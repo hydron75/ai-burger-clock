@@ -1,6 +1,7 @@
 using System;
 using System.Drawing;
 using System.Runtime.InteropServices;
+using System.Net.NetworkInformation;
 using System.Windows.Forms;
 using Microsoft.Win32;
 using Timer = System.Windows.Forms.Timer;
@@ -29,6 +30,7 @@ namespace AiBurgerClock
         private readonly UsageStore store;
         private readonly HttpClient? ownedHttpClient; // Null when the caller supplied the client.
         private readonly StatusMonitor? monitor;
+        private readonly AccountQuotaMonitor? quotaMonitor;
         private StatisticsWindow? statisticsWindow;
         private readonly HashSet<Task> pendingWrites = new();
         private readonly RecommendationNotifications providerNotifications = new();
@@ -44,14 +46,14 @@ namespace AiBurgerClock
         internal event Action<ProviderKind, Recommendation>? ProviderNotificationRequested;
 
         // Normal runs use UTC now; the explicit smoke test supplies a clock without changing Windows time.
-        public TrayApplicationContext(bool startedAutomatically, Func<DateTimeOffset>? utcNow = null, bool enableServices = true, UsageStore? usageStore = null, HttpClient? statusHttpClient = null, Action<Uri>? openStatusPage = null)
+        public TrayApplicationContext(bool startedAutomatically, Func<DateTimeOffset>? utcNow = null, bool enableServices = true, UsageStore? usageStore = null, HttpClient? statusHttpClient = null, Action<Uri>? openStatusPage = null, IAccountQuotaClient? accountQuotaClient = null)
         {
             this.utcNow = utcNow ?? (() => DateTimeOffset.UtcNow);
             this.openStatusPage = openStatusPage ?? ProviderStatusPages.Open;
             store = usageStore ?? new UsageStore();
             statusWindow = new StatusWindow();
             statusWindow.AutoStartChanged += OnWindowAutoStartChanged;
-            statusWindow.RefreshRequested += (_, _) => monitor?.RequestRefresh();
+            statusWindow.RefreshRequested += (_, _) => RefreshAll();
             statusWindow.StatisticsRequested += (_, _) => ShowStatistics();
             statusWindow.RecordRequested += RecordMeasurement;
             statusWindow.StatusPageRequested += OpenStatusPage;
@@ -75,8 +77,8 @@ namespace AiBurgerClock
             menu.Items.Add(countdownMenuItem);
             menu.Items.Add(new ToolStripSeparator());
             menu.Items.Add(showItem);
-            var refreshItem = new ToolStripMenuItem("공식 상태 새로 고침");
-            refreshItem.Click += (_, _) => monitor?.RequestRefresh();
+            var refreshItem = new ToolStripMenuItem("공식 상태 새로 고침") { ToolTipText = "공식 서비스 상태와 Work / Codex·Claude 계정 한도를 함께 갱신" };
+            refreshItem.Click += (_, _) => RefreshAll();
             menu.Items.Add(refreshItem);
             var recordRoot = new ToolStripMenuItem("사용 경험 기록");
             foreach (var provider in Enum.GetValues<ProviderKind>())
@@ -127,9 +129,12 @@ namespace AiBurgerClock
                 }
                 HttpClient httpClient = statusHttpClient ?? ownedHttpClient!;
                 monitor = new StatusMonitor(new ProviderStatusClient(httpClient, this.utcNow), store, this.utcNow, scheduleAt: GetSchedule);
+                quotaMonitor = new AccountQuotaMonitor(accountQuotaClient ?? new AccountQuotaClient(), store, this.utcNow);
                 _ = statusWindow.Handle; // Hidden marshal target; polling never touches WinForms from worker threads.
                 monitor.Changed += OnProviderChanged;
+                quotaMonitor.Changed += OnProviderChanged;
                 SystemEvents.PowerModeChanged += OnPowerModeChanged;
+                NetworkChange.NetworkAvailabilityChanged += OnNetworkAvailabilityChanged;
             }
             RefreshAutoStartChecks();
             RefreshStatus(false);
@@ -156,6 +161,7 @@ namespace AiBurgerClock
             RefreshHolidayControls();
             RefreshStatus(false); // Initial policy load is not a service recovery or a time transition.
             monitor?.Start();
+            quotaMonitor?.Start();
         }
 
         internal async Task SetHolidayAdjustmentAsync(bool enabled)
@@ -268,7 +274,20 @@ namespace AiBurgerClock
         internal void OnPowerModeChanged(object? sender, PowerModeChangedEventArgs e)
         {
             if (e.Mode == PowerModes.Resume && !exiting && !disposed)
-                monitor?.RequestRefresh(queueWhileRefreshing: true);
+                RefreshAll(queueWhileRefreshing: true);
+        }
+
+        internal void OnNetworkAvailabilityChanged(object? sender, NetworkAvailabilityEventArgs e)
+        {
+            if (e.IsAvailable && !exiting && !disposed)
+                RefreshAll(queueWhileRefreshing: true);
+        }
+
+        private void RefreshAll(bool queueWhileRefreshing = false)
+        {
+            if (exiting || disposed) return;
+            monitor?.RequestRefresh(queueWhileRefreshing);
+            quotaMonitor?.RequestRefresh(queueWhileRefreshing);
         }
 
         private IReadOnlyList<ProviderStatus> CurrentProviders() => monitor?.Snapshot() ??
@@ -302,6 +321,9 @@ namespace AiBurgerClock
             }
             statusWindow.UpdateProviders(providers, schedule, monitor?.IsRefreshing ?? false,
                 monitor?.NextRefreshUtc, monitor?.StorageError ?? "");
+            // Quotas never change official service health, schedule recommendations or tray colors.
+            statusWindow.UpdateQuotas(quotaMonitor?.Snapshot() ??
+                Enum.GetValues<QuotaProvider>().Select(p => new QuotaState(p)).ToArray(), utcNow());
         }
 
         private void OpenStatusPage(ProviderKind provider)
@@ -472,6 +494,7 @@ namespace AiBurgerClock
                 try { await initialization; }
                 catch { /* A startup failure must not block exit or surface from async void. */ }
                 if (monitor is not null) await monitor.StopAsync();
+                if (quotaMonitor is not null) await quotaMonitor.StopAsync();
                 try { await Task.WhenAll(pendingWrites.ToArray()); }
                 catch { /* Individual record handler already reports save failures. */ }
             }
@@ -482,6 +505,7 @@ namespace AiBurgerClock
         internal StatusWindow StatusWindow => statusWindow;
         internal ToolStripMenuItem AutoStartMenuItem => autoStartMenuItem;
         internal StatusMonitor? ProviderMonitor => monitor;
+        internal AccountQuotaMonitor? QuotaMonitor => quotaMonitor;
         internal Task Initialization => initialization;
         internal bool HolidayAdjustmentEnabled => holidayAdjustmentEnabled;
         internal ToolStripMenuItem HolidayMenuItem => holidayMenuItem;
@@ -496,7 +520,10 @@ namespace AiBurgerClock
                 {
                     monitor.Changed -= OnProviderChanged;
                     SystemEvents.PowerModeChanged -= OnPowerModeChanged;
+                    NetworkChange.NetworkAvailabilityChanged -= OnNetworkAvailabilityChanged;
                 }
+                if (quotaMonitor is not null) quotaMonitor.Changed -= OnProviderChanged;
+                quotaMonitor?.Dispose();
                 monitor?.Dispose();
                 ownedHttpClient?.Dispose();
                 statisticsWindow?.Dispose();

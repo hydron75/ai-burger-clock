@@ -14,7 +14,8 @@ internal static class SmokeTest
         var statusHandler = new TestStatusHttpHandler();
         using var statusHttp = new HttpClient(statusHandler);
         var openedPages = new List<Uri>();
-        using var context = new TrayApplicationContext(true, () => now, usageStore: testStore, statusHttpClient: statusHttp, openStatusPage: openedPages.Add);
+        var quotaClient = new TestAccountQuotaClient(() => now);
+        using var context = new TrayApplicationContext(true, () => now, usageStore: testStore, statusHttpClient: statusHttp, openStatusPage: openedPages.Add, accountQuotaClient: quotaClient);
         using var timer = new Timer { Interval = 1500 };
         var notifications = new List<AgentState>();
         int balloonEvents = 0;
@@ -72,6 +73,7 @@ internal static class SmokeTest
                         context.RefreshStatus(false);
                         await UIRegressionChecks.RunAsync(context, testStore, statusHandler, reportDirectory, openedPages);
                         await HolidayUiChecks.RunAsync(context, testStore, statusHandler, value => now = value, reportDirectory);
+                        await AccountQuotaUiChecks.RunAsync(context, quotaClient, () => now, reportDirectory);
                         if (verifyAutoStart)
                             VerifyAutoStart(context, reportDirectory);
                         Console.WriteLine($"Windows BalloonTipShown events: {balloonEvents} (visual delivery depends on Windows notification settings).");

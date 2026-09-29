@@ -9,6 +9,11 @@ internal sealed class StatusWindow : Form
     private readonly Label checkedLabel;
     private readonly Label feedbackLabel;
     private readonly Button refreshButton;
+    private readonly Button quotaButton;
+    private readonly AccountQuotaView quotaView;
+    private readonly List<Panel> statusPanels = new();
+    private bool statusRefreshing;
+    private string statusCaption = "공식 상태 갱신 대기";
     private readonly CheckBox autoStartCheckBox;
     private readonly CheckBox holidayCheckBox;
     private readonly ToolTip details = new() { AutoPopDelay = 25000 };
@@ -66,8 +71,11 @@ internal sealed class StatusWindow : Form
                 panel.Controls.Add(label);
             }
             Controls.Add(panel);
+            statusPanels.Add(panel);
             rows.Add(provider, (heading, official, reason));
         }
+        quotaView = new AccountQuotaView { Location = new Point(16, 146), Size = new Size(342, 214), Visible = false };
+        Controls.Add(quotaView);
         checkedLabel = AddLabel("공식 상태 갱신 대기", 17, 366, 342, 35, 8.5F);
         refreshButton = new Button { Text = "Refresh", Location = new Point(16, 407), Size = new Size(106, 28) };
         refreshButton.Click += (_, _) => RefreshRequested?.Invoke(this, EventArgs.Empty);
@@ -75,6 +83,16 @@ internal sealed class StatusWindow : Form
         statisticsButton.Click += (_, _) => StatisticsRequested?.Invoke(this, EventArgs.Empty);
         Controls.Add(refreshButton);
         Controls.Add(statisticsButton);
+        quotaButton = new Button { Text = "한도 보기", Location = new Point(244, 407), Size = new Size(114, 28) };
+        quotaButton.Click += (_, _) =>
+        {
+            quotaView.Visible = !quotaView.Visible;
+            foreach (var panel in statusPanels) panel.Visible = !quotaView.Visible;
+            quotaButton.Text = quotaView.Visible ? "상태 보기" : "한도 보기";
+            SetQuotaCaption();
+        };
+        Controls.Add(quotaButton);
+        details.SetToolTip(quotaButton, "Work / Codex · Claude 개인 계정 한도. Gemini의 공식 서비스 상태는 그대로 유지합니다.");
         feedbackLabel = AddLabel(DefaultFeedback, 17, 442, 342, 19, 8.5F);
         feedbackLabel.AutoEllipsis = true;
         autoStartCheckBox = new CheckBox { AutoSize = true, Text = "Windows 시작 시 자동 실행", Location = new Point(17, 466) };
@@ -192,6 +210,7 @@ internal sealed class StatusWindow : Form
     public void UpdateProviders(IReadOnlyList<ProviderStatus> states, ScheduleSnapshot schedule, bool refreshing,
         DateTimeOffset? nextRefreshUtc, string storageError = "")
     {
+        statusRefreshing = refreshing;
         foreach (var status in states)
         {
             var row = rows[status.Provider];
@@ -212,9 +231,10 @@ internal sealed class StatusWindow : Form
             foreach (var label in new[] { row.Heading, row.Official, row.Reason }) SetDetail(label, detail);
         }
         var last = states.Select(s => s.CheckedAtUtc).DefaultIfEmpty(DateTimeOffset.MinValue).Max();
-        checkedLabel.Text = (last == DateTimeOffset.MinValue ? "최근 조회 시도: —" : $"최근 조회 시도: {AgentSchedule.ToKst(last):HH:mm:ss} KST") +
+        statusCaption = (last == DateTimeOffset.MinValue ? "최근 조회 시도: —" : $"최근 조회 시도: {AgentSchedule.ToKst(last):HH:mm:ss} KST") +
             "\n" + (refreshing ? "공식 상태 확인 중…" : nextRefreshUtc is { } next ? $"다음 조회: {AgentSchedule.ToKst(next):HH:mm:ss} KST" : "다음 조회: —");
         refreshButton.Enabled = !refreshing;
+        SetQuotaCaption();
         // Called every second: show a storage error only when it changes, so it does not
         // overwrite later save/setting feedback, and clear it once storage recovers.
         if (storageError != shownStorageError)
@@ -223,6 +243,21 @@ internal sealed class StatusWindow : Form
             else if (feedbackLabel.Text == shownStorageError) SetFeedback(DefaultFeedback);
             shownStorageError = storageError;
         }
+    }
+
+    internal AccountQuotaView QuotaView => quotaView;
+    internal Button QuotaButton => quotaButton;
+    internal void UpdateQuotas(IReadOnlyList<QuotaState> quotas, DateTimeOffset now)
+    {
+        quotaView.UpdateQuotas(quotas, now);
+        refreshButton.Enabled = !statusRefreshing && !quotas.Any(s => s.IsRefreshing);
+        SetQuotaCaption();
+    }
+
+    private void SetQuotaCaption()
+    {
+        checkedLabel.Text = quotaButton.Text == "상태 보기"
+            ? "잔여량 = 100 − 사용률 · 시각은 KST\n마우스 올리기: 상세 · Refresh: 다시 조회" : statusCaption;
     }
 
     // A modal message owned by this window deactivates it; keep it visible meanwhile.
