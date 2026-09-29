@@ -17,6 +17,9 @@ internal sealed class ProviderStatusClient(HttpClient client, Func<DateTimeOffse
     internal const string GoogleProductsUrl = "https://www.google.com/appsstatus/dashboard/products.json";
     internal const string GoogleIncidentsUrl = "https://www.google.com/appsstatus/dashboard/incidents.json";
     internal const int MaxResponseBytes = 4 * 1024 * 1024;
+    // The only User-Agent sent to status feeds; follows the version in AiBurgerClock.csproj.
+    internal static readonly string UserAgent = "AIBurgerClock/" +
+        (typeof(ProviderStatusClient).Assembly.GetName().Version?.ToString(3) ?? "0.0.0");
 
     // Verified on 2026-09-19. IDs survive marketing-name changes; semantic matches allow new IDs.
     private static readonly HashSet<string> OpenAiIds = new(StringComparer.OrdinalIgnoreCase)
@@ -110,7 +113,7 @@ internal sealed class ProviderStatusClient(HttpClient client, Func<DateTimeOffse
         if (client.Timeout != Timeout.InfiniteTimeSpan) deadline.CancelAfter(client.Timeout);
         using var request = new HttpRequestMessage(HttpMethod.Get, url);
         request.Headers.Accept.ParseAdd("application/json");
-        request.Headers.UserAgent.ParseAdd("AIBurgerClock/2.0");
+        request.Headers.UserAgent.ParseAdd(UserAgent);
         using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, deadline.Token)
             .ConfigureAwait(false);
         response.EnsureSuccessStatusCode();

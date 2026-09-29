@@ -124,7 +124,6 @@ namespace AiBurgerClock
                         ConnectTimeout = TimeSpan.FromSeconds(5),
                         AutomaticDecompression = System.Net.DecompressionMethods.GZip | System.Net.DecompressionMethods.Deflate
                     }) { Timeout = StatusMonitor.RequestTimeout };
-                    ownedHttpClient.DefaultRequestHeaders.UserAgent.ParseAdd("AI-Burger-Clock/2.0");
                 }
                 HttpClient httpClient = statusHttpClient ?? ownedHttpClient!;
                 monitor = new StatusMonitor(new ProviderStatusClient(httpClient, this.utcNow), store, this.utcNow, scheduleAt: GetSchedule);
