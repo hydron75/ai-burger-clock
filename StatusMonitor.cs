@@ -58,9 +58,12 @@ internal sealed class StatusMonitor : IDisposable
 
     public void Start() => runner ??= RunAsync();
 
-    public void RequestRefresh()
+    // Clicks during a refresh are ignored. A request that must not be lost (resume from
+    // sleep while a pre-suspend pass is still in flight) stays pending and runs one
+    // fresh pass right after the current one.
+    public void RequestRefresh(bool queueWhileRefreshing = false)
     {
-        if (!lifetime.IsCancellationRequested && !IsRefreshing && wake.CurrentCount == 0)
+        if (!lifetime.IsCancellationRequested && (queueWhileRefreshing || !IsRefreshing) && wake.CurrentCount == 0)
         {
             try { wake.Release(); }
             catch (SemaphoreFullException) { /* coalesce repeated clicks */ }

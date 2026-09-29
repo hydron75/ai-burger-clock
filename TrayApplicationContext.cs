@@ -253,11 +253,12 @@ namespace AiBurgerClock
         }
 
         // Do not rely on the polling wait ending promptly after sleep; refresh at once on
-        // resume. Raised off the UI thread; RequestRefresh is thread-safe and coalesces.
+        // resume, even if a pass started before suspension is still running. Raised off the
+        // UI thread; RequestRefresh is thread-safe and coalesces.
         internal void OnPowerModeChanged(object? sender, PowerModeChangedEventArgs e)
         {
             if (e.Mode == PowerModes.Resume && !exiting && !disposed)
-                monitor?.RequestRefresh();
+                monitor?.RequestRefresh(queueWhileRefreshing: true);
         }
 
         private IReadOnlyList<ProviderStatus> CurrentProviders() => monitor?.Snapshot() ??
