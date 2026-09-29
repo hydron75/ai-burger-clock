@@ -40,6 +40,8 @@ internal static class StatisticsAnalysis
     public static StatisticsReport Build(IReadOnlyList<UsageMeasurement> items, CancellationToken cancellationToken = default)
     {
         List<StatisticsRow> providers = [], hours = [], schedules = [], official = [], operationalHours = [];
+        // Every provider gets rows for every recorded policy, including policies it has no data for.
+        string[] policyVersions = items.Select(item => item.SchedulePolicyVersion).Distinct().Order().ToArray();
         foreach (ProviderKind provider in Enum.GetValues<ProviderKind>())
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -67,7 +69,7 @@ internal static class StatisticsAnalysis
             schedules.Add(new(name, "DST × BURGER", EventCounts.From(rows.Where(item => item.EasternIsDst && item.PacificIsDst && item.ScheduleState == AgentState.BurgerTime))));
             schedules.Add(new(name, "Standard × FULL", EventCounts.From(rows.Where(item => !item.EasternIsDst && !item.PacificIsDst && item.ScheduleState == AgentState.FullThrottle))));
             schedules.Add(new(name, "Standard × BURGER", EventCounts.From(rows.Where(item => !item.EasternIsDst && !item.PacificIsDst && item.ScheduleState == AgentState.BurgerTime))));
-            foreach (string policy in items.Select(item => item.SchedulePolicyVersion).Distinct().Order())
+            foreach (string policy in policyVersions)
             {
                 UsageMeasurement[] policyRows = rows.Where(item => item.SchedulePolicyVersion == policy).ToArray();
                 schedules.Add(new(name, "Policy: " + policy, EventCounts.From(policyRows)));
@@ -87,7 +89,7 @@ internal static class StatisticsAnalysis
             foreach (OfficialStatus status in Enum.GetValues<OfficialStatus>())
                 official.Add(new(name, RecommendationPolicy.OfficialLabel(status), EventCounts.From(rows.Where(item => item.OfficialStatus == status))));
         }
-        string policies = string.Join(", ", items.Select(item => item.SchedulePolicyVersion).Distinct().Order());
+        string policies = string.Join(", ", policyVersions);
         return new(providers, hours, schedules, official, operationalHours, policies.Length == 0 ? "No data" : policies);
     }
 }
