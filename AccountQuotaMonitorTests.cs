@@ -96,6 +96,11 @@ internal static class AccountQuotaMonitorTests
         check(State(monitor, QuotaProvider.Codex).IsPrevious, "Overdue refresh presents cached values as previous");
         now = Now.AddHours(-1);
         check(State(monitor, QuotaProvider.Codex).IsPrevious, "Backward clock change cannot make future cached data fresh");
+        now = Now.AddHours(2);
+        client.Handler = (_, _) => Task.FromException<QuotaReading>(new IOException("Synthetic failure after recovery"));
+        await monitor.RefreshOnceAsync(QuotaProvider.Codex);
+        check(State(monitor, QuotaProvider.Codex).NextCheckUtc == now.AddMinutes(15),
+            "A new failure after recovery restarts backoff at 15 minutes");
         await monitor.StopAsync();
     }
 
