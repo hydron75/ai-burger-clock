@@ -152,6 +152,11 @@ internal static class TrayPresentationTests
                 Check(lightGlyphPresent, "Light glyph pixels survive " + size + "px rendering: " + appearance);
             }
         }
+
+        long lastNetworkRefresh = 0;
+        Check(TrayApplicationContext.TryClaimNetworkRefresh(ref lastNetworkRefresh, 1_000), "First network recovery refreshes");
+        Check(!TrayApplicationContext.TryClaimNetworkRefresh(ref lastNetworkRefresh, 60_999), "Network flaps within one minute are coalesced");
+        Check(TrayApplicationContext.TryClaimNetworkRefresh(ref lastNetworkRefresh, 61_000), "Network recovery after one minute refreshes again");
         return count;
     }
 

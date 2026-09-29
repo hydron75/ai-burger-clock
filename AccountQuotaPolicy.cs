@@ -6,6 +6,7 @@ internal static class AccountQuotaPolicy
     public static readonly TimeSpan LowRemainingInterval = TimeSpan.FromHours(1);
     public static readonly TimeSpan ResetInterval = TimeSpan.FromMinutes(5);
     public static readonly TimeSpan ResetMargin = TimeSpan.FromMinutes(15);
+    public static readonly TimeSpan FailureRetryInterval = TimeSpan.FromMinutes(15);
 
     public static TimeSpan GetInterval(DateTimeOffset nowUtc, IReadOnlyList<QuotaWindow> windows,
         IEnumerable<DateTimeOffset>? previousResetAnchors = null)
@@ -33,6 +34,15 @@ internal static class AccountQuotaPolicy
         }
         // A due check is immediate, including clock changes/resume; never return a negative wait.
         return (next < nowUtc ? nowUtc : next).ToUniversalTime();
+    }
+
+    // After consecutive failed reads: 15m, 30m, 1h, ... never later than the regular interval.
+    // A transient CLI/server failure then does not leave the previous value for up to 6h.
+    public static TimeSpan GetFailureRetryDelay(int consecutiveFailures, IReadOnlyList<QuotaWindow> windows)
+    {
+        TimeSpan regular = RegularInterval(windows);
+        TimeSpan delay = FailureRetryInterval * Math.Pow(2, Math.Clamp(consecutiveFailures - 1, 0, 10));
+        return delay < regular ? delay : regular;
     }
 
     private static TimeSpan RegularInterval(IReadOnlyList<QuotaWindow> windows) =>

@@ -70,7 +70,8 @@ internal static class AccountQuotaMonitorTests
         check(codex.Error.Contains("시간 초과") && !codex.IsRefreshing, "Timeout has a bounded friendly message and finishes refresh");
         check(claude.Reading?.Windows[0].UsedPercent == 93 && !claude.IsPrevious && claude.Error.Length == 0,
             "Other provider recovery clears its own previous/error state");
-        check(claude.NextCheckUtc == now.AddHours(1) && codex.NextCheckUtc == now.AddHours(6), "Polling policies are independent per provider");
+        check(claude.NextCheckUtc == now.AddHours(1) && codex.NextCheckUtc == now.AddMinutes(15),
+            "Polling policies are independent per provider; a failed read retries after 15 minutes");
 
         now = now.AddMinutes(1);
         client.Handler = (_, _) => Task.FromResult(Reading(QuotaProvider.Claude, 11));
@@ -79,15 +80,18 @@ internal static class AccountQuotaMonitorTests
         check(codex.Reading?.Provider == QuotaProvider.Codex && codex.Reading.Windows[0].UsedPercent == 45 && codex.IsPrevious,
             "Mismatched provider response cannot replace a valid previous reading");
         check(codex.LastSuccessfulCheckUtc == Now, "Invalid response cannot advance success time");
+        check(codex.NextCheckUtc == now.AddMinutes(30), "Second consecutive failure retries after 30 minutes");
 
         client.Handler = (provider, _) => Task.FromResult(new QuotaReading(provider, []));
         await monitor.RefreshOnceAsync(QuotaProvider.Codex);
         check(State(monitor, QuotaProvider.Codex).Reading?.Windows.Count == 1
             && State(monitor, QuotaProvider.Codex).IsPrevious, "Empty response cannot become a successful reading");
+        check(State(monitor, QuotaProvider.Codex).NextCheckUtc == now.AddHours(1), "Third consecutive failure retries after 1 hour");
         client.Handler = (provider, _) => Task.FromResult(Reading(provider, 1));
         await monitor.RefreshOnceAsync(QuotaProvider.Codex);
         check(!State(monitor, QuotaProvider.Codex).IsPrevious && State(monitor, QuotaProvider.Codex).Error.Length == 0,
             "Valid reading recovers after invalid responses");
+        check(State(monitor, QuotaProvider.Codex).NextCheckUtc == now.AddHours(6), "Success resets failure backoff to the normal schedule");
         now = now.AddHours(6).AddMinutes(6);
         check(State(monitor, QuotaProvider.Codex).IsPrevious, "Overdue refresh presents cached values as previous");
         now = Now.AddHours(-1);

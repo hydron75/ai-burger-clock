@@ -36,6 +36,8 @@ namespace AiBurgerClock
         private readonly RecommendationNotifications providerNotifications = new();
         private int providerNotificationSerial;
         private int providerRefreshQueued;
+        private long lastNetworkRefreshTick;
+        internal static readonly TimeSpan NetworkRefreshMinimumInterval = TimeSpan.FromMinutes(1);
         private readonly Action<Uri> openStatusPage;
         private volatile bool holidayAdjustmentEnabled;
         private bool holidaySettingsReady;
@@ -77,7 +79,7 @@ namespace AiBurgerClock
             menu.Items.Add(countdownMenuItem);
             menu.Items.Add(new ToolStripSeparator());
             menu.Items.Add(showItem);
-            var refreshItem = new ToolStripMenuItem("공식 상태 새로 고침") { ToolTipText = "공식 서비스 상태와 Work / Codex·Claude 계정 한도를 함께 갱신" };
+            var refreshItem = new ToolStripMenuItem("상태·한도 새로 고침") { ToolTipText = "공식 서비스 상태와 Work / Codex·Claude 계정 한도를 함께 갱신" };
             refreshItem.Click += (_, _) => RefreshAll();
             menu.Items.Add(refreshItem);
             var recordRoot = new ToolStripMenuItem("사용 경험 기록");
@@ -279,8 +281,18 @@ namespace AiBurgerClock
 
         internal void OnNetworkAvailabilityChanged(object? sender, NetworkAvailabilityEventArgs e)
         {
-            if (e.IsAvailable && !exiting && !disposed)
+            if (e.IsAvailable && !exiting && !disposed &&
+                TryClaimNetworkRefresh(ref lastNetworkRefreshTick, Environment.TickCount64))
                 RefreshAll(queueWhileRefreshing: true);
+        }
+
+        // Adapters (VPN, virtual switches) can flap, and each refresh starts both quota CLIs.
+        // Raised off the UI thread; at most one network-triggered refresh per minute.
+        internal static bool TryClaimNetworkRefresh(ref long lastTick, long nowTick)
+        {
+            long last = Interlocked.Read(ref lastTick);
+            if (last != 0 && nowTick - last < (long)NetworkRefreshMinimumInterval.TotalMilliseconds) return false;
+            return Interlocked.CompareExchange(ref lastTick, nowTick, last) == last;
         }
 
         private void RefreshAll(bool queueWhileRefreshing = false)

@@ -20,6 +20,7 @@ internal sealed class AccountQuotaMonitor : IDisposable
     private readonly Dictionary<QuotaProvider, SemaphoreSlim> wakes = Enum.GetValues<QuotaProvider>().ToDictionary(p => p, _ => new SemaphoreSlim(0, 1));
     private readonly Dictionary<QuotaProvider, SemaphoreSlim> gates = Enum.GetValues<QuotaProvider>().ToDictionary(p => p, _ => new SemaphoreSlim(1, 1));
     private readonly Dictionary<QuotaProvider, DateTimeOffset[]> anchors = Enum.GetValues<QuotaProvider>().ToDictionary(p => p, _ => Array.Empty<DateTimeOffset>());
+    private readonly Dictionary<QuotaProvider, int> failures = Enum.GetValues<QuotaProvider>().ToDictionary(p => p, _ => 0);
     private Task? runner;
     private bool disposed;
     public event Action? Changed;
@@ -139,6 +140,12 @@ internal sealed class AccountQuotaMonitor : IDisposable
                     .Concat(known?.Windows.Where(w => w.ResetsAtUtc.HasValue).Select(w => w.ResetsAtUtc!.Value) ?? [])
                     .Where(r => r.AddMinutes(15) >= now).Distinct().OrderBy(r => r).Take(64).ToArray();
                 var next = AccountQuotaPolicy.GetNextCheckUtc(now, now, known?.Windows ?? [], anchors[provider]);
+                failures[provider] = reading is null ? Math.Min(failures[provider] + 1, 100) : 0;
+                if (reading is null)
+                {
+                    var retry = now + AccountQuotaPolicy.GetFailureRetryDelay(failures[provider], known?.Windows ?? []);
+                    if (retry < next) next = retry;
+                }
                 states[provider] = old with
                 {
                     Reading = known, CheckedAtUtc = now, LastSuccessfulCheckUtc = reading is not null ? now : old.LastSuccessfulCheckUtc,

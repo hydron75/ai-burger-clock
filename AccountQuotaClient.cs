@@ -312,7 +312,6 @@ internal sealed class AccountQuotaClient(
         if (provider == QuotaProvider.Claude)
         {
             candidates.Add(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".local", "bin", name));
-            candidates.Add(Path.Combine(local, "hermes", "node", "node_modules", "@anthropic-ai", "claude-code", "bin", name));
         }
         if (provider == QuotaProvider.Codex)
         {

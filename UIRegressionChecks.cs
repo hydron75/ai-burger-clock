@@ -46,7 +46,7 @@ internal static class UIRegressionChecks
         await WaitUntilAsync(() => Task.FromResult(handler.RequestCount > requests && !monitor.IsRefreshing && monitor.NextRefreshUtc.HasValue));
         Check(true, "Main Refresh button triggers asynchronous provider update");
         requests = handler.RequestCount;
-        context.TrayIcon.ContextMenuStrip!.Items.OfType<ToolStripMenuItem>().Single(i => i.Text == "공식 상태 새로 고침").PerformClick();
+        context.TrayIcon.ContextMenuStrip!.Items.OfType<ToolStripMenuItem>().Single(i => i.Text == "상태·한도 새로 고침").PerformClick();
         await WaitUntilAsync(() => Task.FromResult(handler.RequestCount > requests && !monitor.IsRefreshing && monitor.NextRefreshUtc.HasValue));
         Check(true, "Tray Refresh handler triggers asynchronous provider update");
         requests = handler.RequestCount;

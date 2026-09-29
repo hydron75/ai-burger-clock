@@ -53,7 +53,7 @@ internal sealed class AccountQuotaView : Panel
             var metadataLabel = metadata[state.Provider];
             metadataLabel.Text = $"성공 {succeeded} · 다음 {next}";
             string note = $"{QuotaNames.For(state.Provider)} · 모든 시각 KST\n마지막 성공: {succeeded}\n다음 조회: {next}\n최근 시도: {(state.CheckedAtUtc is { } attempt ? AgentSchedule.ToKst(attempt).ToString("MM-dd HH:mm:ss") : "—")}\n" +
-                $"{state.Error}\n{state.CacheError}\n기본 6시간 · 잔여 10% 미만 1시간 · 리셋 전후 15분은 5분\n공식 CLI 응답 수신 시각이며 서버 데이터 생성 시각을 보장하지 않습니다.";
+                $"{state.Error}\n{state.CacheError}\n기본 6시간 · 잔여 10% 미만 1시간 · 리셋 전후 15분은 5분 · 실패 시 15분부터 재시도\n공식 CLI 응답 수신 시각이며 서버 데이터 생성 시각을 보장하지 않습니다.";
             Detail(headings[state.Provider], note);
             Detail(metadataLabel, note);
             metadataLabel.ForeColor = state.CacheError.Length > 0 ? Color.Firebrick : Color.DimGray;
