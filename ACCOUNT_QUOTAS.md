@@ -110,6 +110,16 @@ UI 검사는 트레이 시작·열기·숨기기·전환·카운트다운·알�
 
 ## Git 기준점과 백업
 
+| 기준 | 커밋 / 상태 |
+|---|---|
+| 기능 구현 전 로컬 main | `a1195613279ce6f4cd07a4d078a29b0f564b2833` |
+| GitHub 게시 전 최신 main | `d255919b799192af389b4655a350b6689f5b401c` — 이전 기준과 차이는 AGENTS.md만 있음 |
+| 2.2.0 구현·버전 커밋 | `a9ba6be59f8df2c48c19fe6b08e6b7be8e17e2f4` |
+| 게시 전 Windows 빌드·자체 검사 대상 | `a9ba6be59f8df2c48c19fe6b08e6b7be8e17e2f4` — 경고/오류 0, 250,654 assertions, 종료 코드 0 |
+| PR 병합 | 미병합. 게시용 브랜치 `feature/account-quotas-2.2.0` |
+
+GitHub 게시 전 재검증에서는 현재 실행 중인 dist 앱을 교체하거나 계정을 다시 조회하지 않았다. UI 117 PASS는 최초 로컬 배포 검증 결과이며, 그 이후 기능 소스 변경 없이 Git 기록·문서만 정리했다. 마지막 검사 이후의 후속 커밋이 이 문서만 변경했는지도 Git diff로 확인한다.
+
 - 소스 기준점: `a1195613279ce6f4cd07a4d078a29b0f564b2833`, 최초 작업 트리 깨끗함.
 - 소스 백업: `../backups/AiBurgerClock-before-quota-a119561-20260930.zip`, SHA-256 `84010E190C68AA5D345365DE5CEB82F80F5A15E230847CB430537001F30B8170`.
 - 기존 EXE·DB 백업: `../backups/quota-2.2.0-before-deploy-20260930/`. 앱 정상 종료 및 DB WAL 없음 확인 후 복사·해시 일치 확인.
