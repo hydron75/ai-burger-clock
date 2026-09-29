@@ -13,6 +13,8 @@ namespace AiBurgerClock
         private readonly StatusWindow statusWindow;
         private readonly Timer timer;
         private readonly ContextMenuStrip menu;
+        // Assigned DropDowns are not auto-generated, so disposing the menu does not dispose them.
+        private readonly List<ContextMenuStrip> recordMenus = new();
         private readonly Font stateMenuFont;
         private readonly Func<DateTimeOffset> utcNow;
         private readonly ToolStripMenuItem stateMenuItem;
@@ -79,10 +81,9 @@ namespace AiBurgerClock
             var recordRoot = new ToolStripMenuItem("사용 경험 기록");
             foreach (var provider in Enum.GetValues<ProviderKind>())
             {
-                var recordItem = new ToolStripMenuItem(provider.ToString())
-                {
-                    DropDown = StatusWindow.CreateRecordingMenu(provider, RecordMeasurement)
-                };
+                var recordMenu = StatusWindow.CreateRecordingMenu(provider, RecordMeasurement);
+                recordMenus.Add(recordMenu);
+                var recordItem = new ToolStripMenuItem(provider.ToString()) { DropDown = recordMenu };
                 recordRoot.DropDownItems.Add(recordItem);
             }
             menu.Items.Add(recordRoot);
@@ -516,6 +517,7 @@ namespace AiBurgerClock
                 trayIcon.Dispose();
                 statusWindow.Dispose();
                 menu.Dispose();
+                foreach (var recordMenu in recordMenus) recordMenu.Dispose();
                 stateMenuFont.Dispose();
                 if (currentIcon != null)
                     currentIcon.Dispose();
