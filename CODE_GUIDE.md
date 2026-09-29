@@ -1,17 +1,18 @@
 # 소스코드, 쉬운 말로 읽기
 
-AI Burger Clock 2.1.2 기준입니다. 사용법부터 보고 싶다면 [README](README.md)로 돌아가세요.
+AI Burger Clock 2.2.0 기준입니다. 사용법부터 보고 싶다면 [README](README.md)로 돌아가세요.
 
-코드를 한 줄씩 번역한 문서는 아닙니다. **각 파일이 무엇을 맡고, 서로 어떻게 연결되는지** 설명합니다. 직접 작성한 C# 파일 30개와 빌드 설정을 모두 다룹니다. 컴퓨터가 만든 `bin`·`obj` 안의 코드는 대상에서 뺍니다.
+코드를 한 줄씩 번역한 문서는 아닙니다. **각 파일이 무엇을 맡고, 서로 어떻게 연결되는지** 설명합니다. 직접 작성한 C# 파일 41개와 빌드 설정을 모두 다룹니다. 컴퓨터가 만든 `bin`·`obj` 안의 코드는 대상에서 뺍니다.
 
 ## 1. 작은 안내소라고 생각해 보세요
 
-이 앱에는 네 가지 역할이 있습니다.
+이 앱에는 다섯 가지 역할이 있습니다.
 
 - **시간표 담당:** 미국 업무시간과 공휴일을 보고 FULL/BURGER를 정합니다.
 - **공지 확인 담당:** OpenAI·Claude·Gemini가 올린 공식 상태를 읽습니다.
 - **안내 담당:** 두 정보를 합쳐 Provider별 GO/HOLD/STOP/CHECK를 보여줍니다.
 - **기록 담당:** 사용자가 “느렸어요”, “잘 끝났어요”라고 남긴 경험을 저장합니다.
+- **잔여량 담당:** 공식 Codex·Claude CLI에 읽기 전용 조회를 부탁해 계정 한도를 보여줍니다. 인증은 CLI가 맡습니다.
 
 내가 오류를 기록했다고 공식 상태를 장애로 바꾸지 않습니다. 공식 장애라고 내 경험을 자동으로 Error로 적지도 않습니다.
 
@@ -290,7 +291,7 @@ Windows 내부 승인 형식은 알려진 경우만 해석합니다. 낯선 값�
 
 이름을 눌러 소스를 열 수 있습니다. 역할을 알고 필요한 파일부터 읽으면 됩니다.
 
-### 실제 앱 기능: 15개
+### 실제 앱 기능: 21개
 
 | 파일 | 맡은 일 |
 |---|---|
@@ -309,8 +310,14 @@ Windows 내부 승인 형식은 알려진 경우만 해석합니다. 낯선 값�
 | [TrayPresentation.cs](TrayPresentation.cs) | 트레이 문자·색상·짧은 도움말 결정 |
 | [UsageStore.cs](UsageStore.cs) | SQLite 생성·업그레이드·백업·설정·저장·일부 해석 불가 행 구분 |
 | [AutoStartManager.cs](AutoStartManager.cs) | Windows 자동 시작 등록과 상태 판정 |
+| [AccountQuotaModels.cs](AccountQuotaModels.cs) | 한도 Provider·기간·사용률·리셋 시각과 조회 약속 |
+| [AccountQuotaParsers.cs](AccountQuotaParsers.cs) | 서로 다른 공식 CLI JSON을 검증한 공통 한도로 변환 |
+| [AccountQuotaClient.cs](AccountQuotaClient.cs) | 설치된 native CLI 실행, 제한시간·출력 크기·취소·모델 호출 없는 결과 확인 |
+| [AccountQuotaPolicy.cs](AccountQuotaPolicy.cs) | 6시간·1시간·5분 규칙과 리셋 15분 전 진입 계산 |
+| [AccountQuotaMonitor.cs](AccountQuotaMonitor.cs) | 두 독립 조회 루프, 마지막 성공값·실패·다음 조회·재시작 캐시 |
+| [AccountQuotaView.cs](AccountQuotaView.cs) | 기존 창 안에서 바꿔 보는 잔여량·리셋 카운트다운·조회 시각 |
 
-### 검사와 진단: 14개
+### 검사와 진단: 19개
 
 미완성 임시 코드가 아닙니다. **특별한 검사 명령 때만 쓰는 정식 검사 코드**입니다.
 
@@ -330,6 +337,11 @@ Windows 내부 승인 형식은 알려진 경우만 해석합니다. 낯선 값�
 | [UIRegressionChecks.cs](UIRegressionChecks.cs) | 클릭·새로고침·기록·메모·통계 연결 |
 | [HolidayUiChecks.cs](HolidayUiChecks.cs) | 공휴일 옵션·색상·카운트다운·기록·알림 연결 |
 | [LiveStatusProbe.cs](LiveStatusProbe.cs) | 공식 상태를 실제 인터넷으로 조회해 출력 |
+| [AccountQuotaTests.cs](AccountQuotaTests.cs) | 한도 파서·잘못된 값·리셋 경계·조회 주기 |
+| [AccountQuotaClientTests.cs](AccountQuotaClientTests.cs) | 가짜 CLI 입출력으로 명령·크기 제한·취소·0턴 검증 |
+| [AccountQuotaMonitorTests.cs](AccountQuotaMonitorTests.cs) | 실패 격리·조회 합치기·종료·SQLite 캐시·재시작 |
+| [AccountQuotaUiChecks.cs](AccountQuotaUiChecks.cs) | 가짜 한도로 창 전환·퍼센트·실패·Refresh·기존 상태 복귀 |
+| [LiveQuotaProbe.cs](LiveQuotaProbe.cs) | 공식 CLI 실제 계정 조회 결과 중 한도 정보만 출력 |
 
 검사의 고정 날짜와 가짜 장애는 정답을 비교하기 위한 문제지입니다. 실제 시간표나 공식 상태를 그 값으로 고정하지 않습니다.
 
@@ -379,10 +391,11 @@ $result.ExitCode
 | `--smoke-test --verify-autostart` | 자동 시작 UI까지 검사 | **실제 사용자 레지스트리의 이 앱 값을 잠시 변경 후 복원. 일반 사용 중 실행하지 않는 개발 전용 검사** |
 | `--smoke-test --report-directory 경로` | 검사 중 창을 PNG로 저장 | 지정 폴더에 이미지 생성. 바탕화면 전체 스크린샷은 아님 |
 | `--check-providers` | 세 공식 소스를 지금 조회해 출력 | 실제 인터넷 사용. 사용자 DB에 기록하지 않음 |
+| `--check-quotas` | 로그인된 Codex·Claude CLI에서 한도만 조회 | 실제 계정 조회. 모델 요청·리셋권 사용·사용자 DB 저장 없음. CLI가 자체 인증을 관리 |
 
 검사는 가짜 현재 시각을 전달하므로 Windows 시스템 시계를 바꾸지 않습니다. UI 검사에서 공식 페이지 열기는 실제 브라우저 대신 주소를 받는 함수로 확인합니다.
 
-검사 통과와 실제 재부팅 성공, 사용자 화면의 알림 노출은 다른 증거입니다. 배포 당시 무엇을 확인했는지는 [2.1.2 검증 기록](MAINTENANCE_2_1_2.md)을 참고하세요.
+검사 통과와 실제 재부팅 성공, 사용자 화면의 알림 노출은 다른 증거입니다. 배포 당시 무엇을 확인했는지는 [2.2.0 검증 기록](ACCOUNT_QUOTAS.md)을 참고하세요.
 
 ## 14. 어디부터 읽으면 좋을까요?
 
@@ -392,5 +405,6 @@ $result.ExitCode
 - **왜 트레이가 이 색인지:** TrayPresentation → TrayApplicationContext.
 - **기록이 어떻게 쌓이는지:** Phase2Models → UsageStore → StatisticsWindow.
 - **버튼이 하는 일:** StatusWindow → TrayApplicationContext.
+- **잔여량 조회와 다음 갱신:** AccountQuotaClient → AccountQuotaParsers → AccountQuotaMonitor / AccountQuotaPolicy → AccountQuotaView. 사용자 실측 통계와는 별개이며 캐시는 UsageStore의 AppMetadata 두 항목만 사용합니다.
 
 색상은 표시 문제, 공휴일은 시간표 정책, 경험 기록은 관찰 데이터, 추천 점수는 데이터 해석 문제입니다. 이 구분이 작은 앱의 가장 중요한 구조입니다.

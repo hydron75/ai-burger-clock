@@ -14,6 +14,8 @@ internal static class Program
             return SelfTest.Run();
         if (HasArgument("--check-providers"))
             return LiveStatusProbe.Run();
+        if (HasArgument("--check-quotas"))
+            return LiveQuotaProbe.RunAsync().GetAwaiter().GetResult();
 
         using var mutex = new Mutex(true, MutexName, out bool createdNew);
         if (!createdNew)

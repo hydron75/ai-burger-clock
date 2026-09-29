@@ -25,7 +25,17 @@ internal static class SelfTest
             Console.WriteLine($"PASS SQLite/measurement metadata/statistics: {storage:N0} assertions, including 10,000-row dataset");
             int holidayMonitor = await HolidayMonitorTests.RunAsync(directory);
             Console.WriteLine($"PASS background provider cache follows holiday policy: {holidayMonitor:N0} assertions");
-            Console.WriteLine($"PASS ALL: {autoStart + schedule + holidays + tray + sources + monitor + storage + holidayMonitor:N0} assertions");
+            int quota = 0;
+            AccountQuotaTests.Run((condition, label) =>
+            {
+                if (!condition) throw new InvalidOperationException(label);
+                quota++;
+            });
+            int quotaClient = await AccountQuotaClientTests.RunAsync();
+            Console.WriteLine($"PASS quota schemas/policy/CLI protocol: {quota + quotaClient:N0} assertions (no account calls)");
+            int quotaMonitor = await AccountQuotaMonitorTests.RunAsync();
+            Console.WriteLine($"PASS quota polling/isolation/SQLite cache/restart/cancellation: {quotaMonitor:N0} assertions");
+            Console.WriteLine($"PASS ALL: {autoStart + schedule + holidays + tray + sources + monitor + storage + holidayMonitor + quota + quotaClient + quotaMonitor:N0} assertions");
             return 0;
         }
         catch (Exception error)

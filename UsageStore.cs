@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text.Json;
 using Microsoft.Data.Sqlite;
 
 namespace AiBurgerClock;
@@ -9,6 +10,7 @@ internal sealed class UsageStore(string? databasePath = null)
 {
     internal const int SchemaVersion = 2;
     internal const string HolidaySettingKey = "UsFederalHolidaysEnabled";
+    private const int MaximumQuotaCacheCharacters = 512 * 1024;
     private readonly SemaphoreSlim gate = new(1, 1);
     private Exception? schemaInitializationFailure;
     public string DatabasePath { get; } = databasePath ?? Path.Combine(
@@ -17,6 +19,48 @@ internal sealed class UsageStore(string? databasePath = null)
 
     public Task InitializeAsync(CancellationToken cancellationToken = default) =>
         ExecuteAsync(_ => true, cancellationToken);
+
+    // Two bounded cache entries in existing metadata; no measurement/history schema changes.
+    internal Task SaveQuotaAsync(QuotaCache cache, CancellationToken cancellationToken = default) =>
+        ExecuteAsync(connection =>
+        {
+            ValidateQuotaCache(cache, cache.Reading.Provider);
+            string json = JsonSerializer.Serialize(cache);
+            if (json.Length > MaximumQuotaCacheCharacters) throw new InvalidDataException("Invalid quota cache size.");
+            using var command = connection.CreateCommand();
+            command.CommandText = "INSERT INTO AppMetadata(Key,Value) VALUES($key,$value) ON CONFLICT(Key) DO UPDATE SET Value=excluded.Value;";
+            command.Parameters.AddWithValue("$key", "AccountQuota.v1." + cache.Reading.Provider);
+            command.Parameters.AddWithValue("$value", json);
+            command.ExecuteNonQuery();
+            return true;
+        }, cancellationToken);
+
+    internal Task<QuotaCache?> ReadQuotaAsync(QuotaProvider provider, CancellationToken cancellationToken = default) =>
+        ExecuteAsync<QuotaCache?>(connection =>
+        {
+            using var command = connection.CreateCommand();
+            command.CommandText = "SELECT Value FROM AppMetadata WHERE Key=$key;";
+            command.Parameters.AddWithValue("$key", "AccountQuota.v1." + provider);
+            if (command.ExecuteScalar() is not string json) return null;
+            if (json.Length > MaximumQuotaCacheCharacters) throw new InvalidDataException("Invalid quota cache size.");
+            var cache = JsonSerializer.Deserialize<QuotaCache>(json) ?? throw new InvalidDataException("Invalid quota cache.");
+            ValidateQuotaCache(cache, provider);
+            return cache;
+        }, cancellationToken);
+
+    internal static void ValidateQuotaCache(QuotaCache cache, QuotaProvider provider)
+    {
+        if (cache.Version != 1 || !Enum.IsDefined(provider) || cache.Reading is null || cache.Reading.Provider != provider ||
+            cache.Reading.Windows is not { Count: > 0 and <= 64 } || cache.ResetAnchors is not { Count: <= 64 } ||
+            cache.SuccessfulAtUtc < DateTimeOffset.UnixEpoch ||
+            cache.Reading.Windows.Any(w => w is null || string.IsNullOrWhiteSpace(w.Id) || w.Id.Length > 512 ||
+                string.IsNullOrWhiteSpace(w.Label) || w.Label.Length > 180 || !double.IsFinite(w.UsedPercent) ||
+                w.UsedPercent < 0 || w.UsedPercent > 100 || w.WindowMinutes is <= 0 ||
+                w.ResetsAtUtc is { } reset && (reset.Year < 1970 || reset.Year > 9000)) ||
+            cache.ResetAnchors.Any(r => r.Year < 1970 || r.Year > 9000) ||
+            cache.Reading.Windows.Select(w => w.Id).Distinct(StringComparer.Ordinal).Count() != cache.Reading.Windows.Count)
+            throw new InvalidDataException("Invalid quota cache.");
+    }
 
     // Missing means the new default applies. Invalid data is reported rather than
     // silently changing the user's selected schedule policy.
