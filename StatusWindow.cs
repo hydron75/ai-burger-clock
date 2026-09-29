@@ -14,10 +14,12 @@ internal sealed class StatusWindow : Form
     private readonly ToolTip details = new() { AutoPopDelay = 25000 };
     private readonly Dictionary<ProviderKind, (Label Heading, Label Official, Label Reason)> rows = new();
     private readonly List<ContextMenuStrip> recordingMenus = new();
+    private readonly List<Font> fonts = new();
     private const string DefaultFeedback = "AI 상태 클릭: 공식 페이지 · 우클릭: 기록";
     private string shownStorageError = "";
     private bool updatingAutoStart;
     private bool updatingHoliday;
+    private int autoHideSuppressed;
 
     public event EventHandler? AutoStartChanged;
     public event EventHandler? HolidayAdjustmentChanged;
@@ -39,7 +41,7 @@ internal sealed class StatusWindow : Form
         ShowInTaskbar = false;
         StartPosition = FormStartPosition.Manual;
         BackColor = Color.FromArgb(248, 249, 250);
-        Font = new Font("Segoe UI", 9F);
+        Font = OwnedFont(9F);
 
         AddLabel("AI AGENT TRAFFIC", 16, 10, 342, 18, 9F, FontStyle.Bold);
         stateLabel = AddLabel("", 14, 31, 345, 36, 18F, FontStyle.Bold);
@@ -50,9 +52,9 @@ internal sealed class StatusWindow : Form
         foreach (var provider in Enum.GetValues<ProviderKind>())
         {
             var panel = new Panel { Location = new Point(16, 146 + index++ * 72), Size = new Size(342, 66), BackColor = Color.White };
-            var heading = new Label { Location = new Point(8, 4), Size = new Size(326, 20), Font = new Font("Segoe UI", 10F, FontStyle.Bold) };
-            var official = new Label { Location = new Point(8, 25), Size = new Size(326, 17), Font = new Font("Segoe UI", 8.5F), AutoEllipsis = true };
-            var reason = new Label { Location = new Point(8, 44), Size = new Size(326, 17), Font = new Font("Segoe UI", 8.5F), AutoEllipsis = true, ForeColor = Color.DimGray };
+            var heading = new Label { Location = new Point(8, 4), Size = new Size(326, 20), Font = OwnedFont(10F, FontStyle.Bold) };
+            var official = new Label { Location = new Point(8, 25), Size = new Size(326, 17), Font = OwnedFont(8.5F), AutoEllipsis = true };
+            var reason = new Label { Location = new Point(8, 44), Size = new Size(326, 17), Font = OwnedFont(8.5F), AutoEllipsis = true, ForeColor = Color.DimGray };
             var menu = CreateRecordingMenu(provider, (p, e, note) => RecordRequested?.Invoke(p, e, note));
             recordingMenus.Add(menu);
             panel.ContextMenuStrip = menu;
@@ -88,7 +90,10 @@ internal sealed class StatusWindow : Form
         };
         details.SetToolTip(holidayCheckBox, "미국 연방 정기 공휴일·대체휴일의 업무 구간을 제외합니다.\n기업 휴무나 실제 서비스 품질을 보장하지 않는 시간표 정책입니다.");
         Controls.Add(holidayCheckBox);
-        Deactivate += (_, _) => Hide();
+        Deactivate += (_, _) =>
+        {
+            if (autoHideSuppressed == 0) Hide();
+        };
         FormClosing += (_, e) =>
         {
             if (e.CloseReason == CloseReason.UserClosing) { e.Cancel = true; Hide(); }
@@ -108,9 +113,17 @@ internal sealed class StatusWindow : Form
         details.SetToolTip(control, control.AccessibleDescription);
     }
 
+    // Controls do not dispose fonts assigned to them; this window releases its own.
+    private Font OwnedFont(float size, FontStyle style = FontStyle.Regular)
+    {
+        var font = new Font("Segoe UI", size, style);
+        fonts.Add(font);
+        return font;
+    }
+
     private Label AddLabel(string text, int x, int y, int width, int height, float size, FontStyle style = FontStyle.Regular)
     {
-        var label = new Label { Text = text, Location = new Point(x, y), Size = new Size(width, height), Font = new Font("Segoe UI", size, style), ForeColor = Color.FromArgb(70, 70, 70) };
+        var label = new Label { Text = text, Location = new Point(x, y), Size = new Size(width, height), Font = OwnedFont(size, style), ForeColor = Color.FromArgb(70, 70, 70) };
         Controls.Add(label);
         return label;
     }
@@ -152,16 +165,15 @@ internal sealed class StatusWindow : Form
             autoStartCheckBox.Checked = status.IsEnabled;
             autoStartCheckBox.Text = status.Label;
             autoStartCheckBox.AccessibleDescription = status.Detail;
-            details.SetToolTip(autoStartCheckBox, status.Detail);
+            SetDetail(autoStartCheckBox, status.Detail);
         }
         finally { updatingAutoStart = false; }
     }
 
     public void UpdateStatus(ScheduleSnapshot snapshot)
     {
-        bool full = snapshot.State == AgentState.FullThrottle;
-        stateLabel.Text = full ? "●  FULL THROTTLE" : "●  BURGER TIME";
-        stateLabel.ForeColor = full ? Color.FromArgb(25, 145, 78) : Color.FromArgb(211, 61, 55);
+        stateLabel.Text = "●  " + TrayPresentation.StateName(snapshot.State);
+        stateLabel.ForeColor = TrayPresentation.StateColor(snapshot.State);
         countdownLabel.Text = "전환까지  " + FormatRemaining(snapshot.Remaining);
         string extended = (snapshot.IsWeekendExtendedFullThrottle, snapshot.IsHolidayExtendedFullThrottle) switch
         {
@@ -171,10 +183,10 @@ internal sealed class StatusWindow : Form
             _ => ""
         };
         nextLabel.Text = $"다음: {snapshot.NextTransitionKst:ddd HH:mm} KST" + extended;
-        details.SetToolTip(nextLabel, $"다음 전환: {snapshot.NextTransitionKst:yyyy-MM-dd HH:mm:ss} KST\n공휴일 보정: {(snapshot.HolidayAdjustmentEnabled ? "켜짐" : "꺼짐")}\n연장에 반영된 공휴일: {snapshot.HolidayNames}\n주말 여부와 공휴일 연장은 독립적으로 기록됩니다.");
+        SetDetail(nextLabel, $"다음 전환: {snapshot.NextTransitionKst:yyyy-MM-dd HH:mm:ss} KST\n공휴일 보정: {(snapshot.HolidayAdjustmentEnabled ? "켜짐" : "꺼짐")}\n연장에 반영된 공휴일: {snapshot.HolidayNames}\n주말 여부와 공휴일 연장은 독립적으로 기록됩니다.");
         string mode = snapshot.EasternIsDst == snapshot.PacificIsDst ? (snapshot.EasternIsDst ? "DST" : "Standard") : "Mixed DST";
         timeZoneLabel.Text = $"US: {mode} · ET {Offset(snapshot.EasternUtcOffsetMinutes)} / PT {Offset(snapshot.PacificUtcOffsetMinutes)}";
-        details.SetToolTip(timeZoneLabel, $"Eastern: {snapshot.EasternLocalTime:yyyy-MM-dd HH:mm zzz}\nPacific: {snapshot.PacificLocalTime:yyyy-MM-dd HH:mm zzz}\n정책: {snapshot.SchedulePolicyVersion}");
+        SetDetail(timeZoneLabel, $"Eastern: {snapshot.EasternLocalTime:yyyy-MM-dd HH:mm zzz}\nPacific: {snapshot.PacificLocalTime:yyyy-MM-dd HH:mm zzz}\n정책: {snapshot.SchedulePolicyVersion}");
     }
 
     public void UpdateProviders(IReadOnlyList<ProviderStatus> states, ScheduleSnapshot schedule, bool refreshing,
@@ -194,14 +206,14 @@ internal sealed class StatusWindow : Form
             };
             row.Official.Text = "Official: " + RecommendationPolicy.OfficialLabel(status.Status);
             row.Reason.Text = status.Reason;
-            string success = status.LastSuccessfulCheckUtc is { } time ? ToKst(time).ToString("MM-dd HH:mm:ss") + " KST" : "없음";
-            string attempted = status.CheckedAtUtc == DateTimeOffset.MinValue ? "없음" : ToKst(status.CheckedAtUtc).ToString("MM-dd HH:mm:ss") + " KST";
+            string success = status.LastSuccessfulCheckUtc is { } time ? AgentSchedule.ToKst(time).ToString("MM-dd HH:mm:ss") + " KST" : "없음";
+            string attempted = status.CheckedAtUtc == DateTimeOffset.MinValue ? "없음" : AgentSchedule.ToKst(status.CheckedAtUtc).ToString("MM-dd HH:mm:ss") + " KST";
             string detail = $"클릭: 공식 상태 페이지 열기 · 우클릭: 사용 경험 기록\n{status.Reason}\n최근 조회 시도: {attempted}\n마지막 상태 확인 성공: {success}\n관련: {status.RelevantComponent}\n사건: {status.IncidentTitle}\n사건 ID: {status.IncidentId}\n마지막 알려진 상태: {status.LastKnownStatus}\n{status.Source}";
-            foreach (var label in new[] { row.Heading, row.Official, row.Reason }) details.SetToolTip(label, detail);
+            foreach (var label in new[] { row.Heading, row.Official, row.Reason }) SetDetail(label, detail);
         }
         var last = states.Select(s => s.CheckedAtUtc).DefaultIfEmpty(DateTimeOffset.MinValue).Max();
-        checkedLabel.Text = (last == DateTimeOffset.MinValue ? "최근 조회 시도: —" : $"최근 조회 시도: {ToKst(last):HH:mm:ss} KST") +
-            "\n" + (refreshing ? "공식 상태 확인 중…" : nextRefreshUtc is { } next ? $"다음 조회: {ToKst(next):HH:mm:ss} KST" : "다음 조회: —");
+        checkedLabel.Text = (last == DateTimeOffset.MinValue ? "최근 조회 시도: —" : $"최근 조회 시도: {AgentSchedule.ToKst(last):HH:mm:ss} KST") +
+            "\n" + (refreshing ? "공식 상태 확인 중…" : nextRefreshUtc is { } next ? $"다음 조회: {AgentSchedule.ToKst(next):HH:mm:ss} KST" : "다음 조회: —");
         refreshButton.Enabled = !refreshing;
         // Called every second: show a storage error only when it changes, so it does not
         // overwrite later save/setting feedback, and clear it once storage recovers.
@@ -213,11 +225,25 @@ internal sealed class StatusWindow : Form
         }
     }
 
+    // A modal message owned by this window deactivates it; keep it visible meanwhile.
+    internal T WithoutAutoHide<T>(Func<T> action)
+    {
+        autoHideSuppressed++;
+        try { return action(); }
+        finally { autoHideSuppressed--; }
+    }
+
+    // UpdateStatus/UpdateProviders run every second; replace a tooltip only when its text changes.
+    private void SetDetail(Control control, string text)
+    {
+        if (details.GetToolTip(control) != text) details.SetToolTip(control, text);
+    }
+
     public void SetFeedback(string text, bool error = false)
     {
         feedbackLabel.Text = text;
         feedbackLabel.ForeColor = error ? Color.Firebrick : Color.DimGray;
-        details.SetToolTip(feedbackLabel, text);
+        SetDetail(feedbackLabel, text);
     }
 
     public void ShowNearTray()
@@ -231,7 +257,6 @@ internal sealed class StatusWindow : Form
 
     private static string Offset(int minutes) => $"UTC{(minutes >= 0 ? "+" : "-")}{Math.Abs(minutes) / 60}" +
         (minutes % 60 == 0 ? "" : $":{Math.Abs(minutes) % 60:00}");
-    private static DateTimeOffset ToKst(DateTimeOffset utc) => TimeZoneInfo.ConvertTimeBySystemTimeZoneId(utc, "Korea Standard Time");
     internal static string FormatRemaining(TimeSpan remaining) =>
         $"{Math.Max(0, (int)remaining.TotalHours):00}:{Math.Max(0, remaining.Minutes):00}:{Math.Max(0, remaining.Seconds):00}";
 
@@ -243,5 +268,7 @@ internal sealed class StatusWindow : Form
             foreach (var menu in recordingMenus) menu.Dispose();
         }
         base.Dispose(disposing);
+        if (disposing)
+            foreach (var font in fonts) font.Dispose(); // After the controls using them.
     }
 }

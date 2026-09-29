@@ -16,6 +16,13 @@ internal readonly record struct TrayAppearance(AgentState Schedule, TrayAttentio
 // Presentation only: never writes back to an individual provider's recommendation.
 internal static class TrayPresentation
 {
+    // Shared by the tray menu, tooltip, transition notification and status window.
+    public static string StateName(AgentState state) =>
+        state == AgentState.FullThrottle ? "FULL THROTTLE" : "BURGER TIME";
+
+    public static Color StateColor(AgentState state) =>
+        state == AgentState.FullThrottle ? Color.FromArgb(25, 145, 78) : Color.FromArgb(211, 61, 55);
+
     public static TrayAppearance Calculate(AgentState schedule, IReadOnlyList<ProviderStatus> states)
     {
         TrayAttention attention;
@@ -33,7 +40,7 @@ internal static class TrayPresentation
 
     public static string Tooltip(ScheduleSnapshot schedule, IReadOnlyList<ProviderStatus> states)
     {
-        string state = schedule.State == AgentState.FullThrottle ? "FULL THROTTLE" : "BURGER TIME";
+        string state = StateName(schedule.State);
         string holiday = schedule.IsHolidayExtendedFullThrottle ? " · 공휴일" : "";
         string providers = string.Join("\n", Enum.GetValues<ProviderKind>().Select(provider =>
         {

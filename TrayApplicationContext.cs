@@ -13,6 +13,8 @@ namespace AiBurgerClock
         private readonly StatusWindow statusWindow;
         private readonly Timer timer;
         private readonly ContextMenuStrip menu;
+        // Assigned DropDowns are not auto-generated, so disposing the menu does not dispose them.
+        private readonly List<ContextMenuStrip> recordMenus = new();
         private readonly Font stateMenuFont;
         private readonly Func<DateTimeOffset> utcNow;
         private readonly ToolStripMenuItem stateMenuItem;
@@ -25,12 +27,13 @@ namespace AiBurgerClock
         private bool disposed;
         private bool exiting;
         private readonly UsageStore store;
-        private readonly HttpClient? httpClient;
+        private readonly HttpClient? ownedHttpClient; // Null when the caller supplied the client.
         private readonly StatusMonitor? monitor;
         private StatisticsWindow? statisticsWindow;
         private readonly HashSet<Task> pendingWrites = new();
         private readonly RecommendationNotifications providerNotifications = new();
         private int providerNotificationSerial;
+        private int providerRefreshQueued;
         private readonly Action<Uri> openStatusPage;
         private volatile bool holidayAdjustmentEnabled;
         private bool holidaySettingsReady;
@@ -78,10 +81,9 @@ namespace AiBurgerClock
             var recordRoot = new ToolStripMenuItem("사용 경험 기록");
             foreach (var provider in Enum.GetValues<ProviderKind>())
             {
-                var recordItem = new ToolStripMenuItem(provider.ToString())
-                {
-                    DropDown = StatusWindow.CreateRecordingMenu(provider, RecordMeasurement)
-                };
+                var recordMenu = StatusWindow.CreateRecordingMenu(provider, RecordMeasurement);
+                recordMenus.Add(recordMenu);
+                var recordItem = new ToolStripMenuItem(provider.ToString()) { DropDown = recordMenu };
                 recordRoot.DropDownItems.Add(recordItem);
             }
             menu.Items.Add(recordRoot);
@@ -113,15 +115,18 @@ namespace AiBurgerClock
 
             if (enableServices)
             {
-                httpClient = statusHttpClient ?? new HttpClient(new SocketsHttpHandler
+                if (statusHttpClient is null)
                 {
-                    UseCookies = false,
-                    PooledConnectionLifetime = TimeSpan.FromMinutes(10),
-                    ConnectTimeout = TimeSpan.FromSeconds(5),
-                    AutomaticDecompression = System.Net.DecompressionMethods.GZip | System.Net.DecompressionMethods.Deflate
-                }) { Timeout = StatusMonitor.RequestTimeout };
-                httpClient.DefaultRequestHeaders.UserAgent.ParseAdd("AI-Burger-Clock/2.0");
-                monitor = new StatusMonitor(new ProviderStatusClient(httpClient), store, this.utcNow, scheduleAt: GetSchedule);
+                    ownedHttpClient = new HttpClient(new SocketsHttpHandler
+                    {
+                        UseCookies = false,
+                        PooledConnectionLifetime = TimeSpan.FromMinutes(10),
+                        ConnectTimeout = TimeSpan.FromSeconds(5),
+                        AutomaticDecompression = System.Net.DecompressionMethods.GZip | System.Net.DecompressionMethods.Deflate
+                    }) { Timeout = StatusMonitor.RequestTimeout };
+                }
+                HttpClient httpClient = statusHttpClient ?? ownedHttpClient!;
+                monitor = new StatusMonitor(new ProviderStatusClient(httpClient, this.utcNow), store, this.utcNow, scheduleAt: GetSchedule);
                 _ = statusWindow.Handle; // Hidden marshal target; polling never touches WinForms from worker threads.
                 monitor.Changed += OnProviderChanged;
                 SystemEvents.PowerModeChanged += OnPowerModeChanged;
@@ -205,11 +210,9 @@ namespace AiBurgerClock
             ScheduleSnapshot snapshot = GetSchedule(utcNow());
             bool changed = lastState.HasValue && lastState.Value != snapshot.State;
             statusWindow.UpdateStatus(snapshot);
-            stateMenuItem.Text = snapshot.State == AgentState.FullThrottle ? "●  FULL THROTTLE" : "●  BURGER TIME";
-            stateMenuItem.ForeColor = snapshot.State == AgentState.FullThrottle
-                ? Color.FromArgb(25, 145, 78)
-                : Color.FromArgb(211, 61, 55);
-            countdownMenuItem.Text = "전환까지 " + FormatRemaining(snapshot.Remaining);
+            stateMenuItem.Text = "●  " + TrayPresentation.StateName(snapshot.State);
+            stateMenuItem.ForeColor = TrayPresentation.StateColor(snapshot.State);
+            countdownMenuItem.Text = "전환까지 " + StatusWindow.FormatRemaining(snapshot.Remaining);
             lastState = snapshot.State;
 
             if (notifyOnChange && changed)
@@ -222,7 +225,7 @@ namespace AiBurgerClock
         private void ShowTransitionNotification(ScheduleSnapshot snapshot)
         {
             bool full = snapshot.State == AgentState.FullThrottle;
-            trayIcon.BalloonTipTitle = full ? "FULL THROTTLE 시작" : "BURGER TIME 시작";
+            trayIcon.BalloonTipTitle = TrayPresentation.StateName(snapshot.State) + " 시작";
             trayIcon.BalloonTipText = full
                 ? (snapshot.IsHolidayExtendedFullThrottle ? "미국 공휴일이 포함된 연장 FULL 구간입니다. " : "미국 업무시간 밖입니다. ") +
                     $"다음 전환: {snapshot.NextTransitionKst:MM-dd HH:mm} KST. Provider별 공식 상태와 작업 권고도 확인하세요."
@@ -242,14 +245,21 @@ namespace AiBurgerClock
         private void OnProviderChanged()
         {
             if (exiting || disposed || statusWindow.IsDisposed) return;
+            // A poll raises Changed several times; while one UI refresh is still queued, later
+            // events are covered by it because it reads the latest snapshot when it runs.
+            if (Interlocked.Exchange(ref providerRefreshQueued, 1) == 1) return;
             try
             {
                 statusWindow.BeginInvoke(() =>
                 {
+                    Volatile.Write(ref providerRefreshQueued, 0); // Before reading the snapshot.
                     if (!exiting && !disposed) RefreshStatus(true);
                 });
             }
-            catch (InvalidOperationException) { /* Window already shutting down. */ }
+            catch (InvalidOperationException)
+            {
+                Volatile.Write(ref providerRefreshQueued, 0); // Window already shutting down.
+            }
         }
 
         // Do not rely on the polling wait ending promptly after sleep; refresh at once on
@@ -307,7 +317,13 @@ namespace AiBurgerClock
         private async void RecordMeasurement(ProviderKind provider, UsageEventType type, bool withNote)
         {
             if (exiting) return;
-            await initialization;
+            // async void: a faulted startup task must be reported here, not rethrown.
+            try { await initialization; }
+            catch (Exception error)
+            {
+                if (!disposed) statusWindow.SetFeedback("초기화 실패로 기록하지 못했습니다: " + error.Message, true);
+                return;
+            }
             if (exiting || disposed) return;
             var at = utcNow().ToUniversalTime();
             var schedule = GetSchedule(at);
@@ -320,6 +336,9 @@ namespace AiBurgerClock
                 type = dialog.EventType;
                 note = dialog.UserNote;
             }
+            // Exit may start while the modal note dialog is open; ExitApplication has then
+            // already collected pendingWrites, so a save started now would outlive it.
+            if (exiting || disposed) return;
             var item = new UsageMeasurement(Guid.NewGuid().ToString("N"), provider, type, at,
                 schedule.State, schedule.IsWeekendExtendedFullThrottle, schedule.EasternUtcOffsetMinutes,
                 schedule.PacificUtcOffsetMinutes, schedule.EasternIsDst, schedule.PacificIsDst,
@@ -353,7 +372,7 @@ namespace AiBurgerClock
             if (exiting) return;
             if (statisticsWindow is null || statisticsWindow.IsDisposed)
             {
-                statisticsWindow = new StatisticsWindow(store);
+                statisticsWindow = new StatisticsWindow(store, utcNow);
                 statisticsWindow.FormClosed += (_, _) => statisticsWindow = null;
             }
             statisticsWindow.Show();
@@ -378,8 +397,12 @@ namespace AiBurgerClock
             }
             catch (Exception ex)
             {
-                MessageBox.Show("자동 실행 설정을 변경하지 못했습니다.\n\n" + ex.Message,
-                    "AI Burger Clock", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                string text = "자동 실행 설정을 변경하지 못했습니다.\n\n" + ex.Message;
+                if (statusWindow.Visible)
+                    statusWindow.WithoutAutoHide(() => MessageBox.Show(statusWindow, text,
+                        "AI Burger Clock", MessageBoxButtons.OK, MessageBoxIcon.Warning));
+                else
+                    MessageBox.Show(text, "AI Burger Clock", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             }
             RefreshAutoStartChecks();
         }
@@ -437,14 +460,6 @@ namespace AiBurgerClock
             }
         }
 
-        private static string FormatRemaining(TimeSpan remaining)
-        {
-            if (remaining < TimeSpan.Zero)
-                remaining = TimeSpan.Zero;
-            int totalHours = (int)remaining.TotalHours;
-            return string.Format("{0:00}:{1:00}:{2:00}", totalHours, remaining.Minutes, remaining.Seconds);
-        }
-
         internal async void ExitApplication()
         {
             if (exiting) return;
@@ -454,7 +469,8 @@ namespace AiBurgerClock
             statisticsWindow?.Close();
             try
             {
-                await initialization;
+                try { await initialization; }
+                catch { /* A startup failure must not block exit or surface from async void. */ }
                 if (monitor is not null) await monitor.StopAsync();
                 try { await Task.WhenAll(pendingWrites.ToArray()); }
                 catch { /* Individual record handler already reports save failures. */ }
@@ -482,7 +498,7 @@ namespace AiBurgerClock
                     SystemEvents.PowerModeChanged -= OnPowerModeChanged;
                 }
                 monitor?.Dispose();
-                httpClient?.Dispose();
+                ownedHttpClient?.Dispose();
                 statisticsWindow?.Dispose();
                 timer.Stop();
                 timer.Dispose();
@@ -490,6 +506,7 @@ namespace AiBurgerClock
                 trayIcon.Dispose();
                 statusWindow.Dispose();
                 menu.Dispose();
+                foreach (var recordMenu in recordMenus) recordMenu.Dispose();
                 stateMenuFont.Dispose();
                 if (currentIcon != null)
                     currentIcon.Dispose();

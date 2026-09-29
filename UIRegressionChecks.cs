@@ -76,6 +76,9 @@ internal static class UIRegressionChecks
         SmokeTest.RenderAndCheckLayout(context.StatusWindow, "provider-outage.png", reportDirectory);
         Check(Descendants(context.StatusWindow).OfType<Label>().Any(l => l.Text == "Claude   GO") &&
             Descendants(context.StatusWindow).OfType<Label>().Any(l => l.Text == "Gemini   GO"), "OpenAI STOP leaves Claude and Gemini GO in UI");
+        var deactivate = typeof(Form).GetMethod("OnDeactivate", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
+        context.StatusWindow.WithoutAutoHide(() => deactivate.Invoke(context.StatusWindow, [EventArgs.Empty]));
+        Check(context.StatusWindow.Visible, "Owned warning message does not auto-hide the status window");
         handler.OpenAiStatus = OfficialStatus.Degraded;
         await monitor.RefreshOnceAsync();
         context.RefreshStatus(true);
@@ -153,6 +156,9 @@ internal static class UIRegressionChecks
             e.PacificIsDst && e.WeekendExtendedFullThrottle && e.OfficialStatus == OfficialStatus.Operational &&
             e.EffectiveRecommendation == Recommendation.Go), "UI-recorded events capture schedule/DST/official/recommendation metadata");
 
+        using (var slowDialog = new MeasurementDialog(ProviderKind.Claude, UsageEventType.Slow))
+            Check(slowDialog.EventType == UsageEventType.Slow, "Note dialog preselects the requested event type");
+
         bool dialogFilled = false;
         using (var dialogTimer = new Timer { Interval = 100 })
         {
@@ -179,6 +185,8 @@ internal static class UIRegressionChecks
         context.ShowStatistics();
         var statistics = Application.OpenForms.OfType<StatisticsWindow>().Single();
         await WaitUntilAsync(() => Task.FromResult(Descendants(statistics).OfType<Label>().Any(l => l.Text.StartsWith("직접 기록한 표본 n = "))));
+        Check(Descendants(statistics).OfType<Label>().Any(l => l.Text.StartsWith("직접 기록한 표본 n = 13 ")),
+            "Statistics 7-day period uses the app clock, not the real date");
         var period = Descendants(statistics).OfType<ComboBox>().Single();
         for (int index = 0; index < 3; index++)
         {

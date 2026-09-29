@@ -53,37 +53,48 @@ internal sealed class UsageStore(string? databasePath = null)
     public Task AddUsageAsync(UsageMeasurement item, CancellationToken cancellationToken = default) =>
         AddUsageBatchAsync([item], cancellationToken);
 
+    // Each column sits next to its value, so adding a column cannot misalign parameters.
+    private static readonly (string Column, Func<UsageMeasurement, object> Value)[] UsageColumns =
+    [
+        ("EventId", item => item.EventId),
+        ("Provider", item => item.Provider.ToString()),
+        ("EventType", item => item.EventType.ToString()),
+        ("TimestampUtc", item => Utc(item.TimestampUtc)),
+        ("ScheduleState", item => item.ScheduleState.ToString()),
+        ("WeekendExtendedFullThrottle", item => item.WeekendExtendedFullThrottle),
+        ("EasternUtcOffsetMinutes", item => item.EasternUtcOffsetMinutes),
+        ("PacificUtcOffsetMinutes", item => item.PacificUtcOffsetMinutes),
+        ("EasternIsDst", item => item.EasternIsDst),
+        ("PacificIsDst", item => item.PacificIsDst),
+        ("SchedulePolicyVersion", item => item.SchedulePolicyVersion),
+        ("OfficialStatus", item => item.OfficialStatus.ToString()),
+        ("EffectiveRecommendation", item => item.EffectiveRecommendation.ToString()),
+        ("RelevantComponent", item => item.RelevantComponent),
+        ("IncidentId", item => item.IncidentId),
+        ("UserNote", item => item.UserNote),
+        ("AppVersion", item => item.AppVersion),
+        ("HolidayAdjustmentEnabled", item => (object?)item.HolidayAdjustmentEnabled ?? DBNull.Value),
+        ("HolidayExtendedFullThrottle", item => item.HolidayExtendedFullThrottle),
+        ("HolidayNames", item => item.HolidayNames),
+    ];
+
+    private static readonly string InsertUsageSql =
+        "INSERT INTO UsageEvents(" + string.Join(",", UsageColumns.Select(c => c.Column)) +
+        ") VALUES(" + string.Join(",", UsageColumns.Select(c => "$" + c.Column)) + ");";
+
     internal Task AddUsageBatchAsync(IReadOnlyList<UsageMeasurement> items, CancellationToken cancellationToken = default) =>
         ExecuteAsync(connection =>
         {
             using SqliteTransaction transaction = connection.BeginTransaction();
             using SqliteCommand command = connection.CreateCommand();
             command.Transaction = transaction;
-            command.CommandText = """
-                INSERT INTO UsageEvents(EventId,Provider,EventType,TimestampUtc,ScheduleState,
-                  WeekendExtendedFullThrottle,EasternUtcOffsetMinutes,PacificUtcOffsetMinutes,
-                  EasternIsDst,PacificIsDst,SchedulePolicyVersion,OfficialStatus,
-                  EffectiveRecommendation,RelevantComponent,IncidentId,UserNote,AppVersion,
-                  HolidayAdjustmentEnabled,HolidayExtendedFullThrottle,HolidayNames)
-                VALUES($id,$provider,$type,$time,$schedule,$weekend,$eastOffset,$westOffset,
-                  $eastDst,$westDst,$policy,$official,$recommendation,$component,$incident,$note,$version,
-                  $holidayEnabled,$holidayExtended,$holidayNames);
-                """;
-            foreach (string name in new[] { "$id", "$provider", "$type", "$time", "$schedule", "$weekend",
-                "$eastOffset", "$westOffset", "$eastDst", "$westDst", "$policy", "$official",
-                "$recommendation", "$component", "$incident", "$note", "$version",
-                "$holidayEnabled", "$holidayExtended", "$holidayNames" })
-                command.Parameters.Add(new SqliteParameter(name, null));
+            command.CommandText = InsertUsageSql;
+            foreach (var (column, _) in UsageColumns)
+                command.Parameters.Add(new SqliteParameter("$" + column, null));
             foreach (UsageMeasurement item in items)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                object[] values = [item.EventId, item.Provider.ToString(), item.EventType.ToString(), Utc(item.TimestampUtc),
-                    item.ScheduleState.ToString(), item.WeekendExtendedFullThrottle, item.EasternUtcOffsetMinutes,
-                    item.PacificUtcOffsetMinutes, item.EasternIsDst, item.PacificIsDst, item.SchedulePolicyVersion,
-                    item.OfficialStatus.ToString(), item.EffectiveRecommendation.ToString(), item.RelevantComponent,
-                    item.IncidentId, item.UserNote, item.AppVersion,
-                    (object?)item.HolidayAdjustmentEnabled ?? DBNull.Value, item.HolidayExtendedFullThrottle, item.HolidayNames];
-                for (int i = 0; i < values.Length; i++) command.Parameters[i].Value = values[i];
+                for (int i = 0; i < UsageColumns.Length; i++) command.Parameters[i].Value = UsageColumns[i].Value(item);
                 command.ExecuteNonQuery();
             }
             cancellationToken.ThrowIfCancellationRequested();
@@ -91,8 +102,14 @@ internal sealed class UsageStore(string? databasePath = null)
             return true;
         }, cancellationToken);
 
-    public Task<IReadOnlyList<UsageMeasurement>> ReadUsageAsync(DateTimeOffset? sinceUtc,
-        CancellationToken cancellationToken = default) => ExecuteAsync<IReadOnlyList<UsageMeasurement>>(connection =>
+    public async Task<IReadOnlyList<UsageMeasurement>> ReadUsageAsync(DateTimeOffset? sinceUtc,
+        CancellationToken cancellationToken = default) =>
+        (await ReadUsageWithSkippedAsync(sinceUtc, cancellationToken).ConfigureAwait(false)).Rows;
+
+    // A row this version cannot interpret (e.g. written by a newer version) is skipped
+    // and counted instead of failing every statistics read.
+    public Task<(IReadOnlyList<UsageMeasurement> Rows, int Skipped)> ReadUsageWithSkippedAsync(DateTimeOffset? sinceUtc,
+        CancellationToken cancellationToken = default) => ExecuteAsync<(IReadOnlyList<UsageMeasurement>, int)>(connection =>
         {
             using SqliteCommand command = connection.CreateCommand();
             command.CommandText = """
@@ -105,18 +122,23 @@ internal sealed class UsageStore(string? databasePath = null)
             if (sinceUtc.HasValue) command.Parameters.AddWithValue("$since", Utc(sinceUtc.Value));
             using SqliteDataReader reader = command.ExecuteReader();
             List<UsageMeasurement> rows = [];
+            int skipped = 0;
             while (reader.Read())
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                rows.Add(new UsageMeasurement(reader.GetString(0), Enum.Parse<ProviderKind>(reader.GetString(1)),
-                    Enum.Parse<UsageEventType>(reader.GetString(2)), ParseUtc(reader.GetString(3)),
-                    Enum.Parse<AgentState>(reader.GetString(4)), reader.GetBoolean(5), reader.GetInt32(6),
-                    reader.GetInt32(7), reader.GetBoolean(8), reader.GetBoolean(9), reader.GetString(10),
-                    Enum.Parse<OfficialStatus>(reader.GetString(11)), Enum.Parse<Recommendation>(reader.GetString(12)),
-                    reader.GetString(13), reader.GetString(14), reader.GetString(15), reader.GetString(16),
-                    reader.IsDBNull(17) ? null : reader.GetBoolean(17), reader.GetBoolean(18), reader.GetString(19)));
+                try
+                {
+                    rows.Add(new UsageMeasurement(reader.GetString(0), ParseName<ProviderKind>(reader.GetString(1)),
+                        ParseName<UsageEventType>(reader.GetString(2)), ParseUtc(reader.GetString(3)),
+                        ParseName<AgentState>(reader.GetString(4)), reader.GetBoolean(5), reader.GetInt32(6),
+                        reader.GetInt32(7), reader.GetBoolean(8), reader.GetBoolean(9), reader.GetString(10),
+                        ParseName<OfficialStatus>(reader.GetString(11)), ParseName<Recommendation>(reader.GetString(12)),
+                        reader.GetString(13), reader.GetString(14), reader.GetString(15), reader.GetString(16),
+                        reader.IsDBNull(17) ? null : reader.GetBoolean(17), reader.GetBoolean(18), reader.GetString(19)));
+                }
+                catch (FormatException) { skipped++; }
             }
-            return rows;
+            return (rows, skipped);
         }, cancellationToken);
 
     public Task SaveProviderAsync(ProviderStatus status, ScheduleSnapshot schedule, Recommendation recommendation,
@@ -177,11 +199,16 @@ internal sealed class UsageStore(string? databasePath = null)
             while (reader.Read())
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                rows.Add(new ProviderStatus(Enum.Parse<ProviderKind>(reader.GetString(0)),
-                    Enum.Parse<OfficialStatus>(reader.GetString(1)), ParseUtc(reader.GetString(2)),
-                    reader.IsDBNull(3) ? null : ParseUtc(reader.GetString(3)), reader.GetString(4), reader.GetString(5),
-                    reader.GetString(6), reader.GetString(7), reader.GetString(8),
-                    reader.IsDBNull(9) ? null : Enum.Parse<OfficialStatus>(reader.GetString(9))));
+                // An unreadable cache row is only a missing cache entry; the next poll replaces it.
+                try
+                {
+                    rows.Add(new ProviderStatus(ParseName<ProviderKind>(reader.GetString(0)),
+                        ParseName<OfficialStatus>(reader.GetString(1)), ParseUtc(reader.GetString(2)),
+                        reader.IsDBNull(3) ? null : ParseUtc(reader.GetString(3)), reader.GetString(4), reader.GetString(5),
+                        reader.GetString(6), reader.GetString(7), reader.GetString(8),
+                        reader.IsDBNull(9) ? null : ParseName<OfficialStatus>(reader.GetString(9))));
+                }
+                catch (FormatException) { }
             }
             return rows;
         }, cancellationToken);
@@ -232,10 +259,7 @@ internal sealed class UsageStore(string? databasePath = null)
     private static void EnsureSchema(SqliteConnection connection)
     {
         using SqliteCommand command = connection.CreateCommand();
-        command.CommandText = "PRAGMA user_version;";
-        long version = (long)(command.ExecuteScalar() ?? 0L);
-        if (version > SchemaVersion)
-            throw new InvalidOperationException("이 데이터베이스는 더 새로운 AI Burger Clock 버전에서 생성되었습니다.");
+        long version = ReadSchemaVersion(command);
         if (version == SchemaVersion) return;
 
         if (version == 1) BackupBeforeMigration(connection);
@@ -246,10 +270,7 @@ internal sealed class UsageStore(string? databasePath = null)
         command.Transaction = transaction;
         // A different store/process may have migrated after the initial check.
         // Recheck while holding SQLite's write transaction before ALTER TABLE.
-        command.CommandText = "PRAGMA user_version;";
-        version = (long)(command.ExecuteScalar() ?? 0L);
-        if (version > SchemaVersion)
-            throw new InvalidOperationException("이 데이터베이스는 더 새로운 AI Burger Clock 버전에서 생성되었습니다.");
+        version = ReadSchemaVersion(command);
         if (version == SchemaVersion)
         {
             transaction.Commit();
@@ -297,6 +318,16 @@ internal sealed class UsageStore(string? databasePath = null)
         transaction.Commit();
     }
 
+    // Reads PRAGMA user_version and refuses a database written by a newer app version.
+    private static long ReadSchemaVersion(SqliteCommand command)
+    {
+        command.CommandText = "PRAGMA user_version;";
+        long version = (long)(command.ExecuteScalar() ?? 0L);
+        if (version > SchemaVersion)
+            throw new InvalidOperationException("이 데이터베이스는 더 새로운 AI Burger Clock 버전에서 생성되었습니다.");
+        return version;
+    }
+
     private static void BackupBeforeMigration(SqliteConnection source)
     {
         // SQLite's online backup API includes committed WAL contents; copying
@@ -337,6 +368,11 @@ internal sealed class UsageStore(string? databasePath = null)
     }
 
     private static string Utc(DateTimeOffset value) => value.UtcDateTime.ToString("yyyy-MM-dd'T'HH:mm:ss.fffffff'Z'", CultureInfo.InvariantCulture);
+    // Values are stored with ToString(); numeric text such as "7" is not a known name.
+    private static T ParseName<T>(string value) where T : struct, Enum =>
+        Enum.IsDefined(typeof(T), value) ? Enum.Parse<T>(value)
+            : throw new FormatException($"알 수 없는 {typeof(T).Name} 값: {value}");
+
     private static DateTimeOffset ParseUtc(string value) => DateTimeOffset.Parse(value, CultureInfo.InvariantCulture,
         DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal);
 }

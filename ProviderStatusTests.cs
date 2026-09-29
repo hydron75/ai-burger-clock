@@ -205,6 +205,19 @@ internal static class ProviderStatusTests
                     throw new InvalidOperationException("Provider fake transport routing failed");
             }
         }
+        string? userAgent = null;
+        using (var client = new HttpClient(new FakeHandler((request, _) =>
+        {
+            userAgent = request.Headers.UserAgent.ToString();
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(Page([Component("Claude Code", "operational")]), Encoding.UTF8, "application/json")
+            });
+        })))
+            await new ProviderStatusClient(client).FetchAsync(ProviderKind.Claude, CancellationToken.None).ConfigureAwait(false);
+        count++;
+        if (userAgent != ProviderStatusClient.UserAgent || !userAgent.StartsWith("AIBurgerClock/", StringComparison.Ordinal))
+            throw new InvalidOperationException("Status requests carry one versioned User-Agent: " + userAgent);
         using (var client = new HttpClient(new FakeHandler((_, _) => throw new HttpRequestException("offline"))))
             await AssertThrows<HttpRequestException>(() => new ProviderStatusClient(client).FetchAsync(ProviderKind.OpenAI, CancellationToken.None), "offline propagation");
         using (var client = new HttpClient(new FakeHandler((_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.ServiceUnavailable)))))

@@ -65,9 +65,10 @@ internal static class AgentSchedule
     public const string HolidayPolicyVersion = "us-business-et09-pt18-holidays-v2";
     public const string EasternTimeZoneId = "Eastern Standard Time";
     public const string PacificTimeZoneId = "Pacific Standard Time";
+    public const string KoreaTimeZoneId = "Korea Standard Time";
     private const long TimeZoneRefreshMilliseconds = 24L * 60 * 60 * 1000;
     private static readonly object Sync = new();
-    private static TimeZoneInfo korea = TimeZoneInfo.FindSystemTimeZoneById("Korea Standard Time");
+    private static TimeZoneInfo korea = TimeZoneInfo.FindSystemTimeZoneById(KoreaTimeZoneId);
     private static TimeZoneInfo eastern = TimeZoneInfo.FindSystemTimeZoneById(EasternTimeZoneId);
     private static TimeZoneInfo pacific = TimeZoneInfo.FindSystemTimeZoneById(PacificTimeZoneId);
     private static long timeZonesLoadedAt = Environment.TickCount64;
@@ -107,6 +108,10 @@ internal static class AgentSchedule
             throw new InvalidOperationException("No upcoming US business interval was generated.");
         }
     }
+
+    // Display/statistics conversion with the same cached zone data as the schedule.
+    // The field is replaced atomically on refresh, so reading it needs no lock.
+    public static DateTimeOffset ToKst(DateTimeOffset instant) => TimeZoneInfo.ConvertTime(instant, korea);
 
     private static ScheduleSnapshot CreateSnapshot(
         AgentState state, DateTimeOffset nowUtc, DateTimeOffset transitionUtc,
@@ -178,7 +183,7 @@ internal static class AgentSchedule
         // Observe installed Windows time-zone rule updates without an app update or a
         // separate polling timer. Existing immutable snapshots keep their captured data.
         TimeZoneInfo.ClearCachedData();
-        korea = TimeZoneInfo.FindSystemTimeZoneById("Korea Standard Time");
+        korea = TimeZoneInfo.FindSystemTimeZoneById(KoreaTimeZoneId);
         eastern = TimeZoneInfo.FindSystemTimeZoneById(EasternTimeZoneId);
         pacific = TimeZoneInfo.FindSystemTimeZoneById(PacificTimeZoneId);
         timeZonesLoadedAt = Environment.TickCount64;

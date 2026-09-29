@@ -6,14 +6,20 @@ using System.Text.RegularExpressions;
 namespace AiBurgerClock;
 
 /// <summary>Reads only public, structured official feeds. Owns neither HttpClient nor its lifetime.</summary>
-internal sealed class ProviderStatusClient(HttpClient client)
+internal sealed class ProviderStatusClient(HttpClient client, Func<DateTimeOffset>? utcNow = null)
 {
+    // Incident begin/end comparisons use the same injected clock as the rest of the app.
+    private readonly Func<DateTimeOffset> clock = utcNow ?? (() => DateTimeOffset.UtcNow);
+
     internal const string OpenAiSummaryUrl = "https://status.openai.com/api/v2/summary.json";
     internal const string OpenAiIncidentsUrl = "https://status.openai.com/api/v2/incidents.json";
     internal const string ClaudeSummaryUrl = "https://status.claude.com/api/v2/summary.json";
     internal const string GoogleProductsUrl = "https://www.google.com/appsstatus/dashboard/products.json";
     internal const string GoogleIncidentsUrl = "https://www.google.com/appsstatus/dashboard/incidents.json";
     internal const int MaxResponseBytes = 4 * 1024 * 1024;
+    // The only User-Agent sent to status feeds; follows the version in AiBurgerClock.csproj.
+    internal static readonly string UserAgent = "AIBurgerClock/" +
+        (typeof(ProviderStatusClient).Assembly.GetName().Version?.ToString(3) ?? "0.0.0");
 
     // Verified on 2026-09-19. IDs survive marketing-name changes; semantic matches allow new IDs.
     private static readonly HashSet<string> OpenAiIds = new(StringComparer.OrdinalIgnoreCase)
@@ -43,7 +49,7 @@ internal sealed class ProviderStatusClient(HttpClient client)
             var incidents = GetJsonAsync(GoogleIncidentsUrl, token);
             await Task.WhenAll(catalog, incidents).ConfigureAwait(false);
             token.ThrowIfCancellationRequested();
-            return ParseGoogle(catalog.Result, incidents.Result, DateTimeOffset.UtcNow);
+            return ParseGoogle(catalog.Result, incidents.Result, clock());
         }
 
         var url = provider switch
@@ -63,7 +69,7 @@ internal sealed class ProviderStatusClient(HttpClient client)
             supplemented = true;
         }
         token.ThrowIfCancellationRequested();
-        var result = ParseStatuspage(provider, json, DateTimeOffset.UtcNow);
+        var result = ParseStatuspage(provider, json, clock());
         return supplemented ? result with { Source = url + " + " + OpenAiIncidentsUrl } : result;
     }
 
@@ -107,7 +113,7 @@ internal sealed class ProviderStatusClient(HttpClient client)
         if (client.Timeout != Timeout.InfiniteTimeSpan) deadline.CancelAfter(client.Timeout);
         using var request = new HttpRequestMessage(HttpMethod.Get, url);
         request.Headers.Accept.ParseAdd("application/json");
-        request.Headers.UserAgent.ParseAdd("AIBurgerClock/2.0");
+        request.Headers.UserAgent.ParseAdd(UserAgent);
         using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, deadline.Token)
             .ConfigureAwait(false);
         response.EnsureSuccessStatusCode();

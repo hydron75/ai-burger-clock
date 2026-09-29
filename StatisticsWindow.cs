@@ -40,6 +40,8 @@ internal static class StatisticsAnalysis
     public static StatisticsReport Build(IReadOnlyList<UsageMeasurement> items, CancellationToken cancellationToken = default)
     {
         List<StatisticsRow> providers = [], hours = [], schedules = [], official = [], operationalHours = [];
+        // Every provider gets rows for every recorded policy, including policies it has no data for.
+        string[] policyVersions = items.Select(item => item.SchedulePolicyVersion).Distinct().Order().ToArray();
         foreach (ProviderKind provider in Enum.GetValues<ProviderKind>())
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -67,7 +69,7 @@ internal static class StatisticsAnalysis
             schedules.Add(new(name, "DST × BURGER", EventCounts.From(rows.Where(item => item.EasternIsDst && item.PacificIsDst && item.ScheduleState == AgentState.BurgerTime))));
             schedules.Add(new(name, "Standard × FULL", EventCounts.From(rows.Where(item => !item.EasternIsDst && !item.PacificIsDst && item.ScheduleState == AgentState.FullThrottle))));
             schedules.Add(new(name, "Standard × BURGER", EventCounts.From(rows.Where(item => !item.EasternIsDst && !item.PacificIsDst && item.ScheduleState == AgentState.BurgerTime))));
-            foreach (string policy in items.Select(item => item.SchedulePolicyVersion).Distinct().Order())
+            foreach (string policy in policyVersions)
             {
                 UsageMeasurement[] policyRows = rows.Where(item => item.SchedulePolicyVersion == policy).ToArray();
                 schedules.Add(new(name, "Policy: " + policy, EventCounts.From(policyRows)));
@@ -87,7 +89,7 @@ internal static class StatisticsAnalysis
             foreach (OfficialStatus status in Enum.GetValues<OfficialStatus>())
                 official.Add(new(name, RecommendationPolicy.OfficialLabel(status), EventCounts.From(rows.Where(item => item.OfficialStatus == status))));
         }
-        string policies = string.Join(", ", items.Select(item => item.SchedulePolicyVersion).Distinct().Order());
+        string policies = string.Join(", ", policyVersions);
         return new(providers, hours, schedules, official, operationalHours, policies.Length == 0 ? "No data" : policies);
     }
 }
@@ -95,24 +97,27 @@ internal static class StatisticsAnalysis
 internal sealed class StatisticsWindow : Form
 {
     private readonly UsageStore store;
+    private readonly Func<DateTimeOffset> utcNow;
     private readonly ComboBox period;
     private readonly Button refresh;
     private readonly Label summary;
     private readonly Dictionary<string, DataGridView> grids = [];
     private readonly CancellationTokenSource lifetime = new();
+    private readonly Font formFont = new("Segoe UI", 9F); // Not disposed by the form itself.
     private bool loading;
 
-    public StatisticsWindow(UsageStore store)
+    public StatisticsWindow(UsageStore store, Func<DateTimeOffset>? utcNow = null)
     {
         SuspendLayout();
         this.store = store;
+        this.utcNow = utcNow ?? (() => DateTimeOffset.UtcNow);
         Text = "AI Burger Clock · Statistics";
         AutoScaleDimensions = new SizeF(96F, 96F);
         AutoScaleMode = AutoScaleMode.Dpi;
         ClientSize = new Size(860, 525);
         MinimumSize = new Size(720, 420);
         StartPosition = FormStartPosition.CenterScreen;
-        Font = new Font("Segoe UI", 9F);
+        Font = formFont;
         BackColor = Color.FromArgb(248, 249, 250);
 
         TableLayoutPanel layout = new()
@@ -192,8 +197,8 @@ internal sealed class StatisticsWindow : Form
         try
         {
             CancellationToken token = lifetime.Token;
-            DateTimeOffset? since = StatisticsAnalysis.SinceUtc(period.SelectedIndex, DateTimeOffset.UtcNow);
-            IReadOnlyList<UsageMeasurement> items = await store.ReadUsageAsync(since, token);
+            DateTimeOffset? since = StatisticsAnalysis.SinceUtc(period.SelectedIndex, utcNow());
+            (IReadOnlyList<UsageMeasurement> items, int skipped) = await store.ReadUsageWithSkippedAsync(since, token);
             StatisticsReport report = await Task.Run(() => StatisticsAnalysis.Build(items, token), token);
             if (IsDisposed || token.IsCancellationRequested) return;
             Fill(grids["providers"], report.Providers);
@@ -201,7 +206,8 @@ internal sealed class StatisticsWindow : Form
             Fill(grids["schedules"], report.Schedules);
             Fill(grids["official"], report.Official);
             Fill(grids["operationalHours"], report.OperationalHours);
-            summary.Text = $"직접 기록한 표본 n = {items.Count:N0} · 정책: {report.Policies}\n" +
+            summary.Text = $"직접 기록한 표본 n = {items.Count:N0} · 정책: {report.Policies}" +
+                (skipped > 0 ? $" · 읽을 수 없는 기록 {skipped:N0}건 제외" : "") + "\n" +
                 (items.Count == 0 ? "No data · Provider 행이나 트레이 메뉴에서 사용 경험을 기록하세요." : "각 탭에서 Provider·시간대·Schedule·공식 상태별 체감을 비교할 수 있습니다.");
         }
         catch (OperationCanceledException) { }
@@ -214,6 +220,12 @@ internal sealed class StatisticsWindow : Form
             loading = false;
             if (!IsDisposed) period.Enabled = refresh.Enabled = true;
         }
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        base.Dispose(disposing);
+        if (disposing) formFont.Dispose();
     }
 
     private static void Fill(DataGridView grid, IReadOnlyList<StatisticsRow> rows)

@@ -117,10 +117,19 @@ internal static class AutoStartManager
             }
             else run.DeleteValue(ValueName, false);
         }
-        catch
+        catch (Exception original)
         {
-            try { previousRun.Restore(run); }
-            finally { if (approvalChanged) previousApproval.Restore(approval!); }
+            try
+            {
+                try { previousRun.Restore(run); }
+                finally { if (approvalChanged) previousApproval.Restore(approval!); }
+            }
+            catch (Exception restoreError)
+            {
+                // Report both causes; a rollback failure must not hide why the change failed.
+                throw new InvalidOperationException(original.Message + "\n기존 설정 복원도 실패했습니다: " + restoreError.Message,
+                    new AggregateException(original, restoreError));
+            }
             throw;
         }
     }
