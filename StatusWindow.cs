@@ -12,7 +12,6 @@ internal sealed class StatusWindow : Form
     private readonly Button quotaButton;
     private readonly AccountQuotaView quotaView;
     private readonly List<Panel> statusPanels = new();
-    private bool statusRefreshing;
     private string statusCaption = "공식 상태 갱신 대기";
     private readonly CheckBox autoStartCheckBox;
     private readonly CheckBox holidayCheckBox;
@@ -210,7 +209,6 @@ internal sealed class StatusWindow : Form
     public void UpdateProviders(IReadOnlyList<ProviderStatus> states, ScheduleSnapshot schedule, bool refreshing,
         DateTimeOffset? nextRefreshUtc, string storageError = "")
     {
-        statusRefreshing = refreshing;
         foreach (var status in states)
         {
             var row = rows[status.Provider];
@@ -249,8 +247,9 @@ internal sealed class StatusWindow : Form
     internal Button QuotaButton => quotaButton;
     internal void UpdateQuotas(IReadOnlyList<QuotaState> quotas, DateTimeOffset now)
     {
+        // Refresh stays tied to the official status poll: a quota CLI read can take up to
+        // 30-40s, and a click while it runs only skips the provider already refreshing.
         quotaView.UpdateQuotas(quotas, now);
-        refreshButton.Enabled = !statusRefreshing && !quotas.Any(s => s.IsRefreshing);
         SetQuotaCaption();
     }
 
