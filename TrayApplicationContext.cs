@@ -31,6 +31,7 @@ namespace AiBurgerClock
         private readonly HashSet<Task> pendingWrites = new();
         private readonly RecommendationNotifications providerNotifications = new();
         private int providerNotificationSerial;
+        private int providerRefreshQueued;
         private readonly Action<Uri> openStatusPage;
         private volatile bool holidayAdjustmentEnabled;
         private bool holidaySettingsReady;
@@ -242,14 +243,21 @@ namespace AiBurgerClock
         private void OnProviderChanged()
         {
             if (exiting || disposed || statusWindow.IsDisposed) return;
+            // A poll raises Changed several times; while one UI refresh is still queued, later
+            // events are covered by it because it reads the latest snapshot when it runs.
+            if (Interlocked.Exchange(ref providerRefreshQueued, 1) == 1) return;
             try
             {
                 statusWindow.BeginInvoke(() =>
                 {
+                    Volatile.Write(ref providerRefreshQueued, 0); // Before reading the snapshot.
                     if (!exiting && !disposed) RefreshStatus(true);
                 });
             }
-            catch (InvalidOperationException) { /* Window already shutting down. */ }
+            catch (InvalidOperationException)
+            {
+                Volatile.Write(ref providerRefreshQueued, 0); // Window already shutting down.
+            }
         }
 
         // Do not rely on the polling wait ending promptly after sleep; refresh at once on
