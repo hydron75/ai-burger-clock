@@ -320,6 +320,9 @@ namespace AiBurgerClock
                 type = dialog.EventType;
                 note = dialog.UserNote;
             }
+            // Exit may start while the modal note dialog is open; ExitApplication has then
+            // already collected pendingWrites, so a save started now would outlive it.
+            if (exiting || disposed) return;
             var item = new UsageMeasurement(Guid.NewGuid().ToString("N"), provider, type, at,
                 schedule.State, schedule.IsWeekendExtendedFullThrottle, schedule.EasternUtcOffsetMinutes,
                 schedule.PacificUtcOffsetMinutes, schedule.EasternIsDst, schedule.PacificIsDst,
