@@ -387,8 +387,12 @@ namespace AiBurgerClock
             }
             catch (Exception ex)
             {
-                MessageBox.Show("자동 실행 설정을 변경하지 못했습니다.\n\n" + ex.Message,
-                    "AI Burger Clock", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                string text = "자동 실행 설정을 변경하지 못했습니다.\n\n" + ex.Message;
+                if (statusWindow.Visible)
+                    statusWindow.WithoutAutoHide(() => MessageBox.Show(statusWindow, text,
+                        "AI Burger Clock", MessageBoxButtons.OK, MessageBoxIcon.Warning));
+                else
+                    MessageBox.Show(text, "AI Burger Clock", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             }
             RefreshAutoStartChecks();
         }

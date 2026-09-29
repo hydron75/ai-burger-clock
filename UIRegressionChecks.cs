@@ -76,6 +76,9 @@ internal static class UIRegressionChecks
         SmokeTest.RenderAndCheckLayout(context.StatusWindow, "provider-outage.png", reportDirectory);
         Check(Descendants(context.StatusWindow).OfType<Label>().Any(l => l.Text == "Claude   GO") &&
             Descendants(context.StatusWindow).OfType<Label>().Any(l => l.Text == "Gemini   GO"), "OpenAI STOP leaves Claude and Gemini GO in UI");
+        var deactivate = typeof(Form).GetMethod("OnDeactivate", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
+        context.StatusWindow.WithoutAutoHide(() => deactivate.Invoke(context.StatusWindow, [EventArgs.Empty]));
+        Check(context.StatusWindow.Visible, "Owned warning message does not auto-hide the status window");
         handler.OpenAiStatus = OfficialStatus.Degraded;
         await monitor.RefreshOnceAsync();
         context.RefreshStatus(true);

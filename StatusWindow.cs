@@ -18,6 +18,7 @@ internal sealed class StatusWindow : Form
     private string shownStorageError = "";
     private bool updatingAutoStart;
     private bool updatingHoliday;
+    private int autoHideSuppressed;
 
     public event EventHandler? AutoStartChanged;
     public event EventHandler? HolidayAdjustmentChanged;
@@ -88,7 +89,10 @@ internal sealed class StatusWindow : Form
         };
         details.SetToolTip(holidayCheckBox, "미국 연방 정기 공휴일·대체휴일의 업무 구간을 제외합니다.\n기업 휴무나 실제 서비스 품질을 보장하지 않는 시간표 정책입니다.");
         Controls.Add(holidayCheckBox);
-        Deactivate += (_, _) => Hide();
+        Deactivate += (_, _) =>
+        {
+            if (autoHideSuppressed == 0) Hide();
+        };
         FormClosing += (_, e) =>
         {
             if (e.CloseReason == CloseReason.UserClosing) { e.Cancel = true; Hide(); }
@@ -211,6 +215,14 @@ internal sealed class StatusWindow : Form
             else if (feedbackLabel.Text == shownStorageError) SetFeedback(DefaultFeedback);
             shownStorageError = storageError;
         }
+    }
+
+    // A modal message owned by this window deactivates it; keep it visible meanwhile.
+    internal T WithoutAutoHide<T>(Func<T> action)
+    {
+        autoHideSuppressed++;
+        try { return action(); }
+        finally { autoHideSuppressed--; }
     }
 
     public void SetFeedback(string text, bool error = false)
