@@ -34,8 +34,15 @@ internal static class UIRegressionChecks
         }
         Check((await store.ReadUsageAsync(null)).Count == 0, "Opening official pages never creates usage records");
         await WaitUntilAsync(() => Task.FromResult(!monitor.IsRefreshing && monitor.NextRefreshUtc.HasValue));
+        // The popup may auto-hide while this async test yields. Reopen it through
+        // the normal tray path before PerformClick, which requires a selectable button.
+        context.StatusWindow.Hide();
+        context.ShowWindow();
+        var refreshButton = context.StatusWindow.Controls.OfType<Button>().Single(b => b.Text == "Refresh");
+        Check(context.StatusWindow.Visible && refreshButton.Enabled && refreshButton.CanSelect,
+            "Reopening the status window makes Refresh actionable");
         int requests = handler.RequestCount;
-        context.StatusWindow.Controls.OfType<Button>().Single(b => b.Text == "Refresh").PerformClick();
+        refreshButton.PerformClick();
         await WaitUntilAsync(() => Task.FromResult(handler.RequestCount > requests && !monitor.IsRefreshing && monitor.NextRefreshUtc.HasValue));
         Check(true, "Main Refresh button triggers asynchronous provider update");
         requests = handler.RequestCount;
