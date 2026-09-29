@@ -131,6 +131,11 @@ internal static class AccountQuotaTests
         check(AccountQuotaPolicy.GetInterval(now, [normal]) == TimeSpan.FromHours(6), "Another provider's low quota cannot affect this provider");
         check(AccountQuotaPolicy.GetNextCheckUtc(now, now, [normal]) == now.AddHours(6), "Normal next check");
         check(AccountQuotaPolicy.GetNextCheckUtc(now, now, [low]) == now.AddHours(1), "Low remaining next check");
+        check(AccountQuotaPolicy.GetFailureRetryDelay(1, [normal]) == TimeSpan.FromMinutes(15), "First failed read retries after 15m");
+        check(AccountQuotaPolicy.GetFailureRetryDelay(2, [normal]) == TimeSpan.FromMinutes(30), "Failed read retry doubles");
+        check(AccountQuotaPolicy.GetFailureRetryDelay(100, [normal]) == TimeSpan.FromHours(6), "Failure retry never exceeds normal 6h");
+        check(AccountQuotaPolicy.GetFailureRetryDelay(100, [low]) == TimeSpan.FromHours(1), "Failure retry never exceeds low-remaining 1h");
+        check(AccountQuotaPolicy.GetFailureRetryDelay(100, []) == TimeSpan.FromHours(6), "Failure retry without a reading caps at 6h");
 
         DateTimeOffset reset = now.AddHours(2);
         QuotaWindow resetting = normal with { ResetsAtUtc = reset };
