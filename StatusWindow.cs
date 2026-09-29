@@ -172,9 +172,8 @@ internal sealed class StatusWindow : Form
 
     public void UpdateStatus(ScheduleSnapshot snapshot)
     {
-        bool full = snapshot.State == AgentState.FullThrottle;
-        stateLabel.Text = full ? "●  FULL THROTTLE" : "●  BURGER TIME";
-        stateLabel.ForeColor = full ? Color.FromArgb(25, 145, 78) : Color.FromArgb(211, 61, 55);
+        stateLabel.Text = "●  " + TrayPresentation.StateName(snapshot.State);
+        stateLabel.ForeColor = TrayPresentation.StateColor(snapshot.State);
         countdownLabel.Text = "전환까지  " + FormatRemaining(snapshot.Remaining);
         string extended = (snapshot.IsWeekendExtendedFullThrottle, snapshot.IsHolidayExtendedFullThrottle) switch
         {

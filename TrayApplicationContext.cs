@@ -211,10 +211,8 @@ namespace AiBurgerClock
             ScheduleSnapshot snapshot = GetSchedule(utcNow());
             bool changed = lastState.HasValue && lastState.Value != snapshot.State;
             statusWindow.UpdateStatus(snapshot);
-            stateMenuItem.Text = snapshot.State == AgentState.FullThrottle ? "●  FULL THROTTLE" : "●  BURGER TIME";
-            stateMenuItem.ForeColor = snapshot.State == AgentState.FullThrottle
-                ? Color.FromArgb(25, 145, 78)
-                : Color.FromArgb(211, 61, 55);
+            stateMenuItem.Text = "●  " + TrayPresentation.StateName(snapshot.State);
+            stateMenuItem.ForeColor = TrayPresentation.StateColor(snapshot.State);
             countdownMenuItem.Text = "전환까지 " + StatusWindow.FormatRemaining(snapshot.Remaining);
             lastState = snapshot.State;
 
@@ -228,7 +226,7 @@ namespace AiBurgerClock
         private void ShowTransitionNotification(ScheduleSnapshot snapshot)
         {
             bool full = snapshot.State == AgentState.FullThrottle;
-            trayIcon.BalloonTipTitle = full ? "FULL THROTTLE 시작" : "BURGER TIME 시작";
+            trayIcon.BalloonTipTitle = TrayPresentation.StateName(snapshot.State) + " 시작";
             trayIcon.BalloonTipText = full
                 ? (snapshot.IsHolidayExtendedFullThrottle ? "미국 공휴일이 포함된 연장 FULL 구간입니다. " : "미국 업무시간 밖입니다. ") +
                     $"다음 전환: {snapshot.NextTransitionKst:MM-dd HH:mm} KST. Provider별 공식 상태와 작업 권고도 확인하세요."
