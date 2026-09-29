@@ -51,10 +51,10 @@ Windows 빌드와 검사는 ChatGPT에서 진행합니다. 코드를 고치는 �
 
 ## 작업을 마칠 때: 버전 기록
 
-지금까지의 작업(2.0.0, 2.0.1, 2.0.2, 2.1.0, 2.1.1, 2.1.2)은 다음 방식으로 기록했습니다.
+지금까지의 작업(2.0.0, 2.0.1, 2.0.2, 2.1.0, 2.1.1, 2.1.2, 2.2.0)은 다음 방식으로 기록했습니다.
 
 1. **버전 올리기:** [AiBurgerClock.csproj](AiBurgerClock.csproj)의 `Version`, `AssemblyVersion`, `FileVersion`을 함께 바꿉니다. 버전은 이 파일에서만 관리합니다.
-2. **작업 기록 문서 만들기:** 루트에 작업별 Markdown을 새로 만듭니다. 예: [PHASE2.md](PHASE2.md)(2.0.0), [STATUS_LINKS.md](STATUS_LINKS.md)(2.0.1), [AUTOSTART_FIX.md](AUTOSTART_FIX.md)(2.0.2), [HOLIDAYS_TRAY.md](HOLIDAYS_TRAY.md)(2.1.0), [RELIABILITY_FIX.md](RELIABILITY_FIX.md)(2.1.1), [MAINTENANCE_2_1_2.md](MAINTENANCE_2_1_2.md)(2.1.2). 제목에 버전을 적고 다음을 담습니다.
+2. **작업 기록 문서 만들기:** 루트에 작업별 Markdown을 새로 만듭니다. 예: [PHASE2.md](PHASE2.md)(2.0.0), [STATUS_LINKS.md](STATUS_LINKS.md)(2.0.1), [AUTOSTART_FIX.md](AUTOSTART_FIX.md)(2.0.2), [HOLIDAYS_TRAY.md](HOLIDAYS_TRAY.md)(2.1.0), [RELIABILITY_FIX.md](RELIABILITY_FIX.md)(2.1.1), [MAINTENANCE_2_1_2.md](MAINTENANCE_2_1_2.md)(2.1.2), [ACCOUNT_QUOTAS.md](ACCOUNT_QUOTAS.md)(2.2.0). 제목에 버전을 적고 다음을 담습니다.
    - 동작 또는 수정 범위, 원인.
    - 변경 파일: 기존 수정 / 신규로 나눈 목록.
    - 검증 결과: SDK 버전, 경고·오류 수, 자체 검사 assertion 수와 종료 코드, smoke 결과, 로그 위치(`artifacts/<작업명>/`).
