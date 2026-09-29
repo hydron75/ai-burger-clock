@@ -14,6 +14,8 @@ internal sealed class StatusWindow : Form
     private readonly ToolTip details = new() { AutoPopDelay = 25000 };
     private readonly Dictionary<ProviderKind, (Label Heading, Label Official, Label Reason)> rows = new();
     private readonly List<ContextMenuStrip> recordingMenus = new();
+    private const string DefaultFeedback = "AI 상태 클릭: 공식 페이지 · 우클릭: 기록";
+    private string shownStorageError = "";
     private bool updatingAutoStart;
     private bool updatingHoliday;
 
@@ -71,7 +73,7 @@ internal sealed class StatusWindow : Form
         statisticsButton.Click += (_, _) => StatisticsRequested?.Invoke(this, EventArgs.Empty);
         Controls.Add(refreshButton);
         Controls.Add(statisticsButton);
-        feedbackLabel = AddLabel("AI 상태 클릭: 공식 페이지 · 우클릭: 기록", 17, 442, 342, 19, 8.5F);
+        feedbackLabel = AddLabel(DefaultFeedback, 17, 442, 342, 19, 8.5F);
         feedbackLabel.AutoEllipsis = true;
         autoStartCheckBox = new CheckBox { AutoSize = true, Text = "Windows 시작 시 자동 실행", Location = new Point(17, 466) };
         autoStartCheckBox.CheckedChanged += (_, _) =>
@@ -133,6 +135,7 @@ internal sealed class StatusWindow : Form
     internal bool HolidayAdjustmentChecked => holidayCheckBox.Checked;
     internal CheckBox HolidayCheckBox => holidayCheckBox;
     internal CheckBox AutoStartCheckBox => autoStartCheckBox;
+    internal Label FeedbackLabel => feedbackLabel;
 
     internal void SetHolidayAdjustment(bool enabled, bool ready)
     {
@@ -200,7 +203,14 @@ internal sealed class StatusWindow : Form
         checkedLabel.Text = (last == DateTimeOffset.MinValue ? "최근 조회 시도: —" : $"최근 조회 시도: {ToKst(last):HH:mm:ss} KST") +
             "\n" + (refreshing ? "공식 상태 확인 중…" : nextRefreshUtc is { } next ? $"다음 조회: {ToKst(next):HH:mm:ss} KST" : "다음 조회: —");
         refreshButton.Enabled = !refreshing;
-        if (!string.IsNullOrEmpty(storageError)) SetFeedback(storageError, true);
+        // Called every second: show a storage error only when it changes, so it does not
+        // overwrite later save/setting feedback, and clear it once storage recovers.
+        if (storageError != shownStorageError)
+        {
+            if (storageError.Length > 0) SetFeedback(storageError, true);
+            else if (feedbackLabel.Text == shownStorageError) SetFeedback(DefaultFeedback);
+            shownStorageError = storageError;
+        }
     }
 
     public void SetFeedback(string text, bool error = false)
