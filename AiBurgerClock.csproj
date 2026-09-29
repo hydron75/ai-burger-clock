@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <PlatformTarget>x64</PlatformTarget>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <SelfContained>false</SelfContained>
+    <RootNamespace>AiBurgerClock</RootNamespace>
+    <AssemblyName>AI Burger Clock</AssemblyName>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <!-- Preserve the Framework-era layout, font scaling and DPI behavior. -->
+    <ApplicationDefaultFont>Microsoft Sans Serif, 8.25pt</ApplicationDefaultFont>
+    <ApplicationHighDpiMode>SystemAware</ApplicationHighDpiMode>
+    <Title>AI Burger Clock</Title>
+    <Description>DST-aware AI Agent schedule, official status and local observations</Description>
+    <Product>AI Burger Clock</Product>
+    <Version>2.1.0</Version>
+    <AssemblyVersion>2.1.0.0</AssemblyVersion>
+    <FileVersion>2.1.0.0</FileVersion>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.12" />
+  </ItemGroup>
+</Project>

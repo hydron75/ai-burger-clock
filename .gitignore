@@ -1,0 +1,26 @@
+bin/
+obj/
+*.user
+*.suo
+*.pdb
+dist/
+artifacts/
+.vs/
+*.pubxml.user
+
+# Local observations, diagnostics, and credentials are not source code.
+*.db
+*.db-*
+*.sqlite
+*.sqlite-*
+*.sqlite3
+*.sqlite3-*
+*.log
+*.reg
+.env
+.env.*
+!.env.example
+auth.json
+.credentials.json
+/.claude/
+/.codex/

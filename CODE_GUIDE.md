@@ -1,0 +1,375 @@
+# 소스코드, 쉬운 말로 읽기
+
+AI Burger Clock 2.1.0 기준입니다. 사용법부터 보고 싶다면 [README](README.md)로 돌아가세요.
+
+코드를 한 줄씩 번역한 문서는 아닙니다. **각 파일이 무엇을 맡고, 서로 어떻게 연결되는지** 설명합니다. 직접 작성한 C# 파일 30개와 빌드 설정을 모두 다룹니다. 컴퓨터가 만든 `bin`·`obj` 안의 코드는 대상에서 뺍니다.
+
+## 1. 작은 안내소라고 생각해 보세요
+
+이 앱에는 네 가지 역할이 있습니다.
+
+- **시간표 담당:** 미국 업무시간과 공휴일을 보고 FULL/BURGER를 정합니다.
+- **공지 확인 담당:** OpenAI·Claude·Gemini가 올린 공식 상태를 읽습니다.
+- **안내 담당:** 두 정보를 합쳐 Provider별 GO/HOLD/STOP/CHECK를 보여줍니다.
+- **기록 담당:** 사용자가 “느렸어요”, “잘 끝났어요”라고 남긴 경험을 저장합니다.
+
+내가 오류를 기록했다고 공식 상태를 장애로 바꾸지 않습니다. 공식 장애라고 내 경험을 자동으로 Error로 적지도 않습니다.
+
+~~~text
+현재 시각 + 미국 시간대 + 공휴일 옵션
+                  ↓
+             AgentSchedule ─── 시간표·다음 전환 ─┐
+                                                ↓
+공식 공지 → ProviderStatusClient → StatusMonitor → 권고 계산
+                                                ↓
+                                      화면·트레이·알림
+
+내가 누른 결과 + 당시 시간표·공식 상태
+                  ↓
+             UsageStore → SQLite 파일 → StatisticsWindow
+~~~
+
+`TrayApplicationContext`가 이 담당자들을 연결합니다. 시간을 판단하는 규칙, 공지를 읽는 규칙, 기록을 저장하는 규칙은 다른 파일에 나눠 두었습니다.
+
+## 2. 먼저 알아둘 단어
+
+| 코드에서 보이는 말 | 여기서는 이런 뜻 |
+|---|---|
+| class | 관련된 일들을 모아 놓은 담당자 |
+| method / 함수 | 담당자에게 시킬 수 있는 한 가지 일 |
+| enum | 정해진 선택지. 예: Success / Slow / Error / Interrupted |
+| record | 여러 정보를 한 묶음으로 주고받는 기록 카드 |
+| snapshot | 특정 순간의 상태를 찍어 둔 사진 같은 데이터 |
+| UTC / KST | 저장·계산에 쓰는 세계 기준 시각 / 한국에서 읽는 시각 |
+| async / await | 느린 일을 기다리는 동안 화면이 멈추지 않도록 연결하는 방식 |
+| cancellation | 종료할 때 진행 중인 작업에 멈추라고 알리는 신호 |
+
+비유일 뿐 C# 문법 전체를 설명한 것은 아닙니다. 우선 “어떤 정보를 넣으면 무엇이 나오는가?”를 보면 됩니다.
+
+## 3. 앱을 켜면 어떤 일이 생기나요?
+
+먼저 [Program.cs](Program.cs)가 실행됩니다. 앱의 현관입니다.
+
+1. 특별한 검사 명령을 붙였는지 확인합니다.
+2. 일반 실행이면 같은 Windows 세션에 앱이 이미 있는지 확인합니다.
+3. 창과 버튼을 다루는 WinForms를 준비합니다.
+4. [TrayApplicationContext.cs](TrayApplicationContext.cs)를 만들고, 클릭과 타이머를 기다립니다.
+
+중복 실행 방지에는 `Mutex`를 씁니다. “이 앱이 이미 자리를 차지했다”는 표지판과 비슷합니다.
+
+`--autostart`는 **창 없이 트레이로 시작하라는 뜻**입니다. 이 옵션으로 실행한다고 Windows 자동 시작 등록을 새로 켜는 것은 아닙니다.
+
+연결 담당자는 트레이와 화면을 준비한 뒤 DB에서 공휴일 설정을 읽습니다. 그 설정을 반영하고 나서 공식 상태의 정기 조회를 시작합니다. 새 설정이 없으면 공휴일 보정은 ON입니다. 읽기에 실패하면 확인되지 않은 정책을 적용하지 않도록 OFF와 오류 안내를 사용합니다.
+
+소스의 `AgentSchedule.GetSnapshot` 함수에는 기본 인수가 OFF로 적혀 있지만, **실제 앱은 읽어 온 설정을 명시적으로 전달합니다.** 함수의 기본 인수와 앱의 기본 설정은 다릅니다.
+
+## 4. 시간표 담당은 어떻게 계산하나요?
+
+핵심은 [AgentSchedule.cs](AgentSchedule.cs)입니다.
+
+입력은 **지금의 UTC 시각과 공휴일 보정 ON/OFF**입니다. 출력인 `ScheduleSnapshot`에는 현재 FULL/BURGER, 다음 전환과 남은 시간, 미국 현지 시각과 DST 여부, 주말·공휴일 연장 여부, 정책 버전이 들어 있습니다.
+
+계산 순서는 다음과 같습니다.
+
+1. 현재 시각을 미국 동부 날짜로 바꿉니다.
+2. 주변 날짜들의 미국 업무 구간을 만듭니다.
+3. 토요일·일요일은 건너뜁니다.
+4. 공휴일 보정이 ON이면 대상 공휴일도 건너뜁니다.
+5. 각 업무일의 **동부 09:00과 같은 날짜 서부 18:00을 각각 UTC로 변환**합니다.
+6. 지금이 그 사이이면 BURGER, 아니면 FULL입니다.
+7. BURGER이면 현재 업무 종료, FULL이면 다음 업무 시작이 다음 전환입니다.
+
+업무 시작 순간은 BURGER에 포함하고, 업무 종료 순간부터 FULL입니다. 코드에서 말하는 `[start, end)`가 이 뜻입니다.
+
+### 한 시간 차이를 직접 외우지 않습니다
+
+Windows 시간대 이름 `Eastern Standard Time`, `Pacific Standard Time`을 사용합니다. 이름에 Standard가 들어 있지만 코드가 받는 시간대 규칙에는 DST도 들어 있습니다.
+
+“지금 DST니까 모든 날짜에서 4시간을 빼자”가 아니라 **각 경계 날짜에 맞는 규칙**을 적용합니다. 그래서 시계가 바뀌는 주말도 실제 시간으로 셉니다.
+
+`Korea Standard Time`은 한국 시각 표시와 통계에 사용합니다. KST 10시·22시는 계산 결과이지 원래 규칙이 아닙니다.
+
+주변 업무 구간은 잠시 기억해 둡니다. 이것이 캐시입니다. 동부 날짜나 공휴일 옵션이 달라질 때 다시 만들므로 매초 한 달치 달력을 새로 계산하지 않습니다.
+
+### 공휴일 달력은 따로 있습니다
+
+[UsFederalHolidays.cs](UsFederalHolidays.cs)는 “그해 관측하는 정기 연방 공휴일은 언제인가?”에 답합니다. 고정 날짜와 “몇 번째 월요일” 같은 규칙을 사용합니다.
+
+토요일→앞 금요일, 일요일→다음 월요일의 대체휴일과 다음 해 신정이 전년도 12월 31일에 관측되는 경우도 처리합니다. 회사별 휴가, 지역 휴일, 임시 휴무, 반일 휴무를 모두 아는 달력은 아닙니다. [정책 범위](HOLIDAYS_TRAY.md)
+
+**공휴일 규칙은 앱 코드가 관리하고, DST는 Windows/.NET 시간대 정보가 관리합니다.** 두 가지를 같은 자동 갱신 정보로 보면 안 됩니다.
+
+주말과 공휴일 플래그는 독립적입니다. 긴 주말에 공휴일이 붙으면 둘 다 true가 될 수 있습니다. 평일 공휴일만 있으면 공휴일 플래그만 true입니다.
+
+“공휴일 연장”은 **그 공휴일 때문에 길어진 연속 FULL 구간 전체**입니다. 지금 미국 날짜 자체가 반드시 공휴일이라는 뜻은 아닙니다.
+
+## 5. 공식 상태는 어떻게 알아오나요?
+
+[ProviderStatusClient.cs](ProviderStatusClient.cs)가 회사의 공개 상태 데이터를 읽습니다.
+
+브라우저 화면을 그림처럼 읽거나 HTML 모양에 의존하지 않습니다. 항목 이름과 값으로 정리된 **JSON**을 읽습니다. JSON은 컴퓨터끼리 주고받기 쉬운 목록 형식이라고 생각하면 됩니다.
+
+| Provider | 이 코드가 읽는 정보 |
+|---|---|
+| OpenAI | 공식 summary. incident 목록이 생략되어 있으면 공식 incident history도 추가 확인 |
+| Claude | 공식 summary의 구성 요소와 incident |
+| Gemini | Workspace의 제품 목록과 장애 이력에서 Gemini를 선택 |
+
+component는 서비스 안의 기능·구성 요소, incident는 회사가 공개한 장애 사건입니다. 모든 제품의 문제를 이 앱의 관심 서비스 문제로 취급하지 않습니다. 범위를 확실히 판단할 수 없으면 UNKNOWN으로 남깁니다.
+
+예를 들어 Sora 문제만 있다면 ChatGPT 작업 장애로 곧바로 바꾸지 않습니다. 반대로 관련 사건이 확인되면 전체 요약이 정상처럼 보여도 문제를 반영할 수 있습니다.
+
+Gemini는 Workspace의 Gemini 제품 범위입니다. 모든 Gemini API·Vertex AI·지역별 서비스까지 검사하는 것은 아닙니다. OpenAI Work도 별도 구성 요소가 항상 따로 있는 것은 아니므로 관련 기능과 사건 정보를 사용합니다.
+
+정확한 주소·선정 기준·예외는 [PROVIDER_SOURCES.md](PROVIDER_SOURCES.md)에 있습니다. 과거 조회 기록은 현재 정상이라는 보증이 아닙니다.
+
+### 읽는 사람과 정기적으로 확인하는 사람은 다릅니다
+
+[StatusMonitor.cs](StatusMonitor.cs)는 정기적으로 `ProviderStatusClient`를 부릅니다.
+
+- 세 Provider를 독립적으로 조회합니다. 한 곳의 실패가 다른 두 곳의 실패로 번지지 않습니다.
+- 보통 조회 묶음이 끝난 뒤 약 5분을 기다립니다.
+- 한 Provider의 조회 제한은 15초입니다.
+- 마지막 성공부터 15분 이상 지나면 STALE로 표시합니다.
+- 성공한 적이 없으면 오래 기다렸다는 이유만으로 STALE가 되지 않고 UNKNOWN으로 남습니다.
+- 수동 Refresh와 종료 시 취소도 처리합니다.
+
+통신 창구인 `HttpClient`는 재사용합니다. 매초 새 인터넷 연결을 시도하지 않습니다.
+
+## 6. 권고와 트레이 색상은 어디서 정하나요?
+
+[Phase2Models.cs](Phase2Models.cs) 안의 `RecommendationPolicy`가 권고 규칙입니다.
+
+~~~text
+FULL + 정상       → GO
+FULL + 성능 저하  → HOLD
+FULL + 장애       → STOP
+FULL + 확인 불가  → CHECK
+
+BURGER + 정상     → BURGER 유지
+BURGER + 문제     → BURGER + ISSUE
+~~~
+
+UNKNOWN/STALE인 BURGER는 BURGER + CHECK입니다. **공식 상태로 시간표를 승격시키지 않으며, Provider를 따로 계산합니다.**
+
+[TrayPresentation.cs](TrayPresentation.cs)는 작은 표지판의 표현을 정합니다.
+
+- F/B는 시간표에서 가져옵니다.
+- 색은 장애 빨강 → 성능 저하 주황 → 확인 불가 회색 순서입니다.
+- 모두 정상이면 FULL은 초록, BURGER는 주황입니다.
+- 마우스를 올렸을 때의 도움말에도 세 Provider를 각각 적습니다.
+
+트레이 색을 정하는 일이 Provider의 권고를 다시 바꾸지는 않습니다. 표시와 판단을 분리한 것입니다.
+
+### 알림이 계속 반복되면 곤란하겠죠?
+
+[RecommendationNotifications.cs](RecommendationNotifications.cs)는 마지막 확정 권고를 기억합니다.
+
+- GO → HOLD처럼 의미 있는 변경은 알립니다.
+- HOLD → HOLD는 다시 알리지 않습니다.
+- GO → UNKNOWN → HOLD라면 마지막에 확인했던 GO와 비교합니다.
+- HOLD → UNKNOWN → HOLD라면 같은 경고를 반복하지 않습니다.
+
+실제 Windows 알림을 요청하는 곳은 `TrayApplicationContext`입니다. 시간 경계 알림과 공휴일 설정 변경 알림도 구분합니다.
+
+이는 알림을 **요청하는 로직**입니다. Windows 설정에 따라 실제 풍선이 보이지 않을 수도 있습니다. STOP 역시 안내일 뿐 다른 프로그램을 중단시키지 않습니다.
+
+## 7. 내 기록은 어떻게 저장되나요?
+
+OpenAI 행을 우클릭하고 Slow를 고른 경우입니다.
+
+1. [StatusWindow.cs](StatusWindow.cs)가 클릭을 알아챕니다.
+2. `TrayApplicationContext`에 “OpenAI, Slow를 기록해 주세요”라고 알립니다.
+3. 당시 시각·시간표·공식 상태를 `UsageMeasurement` 카드로 묶습니다.
+4. 메모를 선택했다면 [MeasurementDialog.cs](MeasurementDialog.cs)를 엽니다.
+5. [UsageStore.cs](UsageStore.cs)가 SQLite에 저장합니다.
+6. 성공하면 화면에 “저장됨”이라고 표시합니다.
+
+메모를 쓰더라도 기준 시각과 상태는 **메모 창을 열기 전**에 잡습니다. 저장 버튼을 누른 순간으로 바뀌지는 않습니다.
+
+메모는 최대 1,000자입니다. 앱이 대화를 수집하지는 않지만, 직접 입력한 메모는 저장됩니다. 프롬프트·계정·비밀번호 같은 민감정보를 적지 않아야 합니다.
+
+### 기록장 안에는 네 칸이 있습니다
+
+| SQLite 테이블 | 무엇을 담나요? |
+|---|---|
+| UsageEvents | 사용자가 남긴 경험과 당시 상태 |
+| ProviderStatusHistory | 공식 상태·권고·사건 등의 변화 이력 |
+| ProviderStatusCache | Provider별 가장 최근 조회 정보 |
+| AppMetadata | DB 구조 버전과 공휴일 설정 |
+
+Cache는 “마지막으로 읽은 메모”, History는 “중요한 변화 기록”입니다. 매 5분마다 같은 정상 상태를 History에 계속 추가하지 않습니다. **공식 이력은 모든 조회를 빠짐없이 모은 로그가 아닙니다.**
+
+시간은 UTC로 저장하고 화면에서는 KST로 바꿉니다.
+
+### 기록장 구조가 바뀌면요?
+
+현재 DB 구조 버전은 2입니다. 앱 버전 2.1.0과는 다른 번호입니다.
+
+기존 구조 1을 열면 먼저 SQLite 백업 기능으로 복사본을 만듭니다. 본체 옆의 WAL에 이미 저장된 내용도 포함합니다. WAL은 기록을 안전하게 반영하기 위한 보조 파일입니다.
+
+백업 확인 뒤 공휴일 관련 세 항목을 한 묶음으로 추가합니다. 이것이 트랜잭션입니다. 중간에 실패하면 일부만 바뀐 채로 두지 않고 되돌립니다.
+
+- `HolidayAdjustmentEnabled`: 그때 보정이 ON이었나, OFF였나.
+- `HolidayExtendedFullThrottle`: 공휴일 때문에 연장된 FULL이었나.
+- `HolidayNames`: 어떤 공휴일이 반영됐나.
+
+예전 기록에는 설정을 적지 않았으므로 `null`, 즉 **미기록**으로 둡니다. 미기록을 OFF였다고 추측하지 않고, 과거 경험을 새 규칙으로 재분류하지도 않습니다.
+
+일부 실패를 만난 뒤에는 같은 실행 중 계속 백업하며 재시도하지 않도록 실패를 기억합니다. 원본과 백업 확인 후 재시작을 안내합니다. 더 최신 DB를 자동으로 구버전으로 바꾸지도 않습니다.
+
+## 8. 통계는 AI가 판단하나요?
+
+아니요. [StatisticsWindow.cs](StatisticsWindow.cs)의 `StatisticsAnalysis`가 기록을 골라 세고 비율을 계산합니다.
+
+OpenAI 기록 열 개 중 Slow가 두 개면 그 열 개 안에서 Slow는 20%입니다. **관찰하지 않은 작업까지 포함한 OpenAI 전체의 속도 통계가 아닙니다.**
+
+- 최근 7일·30일은 지금부터 거슬러 올라간 7×24시간·30×24시간입니다.
+- 시간대와 요일은 한국 시각으로 분류합니다.
+- 데이터가 없으면 0% 대신 No data입니다.
+- n은 해당 행의 기록 수입니다.
+- n < 30은 소표본 표시이며, 그 이상이면 결론이 확실하다는 보증이 아닙니다.
+
+공휴일 ON/OFF/이전 미기록, 주말·공휴일, 정책별 FULL/BURGER를 분리해 봅니다. 같은 기록이 여러 비교 행에 등장할 수 있으므로 **여러 행의 n을 무조건 더하면 안 됩니다.**
+
+통계로 시간표를 자동 변경하지는 않습니다. 추천 점수·히트맵·CSV/JSON 내보내기·자동 지연시간 측정도 아직 구현하지 않았습니다.
+
+## 9. 왜 화면이 계속 반응하나요?
+
+일을 종류별로 나눴기 때문입니다.
+
+- 1초 타이머는 카운트다운과 표시를 갱신합니다.
+- 인터넷은 기다리는 시간이 긴 별도 작업으로 처리합니다.
+- SQLite는 화면 담당 스레드 바깥에서 실행하고 한 저장소 안에서는 순서를 지킵니다.
+- 새 상태가 오면 `BeginInvoke`로 화면 담당에게 갱신을 요청합니다.
+
+스레드는 “일을 수행하는 흐름” 정도로 이해하면 됩니다. 느린 일을 화면 담당에게 직접 시키지 않는 구조입니다. SQLite 호출 자체를 비동기 기능으로 바꾸는 것이 아니라, `Task.Run`을 통해 화면 바깥에서 실행합니다.
+
+매초 HTTP 조회나 DB 저장을 하지는 않습니다. 아이콘도 문자·색상이 바뀔 때만 교체하고 이전 그림 자원은 해제합니다.
+
+종료할 때는 타이머를 멈추고 트레이를 숨긴 뒤, 초기화·조회 취소·진행 중 저장의 마무리를 기다립니다. 그 뒤 창·통신·그림 자원을 정리합니다.
+
+## 10. 자동 시작과 공식 페이지 클릭
+
+[AutoStartManager.cs](AutoStartManager.cs)는 현재 실행 파일 경로와 Windows 허용 상태를 함께 봅니다.
+
+- 등록 경로: `HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Run`.
+- 허용 상태 참고: `HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run`.
+- 이 앱의 값 이름: `AI Burger Clock`.
+
+창이나 메뉴를 여는 것만으로 설정을 바꾸지 않습니다. 사용자가 체크하거나 메뉴를 눌렀을 때 현재 경로를 등록·해제합니다.
+
+Windows 내부 승인 형식은 알려진 경우만 해석합니다. 낯선 값은 억지로 수정하지 않습니다. **코드가 읽은 값과 실제 Windows 화면·재로그인 결과는 구분해서 검증해야 합니다.**
+
+트레이 표시 목록의 옛 항목은 별도 이력입니다. 자동 시작 항목과 같은 것이 아니며, 다른 프로그램의 트레이 이력을 일괄 초기화하지 않습니다.
+
+[ProviderStatusPages.cs](ProviderStatusPages.cs)는 공식 페이지 주소록입니다. 미리 정해 둔 HTTPS 주소를 Windows 기본 브라우저로 엽니다. 외부 공지의 아무 주소나 명령으로 실행하는 것이 아닙니다.
+
+## 11. 전체 소스 파일 지도
+
+이름을 눌러 소스를 열 수 있습니다. 역할을 알고 필요한 파일부터 읽으면 됩니다.
+
+### 실제 앱 기능: 15개
+
+| 파일 | 맡은 일 |
+|---|---|
+| [Program.cs](Program.cs) | 실행 입구, 검사 모드 분기, 중복 실행 방지 |
+| [TrayApplicationContext.cs](TrayApplicationContext.cs) | 트레이·타이머·조회·저장·알림·종료 연결 |
+| [StatusWindow.cs](StatusWindow.cs) | 작은 상태 창, 클릭과 설정 변경 전달 |
+| [MeasurementDialog.cs](MeasurementDialog.cs) | 기록 종류와 선택 메모 입력 |
+| [StatisticsWindow.cs](StatisticsWindow.cs) | 통계 계산과 통계 창 |
+| [AgentSchedule.cs](AgentSchedule.cs) | 미국 업무시간과 다음 전환 계산 |
+| [UsFederalHolidays.cs](UsFederalHolidays.cs) | 정기 연방 공휴일의 관측 날짜 계산 |
+| [Phase2Models.cs](Phase2Models.cs) | 공통 상태·기록 카드·권고 규칙 |
+| [ProviderStatusClient.cs](ProviderStatusClient.cs) | 공식 JSON을 읽고 관련 상태로 해석 |
+| [ProviderStatusPages.cs](ProviderStatusPages.cs) | 공식 상태 페이지의 고정 주소와 열기 |
+| [StatusMonitor.cs](StatusMonitor.cs) | 정기 조회, 실패 격리, 오래된 정보 판정 |
+| [RecommendationNotifications.cs](RecommendationNotifications.cs) | 마지막 확정 권고 기억, 중복 알림 방지 |
+| [TrayPresentation.cs](TrayPresentation.cs) | 트레이 문자·색상·짧은 도움말 결정 |
+| [UsageStore.cs](UsageStore.cs) | SQLite 생성·업그레이드·백업·설정·저장 |
+| [AutoStartManager.cs](AutoStartManager.cs) | Windows 자동 시작 등록과 상태 판정 |
+
+### 검사와 진단: 14개
+
+미완성 임시 코드가 아닙니다. **특별한 검사 명령 때만 쓰는 정식 검사 코드**입니다.
+
+| 파일 | 확인하는 것 |
+|---|---|
+| [SelfTest.cs](SelfTest.cs) | 자체 검사들을 묶어서 실행하고 결과 반환 |
+| [ScheduleTests.cs](ScheduleTests.cs) | 공휴일 OFF 시간표, DST, 정확한 경계 |
+| [HolidayScheduleTests.cs](HolidayScheduleTests.cs) | 공휴일, 대체휴일, 연도 경계, 연장 구간 |
+| [TrayPresentationTests.cs](TrayPresentationTests.cs) | 색상 조합, F/B, 도움말 길이, 아이콘 그리기 |
+| [ProviderStatusTests.cs](ProviderStatusTests.cs) | 정상·장애·잘못된 JSON·통신 실패의 해석 |
+| [MonitorTests.cs](MonitorTests.cs) | 권고, 갱신, STALE, 취소, 알림 기억. 가짜 HTTP 응답 담당도 포함 |
+| [StorageTests.cs](StorageTests.cs) | 임시 DB 저장·재열기·빈 기록·1만 건·통계 |
+| [HolidayStorageTests.cs](HolidayStorageTests.cs) | 이전 DB 보존·WAL 백업·설정·업그레이드 실패 |
+| [HolidayMonitorTests.cs](HolidayMonitorTests.cs) | 백그라운드 저장도 같은 공휴일 정책을 쓰는지 |
+| [AutoStartTests.cs](AutoStartTests.cs) | 가짜 경로·승인값으로 자동 시작 판정만 검사 |
+| [SmokeTest.cs](SmokeTest.cs) | 실제 WinForms 실행 흐름의 검사 입구 |
+| [UIRegressionChecks.cs](UIRegressionChecks.cs) | 클릭·새로고침·기록·메모·통계 연결 |
+| [HolidayUiChecks.cs](HolidayUiChecks.cs) | 공휴일 옵션·색상·카운트다운·기록·알림 연결 |
+| [LiveStatusProbe.cs](LiveStatusProbe.cs) | 공식 상태를 실제 인터넷으로 조회해 출력 |
+
+검사의 고정 날짜와 가짜 장애는 정답을 비교하기 위한 문제지입니다. 실제 시간표나 공식 상태를 그 값으로 고정하지 않습니다.
+
+### 프로그램 명찰: 1개
+
+[Properties/AssemblyInfo.cs](Properties/AssemblyInfo.cs)는 프로그램 식별 정보 일부를 담습니다. 버전은 여기 아닌 프로젝트 파일에서 관리하고, 나머지 정보는 SDK가 생성합니다.
+
+## 12. 빌드 파일과 폴더 지도
+
+| 파일·폴더 | 쉬운 설명 |
+|---|---|
+| [AiBurgerClock.csproj](AiBurgerClock.csproj) | 제작 사양서. WinForms, net10.0-windows, x64, 버전, SQLite 패키지 지정 |
+| [AiBurgerClock.sln](AiBurgerClock.sln) | Visual Studio에서 여는 프로젝트 묶음 |
+| [global.json](global.json) | SDK 범위. 10.0.100 기준에서 같은 10.0의 최신 기능 밴드 허용 |
+| [build.ps1](build.ps1) | 빌드와 자체 검사를 실행하는 순서 |
+| [Portable.pubxml](Properties/PublishProfiles/Portable.pubxml) | 배포용 단일 EXE 설정 |
+| [app.manifest](app.manifest) | Windows 권한·호환 설정. 관리자 권한으로 자동 상승하지 않음 |
+| bin | 일반 빌드 결과 |
+| obj | 중간 결과와 자동 생성 코드 |
+| dist | 사용자에게 전달할 배포 결과 |
+| artifacts | 검사 출력과 화면 렌더 |
+
+빌드는 경고도 실패로 취급합니다. `-Publish`는 배포 파일을 갱신하므로 실행 중인 앱을 먼저 종료해야 합니다.
+
+단일 EXE여도 모든 .NET 부품이 들어 있다는 뜻은 아닙니다. **.NET 10 Desktop Runtime x64는 별도로 필요**합니다. SQLite 네이티브 부품은 포함하고 실행 시 임시 위치에 풀릴 수 있습니다. WinForms 호환성을 위해 코드 잘라내기(trimming)나 NativeAOT는 사용하지 않습니다.
+
+## 13. 검사는 어떻게 실행하나요?
+
+일반 사용자는 건너뛰어도 됩니다. 문서만 읽으려면 명령을 실행할 필요가 없습니다.
+
+프로젝트 폴더의 PowerShell에서 자체 검사를 하려면:
+
+~~~powershell
+$exe = (Resolve-Path '.\dist\win-x64\AI Burger Clock.exe').Path
+New-Item -ItemType Directory -Force '.\artifacts' | Out-Null
+$result = Start-Process -FilePath $exe -ArgumentList '--self-test' -WindowStyle Hidden -Wait -PassThru -RedirectStandardOutput '.\artifacts\self-test.txt' -RedirectStandardError '.\artifacts\self-test-errors.txt'
+Get-Content '.\artifacts\self-test.txt'
+$result.ExitCode
+~~~
+
+마지막 종료 코드 0은 성공입니다. 이 명령은 이전 자체 검사 로그를 갱신합니다. Windows 앱은 일반적인 명령줄 종료 코드 변수만 보면 잘못 판단할 수 있어 실제 프로세스를 기다립니다.
+
+| 옵션 | 하는 일 | 실제 환경에 미치는 영향 |
+|---|---|---|
+| `--self-test` | 시간표·공휴일·파서·권고·저장·통계 검사 | 임시 DB·가짜 통신. 사용자 DB·자동 시작 등록은 변경하지 않음 |
+| `--smoke-test` | 실제 창·트레이·알림·버튼 연결 검사 | 테스트 UI·알림을 만들 수 있음. 임시 DB·가짜 통신. 실행 중인 일반 앱을 먼저 종료해야 함 |
+| `--smoke-test --verify-autostart` | 자동 시작 UI까지 검사 | **실제 사용자 레지스트리의 이 앱 값을 잠시 변경 후 복원. 일반 사용 중 실행하지 않는 개발 전용 검사** |
+| `--smoke-test --report-directory 경로` | 검사 중 창을 PNG로 저장 | 지정 폴더에 이미지 생성. 바탕화면 전체 스크린샷은 아님 |
+| `--check-providers` | 세 공식 소스를 지금 조회해 출력 | 실제 인터넷 사용. 사용자 DB에 기록하지 않음 |
+
+검사는 가짜 현재 시각을 전달하므로 Windows 시스템 시계를 바꾸지 않습니다. UI 검사에서 공식 페이지 열기는 실제 브라우저 대신 주소를 받는 함수로 확인합니다.
+
+검사 통과와 실제 재부팅 성공, 사용자 화면의 알림 노출은 다른 증거입니다. 배포 당시 무엇을 확인했는지는 [2.1.0 검증 기록](HOLIDAYS_TRAY.md)을 참고하세요.
+
+## 14. 어디부터 읽으면 좋을까요?
+
+- **앱 전체 흐름:** Program → TrayApplicationContext.
+- **왜 지금 FULL/BURGER인지:** AgentSchedule → UsFederalHolidays → ScheduleTests / HolidayScheduleTests.
+- **왜 OpenAI만 STOP인지:** ProviderStatusClient → Phase2Models → RecommendationNotifications.
+- **왜 트레이가 이 색인지:** TrayPresentation → TrayApplicationContext.
+- **기록이 어떻게 쌓이는지:** Phase2Models → UsageStore → StatisticsWindow.
+- **버튼이 하는 일:** StatusWindow → TrayApplicationContext.
+
+색상은 표시 문제, 공휴일은 시간표 정책, 경험 기록은 관찰 데이터, 추천 점수는 데이터 해석 문제입니다. 이 구분이 작은 앱의 가장 중요한 구조입니다.

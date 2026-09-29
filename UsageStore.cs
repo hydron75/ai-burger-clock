@@ -1,0 +1,336 @@
+using System.Globalization;
+using Microsoft.Data.Sqlite;
+
+namespace AiBurgerClock;
+
+// Connections live for one operation. SQLite work runs off the UI thread and is
+// serialized within this store; WAL and transactions also protect other readers.
+internal sealed class UsageStore(string? databasePath = null)
+{
+    internal const int SchemaVersion = 2;
+    internal const string HolidaySettingKey = "UsFederalHolidaysEnabled";
+    private readonly SemaphoreSlim gate = new(1, 1);
+    private Exception? schemaInitializationFailure;
+    public string DatabasePath { get; } = databasePath ?? Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+        "AIBurgerClock", "burgerclock.db");
+
+    public Task InitializeAsync(CancellationToken cancellationToken = default) =>
+        ExecuteAsync(_ => true, cancellationToken);
+
+    // Missing means the new default applies. Invalid data is reported rather than
+    // silently changing the user's selected schedule policy.
+    public Task<bool> GetHolidayAdjustmentAsync(CancellationToken cancellationToken = default) =>
+        ExecuteAsync(connection =>
+        {
+            using SqliteCommand command = connection.CreateCommand();
+            command.CommandText = "SELECT Value FROM AppMetadata WHERE Key=$key;";
+            command.Parameters.AddWithValue("$key", HolidaySettingKey);
+            return command.ExecuteScalar() switch
+            {
+                null => true,
+                "1" => true,
+                "0" => false,
+                _ => throw new InvalidOperationException("미국 연방 공휴일 보정 설정을 읽을 수 없습니다.")
+            };
+        }, cancellationToken);
+
+    public Task SetHolidayAdjustmentAsync(bool enabled, CancellationToken cancellationToken = default) =>
+        ExecuteAsync(connection =>
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            using SqliteCommand command = connection.CreateCommand();
+            command.CommandText = """
+                INSERT INTO AppMetadata(Key,Value) VALUES($key,$value)
+                ON CONFLICT(Key) DO UPDATE SET Value=excluded.Value;
+                """;
+            command.Parameters.AddWithValue("$key", HolidaySettingKey);
+            command.Parameters.AddWithValue("$value", enabled ? "1" : "0");
+            command.ExecuteNonQuery();
+            return true;
+        }, cancellationToken);
+
+    public Task AddUsageAsync(UsageMeasurement item, CancellationToken cancellationToken = default) =>
+        AddUsageBatchAsync([item], cancellationToken);
+
+    internal Task AddUsageBatchAsync(IReadOnlyList<UsageMeasurement> items, CancellationToken cancellationToken = default) =>
+        ExecuteAsync(connection =>
+        {
+            using SqliteTransaction transaction = connection.BeginTransaction();
+            using SqliteCommand command = connection.CreateCommand();
+            command.Transaction = transaction;
+            command.CommandText = """
+                INSERT INTO UsageEvents(EventId,Provider,EventType,TimestampUtc,ScheduleState,
+                  WeekendExtendedFullThrottle,EasternUtcOffsetMinutes,PacificUtcOffsetMinutes,
+                  EasternIsDst,PacificIsDst,SchedulePolicyVersion,OfficialStatus,
+                  EffectiveRecommendation,RelevantComponent,IncidentId,UserNote,AppVersion,
+                  HolidayAdjustmentEnabled,HolidayExtendedFullThrottle,HolidayNames)
+                VALUES($id,$provider,$type,$time,$schedule,$weekend,$eastOffset,$westOffset,
+                  $eastDst,$westDst,$policy,$official,$recommendation,$component,$incident,$note,$version,
+                  $holidayEnabled,$holidayExtended,$holidayNames);
+                """;
+            foreach (string name in new[] { "$id", "$provider", "$type", "$time", "$schedule", "$weekend",
+                "$eastOffset", "$westOffset", "$eastDst", "$westDst", "$policy", "$official",
+                "$recommendation", "$component", "$incident", "$note", "$version",
+                "$holidayEnabled", "$holidayExtended", "$holidayNames" })
+                command.Parameters.Add(new SqliteParameter(name, null));
+            foreach (UsageMeasurement item in items)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                object[] values = [item.EventId, item.Provider.ToString(), item.EventType.ToString(), Utc(item.TimestampUtc),
+                    item.ScheduleState.ToString(), item.WeekendExtendedFullThrottle, item.EasternUtcOffsetMinutes,
+                    item.PacificUtcOffsetMinutes, item.EasternIsDst, item.PacificIsDst, item.SchedulePolicyVersion,
+                    item.OfficialStatus.ToString(), item.EffectiveRecommendation.ToString(), item.RelevantComponent,
+                    item.IncidentId, item.UserNote, item.AppVersion,
+                    (object?)item.HolidayAdjustmentEnabled ?? DBNull.Value, item.HolidayExtendedFullThrottle, item.HolidayNames];
+                for (int i = 0; i < values.Length; i++) command.Parameters[i].Value = values[i];
+                command.ExecuteNonQuery();
+            }
+            cancellationToken.ThrowIfCancellationRequested();
+            transaction.Commit();
+            return true;
+        }, cancellationToken);
+
+    public Task<IReadOnlyList<UsageMeasurement>> ReadUsageAsync(DateTimeOffset? sinceUtc,
+        CancellationToken cancellationToken = default) => ExecuteAsync<IReadOnlyList<UsageMeasurement>>(connection =>
+        {
+            using SqliteCommand command = connection.CreateCommand();
+            command.CommandText = """
+                SELECT EventId,Provider,EventType,TimestampUtc,ScheduleState,WeekendExtendedFullThrottle,
+                  EasternUtcOffsetMinutes,PacificUtcOffsetMinutes,EasternIsDst,PacificIsDst,SchedulePolicyVersion,
+                  OfficialStatus,EffectiveRecommendation,RelevantComponent,IncidentId,UserNote,AppVersion,
+                  HolidayAdjustmentEnabled,HolidayExtendedFullThrottle,HolidayNames
+                FROM UsageEvents
+                """ + (sinceUtc.HasValue ? " WHERE TimestampUtc >= $since" : "") + " ORDER BY TimestampUtc,EventId;";
+            if (sinceUtc.HasValue) command.Parameters.AddWithValue("$since", Utc(sinceUtc.Value));
+            using SqliteDataReader reader = command.ExecuteReader();
+            List<UsageMeasurement> rows = [];
+            while (reader.Read())
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                rows.Add(new UsageMeasurement(reader.GetString(0), Enum.Parse<ProviderKind>(reader.GetString(1)),
+                    Enum.Parse<UsageEventType>(reader.GetString(2)), ParseUtc(reader.GetString(3)),
+                    Enum.Parse<AgentState>(reader.GetString(4)), reader.GetBoolean(5), reader.GetInt32(6),
+                    reader.GetInt32(7), reader.GetBoolean(8), reader.GetBoolean(9), reader.GetString(10),
+                    Enum.Parse<OfficialStatus>(reader.GetString(11)), Enum.Parse<Recommendation>(reader.GetString(12)),
+                    reader.GetString(13), reader.GetString(14), reader.GetString(15), reader.GetString(16),
+                    reader.IsDBNull(17) ? null : reader.GetBoolean(17), reader.GetBoolean(18), reader.GetString(19)));
+            }
+            return rows;
+        }, cancellationToken);
+
+    public Task SaveProviderAsync(ProviderStatus status, ScheduleSnapshot schedule, Recommendation recommendation,
+        CancellationToken cancellationToken = default) => ExecuteAsync(connection =>
+        {
+            using SqliteTransaction transaction = connection.BeginTransaction();
+            bool changed;
+            using (SqliteCommand previous = connection.CreateCommand())
+            {
+                previous.Transaction = transaction;
+                previous.CommandText = """
+                    SELECT OfficialStatus,EffectiveRecommendation,RelevantComponent,IncidentId,IncidentTitle,LastKnownStatus
+                    FROM ProviderStatusHistory WHERE Provider=$provider ORDER BY StatusId DESC LIMIT 1;
+                    """;
+                previous.Parameters.AddWithValue("$provider", status.Provider.ToString());
+                using SqliteDataReader reader = previous.ExecuteReader();
+                changed = !reader.Read() || reader.GetString(0) != status.Status.ToString() ||
+                    reader.GetString(1) != recommendation.ToString() || reader.GetString(2) != status.RelevantComponent ||
+                    reader.GetString(3) != status.IncidentId || reader.GetString(4) != status.IncidentTitle ||
+                    (reader.IsDBNull(5) ? null : reader.GetString(5)) != status.LastKnownStatus?.ToString();
+            }
+            cancellationToken.ThrowIfCancellationRequested();
+            using SqliteCommand command = connection.CreateCommand();
+            command.Transaction = transaction;
+            const string columns = "Provider,CheckedAtUtc,OfficialStatus,EffectiveRecommendation,RelevantComponent," +
+                "IncidentId,IncidentTitle,ScheduleStateAtCheck,LastSuccessfulCheckUtc,Source,Reason,LastKnownStatus";
+            const string values = "$provider,$checked,$official,$recommendation,$component,$incident,$title," +
+                "$schedule,$success,$source,$reason,$known";
+            command.CommandText = "INSERT INTO ProviderStatusCache(" + columns + ") VALUES(" + values + ") " +
+                "ON CONFLICT(Provider) DO UPDATE SET CheckedAtUtc=excluded.CheckedAtUtc," +
+                "OfficialStatus=excluded.OfficialStatus,EffectiveRecommendation=excluded.EffectiveRecommendation," +
+                "RelevantComponent=excluded.RelevantComponent,IncidentId=excluded.IncidentId,IncidentTitle=excluded.IncidentTitle," +
+                "ScheduleStateAtCheck=excluded.ScheduleStateAtCheck,LastSuccessfulCheckUtc=excluded.LastSuccessfulCheckUtc," +
+                "Source=excluded.Source,Reason=excluded.Reason,LastKnownStatus=excluded.LastKnownStatus;";
+            AddProviderParameters(command, status, schedule, recommendation);
+            command.ExecuteNonQuery();
+            if (changed)
+            {
+                command.CommandText = "INSERT INTO ProviderStatusHistory(" + columns + ") VALUES(" + values + ");";
+                command.ExecuteNonQuery();
+            }
+            cancellationToken.ThrowIfCancellationRequested();
+            transaction.Commit();
+            return true;
+        }, cancellationToken);
+
+    public Task<IReadOnlyList<ProviderStatus>> ReadLatestStatusesAsync(CancellationToken cancellationToken = default) =>
+        ExecuteAsync<IReadOnlyList<ProviderStatus>>(connection =>
+        {
+            using SqliteCommand command = connection.CreateCommand();
+            command.CommandText = """
+                SELECT Provider,OfficialStatus,CheckedAtUtc,LastSuccessfulCheckUtc,Reason,
+                  RelevantComponent,IncidentId,IncidentTitle,Source,LastKnownStatus
+                FROM ProviderStatusCache ORDER BY Provider;
+                """;
+            using SqliteDataReader reader = command.ExecuteReader();
+            List<ProviderStatus> rows = [];
+            while (reader.Read())
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                rows.Add(new ProviderStatus(Enum.Parse<ProviderKind>(reader.GetString(0)),
+                    Enum.Parse<OfficialStatus>(reader.GetString(1)), ParseUtc(reader.GetString(2)),
+                    reader.IsDBNull(3) ? null : ParseUtc(reader.GetString(3)), reader.GetString(4), reader.GetString(5),
+                    reader.GetString(6), reader.GetString(7), reader.GetString(8),
+                    reader.IsDBNull(9) ? null : Enum.Parse<OfficialStatus>(reader.GetString(9))));
+            }
+            return rows;
+        }, cancellationToken);
+
+    private async Task<T> ExecuteAsync<T>(Func<SqliteConnection, T> operation, CancellationToken cancellationToken)
+    {
+        await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            return await Task.Run(() =>
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (schemaInitializationFailure is not null)
+                    throw SchemaInitializationError(schemaInitializationFailure);
+                string? directory = Path.GetDirectoryName(Path.GetFullPath(DatabasePath));
+                if (directory is not null) Directory.CreateDirectory(directory);
+                using SqliteConnection connection = new(new SqliteConnectionStringBuilder
+                {
+                    DataSource = DatabasePath, Mode = SqliteOpenMode.ReadWriteCreate,
+                    Pooling = false, DefaultTimeout = 5
+                }.ToString());
+                connection.Open();
+                try { EnsureSchema(connection); }
+                catch (Exception ex) when (ex is SqliteException or IOException or UnauthorizedAccessException)
+                {
+                    // Polling must not repeatedly create whole-DB backups after a
+                    // failed migration. The app owns one store; retry on restart.
+                    schemaInitializationFailure = ex;
+                    throw SchemaInitializationError(ex);
+                }
+                cancellationToken.ThrowIfCancellationRequested();
+                return operation(connection);
+            }, cancellationToken).ConfigureAwait(false);
+        }
+        finally { gate.Release(); }
+    }
+
+    private static InvalidOperationException SchemaInitializationError(Exception cause) => new(
+        "데이터베이스 준비에 실패하여 자동 재시도를 중단했습니다. 원본과 pre-schema2 백업을 확인한 뒤 앱을 다시 시작하세요. " + cause.Message,
+        cause);
+
+    private static void EnsureSchema(SqliteConnection connection)
+    {
+        using SqliteCommand command = connection.CreateCommand();
+        command.CommandText = "PRAGMA user_version;";
+        long version = (long)(command.ExecuteScalar() ?? 0L);
+        if (version > SchemaVersion)
+            throw new InvalidOperationException("이 데이터베이스는 더 새로운 AI Burger Clock 버전에서 생성되었습니다.");
+        if (version == SchemaVersion) return;
+
+        if (version == 1) BackupBeforeMigration(connection);
+
+        command.CommandText = "PRAGMA journal_mode=WAL;";
+        command.ExecuteScalar();
+        using SqliteTransaction transaction = connection.BeginTransaction();
+        command.Transaction = transaction;
+        // A different store/process may have migrated after the initial check.
+        // Recheck while holding SQLite's write transaction before ALTER TABLE.
+        command.CommandText = "PRAGMA user_version;";
+        version = (long)(command.ExecuteScalar() ?? 0L);
+        if (version > SchemaVersion)
+            throw new InvalidOperationException("이 데이터베이스는 더 새로운 AI Burger Clock 버전에서 생성되었습니다.");
+        if (version == SchemaVersion)
+        {
+            transaction.Commit();
+            return;
+        }
+        if (version == 0)
+        {
+            command.CommandText = """
+            CREATE TABLE IF NOT EXISTS AppMetadata(Key TEXT PRIMARY KEY, Value TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS UsageEvents(
+              EventId TEXT PRIMARY KEY, Provider TEXT NOT NULL, EventType TEXT NOT NULL,
+              TimestampUtc TEXT NOT NULL, ScheduleState TEXT NOT NULL,
+              WeekendExtendedFullThrottle INTEGER NOT NULL, EasternUtcOffsetMinutes INTEGER NOT NULL,
+              PacificUtcOffsetMinutes INTEGER NOT NULL, EasternIsDst INTEGER NOT NULL, PacificIsDst INTEGER NOT NULL,
+              SchedulePolicyVersion TEXT NOT NULL, OfficialStatus TEXT NOT NULL, EffectiveRecommendation TEXT NOT NULL,
+              RelevantComponent TEXT NOT NULL, IncidentId TEXT NOT NULL, UserNote TEXT NOT NULL, AppVersion TEXT NOT NULL);
+            CREATE INDEX IF NOT EXISTS IX_UsageEvents_Timestamp ON UsageEvents(TimestampUtc);
+            CREATE INDEX IF NOT EXISTS IX_UsageEvents_ProviderTimestamp ON UsageEvents(Provider,TimestampUtc);
+            CREATE TABLE IF NOT EXISTS ProviderStatusHistory(
+              StatusId INTEGER PRIMARY KEY AUTOINCREMENT, Provider TEXT NOT NULL, CheckedAtUtc TEXT NOT NULL,
+              OfficialStatus TEXT NOT NULL, EffectiveRecommendation TEXT NOT NULL, RelevantComponent TEXT NOT NULL,
+              IncidentId TEXT NOT NULL, IncidentTitle TEXT NOT NULL, ScheduleStateAtCheck TEXT NOT NULL,
+              LastSuccessfulCheckUtc TEXT, Source TEXT NOT NULL, Reason TEXT NOT NULL, LastKnownStatus TEXT);
+            CREATE INDEX IF NOT EXISTS IX_StatusHistory_ProviderStatusId ON ProviderStatusHistory(Provider,StatusId DESC);
+            CREATE INDEX IF NOT EXISTS IX_StatusHistory_Checked ON ProviderStatusHistory(CheckedAtUtc);
+            CREATE TABLE IF NOT EXISTS ProviderStatusCache(
+              Provider TEXT PRIMARY KEY, CheckedAtUtc TEXT NOT NULL, OfficialStatus TEXT NOT NULL,
+              EffectiveRecommendation TEXT NOT NULL, RelevantComponent TEXT NOT NULL, IncidentId TEXT NOT NULL,
+              IncidentTitle TEXT NOT NULL, ScheduleStateAtCheck TEXT NOT NULL, LastSuccessfulCheckUtc TEXT,
+              Source TEXT NOT NULL, Reason TEXT NOT NULL, LastKnownStatus TEXT);
+            """;
+            command.ExecuteNonQuery();
+        }
+        // Additive v1 -> v2 migration. NULL deliberately means the old event did
+        // not record this setting: historical classifications are never guessed.
+        command.CommandText = """
+            ALTER TABLE UsageEvents ADD COLUMN HolidayAdjustmentEnabled INTEGER;
+            ALTER TABLE UsageEvents ADD COLUMN HolidayExtendedFullThrottle INTEGER NOT NULL DEFAULT 0;
+            ALTER TABLE UsageEvents ADD COLUMN HolidayNames TEXT NOT NULL DEFAULT '';
+            INSERT INTO AppMetadata(Key,Value) VALUES('SchemaVersion','2')
+              ON CONFLICT(Key) DO UPDATE SET Value=excluded.Value;
+            PRAGMA user_version=2;
+            """;
+        command.ExecuteNonQuery();
+        transaction.Commit();
+    }
+
+    private static void BackupBeforeMigration(SqliteConnection source)
+    {
+        // SQLite's online backup API includes committed WAL contents; copying
+        // only the .db file would not. Each migration attempt keeps a unique file.
+        string original = Path.GetFullPath(source.DataSource);
+        string backupPath = Path.Combine(Path.GetDirectoryName(original)!,
+            Path.GetFileNameWithoutExtension(original) + ".pre-schema2-" +
+            DateTimeOffset.UtcNow.ToString("yyyyMMddTHHmmssfff'Z'", CultureInfo.InvariantCulture) +
+            "-" + Guid.NewGuid().ToString("N") + ".db");
+        using (FileStream reserved = new(backupPath, FileMode.CreateNew, FileAccess.Write, FileShare.None)) { }
+        using SqliteConnection backup = new(new SqliteConnectionStringBuilder
+        {
+            DataSource = backupPath, Mode = SqliteOpenMode.ReadWrite, Pooling = false, DefaultTimeout = 5
+        }.ToString());
+        backup.Open();
+        source.BackupDatabase(backup);
+        using SqliteCommand check = backup.CreateCommand();
+        check.CommandText = "PRAGMA quick_check;";
+        if (!string.Equals(check.ExecuteScalar() as string, "ok", StringComparison.Ordinal))
+            throw new InvalidDataException("마이그레이션 전 데이터베이스 백업 검증에 실패했습니다.");
+    }
+
+    private static void AddProviderParameters(SqliteCommand command, ProviderStatus status,
+        ScheduleSnapshot schedule, Recommendation recommendation)
+    {
+        command.Parameters.AddWithValue("$provider", status.Provider.ToString());
+        command.Parameters.AddWithValue("$checked", Utc(status.CheckedAtUtc));
+        command.Parameters.AddWithValue("$official", status.Status.ToString());
+        command.Parameters.AddWithValue("$recommendation", recommendation.ToString());
+        command.Parameters.AddWithValue("$component", status.RelevantComponent);
+        command.Parameters.AddWithValue("$incident", status.IncidentId);
+        command.Parameters.AddWithValue("$title", status.IncidentTitle);
+        command.Parameters.AddWithValue("$schedule", schedule.State.ToString());
+        command.Parameters.AddWithValue("$success", status.LastSuccessfulCheckUtc.HasValue ? Utc(status.LastSuccessfulCheckUtc.Value) : DBNull.Value);
+        command.Parameters.AddWithValue("$source", status.Source);
+        command.Parameters.AddWithValue("$reason", status.Reason);
+        command.Parameters.AddWithValue("$known", (object?)status.LastKnownStatus?.ToString() ?? DBNull.Value);
+    }
+
+    private static string Utc(DateTimeOffset value) => value.UtcDateTime.ToString("yyyy-MM-dd'T'HH:mm:ss.fffffff'Z'", CultureInfo.InvariantCulture);
+    private static DateTimeOffset ParseUtc(string value) => DateTimeOffset.Parse(value, CultureInfo.InvariantCulture,
+        DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal);
+}
