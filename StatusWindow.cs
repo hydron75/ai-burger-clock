@@ -14,6 +14,7 @@ internal sealed class StatusWindow : Form
     private readonly ToolTip details = new() { AutoPopDelay = 25000 };
     private readonly Dictionary<ProviderKind, (Label Heading, Label Official, Label Reason)> rows = new();
     private readonly List<ContextMenuStrip> recordingMenus = new();
+    private readonly List<Font> fonts = new();
     private const string DefaultFeedback = "AI 상태 클릭: 공식 페이지 · 우클릭: 기록";
     private string shownStorageError = "";
     private bool updatingAutoStart;
@@ -40,7 +41,7 @@ internal sealed class StatusWindow : Form
         ShowInTaskbar = false;
         StartPosition = FormStartPosition.Manual;
         BackColor = Color.FromArgb(248, 249, 250);
-        Font = new Font("Segoe UI", 9F);
+        Font = OwnedFont(9F);
 
         AddLabel("AI AGENT TRAFFIC", 16, 10, 342, 18, 9F, FontStyle.Bold);
         stateLabel = AddLabel("", 14, 31, 345, 36, 18F, FontStyle.Bold);
@@ -51,9 +52,9 @@ internal sealed class StatusWindow : Form
         foreach (var provider in Enum.GetValues<ProviderKind>())
         {
             var panel = new Panel { Location = new Point(16, 146 + index++ * 72), Size = new Size(342, 66), BackColor = Color.White };
-            var heading = new Label { Location = new Point(8, 4), Size = new Size(326, 20), Font = new Font("Segoe UI", 10F, FontStyle.Bold) };
-            var official = new Label { Location = new Point(8, 25), Size = new Size(326, 17), Font = new Font("Segoe UI", 8.5F), AutoEllipsis = true };
-            var reason = new Label { Location = new Point(8, 44), Size = new Size(326, 17), Font = new Font("Segoe UI", 8.5F), AutoEllipsis = true, ForeColor = Color.DimGray };
+            var heading = new Label { Location = new Point(8, 4), Size = new Size(326, 20), Font = OwnedFont(10F, FontStyle.Bold) };
+            var official = new Label { Location = new Point(8, 25), Size = new Size(326, 17), Font = OwnedFont(8.5F), AutoEllipsis = true };
+            var reason = new Label { Location = new Point(8, 44), Size = new Size(326, 17), Font = OwnedFont(8.5F), AutoEllipsis = true, ForeColor = Color.DimGray };
             var menu = CreateRecordingMenu(provider, (p, e, note) => RecordRequested?.Invoke(p, e, note));
             recordingMenus.Add(menu);
             panel.ContextMenuStrip = menu;
@@ -112,9 +113,17 @@ internal sealed class StatusWindow : Form
         details.SetToolTip(control, control.AccessibleDescription);
     }
 
+    // Controls do not dispose fonts assigned to them; this window releases its own.
+    private Font OwnedFont(float size, FontStyle style = FontStyle.Regular)
+    {
+        var font = new Font("Segoe UI", size, style);
+        fonts.Add(font);
+        return font;
+    }
+
     private Label AddLabel(string text, int x, int y, int width, int height, float size, FontStyle style = FontStyle.Regular)
     {
-        var label = new Label { Text = text, Location = new Point(x, y), Size = new Size(width, height), Font = new Font("Segoe UI", size, style), ForeColor = Color.FromArgb(70, 70, 70) };
+        var label = new Label { Text = text, Location = new Point(x, y), Size = new Size(width, height), Font = OwnedFont(size, style), ForeColor = Color.FromArgb(70, 70, 70) };
         Controls.Add(label);
         return label;
     }
@@ -261,5 +270,7 @@ internal sealed class StatusWindow : Form
             foreach (var menu in recordingMenus) menu.Dispose();
         }
         base.Dispose(disposing);
+        if (disposing)
+            foreach (var font in fonts) font.Dispose(); // After the controls using them.
     }
 }

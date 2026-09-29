@@ -3,6 +3,7 @@ namespace AiBurgerClock;
 internal sealed class MeasurementDialog : Form
 {
     private readonly ComboBox eventType = new() { DropDownStyle = ComboBoxStyle.DropDownList, Dock = DockStyle.Fill };
+    private readonly Font formFont = new("Segoe UI", 9F); // Not disposed by the form itself.
     private readonly TextBox note = new() { Multiline = true, MaxLength = 1000, Dock = DockStyle.Fill, ScrollBars = ScrollBars.Vertical };
     public UsageEventType EventType => (UsageEventType)(eventType.SelectedItem ?? UsageEventType.Success);
     public string UserNote => note.Text.Trim();
@@ -18,7 +19,7 @@ internal sealed class MeasurementDialog : Form
         MaximizeBox = false;
         MinimizeBox = false;
         StartPosition = FormStartPosition.CenterScreen;
-        Font = new Font("Segoe UI", 9F);
+        Font = formFont;
         var layout = new TableLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(12), RowCount = 5, ColumnCount = 1 };
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 28));
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 36));
@@ -43,5 +44,11 @@ internal sealed class MeasurementDialog : Form
         CancelButton = cancel;
         ResumeLayout(false);
         PerformLayout();
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        base.Dispose(disposing);
+        if (disposing) formFont.Dispose();
     }
 }

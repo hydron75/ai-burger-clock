@@ -101,6 +101,7 @@ internal sealed class StatisticsWindow : Form
     private readonly Label summary;
     private readonly Dictionary<string, DataGridView> grids = [];
     private readonly CancellationTokenSource lifetime = new();
+    private readonly Font formFont = new("Segoe UI", 9F); // Not disposed by the form itself.
     private bool loading;
 
     public StatisticsWindow(UsageStore store, Func<DateTimeOffset>? utcNow = null)
@@ -114,7 +115,7 @@ internal sealed class StatisticsWindow : Form
         ClientSize = new Size(860, 525);
         MinimumSize = new Size(720, 420);
         StartPosition = FormStartPosition.CenterScreen;
-        Font = new Font("Segoe UI", 9F);
+        Font = formFont;
         BackColor = Color.FromArgb(248, 249, 250);
 
         TableLayoutPanel layout = new()
@@ -217,6 +218,12 @@ internal sealed class StatisticsWindow : Form
             loading = false;
             if (!IsDisposed) period.Enabled = refresh.Enabled = true;
         }
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        base.Dispose(disposing);
+        if (disposing) formFont.Dispose();
     }
 
     private static void Fill(DataGridView grid, IReadOnlyList<StatisticsRow> rows)
