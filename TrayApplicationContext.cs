@@ -36,6 +36,8 @@ namespace AiBurgerClock
         private readonly RecommendationNotifications providerNotifications = new();
         private int providerNotificationSerial;
         private int providerRefreshQueued;
+        private long lastNetworkRefreshTick;
+        internal static readonly TimeSpan NetworkRefreshMinimumInterval = TimeSpan.FromMinutes(1);
         private readonly Action<Uri> openStatusPage;
         private volatile bool holidayAdjustmentEnabled;
         private bool holidaySettingsReady;
@@ -279,8 +281,18 @@ namespace AiBurgerClock
 
         internal void OnNetworkAvailabilityChanged(object? sender, NetworkAvailabilityEventArgs e)
         {
-            if (e.IsAvailable && !exiting && !disposed)
+            if (e.IsAvailable && !exiting && !disposed &&
+                TryClaimNetworkRefresh(ref lastNetworkRefreshTick, Environment.TickCount64))
                 RefreshAll(queueWhileRefreshing: true);
+        }
+
+        // Adapters (VPN, virtual switches) can flap, and each refresh starts both quota CLIs.
+        // Raised off the UI thread; at most one network-triggered refresh per minute.
+        internal static bool TryClaimNetworkRefresh(ref long lastTick, long nowTick)
+        {
+            long last = Interlocked.Read(ref lastTick);
+            if (last != 0 && nowTick - last < (long)NetworkRefreshMinimumInterval.TotalMilliseconds) return false;
+            return Interlocked.CompareExchange(ref lastTick, nowTick, last) == last;
         }
 
         private void RefreshAll(bool queueWhileRefreshing = false)
