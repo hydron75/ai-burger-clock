@@ -53,37 +53,48 @@ internal sealed class UsageStore(string? databasePath = null)
     public Task AddUsageAsync(UsageMeasurement item, CancellationToken cancellationToken = default) =>
         AddUsageBatchAsync([item], cancellationToken);
 
+    // Each column sits next to its value, so adding a column cannot misalign parameters.
+    private static readonly (string Column, Func<UsageMeasurement, object> Value)[] UsageColumns =
+    [
+        ("EventId", item => item.EventId),
+        ("Provider", item => item.Provider.ToString()),
+        ("EventType", item => item.EventType.ToString()),
+        ("TimestampUtc", item => Utc(item.TimestampUtc)),
+        ("ScheduleState", item => item.ScheduleState.ToString()),
+        ("WeekendExtendedFullThrottle", item => item.WeekendExtendedFullThrottle),
+        ("EasternUtcOffsetMinutes", item => item.EasternUtcOffsetMinutes),
+        ("PacificUtcOffsetMinutes", item => item.PacificUtcOffsetMinutes),
+        ("EasternIsDst", item => item.EasternIsDst),
+        ("PacificIsDst", item => item.PacificIsDst),
+        ("SchedulePolicyVersion", item => item.SchedulePolicyVersion),
+        ("OfficialStatus", item => item.OfficialStatus.ToString()),
+        ("EffectiveRecommendation", item => item.EffectiveRecommendation.ToString()),
+        ("RelevantComponent", item => item.RelevantComponent),
+        ("IncidentId", item => item.IncidentId),
+        ("UserNote", item => item.UserNote),
+        ("AppVersion", item => item.AppVersion),
+        ("HolidayAdjustmentEnabled", item => (object?)item.HolidayAdjustmentEnabled ?? DBNull.Value),
+        ("HolidayExtendedFullThrottle", item => item.HolidayExtendedFullThrottle),
+        ("HolidayNames", item => item.HolidayNames),
+    ];
+
+    private static readonly string InsertUsageSql =
+        "INSERT INTO UsageEvents(" + string.Join(",", UsageColumns.Select(c => c.Column)) +
+        ") VALUES(" + string.Join(",", UsageColumns.Select(c => "$" + c.Column)) + ");";
+
     internal Task AddUsageBatchAsync(IReadOnlyList<UsageMeasurement> items, CancellationToken cancellationToken = default) =>
         ExecuteAsync(connection =>
         {
             using SqliteTransaction transaction = connection.BeginTransaction();
             using SqliteCommand command = connection.CreateCommand();
             command.Transaction = transaction;
-            command.CommandText = """
-                INSERT INTO UsageEvents(EventId,Provider,EventType,TimestampUtc,ScheduleState,
-                  WeekendExtendedFullThrottle,EasternUtcOffsetMinutes,PacificUtcOffsetMinutes,
-                  EasternIsDst,PacificIsDst,SchedulePolicyVersion,OfficialStatus,
-                  EffectiveRecommendation,RelevantComponent,IncidentId,UserNote,AppVersion,
-                  HolidayAdjustmentEnabled,HolidayExtendedFullThrottle,HolidayNames)
-                VALUES($id,$provider,$type,$time,$schedule,$weekend,$eastOffset,$westOffset,
-                  $eastDst,$westDst,$policy,$official,$recommendation,$component,$incident,$note,$version,
-                  $holidayEnabled,$holidayExtended,$holidayNames);
-                """;
-            foreach (string name in new[] { "$id", "$provider", "$type", "$time", "$schedule", "$weekend",
-                "$eastOffset", "$westOffset", "$eastDst", "$westDst", "$policy", "$official",
-                "$recommendation", "$component", "$incident", "$note", "$version",
-                "$holidayEnabled", "$holidayExtended", "$holidayNames" })
-                command.Parameters.Add(new SqliteParameter(name, null));
+            command.CommandText = InsertUsageSql;
+            foreach (var (column, _) in UsageColumns)
+                command.Parameters.Add(new SqliteParameter("$" + column, null));
             foreach (UsageMeasurement item in items)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                object[] values = [item.EventId, item.Provider.ToString(), item.EventType.ToString(), Utc(item.TimestampUtc),
-                    item.ScheduleState.ToString(), item.WeekendExtendedFullThrottle, item.EasternUtcOffsetMinutes,
-                    item.PacificUtcOffsetMinutes, item.EasternIsDst, item.PacificIsDst, item.SchedulePolicyVersion,
-                    item.OfficialStatus.ToString(), item.EffectiveRecommendation.ToString(), item.RelevantComponent,
-                    item.IncidentId, item.UserNote, item.AppVersion,
-                    (object?)item.HolidayAdjustmentEnabled ?? DBNull.Value, item.HolidayExtendedFullThrottle, item.HolidayNames];
-                for (int i = 0; i < values.Length; i++) command.Parameters[i].Value = values[i];
+                for (int i = 0; i < UsageColumns.Length; i++) command.Parameters[i].Value = UsageColumns[i].Value(item);
                 command.ExecuteNonQuery();
             }
             cancellationToken.ThrowIfCancellationRequested();
@@ -248,10 +259,7 @@ internal sealed class UsageStore(string? databasePath = null)
     private static void EnsureSchema(SqliteConnection connection)
     {
         using SqliteCommand command = connection.CreateCommand();
-        command.CommandText = "PRAGMA user_version;";
-        long version = (long)(command.ExecuteScalar() ?? 0L);
-        if (version > SchemaVersion)
-            throw new InvalidOperationException("이 데이터베이스는 더 새로운 AI Burger Clock 버전에서 생성되었습니다.");
+        long version = ReadSchemaVersion(command);
         if (version == SchemaVersion) return;
 
         if (version == 1) BackupBeforeMigration(connection);
@@ -262,10 +270,7 @@ internal sealed class UsageStore(string? databasePath = null)
         command.Transaction = transaction;
         // A different store/process may have migrated after the initial check.
         // Recheck while holding SQLite's write transaction before ALTER TABLE.
-        command.CommandText = "PRAGMA user_version;";
-        version = (long)(command.ExecuteScalar() ?? 0L);
-        if (version > SchemaVersion)
-            throw new InvalidOperationException("이 데이터베이스는 더 새로운 AI Burger Clock 버전에서 생성되었습니다.");
+        version = ReadSchemaVersion(command);
         if (version == SchemaVersion)
         {
             transaction.Commit();
@@ -311,6 +316,16 @@ internal sealed class UsageStore(string? databasePath = null)
             """;
         command.ExecuteNonQuery();
         transaction.Commit();
+    }
+
+    // Reads PRAGMA user_version and refuses a database written by a newer app version.
+    private static long ReadSchemaVersion(SqliteCommand command)
+    {
+        command.CommandText = "PRAGMA user_version;";
+        long version = (long)(command.ExecuteScalar() ?? 0L);
+        if (version > SchemaVersion)
+            throw new InvalidOperationException("이 데이터베이스는 더 새로운 AI Burger Clock 버전에서 생성되었습니다.");
+        return version;
     }
 
     private static void BackupBeforeMigration(SqliteConnection source)
