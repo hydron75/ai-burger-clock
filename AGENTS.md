@@ -8,7 +8,7 @@ AI Burger Clock 저장소에서 코드를 고치는 사람과 에이전트를 �
 - SDK는 `global.json` 기준 10.0.100 이상, 같은 10.0의 최신 기능 밴드를 허용합니다. 미리보기 SDK는 쓰지 않습니다.
 - 직접 NuGet 의존성은 `Microsoft.Data.Sqlite 10.0.12` 하나입니다. 새 의존성은 추가하지 않는 것을 기본으로 합니다.
 - 배포본은 framework-dependent 단일 EXE입니다. .NET 10 Desktop Runtime x64가 별도로 필요하며 trimming과 NativeAOT는 쓰지 않습니다.
-- Linux·macOS에서는 빌드와 검사를 실행할 수 없습니다.
+- Linux·macOS에서는 `--self-test`·`--smoke-test`를 실행할 수 없습니다. 컴파일 확인은 `dotnet build -c Release -warnaserror -p:EnableWindowsTargeting=true`로 할 수 있습니다(Linux에서 확인).
 
 ## 빌드
 
@@ -51,10 +51,10 @@ Windows 빌드와 검사는 ChatGPT에서 진행합니다. 코드를 고치는 �
 
 ## 작업을 마칠 때: 버전 기록
 
-지금까지의 작업(2.0.0, 2.0.1, 2.0.2, 2.1.0)은 다음 방식으로 기록했습니다.
+지금까지의 작업(2.0.0, 2.0.1, 2.0.2, 2.1.0, 2.1.1, 2.1.2)은 다음 방식으로 기록했습니다.
 
 1. **버전 올리기:** [AiBurgerClock.csproj](AiBurgerClock.csproj)의 `Version`, `AssemblyVersion`, `FileVersion`을 함께 바꿉니다. 버전은 이 파일에서만 관리합니다.
-2. **작업 기록 문서 만들기:** 루트에 작업별 Markdown을 새로 만듭니다. 예: [PHASE2.md](PHASE2.md)(2.0.0), [STATUS_LINKS.md](STATUS_LINKS.md)(2.0.1), [AUTOSTART_FIX.md](AUTOSTART_FIX.md)(2.0.2), [HOLIDAYS_TRAY.md](HOLIDAYS_TRAY.md)(2.1.0). 제목에 버전을 적고 다음을 담습니다.
+2. **작업 기록 문서 만들기:** 루트에 작업별 Markdown을 새로 만듭니다. 예: [PHASE2.md](PHASE2.md)(2.0.0), [STATUS_LINKS.md](STATUS_LINKS.md)(2.0.1), [AUTOSTART_FIX.md](AUTOSTART_FIX.md)(2.0.2), [HOLIDAYS_TRAY.md](HOLIDAYS_TRAY.md)(2.1.0), [RELIABILITY_FIX.md](RELIABILITY_FIX.md)(2.1.1), [MAINTENANCE_2_1_2.md](MAINTENANCE_2_1_2.md)(2.1.2). 제목에 버전을 적고 다음을 담습니다.
    - 동작 또는 수정 범위, 원인.
    - 변경 파일: 기존 수정 / 신규로 나눈 목록.
    - 검증 결과: SDK 버전, 경고·오류 수, 자체 검사 assertion 수와 종료 코드, smoke 결과, 로그 위치(`artifacts/<작업명>/`).
