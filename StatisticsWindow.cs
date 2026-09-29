@@ -95,6 +95,7 @@ internal static class StatisticsAnalysis
 internal sealed class StatisticsWindow : Form
 {
     private readonly UsageStore store;
+    private readonly Func<DateTimeOffset> utcNow;
     private readonly ComboBox period;
     private readonly Button refresh;
     private readonly Label summary;
@@ -102,10 +103,11 @@ internal sealed class StatisticsWindow : Form
     private readonly CancellationTokenSource lifetime = new();
     private bool loading;
 
-    public StatisticsWindow(UsageStore store)
+    public StatisticsWindow(UsageStore store, Func<DateTimeOffset>? utcNow = null)
     {
         SuspendLayout();
         this.store = store;
+        this.utcNow = utcNow ?? (() => DateTimeOffset.UtcNow);
         Text = "AI Burger Clock · Statistics";
         AutoScaleDimensions = new SizeF(96F, 96F);
         AutoScaleMode = AutoScaleMode.Dpi;
@@ -192,7 +194,7 @@ internal sealed class StatisticsWindow : Form
         try
         {
             CancellationToken token = lifetime.Token;
-            DateTimeOffset? since = StatisticsAnalysis.SinceUtc(period.SelectedIndex, DateTimeOffset.UtcNow);
+            DateTimeOffset? since = StatisticsAnalysis.SinceUtc(period.SelectedIndex, utcNow());
             (IReadOnlyList<UsageMeasurement> items, int skipped) = await store.ReadUsageWithSkippedAsync(since, token);
             StatisticsReport report = await Task.Run(() => StatisticsAnalysis.Build(items, token), token);
             if (IsDisposed || token.IsCancellationRequested) return;

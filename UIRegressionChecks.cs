@@ -182,6 +182,8 @@ internal static class UIRegressionChecks
         context.ShowStatistics();
         var statistics = Application.OpenForms.OfType<StatisticsWindow>().Single();
         await WaitUntilAsync(() => Task.FromResult(Descendants(statistics).OfType<Label>().Any(l => l.Text.StartsWith("직접 기록한 표본 n = "))));
+        Check(Descendants(statistics).OfType<Label>().Any(l => l.Text.StartsWith("직접 기록한 표본 n = 13 ")),
+            "Statistics 7-day period uses the app clock, not the real date");
         var period = Descendants(statistics).OfType<ComboBox>().Single();
         for (int index = 0; index < 3; index++)
         {

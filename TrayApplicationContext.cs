@@ -121,7 +121,7 @@ namespace AiBurgerClock
                     AutomaticDecompression = System.Net.DecompressionMethods.GZip | System.Net.DecompressionMethods.Deflate
                 }) { Timeout = StatusMonitor.RequestTimeout };
                 httpClient.DefaultRequestHeaders.UserAgent.ParseAdd("AI-Burger-Clock/2.0");
-                monitor = new StatusMonitor(new ProviderStatusClient(httpClient), store, this.utcNow, scheduleAt: GetSchedule);
+                monitor = new StatusMonitor(new ProviderStatusClient(httpClient, this.utcNow), store, this.utcNow, scheduleAt: GetSchedule);
                 _ = statusWindow.Handle; // Hidden marshal target; polling never touches WinForms from worker threads.
                 monitor.Changed += OnProviderChanged;
                 SystemEvents.PowerModeChanged += OnPowerModeChanged;
@@ -362,7 +362,7 @@ namespace AiBurgerClock
             if (exiting) return;
             if (statisticsWindow is null || statisticsWindow.IsDisposed)
             {
-                statisticsWindow = new StatisticsWindow(store);
+                statisticsWindow = new StatisticsWindow(store, utcNow);
                 statisticsWindow.FormClosed += (_, _) => statisticsWindow = null;
             }
             statisticsWindow.Show();

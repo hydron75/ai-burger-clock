@@ -6,8 +6,11 @@ using System.Text.RegularExpressions;
 namespace AiBurgerClock;
 
 /// <summary>Reads only public, structured official feeds. Owns neither HttpClient nor its lifetime.</summary>
-internal sealed class ProviderStatusClient(HttpClient client)
+internal sealed class ProviderStatusClient(HttpClient client, Func<DateTimeOffset>? utcNow = null)
 {
+    // Incident begin/end comparisons use the same injected clock as the rest of the app.
+    private readonly Func<DateTimeOffset> clock = utcNow ?? (() => DateTimeOffset.UtcNow);
+
     internal const string OpenAiSummaryUrl = "https://status.openai.com/api/v2/summary.json";
     internal const string OpenAiIncidentsUrl = "https://status.openai.com/api/v2/incidents.json";
     internal const string ClaudeSummaryUrl = "https://status.claude.com/api/v2/summary.json";
@@ -43,7 +46,7 @@ internal sealed class ProviderStatusClient(HttpClient client)
             var incidents = GetJsonAsync(GoogleIncidentsUrl, token);
             await Task.WhenAll(catalog, incidents).ConfigureAwait(false);
             token.ThrowIfCancellationRequested();
-            return ParseGoogle(catalog.Result, incidents.Result, DateTimeOffset.UtcNow);
+            return ParseGoogle(catalog.Result, incidents.Result, clock());
         }
 
         var url = provider switch
@@ -63,7 +66,7 @@ internal sealed class ProviderStatusClient(HttpClient client)
             supplemented = true;
         }
         token.ThrowIfCancellationRequested();
-        var result = ParseStatuspage(provider, json, DateTimeOffset.UtcNow);
+        var result = ParseStatuspage(provider, json, clock());
         return supplemented ? result with { Source = url + " + " + OpenAiIncidentsUrl } : result;
     }
 
