@@ -143,7 +143,28 @@ internal static class StorageTests
         Check((await store.ReadUsageAsync(null)).Count == 0 && (await store.ReadLatestStatusesAsync()).Count == 0, "deleted DB recreates cleanly on same store");
         await store.AddUsageAsync(fixtures[0]);
         Check((await new UsageStore(path).ReadUsageAsync(null)).Count == 1, "recreated database remains usable");
+
+        // Rows this version cannot interpret (unknown or numeric enum text) must not break reads.
+        const string usageColumns = "EventType,TimestampUtc,ScheduleState,WeekendExtendedFullThrottle,EasternUtcOffsetMinutes,PacificUtcOffsetMinutes,EasternIsDst,PacificIsDst,SchedulePolicyVersion,OfficialStatus,EffectiveRecommendation,RelevantComponent,IncidentId,UserNote,AppVersion,HolidayAdjustmentEnabled,HolidayExtendedFullThrottle,HolidayNames";
+        Execute(path, $"INSERT INTO UsageEvents(EventId,Provider,{usageColumns}) SELECT 'unknown-provider','FutureProvider',{usageColumns} FROM UsageEvents LIMIT 1;" +
+            $"INSERT INTO UsageEvents(EventId,Provider,{usageColumns}) SELECT 'numeric-provider','7',{usageColumns} FROM UsageEvents LIMIT 1;" +
+            "INSERT INTO ProviderStatusCache(Provider,CheckedAtUtc,OfficialStatus,EffectiveRecommendation,RelevantComponent,IncidentId," +
+            "IncidentTitle,ScheduleStateAtCheck,LastSuccessfulCheckUtc,Source,Reason,LastKnownStatus) VALUES('FutureProvider'," +
+            "'2026-09-19T00:00:00.0000000Z','Operational','Go','','','','FullThrottle',NULL,'','',NULL);");
+        var (readable, skipped) = await store.ReadUsageWithSkippedAsync(null);
+        Check(readable.Count == 1 && skipped == 2, "unreadable usage rows are skipped and counted");
+        Check((await store.ReadUsageAsync(null)).Count == 1, "usage read continues past unreadable rows");
+        Check((await store.ReadLatestStatusesAsync()).Count == 0, "unreadable cached status row is skipped");
         return assertions + await HolidayStorageTests.RunAsync(tempDirectory);
+    }
+
+    private static void Execute(string path, string sql)
+    {
+        using SqliteConnection connection = new(new SqliteConnectionStringBuilder { DataSource = path, Pooling = false }.ToString());
+        connection.Open();
+        using SqliteCommand command = connection.CreateCommand();
+        command.CommandText = sql;
+        command.ExecuteNonQuery();
     }
 
     private static long Scalar(string path, string sql)

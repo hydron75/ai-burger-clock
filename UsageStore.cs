@@ -91,8 +91,14 @@ internal sealed class UsageStore(string? databasePath = null)
             return true;
         }, cancellationToken);
 
-    public Task<IReadOnlyList<UsageMeasurement>> ReadUsageAsync(DateTimeOffset? sinceUtc,
-        CancellationToken cancellationToken = default) => ExecuteAsync<IReadOnlyList<UsageMeasurement>>(connection =>
+    public async Task<IReadOnlyList<UsageMeasurement>> ReadUsageAsync(DateTimeOffset? sinceUtc,
+        CancellationToken cancellationToken = default) =>
+        (await ReadUsageWithSkippedAsync(sinceUtc, cancellationToken).ConfigureAwait(false)).Rows;
+
+    // A row this version cannot interpret (e.g. written by a newer version) is skipped
+    // and counted instead of failing every statistics read.
+    public Task<(IReadOnlyList<UsageMeasurement> Rows, int Skipped)> ReadUsageWithSkippedAsync(DateTimeOffset? sinceUtc,
+        CancellationToken cancellationToken = default) => ExecuteAsync<(IReadOnlyList<UsageMeasurement>, int)>(connection =>
         {
             using SqliteCommand command = connection.CreateCommand();
             command.CommandText = """
@@ -105,18 +111,23 @@ internal sealed class UsageStore(string? databasePath = null)
             if (sinceUtc.HasValue) command.Parameters.AddWithValue("$since", Utc(sinceUtc.Value));
             using SqliteDataReader reader = command.ExecuteReader();
             List<UsageMeasurement> rows = [];
+            int skipped = 0;
             while (reader.Read())
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                rows.Add(new UsageMeasurement(reader.GetString(0), Enum.Parse<ProviderKind>(reader.GetString(1)),
-                    Enum.Parse<UsageEventType>(reader.GetString(2)), ParseUtc(reader.GetString(3)),
-                    Enum.Parse<AgentState>(reader.GetString(4)), reader.GetBoolean(5), reader.GetInt32(6),
-                    reader.GetInt32(7), reader.GetBoolean(8), reader.GetBoolean(9), reader.GetString(10),
-                    Enum.Parse<OfficialStatus>(reader.GetString(11)), Enum.Parse<Recommendation>(reader.GetString(12)),
-                    reader.GetString(13), reader.GetString(14), reader.GetString(15), reader.GetString(16),
-                    reader.IsDBNull(17) ? null : reader.GetBoolean(17), reader.GetBoolean(18), reader.GetString(19)));
+                try
+                {
+                    rows.Add(new UsageMeasurement(reader.GetString(0), ParseName<ProviderKind>(reader.GetString(1)),
+                        ParseName<UsageEventType>(reader.GetString(2)), ParseUtc(reader.GetString(3)),
+                        ParseName<AgentState>(reader.GetString(4)), reader.GetBoolean(5), reader.GetInt32(6),
+                        reader.GetInt32(7), reader.GetBoolean(8), reader.GetBoolean(9), reader.GetString(10),
+                        ParseName<OfficialStatus>(reader.GetString(11)), ParseName<Recommendation>(reader.GetString(12)),
+                        reader.GetString(13), reader.GetString(14), reader.GetString(15), reader.GetString(16),
+                        reader.IsDBNull(17) ? null : reader.GetBoolean(17), reader.GetBoolean(18), reader.GetString(19)));
+                }
+                catch (FormatException) { skipped++; }
             }
-            return rows;
+            return (rows, skipped);
         }, cancellationToken);
 
     public Task SaveProviderAsync(ProviderStatus status, ScheduleSnapshot schedule, Recommendation recommendation,
@@ -177,11 +188,16 @@ internal sealed class UsageStore(string? databasePath = null)
             while (reader.Read())
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                rows.Add(new ProviderStatus(Enum.Parse<ProviderKind>(reader.GetString(0)),
-                    Enum.Parse<OfficialStatus>(reader.GetString(1)), ParseUtc(reader.GetString(2)),
-                    reader.IsDBNull(3) ? null : ParseUtc(reader.GetString(3)), reader.GetString(4), reader.GetString(5),
-                    reader.GetString(6), reader.GetString(7), reader.GetString(8),
-                    reader.IsDBNull(9) ? null : Enum.Parse<OfficialStatus>(reader.GetString(9))));
+                // An unreadable cache row is only a missing cache entry; the next poll replaces it.
+                try
+                {
+                    rows.Add(new ProviderStatus(ParseName<ProviderKind>(reader.GetString(0)),
+                        ParseName<OfficialStatus>(reader.GetString(1)), ParseUtc(reader.GetString(2)),
+                        reader.IsDBNull(3) ? null : ParseUtc(reader.GetString(3)), reader.GetString(4), reader.GetString(5),
+                        reader.GetString(6), reader.GetString(7), reader.GetString(8),
+                        reader.IsDBNull(9) ? null : ParseName<OfficialStatus>(reader.GetString(9))));
+                }
+                catch (FormatException) { }
             }
             return rows;
         }, cancellationToken);
@@ -337,6 +353,11 @@ internal sealed class UsageStore(string? databasePath = null)
     }
 
     private static string Utc(DateTimeOffset value) => value.UtcDateTime.ToString("yyyy-MM-dd'T'HH:mm:ss.fffffff'Z'", CultureInfo.InvariantCulture);
+    // Values are stored with ToString(); numeric text such as "7" is not a known name.
+    private static T ParseName<T>(string value) where T : struct, Enum =>
+        Enum.IsDefined(typeof(T), value) ? Enum.Parse<T>(value)
+            : throw new FormatException($"알 수 없는 {typeof(T).Name} 값: {value}");
+
     private static DateTimeOffset ParseUtc(string value) => DateTimeOffset.Parse(value, CultureInfo.InvariantCulture,
         DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal);
 }

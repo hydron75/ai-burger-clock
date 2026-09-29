@@ -193,7 +193,7 @@ internal sealed class StatisticsWindow : Form
         {
             CancellationToken token = lifetime.Token;
             DateTimeOffset? since = StatisticsAnalysis.SinceUtc(period.SelectedIndex, DateTimeOffset.UtcNow);
-            IReadOnlyList<UsageMeasurement> items = await store.ReadUsageAsync(since, token);
+            (IReadOnlyList<UsageMeasurement> items, int skipped) = await store.ReadUsageWithSkippedAsync(since, token);
             StatisticsReport report = await Task.Run(() => StatisticsAnalysis.Build(items, token), token);
             if (IsDisposed || token.IsCancellationRequested) return;
             Fill(grids["providers"], report.Providers);
@@ -201,7 +201,8 @@ internal sealed class StatisticsWindow : Form
             Fill(grids["schedules"], report.Schedules);
             Fill(grids["official"], report.Official);
             Fill(grids["operationalHours"], report.OperationalHours);
-            summary.Text = $"직접 기록한 표본 n = {items.Count:N0} · 정책: {report.Policies}\n" +
+            summary.Text = $"직접 기록한 표본 n = {items.Count:N0} · 정책: {report.Policies}" +
+                (skipped > 0 ? $" · 읽을 수 없는 기록 {skipped:N0}건 제외" : "") + "\n" +
                 (items.Count == 0 ? "No data · Provider 행이나 트레이 메뉴에서 사용 경험을 기록하세요." : "각 탭에서 Provider·시간대·Schedule·공식 상태별 체감을 비교할 수 있습니다.");
         }
         catch (OperationCanceledException) { }
