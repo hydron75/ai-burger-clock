@@ -153,6 +153,9 @@ internal static class UIRegressionChecks
             e.PacificIsDst && e.WeekendExtendedFullThrottle && e.OfficialStatus == OfficialStatus.Operational &&
             e.EffectiveRecommendation == Recommendation.Go), "UI-recorded events capture schedule/DST/official/recommendation metadata");
 
+        using (var slowDialog = new MeasurementDialog(ProviderKind.Claude, UsageEventType.Slow))
+            Check(slowDialog.EventType == UsageEventType.Slow, "Note dialog preselects the requested event type");
+
         bool dialogFilled = false;
         using (var dialogTimer = new Timer { Interval = 100 })
         {

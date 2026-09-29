@@ -25,7 +25,8 @@ internal sealed class MeasurementDialog : Form
         layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 24));
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 32));
-        eventType.DataSource = Enum.GetValues<UsageEventType>();
+        // Items (not DataSource) so the initial type is selected before the form is shown.
+        eventType.Items.AddRange(Enum.GetValues<UsageEventType>().Cast<object>().ToArray());
         eventType.SelectedItem = initial;
         layout.Controls.Add(eventType, 0, 0);
         layout.Controls.Add(new Label { Text = "선택 메모 · 프롬프트/대화/계정 정보는 입력하지 마세요.", Dock = DockStyle.Fill, AutoSize = false }, 0, 1);
