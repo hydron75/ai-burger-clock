@@ -206,14 +206,14 @@ internal sealed class StatusWindow : Form
             };
             row.Official.Text = "Official: " + RecommendationPolicy.OfficialLabel(status.Status);
             row.Reason.Text = status.Reason;
-            string success = status.LastSuccessfulCheckUtc is { } time ? ToKst(time).ToString("MM-dd HH:mm:ss") + " KST" : "없음";
-            string attempted = status.CheckedAtUtc == DateTimeOffset.MinValue ? "없음" : ToKst(status.CheckedAtUtc).ToString("MM-dd HH:mm:ss") + " KST";
+            string success = status.LastSuccessfulCheckUtc is { } time ? AgentSchedule.ToKst(time).ToString("MM-dd HH:mm:ss") + " KST" : "없음";
+            string attempted = status.CheckedAtUtc == DateTimeOffset.MinValue ? "없음" : AgentSchedule.ToKst(status.CheckedAtUtc).ToString("MM-dd HH:mm:ss") + " KST";
             string detail = $"클릭: 공식 상태 페이지 열기 · 우클릭: 사용 경험 기록\n{status.Reason}\n최근 조회 시도: {attempted}\n마지막 상태 확인 성공: {success}\n관련: {status.RelevantComponent}\n사건: {status.IncidentTitle}\n사건 ID: {status.IncidentId}\n마지막 알려진 상태: {status.LastKnownStatus}\n{status.Source}";
             foreach (var label in new[] { row.Heading, row.Official, row.Reason }) SetDetail(label, detail);
         }
         var last = states.Select(s => s.CheckedAtUtc).DefaultIfEmpty(DateTimeOffset.MinValue).Max();
-        checkedLabel.Text = (last == DateTimeOffset.MinValue ? "최근 조회 시도: —" : $"최근 조회 시도: {ToKst(last):HH:mm:ss} KST") +
-            "\n" + (refreshing ? "공식 상태 확인 중…" : nextRefreshUtc is { } next ? $"다음 조회: {ToKst(next):HH:mm:ss} KST" : "다음 조회: —");
+        checkedLabel.Text = (last == DateTimeOffset.MinValue ? "최근 조회 시도: —" : $"최근 조회 시도: {AgentSchedule.ToKst(last):HH:mm:ss} KST") +
+            "\n" + (refreshing ? "공식 상태 확인 중…" : nextRefreshUtc is { } next ? $"다음 조회: {AgentSchedule.ToKst(next):HH:mm:ss} KST" : "다음 조회: —");
         refreshButton.Enabled = !refreshing;
         // Called every second: show a storage error only when it changes, so it does not
         // overwrite later save/setting feedback, and clear it once storage recovers.
@@ -257,7 +257,6 @@ internal sealed class StatusWindow : Form
 
     private static string Offset(int minutes) => $"UTC{(minutes >= 0 ? "+" : "-")}{Math.Abs(minutes) / 60}" +
         (minutes % 60 == 0 ? "" : $":{Math.Abs(minutes) % 60:00}");
-    private static DateTimeOffset ToKst(DateTimeOffset utc) => TimeZoneInfo.ConvertTimeBySystemTimeZoneId(utc, "Korea Standard Time");
     internal static string FormatRemaining(TimeSpan remaining) =>
         $"{Math.Max(0, (int)remaining.TotalHours):00}:{Math.Max(0, remaining.Minutes):00}:{Math.Max(0, remaining.Seconds):00}";
 

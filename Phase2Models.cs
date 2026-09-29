@@ -90,7 +90,7 @@ internal sealed record UsageMeasurement(
     bool HolidayExtendedFullThrottle = false,
     string HolidayNames = "")
 {
-    public DateTimeOffset TimestampKst => TimeZoneInfo.ConvertTimeBySystemTimeZoneId(TimestampUtc, "Korea Standard Time");
+    public DateTimeOffset TimestampKst => AgentSchedule.ToKst(TimestampUtc);
     public int KstHour => TimestampKst.Hour;
     public DayOfWeek KstDay => TimestampKst.DayOfWeek;
 }
