@@ -156,7 +156,7 @@ internal sealed class StatusWindow : Form
             autoStartCheckBox.Checked = status.IsEnabled;
             autoStartCheckBox.Text = status.Label;
             autoStartCheckBox.AccessibleDescription = status.Detail;
-            details.SetToolTip(autoStartCheckBox, status.Detail);
+            SetDetail(autoStartCheckBox, status.Detail);
         }
         finally { updatingAutoStart = false; }
     }
@@ -175,10 +175,10 @@ internal sealed class StatusWindow : Form
             _ => ""
         };
         nextLabel.Text = $"다음: {snapshot.NextTransitionKst:ddd HH:mm} KST" + extended;
-        details.SetToolTip(nextLabel, $"다음 전환: {snapshot.NextTransitionKst:yyyy-MM-dd HH:mm:ss} KST\n공휴일 보정: {(snapshot.HolidayAdjustmentEnabled ? "켜짐" : "꺼짐")}\n연장에 반영된 공휴일: {snapshot.HolidayNames}\n주말 여부와 공휴일 연장은 독립적으로 기록됩니다.");
+        SetDetail(nextLabel, $"다음 전환: {snapshot.NextTransitionKst:yyyy-MM-dd HH:mm:ss} KST\n공휴일 보정: {(snapshot.HolidayAdjustmentEnabled ? "켜짐" : "꺼짐")}\n연장에 반영된 공휴일: {snapshot.HolidayNames}\n주말 여부와 공휴일 연장은 독립적으로 기록됩니다.");
         string mode = snapshot.EasternIsDst == snapshot.PacificIsDst ? (snapshot.EasternIsDst ? "DST" : "Standard") : "Mixed DST";
         timeZoneLabel.Text = $"US: {mode} · ET {Offset(snapshot.EasternUtcOffsetMinutes)} / PT {Offset(snapshot.PacificUtcOffsetMinutes)}";
-        details.SetToolTip(timeZoneLabel, $"Eastern: {snapshot.EasternLocalTime:yyyy-MM-dd HH:mm zzz}\nPacific: {snapshot.PacificLocalTime:yyyy-MM-dd HH:mm zzz}\n정책: {snapshot.SchedulePolicyVersion}");
+        SetDetail(timeZoneLabel, $"Eastern: {snapshot.EasternLocalTime:yyyy-MM-dd HH:mm zzz}\nPacific: {snapshot.PacificLocalTime:yyyy-MM-dd HH:mm zzz}\n정책: {snapshot.SchedulePolicyVersion}");
     }
 
     public void UpdateProviders(IReadOnlyList<ProviderStatus> states, ScheduleSnapshot schedule, bool refreshing,
@@ -201,7 +201,7 @@ internal sealed class StatusWindow : Form
             string success = status.LastSuccessfulCheckUtc is { } time ? ToKst(time).ToString("MM-dd HH:mm:ss") + " KST" : "없음";
             string attempted = status.CheckedAtUtc == DateTimeOffset.MinValue ? "없음" : ToKst(status.CheckedAtUtc).ToString("MM-dd HH:mm:ss") + " KST";
             string detail = $"클릭: 공식 상태 페이지 열기 · 우클릭: 사용 경험 기록\n{status.Reason}\n최근 조회 시도: {attempted}\n마지막 상태 확인 성공: {success}\n관련: {status.RelevantComponent}\n사건: {status.IncidentTitle}\n사건 ID: {status.IncidentId}\n마지막 알려진 상태: {status.LastKnownStatus}\n{status.Source}";
-            foreach (var label in new[] { row.Heading, row.Official, row.Reason }) details.SetToolTip(label, detail);
+            foreach (var label in new[] { row.Heading, row.Official, row.Reason }) SetDetail(label, detail);
         }
         var last = states.Select(s => s.CheckedAtUtc).DefaultIfEmpty(DateTimeOffset.MinValue).Max();
         checkedLabel.Text = (last == DateTimeOffset.MinValue ? "최근 조회 시도: —" : $"최근 조회 시도: {ToKst(last):HH:mm:ss} KST") +
@@ -225,11 +225,17 @@ internal sealed class StatusWindow : Form
         finally { autoHideSuppressed--; }
     }
 
+    // UpdateStatus/UpdateProviders run every second; replace a tooltip only when its text changes.
+    private void SetDetail(Control control, string text)
+    {
+        if (details.GetToolTip(control) != text) details.SetToolTip(control, text);
+    }
+
     public void SetFeedback(string text, bool error = false)
     {
         feedbackLabel.Text = text;
         feedbackLabel.ForeColor = error ? Color.Firebrick : Color.DimGray;
-        details.SetToolTip(feedbackLabel, text);
+        SetDetail(feedbackLabel, text);
     }
 
     public void ShowNearTray()
