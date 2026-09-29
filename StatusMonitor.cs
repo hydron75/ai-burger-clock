@@ -80,7 +80,7 @@ internal sealed class StatusMonitor : IDisposable
                     lock (sync)
                         foreach (var state in cached)
                             states[state.Provider] = WithFreshness(state, utcNow());
-                    Changed?.Invoke();
+                    RaiseChanged();
                 }
                 catch (OperationCanceledException) when (lifetime.IsCancellationRequested) { return; }
                 catch (Exception error) { SetStorageError(error); }
@@ -89,7 +89,7 @@ internal sealed class StatusMonitor : IDisposable
             {
                 await RefreshOnceAsync(lifetime.Token).ConfigureAwait(false);
                 lock (sync) nextRefresh = utcNow() + interval;
-                Changed?.Invoke();
+                RaiseChanged();
                 await wake.WaitAsync(interval, lifetime.Token).ConfigureAwait(false);
             }
         }
@@ -104,14 +104,14 @@ internal sealed class StatusMonitor : IDisposable
         try
         {
             lock (sync) { refreshing = true; nextRefresh = null; }
-            Changed?.Invoke();
+            RaiseChanged();
             await Task.WhenAll(Enum.GetValues<ProviderKind>().Select(p => FetchOneAsync(p, linked.Token))).ConfigureAwait(false);
         }
         finally
         {
             lock (sync) refreshing = false;
             refreshGate.Release();
-            Changed?.Invoke();
+            RaiseChanged();
         }
     }
 
@@ -157,7 +157,7 @@ internal sealed class StatusMonitor : IDisposable
             catch (OperationCanceledException) when (token.IsCancellationRequested) { throw; }
             catch (Exception error) { SetStorageError(error); }
         }
-        Changed?.Invoke();
+        RaiseChanged();
     }
 
     private static ProviderStatus Failure(ProviderStatus previous, DateTimeOffset now, string reason) =>
@@ -172,6 +172,18 @@ internal sealed class StatusMonitor : IDisposable
             LastKnownStatus = previous.LastKnownStatus ??
                 (previous.Status is OfficialStatus.Unknown or OfficialStatus.Stale ? null : previous.Status)
         }, now);
+
+    // A failing display subscriber must not end background polling or make shutdown
+    // throw; the UI timer redraws from Snapshot() on its next tick.
+    private void RaiseChanged()
+    {
+        if (Changed is not { } handlers) return;
+        foreach (Action handler in handlers.GetInvocationList().Cast<Action>())
+        {
+            try { handler(); }
+            catch (Exception) { /* Isolated per subscriber. */ }
+        }
+    }
 
     private void SetStorageError(Exception error)
     {

@@ -162,6 +162,15 @@ internal static class MonitorTests
         await Task.Delay(150);
         Check(pollingHandler.RequestCount == stopped, "No polling after shutdown");
 
+        var faultyHandler = new TestStatusHttpHandler();
+        using var faultyHttp = new HttpClient(faultyHandler);
+        using var faulty = new StatusMonitor(new ProviderStatusClient(faultyHttp), pollInterval: TimeSpan.FromMilliseconds(100));
+        faulty.Changed += () => throw new InvalidOperationException("Synthetic subscriber failure");
+        faulty.Start();
+        await WaitUntilAsync(() => faultyHandler.RequestCount >= 8);
+        await faulty.StopAsync();
+        Check(faultyHandler.RequestCount >= 8, "Subscriber failure does not stop polling or shutdown");
+
         var blockedHandler = new TestStatusHttpHandler { Block = true };
         using var blockedHttp = new HttpClient(blockedHandler);
         using var blockedMonitor = new StatusMonitor(new ProviderStatusClient(blockedHttp));
