@@ -205,7 +205,7 @@ internal sealed class UsageStore(string? databasePath = null)
                 }.ToString());
                 connection.Open();
                 try { EnsureSchema(connection); }
-                catch (Exception ex) when (ex is SqliteException or IOException or UnauthorizedAccessException)
+                catch (Exception ex) when (LatchesSchemaFailure(ex))
                 {
                     // Polling must not repeatedly create whole-DB backups after a
                     // failed migration. The app owns one store; retry on restart.
@@ -218,6 +218,12 @@ internal sealed class UsageStore(string? databasePath = null)
         }
         finally { gate.Release(); }
     }
+
+    // A failed backup verification (InvalidDataException) must also stop retries;
+    // otherwise every poll would create another whole-DB backup. A newer schema is
+    // rejected before any backup, so that check remains safe to repeat.
+    internal static bool LatchesSchemaFailure(Exception ex) =>
+        ex is SqliteException or IOException or UnauthorizedAccessException or InvalidDataException;
 
     private static InvalidOperationException SchemaInitializationError(Exception cause) => new(
         "데이터베이스 준비에 실패하여 자동 재시도를 중단했습니다. 원본과 pre-schema2 백업을 확인한 뒤 앱을 다시 시작하세요. " + cause.Message,

@@ -158,6 +158,8 @@ internal static class HolidayStorageTests
             Check(retryStopped, "failed migration latched for store lifetime with restart guidance");
         }
         Check(Directory.EnumerateFiles(directory, "rollback.pre-schema2-*.db").Count() == 1, "repeated store operations after failure create no additional backup");
+        Check(UsageStore.LatchesSchemaFailure(new InvalidDataException()), "backup verification failure is latched like other migration failures");
+        Check(!UsageStore.LatchesSchemaFailure(new InvalidOperationException()), "future-schema rejection stays retryable without backup");
 
         string futurePath = Path.Combine(directory, "future.db");
         CreateVersionOne(futurePath);
