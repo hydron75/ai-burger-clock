@@ -19,12 +19,22 @@ internal sealed class StatusMonitor : IDisposable
     private Task? runner;
     private bool refreshing;
     private DateTimeOffset? nextRefresh;
-    private string storageError = "";
+    // Provider saves run concurrently; one provider's success must not hide another's failure.
+    private string cacheLoadError = "";
+    private readonly Dictionary<ProviderKind, string> saveErrors = new();
 
     public event Action? Changed;
     public bool IsRefreshing { get { lock (sync) return refreshing; } }
     public DateTimeOffset? NextRefreshUtc { get { lock (sync) return nextRefresh; } }
-    public string StorageError { get { lock (sync) return storageError; } }
+    public string StorageError
+    {
+        get
+        {
+            lock (sync)
+                return cacheLoadError.Length > 0 ? cacheLoadError
+                    : saveErrors.OrderBy(e => e.Key).Select(e => e.Value).FirstOrDefault() ?? "";
+        }
+    }
 
     public StatusMonitor(ProviderStatusClient client, UsageStore? store = null,
         Func<DateTimeOffset>? utcNow = null, TimeSpan? pollInterval = null,
@@ -86,7 +96,7 @@ internal sealed class StatusMonitor : IDisposable
                     RaiseChanged();
                 }
                 catch (OperationCanceledException) when (lifetime.IsCancellationRequested) { return; }
-                catch (Exception error) { SetStorageError(error); }
+                catch (Exception error) { lock (sync) cacheLoadError = StorageMessage(error); }
             }
             while (!lifetime.IsCancellationRequested)
             {
@@ -155,10 +165,10 @@ internal sealed class StatusMonitor : IDisposable
             {
                 var schedule = scheduleAt(result.CheckedAtUtc);
                 await store.SaveProviderAsync(result, schedule, RecommendationPolicy.Calculate(schedule.State, result.Status), token).ConfigureAwait(false);
-                lock (sync) storageError = "";
+                lock (sync) { saveErrors.Remove(provider); cacheLoadError = ""; }
             }
             catch (OperationCanceledException) when (token.IsCancellationRequested) { throw; }
-            catch (Exception error) { SetStorageError(error); }
+            catch (Exception error) { lock (sync) saveErrors[provider] = StorageMessage(error); }
         }
         RaiseChanged();
     }
@@ -188,10 +198,7 @@ internal sealed class StatusMonitor : IDisposable
         }
     }
 
-    private void SetStorageError(Exception error)
-    {
-        lock (sync) storageError = "로컬 저장 확인 필요: " + Short(error.Message);
-    }
+    private static string StorageMessage(Exception error) => "로컬 저장 확인 필요: " + Short(error.Message);
 
     private static string Short(string text) => text.Length <= 180 ? text : text[..180];
 
