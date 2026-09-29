@@ -17,6 +17,7 @@ internal sealed class StatusMonitor : IDisposable
     private readonly Dictionary<ProviderKind, ProviderStatus> states =
         Enum.GetValues<ProviderKind>().ToDictionary(p => p, p => ProviderStatus.Unknown(p));
     private Task? runner;
+    private bool disposed;
     private bool refreshing;
     private DateTimeOffset? nextRefresh;
     // Provider saves run concurrently; one provider's success must not hide another's failure.
@@ -213,8 +214,12 @@ internal sealed class StatusMonitor : IDisposable
 
     public void Dispose()
     {
+        if (disposed) return;
+        disposed = true;
         lifetime.Cancel();
         // Normal shutdown has awaited StopAsync before disposing owned HTTP resources.
+        // A still-running runner keeps using these; they hold no OS handles here (no
+        // CancelAfter, no AvailableWaitHandle), so leaving them to the GC is safe.
         if (runner is null || runner.IsCompleted)
         {
             lifetime.Dispose();

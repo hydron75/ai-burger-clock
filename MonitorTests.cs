@@ -161,6 +161,9 @@ internal static class MonitorTests
         int stopped = pollingHandler.RequestCount;
         await Task.Delay(150);
         Check(pollingHandler.RequestCount == stopped, "No polling after shutdown");
+        polling.Dispose();
+        polling.Dispose();
+        Check(true, "Monitor Dispose is idempotent");
 
         var faultyHandler = new TestStatusHttpHandler();
         using var faultyHttp = new HttpClient(faultyHandler);
