@@ -307,7 +307,13 @@ namespace AiBurgerClock
         private async void RecordMeasurement(ProviderKind provider, UsageEventType type, bool withNote)
         {
             if (exiting) return;
-            await initialization;
+            // async void: a faulted startup task must be reported here, not rethrown.
+            try { await initialization; }
+            catch (Exception error)
+            {
+                if (!disposed) statusWindow.SetFeedback("초기화 실패로 기록하지 못했습니다: " + error.Message, true);
+                return;
+            }
             if (exiting || disposed) return;
             var at = utcNow().ToUniversalTime();
             var schedule = GetSchedule(at);
@@ -457,7 +463,8 @@ namespace AiBurgerClock
             statisticsWindow?.Close();
             try
             {
-                await initialization;
+                try { await initialization; }
+                catch { /* A startup failure must not block exit or surface from async void. */ }
                 if (monitor is not null) await monitor.StopAsync();
                 try { await Task.WhenAll(pendingWrites.ToArray()); }
                 catch { /* Individual record handler already reports save failures. */ }
