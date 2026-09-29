@@ -41,6 +41,14 @@ AI Burger Clock 저장소에서 코드를 고치는 사람과 에이전트를 �
 - 새 검사는 [SelfTest.cs](SelfTest.cs) 또는 [SmokeTest.cs](SmokeTest.cs)에서 호출되는 경로에 연결해야 실행됩니다. 예: `HolidayStorageTests`는 `StorageTests`를 거쳐 호출됩니다.
 - 실행 명령 예시는 [CODE_GUIDE 13절](CODE_GUIDE.md#13-검사는-어떻게-실행하나요)에 있습니다.
 
+## 작업 흐름: PR과 Windows 검증
+
+Windows 빌드와 검사는 ChatGPT에서 진행합니다. 코드를 고치는 쪽은 PR을 올리고, ChatGPT에서 그 PR로 빌드와 검사를 합니다.
+
+- **PR을 올리는 쪽:** 브랜치에 커밋·푸시하고 PR을 만듭니다. PR 본문에는 자기 환경에서 실제로 확인한 것만 적고, Windows에서 확인할 항목(새 검사, UI 변경 등)을 따로 적습니다.
+- **Windows 검증:** ChatGPT에서 PR HEAD로 `build.ps1`, `--self-test`, `--smoke-test` 등을 실행하고 결과를 PR 코멘트로 남깁니다. 후속 수정은 이 결과를 기준으로 판단합니다.
+- 아래 버전 기록은 Windows 검증 결과(SDK 버전, assertion 수, 최종 EXE 해시 등)가 필요하므로 PR을 올리는 단계에서는 하지 않습니다.
+
 ## 작업을 마칠 때: 버전 기록
 
 지금까지의 작업(2.0.0, 2.0.1, 2.0.2, 2.1.0)은 다음 방식으로 기록했습니다.
