@@ -1,6 +1,6 @@
 # 소스코드, 쉬운 말로 읽기
 
-AI Burger Clock 2.2.0 기준입니다. 사용법부터 보고 싶다면 [README](README.md)로 돌아가세요.
+AI Burger Clock 2.2.1 기준입니다. 사용법부터 보고 싶다면 [README](README.md)로 돌아가세요.
 
 코드를 한 줄씩 번역한 문서는 아닙니다. **각 파일이 무엇을 맡고, 서로 어떻게 연결되는지** 설명합니다. 직접 작성한 C# 파일 41개와 빌드 설정을 모두 다룹니다. 컴퓨터가 만든 `bin`·`obj` 안의 코드는 대상에서 뺍니다.
 
@@ -312,9 +312,9 @@ Windows 내부 승인 형식은 알려진 경우만 해석합니다. 낯선 값�
 | [AutoStartManager.cs](AutoStartManager.cs) | Windows 자동 시작 등록과 상태 판정 |
 | [AccountQuotaModels.cs](AccountQuotaModels.cs) | 한도 Provider·기간·사용률·리셋 시각과 조회 약속 |
 | [AccountQuotaParsers.cs](AccountQuotaParsers.cs) | 서로 다른 공식 CLI JSON을 검증한 공통 한도로 변환 |
-| [AccountQuotaClient.cs](AccountQuotaClient.cs) | 설치된 native CLI 실행, 제한시간·출력 크기·취소·모델 호출 없는 결과 확인 |
-| [AccountQuotaPolicy.cs](AccountQuotaPolicy.cs) | 6시간·1시간·5분 규칙과 리셋 15분 전 진입 계산 |
-| [AccountQuotaMonitor.cs](AccountQuotaMonitor.cs) | 두 독립 조회 루프, 마지막 성공값·실패·다음 조회·재시작 캐시 |
+| [AccountQuotaClient.cs](AccountQuotaClient.cs) | PATH 등 표준 설치 경로의 native CLI 실행, 제한시간·출력 크기·취소·모델 호출 없는 결과 확인 |
+| [AccountQuotaPolicy.cs](AccountQuotaPolicy.cs) | 6시간·1시간·5분 규칙, 리셋 15분 전 진입, 실패 시 15분부터 재시도 간격 계산 |
+| [AccountQuotaMonitor.cs](AccountQuotaMonitor.cs) | 두 독립 조회 루프, 마지막 성공값·실패 횟수·다음 조회·재시작 캐시 |
 | [AccountQuotaView.cs](AccountQuotaView.cs) | 기존 창 안에서 바꿔 보는 잔여량·리셋 카운트다운·조회 시각 |
 
 ### 검사와 진단: 19개
@@ -395,7 +395,7 @@ $result.ExitCode
 
 검사는 가짜 현재 시각을 전달하므로 Windows 시스템 시계를 바꾸지 않습니다. UI 검사에서 공식 페이지 열기는 실제 브라우저 대신 주소를 받는 함수로 확인합니다.
 
-검사 통과와 실제 재부팅 성공, 사용자 화면의 알림 노출은 다른 증거입니다. 배포 당시 무엇을 확인했는지는 [2.2.0 검증 기록](ACCOUNT_QUOTAS.md)을 참고하세요.
+검사 통과와 실제 재부팅 성공, 사용자 화면의 알림 노출은 다른 증거입니다. 최신 배포 검증은 [2.2.1 기록](MAINTENANCE_2_2_1.md), 한도 기능 도입 당시 검증은 [2.2.0 기록](ACCOUNT_QUOTAS.md)을 참고하세요.
 
 ## 14. 어디부터 읽으면 좋을까요?
 
