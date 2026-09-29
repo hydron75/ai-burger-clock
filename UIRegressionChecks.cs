@@ -1,4 +1,5 @@
 using Timer = System.Windows.Forms.Timer;
+using Microsoft.Win32;
 
 namespace AiBurgerClock;
 
@@ -41,6 +42,13 @@ internal static class UIRegressionChecks
         context.TrayIcon.ContextMenuStrip!.Items.OfType<ToolStripMenuItem>().Single(i => i.Text == "공식 상태 새로 고침").PerformClick();
         await WaitUntilAsync(() => Task.FromResult(handler.RequestCount > requests && !monitor.IsRefreshing && monitor.NextRefreshUtc.HasValue));
         Check(true, "Tray Refresh handler triggers asynchronous provider update");
+        requests = handler.RequestCount;
+        context.OnPowerModeChanged(null, new PowerModeChangedEventArgs(PowerModes.Suspend));
+        await Task.Delay(300);
+        Check(handler.RequestCount == requests, "Suspend does not request a provider update");
+        context.OnPowerModeChanged(null, new PowerModeChangedEventArgs(PowerModes.Resume));
+        await WaitUntilAsync(() => Task.FromResult(handler.RequestCount > requests && !monitor.IsRefreshing && monitor.NextRefreshUtc.HasValue));
+        Check(true, "Resume from sleep triggers an immediate provider update");
         await monitor.RefreshOnceAsync();
         context.RefreshStatus(true);
         Check(context.CurrentAppearance?.Attention == TrayAttention.Green, "Healthy FULL shows green F");
