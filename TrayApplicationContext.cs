@@ -215,7 +215,7 @@ namespace AiBurgerClock
             stateMenuItem.ForeColor = snapshot.State == AgentState.FullThrottle
                 ? Color.FromArgb(25, 145, 78)
                 : Color.FromArgb(211, 61, 55);
-            countdownMenuItem.Text = "전환까지 " + FormatRemaining(snapshot.Remaining);
+            countdownMenuItem.Text = "전환까지 " + StatusWindow.FormatRemaining(snapshot.Remaining);
             lastState = snapshot.State;
 
             if (notifyOnChange && changed)
@@ -461,14 +461,6 @@ namespace AiBurgerClock
                     DestroyIcon(handle);
                 }
             }
-        }
-
-        private static string FormatRemaining(TimeSpan remaining)
-        {
-            if (remaining < TimeSpan.Zero)
-                remaining = TimeSpan.Zero;
-            int totalHours = (int)remaining.TotalHours;
-            return string.Format("{0:00}:{1:00}:{2:00}", totalHours, remaining.Minutes, remaining.Seconds);
         }
 
         internal async void ExitApplication()
