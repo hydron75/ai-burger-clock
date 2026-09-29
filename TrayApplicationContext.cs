@@ -25,7 +25,7 @@ namespace AiBurgerClock
         private bool disposed;
         private bool exiting;
         private readonly UsageStore store;
-        private readonly HttpClient? httpClient;
+        private readonly HttpClient? ownedHttpClient; // Null when the caller supplied the client.
         private readonly StatusMonitor? monitor;
         private StatisticsWindow? statisticsWindow;
         private readonly HashSet<Task> pendingWrites = new();
@@ -114,14 +114,18 @@ namespace AiBurgerClock
 
             if (enableServices)
             {
-                httpClient = statusHttpClient ?? new HttpClient(new SocketsHttpHandler
+                if (statusHttpClient is null)
                 {
-                    UseCookies = false,
-                    PooledConnectionLifetime = TimeSpan.FromMinutes(10),
-                    ConnectTimeout = TimeSpan.FromSeconds(5),
-                    AutomaticDecompression = System.Net.DecompressionMethods.GZip | System.Net.DecompressionMethods.Deflate
-                }) { Timeout = StatusMonitor.RequestTimeout };
-                httpClient.DefaultRequestHeaders.UserAgent.ParseAdd("AI-Burger-Clock/2.0");
+                    ownedHttpClient = new HttpClient(new SocketsHttpHandler
+                    {
+                        UseCookies = false,
+                        PooledConnectionLifetime = TimeSpan.FromMinutes(10),
+                        ConnectTimeout = TimeSpan.FromSeconds(5),
+                        AutomaticDecompression = System.Net.DecompressionMethods.GZip | System.Net.DecompressionMethods.Deflate
+                    }) { Timeout = StatusMonitor.RequestTimeout };
+                    ownedHttpClient.DefaultRequestHeaders.UserAgent.ParseAdd("AI-Burger-Clock/2.0");
+                }
+                HttpClient httpClient = statusHttpClient ?? ownedHttpClient!;
                 monitor = new StatusMonitor(new ProviderStatusClient(httpClient, this.utcNow), store, this.utcNow, scheduleAt: GetSchedule);
                 _ = statusWindow.Handle; // Hidden marshal target; polling never touches WinForms from worker threads.
                 monitor.Changed += OnProviderChanged;
@@ -504,7 +508,7 @@ namespace AiBurgerClock
                     SystemEvents.PowerModeChanged -= OnPowerModeChanged;
                 }
                 monitor?.Dispose();
-                httpClient?.Dispose();
+                ownedHttpClient?.Dispose();
                 statisticsWindow?.Dispose();
                 timer.Stop();
                 timer.Dispose();
