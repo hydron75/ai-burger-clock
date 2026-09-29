@@ -162,6 +162,27 @@ internal static class MonitorTests
         await Task.Delay(150);
         Check(pollingHandler.RequestCount == stopped, "No polling after shutdown");
 
+        var faultyHandler = new TestStatusHttpHandler();
+        using var faultyHttp = new HttpClient(faultyHandler);
+        using var faulty = new StatusMonitor(new ProviderStatusClient(faultyHttp), pollInterval: TimeSpan.FromMilliseconds(100));
+        faulty.Changed += () => throw new InvalidOperationException("Synthetic subscriber failure");
+        faulty.Start();
+        await WaitUntilAsync(() => faultyHandler.RequestCount >= 8);
+        await faulty.StopAsync();
+        Check(faultyHandler.RequestCount >= 8, "Subscriber failure does not stop polling or shutdown");
+
+        // No scheduled poll within the test: only the queued request can start a second pass.
+        var queuedHandler = new TestStatusHttpHandler { Block = true };
+        using var queuedHttp = new HttpClient(queuedHandler) { Timeout = TimeSpan.FromSeconds(1) };
+        using var queued = new StatusMonitor(new ProviderStatusClient(queuedHttp), pollInterval: TimeSpan.FromHours(1));
+        queued.Start();
+        await WaitUntilAsync(() => queuedHandler.RequestCount >= 4);
+        queued.RequestRefresh(queueWhileRefreshing: true);
+        queuedHandler.Block = false;
+        await WaitUntilAsync(() => queuedHandler.RequestCount >= 8);
+        await queued.StopAsync();
+        Check(queuedHandler.RequestCount >= 8, "Refresh requested during an active poll runs right after it");
+
         var blockedHandler = new TestStatusHttpHandler { Block = true };
         using var blockedHttp = new HttpClient(blockedHandler);
         using var blockedMonitor = new StatusMonitor(new ProviderStatusClient(blockedHttp));

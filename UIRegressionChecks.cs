@@ -1,4 +1,5 @@
 using Timer = System.Windows.Forms.Timer;
+using Microsoft.Win32;
 
 namespace AiBurgerClock;
 
@@ -41,6 +42,13 @@ internal static class UIRegressionChecks
         context.TrayIcon.ContextMenuStrip!.Items.OfType<ToolStripMenuItem>().Single(i => i.Text == "공식 상태 새로 고침").PerformClick();
         await WaitUntilAsync(() => Task.FromResult(handler.RequestCount > requests && !monitor.IsRefreshing && monitor.NextRefreshUtc.HasValue));
         Check(true, "Tray Refresh handler triggers asynchronous provider update");
+        requests = handler.RequestCount;
+        context.OnPowerModeChanged(null, new PowerModeChangedEventArgs(PowerModes.Suspend));
+        await Task.Delay(300);
+        Check(handler.RequestCount == requests, "Suspend does not request a provider update");
+        context.OnPowerModeChanged(null, new PowerModeChangedEventArgs(PowerModes.Resume));
+        await WaitUntilAsync(() => Task.FromResult(handler.RequestCount > requests && !monitor.IsRefreshing && monitor.NextRefreshUtc.HasValue));
+        Check(true, "Resume from sleep triggers an immediate provider update");
         await monitor.RefreshOnceAsync();
         context.RefreshStatus(true);
         Check(context.CurrentAppearance?.Attention == TrayAttention.Green, "Healthy FULL shows green F");
@@ -106,6 +114,23 @@ internal static class UIRegressionChecks
         context.RefreshStatus(true);
         Check(notices.Count == 8 && notices.Last() == (ProviderKind.OpenAI, Recommendation.Go), "Recovery after uncertainty notifies once");
         Check(context.StatusWindow.Controls.OfType<Label>().Any(l => l.Text.StartsWith("최근 조회 시도:")), "UI labels attempted time explicitly");
+
+        // Synchronous sequence: the 1-second UI timer cannot run between these calls.
+        var feedback = context.StatusWindow.FeedbackLabel;
+        var feedbackSchedule = AgentSchedule.GetSnapshot(DateTimeOffset.UtcNow);
+        void ShowStorage(string storageError) =>
+            context.StatusWindow.UpdateProviders(monitor.Snapshot(), feedbackSchedule, false, null, storageError);
+        const string storageFailure = "로컬 저장 확인 필요: synthetic";
+        ShowStorage(storageFailure);
+        Check(feedback.Text == storageFailure && feedback.ForeColor == Color.Firebrick, "Storage error appears in feedback");
+        context.StatusWindow.SetFeedback("OpenAI · Success 저장됨");
+        ShowStorage(storageFailure);
+        Check(feedback.Text == "OpenAI · Success 저장됨", "Repeated storage error does not overwrite newer feedback");
+        ShowStorage("");
+        Check(feedback.Text == "OpenAI · Success 저장됨", "Storage recovery keeps unrelated feedback");
+        ShowStorage(storageFailure);
+        ShowStorage("");
+        Check(!feedback.Text.Contains("synthetic") && feedback.ForeColor != Color.Firebrick, "Storage recovery clears a still-visible error");
 
         var rowMenus = context.StatusWindow.Controls.OfType<Panel>().Select(p => p.ContextMenuStrip!).ToArray();
         var trayRoot = context.TrayIcon.ContextMenuStrip!.Items.OfType<ToolStripMenuItem>().Single(i => i.Text == "사용 경험 기록");

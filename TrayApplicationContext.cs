@@ -2,6 +2,7 @@ using System;
 using System.Drawing;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
+using Microsoft.Win32;
 using Timer = System.Windows.Forms.Timer;
 
 namespace AiBurgerClock
@@ -123,6 +124,7 @@ namespace AiBurgerClock
                 monitor = new StatusMonitor(new ProviderStatusClient(httpClient), store, this.utcNow, scheduleAt: GetSchedule);
                 _ = statusWindow.Handle; // Hidden marshal target; polling never touches WinForms from worker threads.
                 monitor.Changed += OnProviderChanged;
+                SystemEvents.PowerModeChanged += OnPowerModeChanged;
             }
             RefreshAutoStartChecks();
             RefreshStatus(false);
@@ -248,6 +250,15 @@ namespace AiBurgerClock
                 });
             }
             catch (InvalidOperationException) { /* Window already shutting down. */ }
+        }
+
+        // Do not rely on the polling wait ending promptly after sleep; refresh at once on
+        // resume, even if a pass started before suspension is still running. Raised off the
+        // UI thread; RequestRefresh is thread-safe and coalesces.
+        internal void OnPowerModeChanged(object? sender, PowerModeChangedEventArgs e)
+        {
+            if (e.Mode == PowerModes.Resume && !exiting && !disposed)
+                monitor?.RequestRefresh(queueWhileRefreshing: true);
         }
 
         private IReadOnlyList<ProviderStatus> CurrentProviders() => monitor?.Snapshot() ??
@@ -465,7 +476,11 @@ namespace AiBurgerClock
             if (disposing && !disposed)
             {
                 disposed = true;
-                if (monitor is not null) monitor.Changed -= OnProviderChanged;
+                if (monitor is not null)
+                {
+                    monitor.Changed -= OnProviderChanged;
+                    SystemEvents.PowerModeChanged -= OnPowerModeChanged;
+                }
                 monitor?.Dispose();
                 httpClient?.Dispose();
                 statisticsWindow?.Dispose();
