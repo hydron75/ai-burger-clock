@@ -31,11 +31,12 @@ AI Burger Clock 저장소에서 코드를 고치는 사람과 에이전트를 �
 
 | 옵션 | 하는 일 | 실제 환경에 미치는 영향 |
 |---|---|---|
-| `--self-test` | 시간표·DST·공휴일·Provider 파서·권고·SQLite·통계·자동 시작 판정 검사 | 임시 DB와 가짜 HTTP 응답만 사용. 사용자 DB와 레지스트리는 변경하지 않음 |
-| `--smoke-test` | 실제 WinForms 메시지 루프에서 트레이·창·버튼·알림 요청·기록·통계 연결 검사 | 테스트 창과 알림이 생길 수 있음. 앱이 실행 중이면 종료 코드 2로 거부 |
+| `--self-test` | 시간표·DST·공휴일·Provider 파서·권고·SQLite·통계·자동 시작 판정·계정 한도(파서·조회 주기·CLI 프로토콜·재시도) 검사 | 임시 DB와 가짜 HTTP·CLI 응답만 사용. 사용자 DB·레지스트리·실제 계정은 건드리지 않음 |
+| `--smoke-test` | 실제 WinForms 메시지 루프에서 트레이·창·버튼·알림 요청·기록·통계·한도 화면 연결 검사 | 테스트 창과 알림이 생길 수 있음. 앱이 실행 중이면 종료 코드 2로 거부 |
 | `--smoke-test --verify-autostart` | 위 검사 + 자동 시작 UI | **실제 HKCU Run·StartupApproved 값을 잠시 바꾼 뒤 복원.** 개발 전용 |
 | `--smoke-test --report-directory 경로` | 검사 중 폼을 PNG로 저장 | 지정 폴더에 이미지 생성 |
 | `--check-providers` | OpenAI·Claude·Gemini 공식 상태를 지금 조회해 출력 | 실제 인터넷 사용. 사용자 DB에는 기록하지 않음 |
+| `--check-quotas` | 로그인된 Codex·Claude CLI에서 계정 한도만 조회해 출력 | 실제 계정 조회. 모델 요청·리셋권 사용·사용자 DB 저장 없음. 한 Provider라도 실패하면 종료 코드 1 |
 
 - 검사는 가짜 현재 시각을 주입합니다. 시스템 시계를 바꾸지 않습니다.
 - 새 검사는 [SelfTest.cs](SelfTest.cs) 또는 [SmokeTest.cs](SmokeTest.cs)에서 호출되는 경로에 연결해야 실행됩니다. 예: `HolidayStorageTests`는 `StorageTests`를 거쳐 호출됩니다.
