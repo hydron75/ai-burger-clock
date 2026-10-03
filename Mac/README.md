@@ -91,10 +91,10 @@ dotnet workload list
 
 Xcode가 설치되어 있지만 개발 도구 경로·라이선스 오류가 나오면 실제 메시지를 확인한 뒤 처리합니다. 이 앱의 스크립트가 Xcode 설정을 임의 변경하거나 라이선스를 대신 승인하지 않습니다.
 
-소스가 아직 없으면 preview 브랜치를 받습니다. 이미 저장소가 있다면 변경사항을 보존하고 해당 브랜치로 이동하세요.
+소스가 아직 없으면 저장소를 받습니다. Mac 앱은 2026-10-04부터 main에 있습니다. 이미 저장소가 있다면 변경사항을 보존하고 main을 최신으로 받으세요(`git pull --ff-only`).
 
 ```sh
-git clone --branch feature/macos-native https://github.com/hydron75/ai-burger-clock.git
+git clone https://github.com/hydron75/ai-burger-clock.git
 cd ai-burger-clock
 bash Mac/build.sh
 ```
