@@ -258,6 +258,38 @@ internal static class MonitorTests
         network.OnNetworkAvailable();
         network.OnNetworkAvailable();
         Check(refreshedAt.Count == 3, "Dispose cancels a pending refresh and ignores later changes");
+
+        // No network when the wait ends: skip without using the one-minute slot.
+        clock = 1_000;
+        refreshedAt.Clear();
+        bool online = true;
+        var offlineAware = new NetworkRefreshScheduler(() => refreshedAt.Add(clock), () => clock, (span, _) =>
+        {
+            clock += (long)span.TotalMilliseconds;
+            return Task.CompletedTask;
+        }, () => online);
+        offlineAware.OnNetworkAvailable();
+        long firstRefresh = refreshedAt.Single();
+        clock = firstRefresh + 70_000;
+        online = false;
+        offlineAware.OnNetworkAvailable();
+        Check(refreshedAt.Count == 1, "No refresh when every network is down after the settle delay");
+        online = true;
+        clock += 3_000;
+        long reconnectAt = clock;
+        offlineAware.OnNetworkAvailable();
+        Check(refreshedAt.Count == 2 && refreshedAt[1] == reconnectAt + settle,
+            "A skipped offline refresh does not take the one-minute slot; reconnect refreshes after the settle delay");
+        clock = refreshedAt[1] + 10_000;
+        online = false;
+        offlineAware.OnNetworkAvailable();
+        Check(refreshedAt.Count == 2, "An offline change within a minute of a refresh is skipped when its slot arrives");
+        online = true;
+        clock += 1_000;
+        reconnectAt = clock;
+        offlineAware.OnNetworkAvailable();
+        Check(refreshedAt.Count == 3 && refreshedAt[2] == reconnectAt + settle,
+            "Reconnect after that skip refreshes after the settle delay, not another minute later");
         return count;
     }
 
