@@ -455,6 +455,11 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
         {
             if (statusItem?.Button is null || menu is null || statusWindow is null)
                 throw new InvalidOperationException("Native menu-bar/window controls were not created.");
+            string assemblyVersion = typeof(MacApplication).Assembly
+                .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion.Split('+')[0] ?? "";
+            string bundleVersion = NSBundle.MainBundle.ObjectForInfoDictionary("CFBundleShortVersionString")?.ToString() ?? "";
+            if (bundleVersion != assemblyVersion)
+                throw new InvalidOperationException($"Bundle version {bundleVersion} does not match app version {assemblyVersion}.");
             MacStatusIcon.VerifyImages();
             if (statusItem.Button.Image is not { } icon || icon.Template ||
                 icon.Size.Width != MacStatusIcon.Size || icon.Size.Height != MacStatusIcon.Size)
@@ -506,7 +511,7 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
             await statisticsWindow.RefreshAsync();
             if (!statisticsWindow.Window.IsVisible)
                 throw new InvalidOperationException("Statistics window did not reopen from the menu-bar action.");
-            Console.WriteLine("PASS: native controls/window close-reopen, 20pt color menu icon/1x-2x pixels, compact one-screen layout/standard quota rows, temporary SQLite, four events/notes, statistics, injected quota countdown; no account/network/settings changes.");
+            Console.WriteLine("PASS: bundle version, native controls/window close-reopen, 20pt color menu icon/1x-2x pixels, compact one-screen layout/standard quota rows, temporary SQLite, four events/notes, statistics, injected quota countdown; no account/network/settings changes.");
             ExitCode = 0;
         }
         catch (Exception error)
