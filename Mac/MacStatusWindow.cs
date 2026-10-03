@@ -6,9 +6,11 @@ using Foundation;
 
 namespace AiBurgerClock;
 
-// Native controls only; the scroll area keeps model-scoped quota rows from enlarging the window.
+// Keep the primary status information in one viewport; only extra quota rows can scroll.
 internal sealed class MacStatusWindow : IDisposable
 {
+    private const int WindowWidth = 430;
+    private const int WindowHeight = 660;
     internal NSWindow Window { get; }
     private readonly NSTextField schedule;
     private readonly NSTextField countdown;
@@ -28,71 +30,75 @@ internal sealed class MacStatusWindow : IDisposable
         Action<bool> changeAutoStart, Action<ProviderKind> openPage,
         Action<ProviderKind, UsageEventType, bool> record, bool smoke)
     {
-        Window = new(new CGRect(0, 0, 430, 720), NSWindowStyle.Titled | NSWindowStyle.Closable,
+        Window = new(new CGRect(0, 0, WindowWidth, WindowHeight), NSWindowStyle.Titled | NSWindowStyle.Closable,
             NSBackingStore.Buffered, false)
         {
             Title = "AI Burger Clock · macOS preview",
             // Closing hides the window; the host retains and reopens it from the menu bar.
             DangerousReleasedWhenClosed = false
         };
-        var root = new NSView(new CGRect(0, 0, 430, 720));
+        var root = new NSView(new CGRect(0, 0, WindowWidth, WindowHeight));
         Window.ContentView = root;
-        var document = new NSView(new CGRect(0, 0, 410, 860));
-        var scroll = new NSScrollView(new CGRect(0, 92, 430, 628))
-        {
-            HasVerticalScroller = true, AutohidesScrollers = true, DocumentView = document
-        };
-        root.AddSubview(scroll);
-        Label(document, "AI AGENT TRAFFIC", 824, 22, 13, true);
-        schedule = Label(document, "FULL THROTTLE", 785, 31, 22, true);
-        countdown = Label(document, "전환까지 —", 756, 23, 15);
-        next = Label(document, "다음: — KST", 731, 22);
-        usTime = Label(document, "US: —", 707, 22);
-        extended = Label(document, "", 670, 34, 11);
-        int y = 638;
+        Label(root, "AI AGENT TRAFFIC", 626, 20, 13, true);
+        schedule = Label(root, "FULL THROTTLE", 594, 30, 22, true);
+        countdown = Label(root, "전환까지 —", 569, 23, 14);
+        countdown.Frame = new CGRect(14, 569, 205, 23);
+        next = Label(root, "다음: — KST", 569, 23, 11);
+        next.Frame = new CGRect(232, 569, 184, 23);
+        usTime = Label(root, "US: —", 546, 20, 11);
+        extended = Label(root, "", 525, 19, 11);
+        extended.UsesSingleLineMode = true;
+        extended.LineBreakMode = NSLineBreakMode.TruncatingTail;
+        int y = 492;
         foreach (ProviderKind provider in Enum.GetValues<ProviderKind>())
         {
             ProviderKind captured = provider;
-            NSButton heading = Button(document, provider + " · CHECK ↗", new CGRect(14, y, 302, 27), () => openPage(captured));
+            NSButton heading = Button(root, provider + " · CHECK ↗", new CGRect(14, y, 324, 24), () => openPage(captured));
             heading.Bordered = false;
             heading.Alignment = NSTextAlignment.Left;
             heading.Font = Font(13, true);
-            var detail = Label(document, "Official: UNKNOWN · 확인 불가", y - 51, 50, 12);
+            var detail = Label(root, "Official: UNKNOWN · 확인 불가", y - 33, 32, 12);
+            detail.MaximumNumberOfLines = 2;
+            detail.LineBreakMode = NSLineBreakMode.TruncatingTail;
             detail.ToolTip = "클릭하면 공식 상태 페이지를 엽니다. 사용 경험은 기록 버튼이나 메뉴바에서 남깁니다.";
-            var recordButton = new NSButton(new CGRect(332, y, 58, 27))
+            var recordButton = new NSButton(new CGRect(350, y, 66, 24))
             {
                 Title = "기록", BezelStyle = NSBezelStyle.Rounded
             };
-            document.AddSubview(recordButton);
+            root.AddSubview(recordButton);
             var eventMenu = RecordMenu(provider, record);
             recordButton.Activated += (_, _) => NSMenu.PopUpContextMenu(eventMenu,
                 NSApplication.SharedApplication.CurrentEvent!, recordButton);
             providers.Add(provider, (heading, detail));
-            y -= 91;
+            y -= 62;
         }
-        Label(document, "개인 계정 잔여 한도", 345, 21, 12, true);
-        Label(document, "ChatGPT", 320, 23, 13, true);
-        Label(document, "Work/Codex", 301, 21, 11);
-        quotas[QuotaProvider.Codex] = TextArea(document, new CGRect(14, 191, 382, 108), 11);
-        Label(document, "Claude", 165, 23, 13, true);
-        quotas[QuotaProvider.Claude] = TextArea(document, new CGRect(14, 52, 382, 111), 11);
-        checkedAt = Label(document, "Checked: — KST", 29, 19, 10);
-        nextCheck = Label(document, "Next check: — KST", 9, 19, 10);
-        scroll.ContentView.ScrollToPoint(new CGPoint(0, 860 - 628));
-        scroll.ReflectScrolledClipView(scroll.ContentView);
+        Label(root, "개인 계정 잔여 한도", 305, 20, 12, true);
+        Label(root, "ChatGPT", 281, 22, 13, true);
+        Label(root, "Work/Codex", 263, 17, 11);
+        quotas[QuotaProvider.Codex] = TextArea(root, new CGRect(14, 207, 402, 54), 11);
+        Label(root, "Claude", 183, 22, 13, true);
+        quotas[QuotaProvider.Claude] = TextArea(root, new CGRect(14, 107, 402, 74), 11);
+        foreach (NSTextView quota in quotas.Values) quota.TextContainerInset = new CGSize(2, 2);
+        checkedAt = Label(root, "Checked: — KST", 86, 18, 10);
+        checkedAt.Frame = new CGRect(14, 86, 190, 18);
+        nextCheck = Label(root, "Next check: — KST", 86, 18, 10);
+        nextCheck.Frame = new CGRect(207, 86, 209, 18);
 
-        refresh = Button(root, "Refresh", new CGRect(14, 58, 107, 28), requestRefresh);
-        Button(root, "Statistics", new CGRect(126, 58, 107, 28), showStatistics);
+        refresh = Button(root, "Refresh", new CGRect(14, 56, 107, 28), requestRefresh);
+        Button(root, "Statistics", new CGRect(126, 56, 107, 28), showStatistics);
         holiday = Button(root, "미국 연방 공휴일 보정", new CGRect(14, 31, 224, 24),
             () => changeHoliday(holiday!.State == NSCellStateValue.On));
         holiday.SetButtonType(NSButtonType.Switch);
         holiday.Enabled = false;
-        autoStart = Button(root, "로그인 시 자동 실행", new CGRect(14, 7, 254, 24),
+        autoStart = Button(root, "로그인 시 자동 실행", new CGRect(14, 6, 224, 24),
             () => changeAutoStart(autoStart!.State == NSCellStateValue.On));
         autoStart.SetButtonType(NSButtonType.Switch);
+        autoStart.Font = Font(12);
         autoStart.Enabled = !smoke;
         feedback = Label(root, "", 2, 48, 10);
-        feedback.Frame = new CGRect(271, 7, 148, 76);
+        feedback.Frame = new CGRect(245, 6, 171, 76);
+        feedback.MaximumNumberOfLines = 5;
+        feedback.LineBreakMode = NSLineBreakMode.TruncatingTail;
         Window.Center();
     }
 
@@ -116,6 +122,7 @@ internal sealed class MacStatusWindow : IDisposable
         extended.StringValue = snapshot.IsHolidayExtendedFullThrottle
             ? "공휴일 연장: " + snapshot.HolidayNames
             : snapshot.IsWeekendExtendedFullThrottle ? "Weekend / Extended Full Throttle" : "";
+        extended.ToolTip = extended.StringValue;
         foreach (ProviderStatus state in states)
         {
             var row = providers[state.Provider];
@@ -150,11 +157,57 @@ internal sealed class MacStatusWindow : IDisposable
     internal void SetAutoStart(bool enabled, string detail)
     {
         autoStart.State = enabled ? NSCellStateValue.On : NSCellStateValue.Off;
-        autoStart.Title = detail;
-        autoStart.ToolTip = ".app를 고정된 위치에 둔 뒤 켜세요. 시스템 설정 → 일반 → 로그인 항목에서 승인 상태를 확인할 수 있습니다.";
+        autoStart.Title = detail switch
+        {
+            "자동 실행: 시스템 설정 승인 필요" => "자동 실행: 승인 필요",
+            "자동 실행: .app 설치 위치 확인 필요" => "자동 실행: .app 위치 확인 필요",
+            _ => detail
+        };
+        autoStart.ToolTip = detail + "\n.app를 고정된 위치에 둔 뒤 켜세요. 시스템 설정 → 일반 → 로그인 항목에서 승인 상태를 확인할 수 있습니다.";
     }
 
-    internal void SetFeedback(string text) => feedback.StringValue = text;
+    internal void SetFeedback(string text)
+    {
+        feedback.StringValue = text;
+        feedback.ToolTip = text;
+    }
+
+    internal void VerifyCompactLayout()
+    {
+        var root = Window.ContentView ?? throw new InvalidOperationException("Status content view is missing.");
+        if (root.Bounds.Width != WindowWidth || root.Bounds.Height != WindowHeight ||
+            providers.Count != 3 || quotas.Count != 2)
+            throw new InvalidOperationException("Compact status window dimensions/rows changed.");
+        NSView[] controls = root.Subviews;
+        NSScrollView[] scrolls = controls.OfType<NSScrollView>().ToArray();
+        if (scrolls.Length != 2 || scrolls.Any(scroll => scroll.DocumentView is not NSTextView))
+            throw new InvalidOperationException("The whole status window must not scroll.");
+        for (int i = 0; i < controls.Length; i++)
+        {
+            CGRect frame = controls[i].Frame;
+            if (frame.X < 0 || frame.Y < 0 || frame.Width <= 0 || frame.Height <= 0 ||
+                frame.X + frame.Width > root.Bounds.Width || frame.Y + frame.Height > root.Bounds.Height)
+                throw new InvalidOperationException("A status control is outside the visible content view.");
+            for (int j = i + 1; j < controls.Length; j++)
+            {
+                CGRect other = controls[j].Frame;
+                if (frame.X < other.X + other.Width && other.X < frame.X + frame.Width &&
+                    frame.Y < other.Y + other.Height && other.Y < frame.Y + frame.Height)
+                    throw new InvalidOperationException("Status controls overlap.");
+            }
+        }
+        // Exercise real native text metrics, not just nominal font size or frame arithmetic.
+        foreach (NSTextView quota in quotas.Values)
+        {
+            var container = quota.TextContainer ?? throw new InvalidOperationException("Quota text container is missing.");
+            var layout = quota.LayoutManager ?? throw new InvalidOperationException("Quota layout manager is missing.");
+            var scroll = quota.EnclosingScrollView ?? throw new InvalidOperationException("Quota scroll view is missing.");
+            layout.EnsureLayoutForTextContainer(container);
+            if (layout.GetUsedRect(container).Height + quota.TextContainerInset.Height * 2 >
+                scroll.ContentView.Bounds.Height + 0.5)
+                throw new InvalidOperationException("Standard quota rows do not fit without scrolling.");
+        }
+    }
 
     internal static string QuotaText(QuotaState state, DateTimeOffset now)
     {

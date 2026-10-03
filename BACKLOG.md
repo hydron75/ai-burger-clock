@@ -1,19 +1,21 @@
 # 다음 개선 항목
 
-## macOS native preview 0.1.0
+## macOS native preview 0.1.1
 
 - 기록일: 2026-10-03 KST.
-- 상태: `feature/macos-native`에서 Apple Silicon / macOS 27용 AppKit 메뉴바 소스와 빌드 안내를 준비하고 [Draft PR #12](https://github.com/hydron75/ai-burger-clock/pull/12)에 올렸다. **실제 Mac Release `.app` 빌드·서명 검사·공통 검사와 native smoke가 통과**했다. 일반 사용·실제 CLI·알림·자동 실행 확인이 남아 있으며 안정판 배포나 main 병합을 완료한 상태가 아니다. [작업 기록](MACOS_PORT.md), [Mac 빌드 안내](Mac/README.md).
+- 상태: `feature/macos-native`의 Apple Silicon / macOS 27용 AppKit 소스를 [Draft PR #12](https://github.com/hydron75/ai-burger-clock/pull/12)에서 검증 중이다. **기존 0.1.0의 실제 Mac Release·서명·native smoke와 CLI 설치 후 두 계정 한도 수신은 확인**했다. 0.1.1은 전체 화면 스크롤을 없앤 배치 수정이며 새 Mac 빌드/화면, 알림·재로그인 검증은 남아 있다. 안정판 배포나 main 병합은 하지 않았다. [작업 기록](MACOS_PORT.md), [Mac 빌드 안내](Mac/README.md).
 - Schedule/DST/공휴일, 공식 상태·권고, CLI 한도·조회 주기, SQLite schema 2와 통계는 루트의 같은 원본을 빌드한다. Windows WinForms와 Mac AppKit UI·알림·자동 실행은 각각 관리한다.
 - Windows Release 빌드 경고·오류 0, 자체 검사 250,750건과 공통 검사 244,347건을 통과했다. Mac 참조 C# 컴파일과 trimming 분석도 경고·오류 0이지만 `.app` 생성·네이티브 실행 검증을 대신하지 않는다.
-- Mac SDK 10.0.401 / Xcode 27.0에서 공통 검사 244,347건, Release `.app` 생성, 로컬 서명 검사와 SQLite dylib의 ARM64 포함을 확인했다. 이어서 native smoke의 창 닫기/재열기·임시 DB 4종 기록/메모·통계·한도 표시와 종료 코드 0을 확인했다. 다음은 일반 실행·화면·실제 CLI·알림·로그인 항목·절전 복귀 확인이다. 문서만 갱신하므로 다시 빌드할 필요는 없다. [native smoke 기록](MACOS_PORT.md#13-실제-mac-native-smoke-통과).
+- Mac SDK 10.0.401 / Xcode 27.0에서 기존 공통 검사 244,347건, Release `.app`·로컬 서명·ARM64 SQLite와 native smoke가 통과했다. 이후 Schedule/US DST, 세 Provider 정상 상태, ChatGPT 주간·Claude 세션/주간 전체/모델별 한도 수신과 메뉴바를 확인했다. 로그인 자동 실행 체크와 등록 성공 안내는 보였지만 실제 재로그인 실행은 확인 전이다. [최신 화면 기록](MACOS_PORT.md#15-cli-조회-성공과-011-한-화면-배치-수정).
+- 0.1.1 배치 수정: 창 720→660 point, 전체 스크롤 제거, Provider 간격 91→62 point, 한도 상자 108/111→54/74 point. 일반 한도는 한 화면에 두고 추가 모델 한도만 내부 스크롤을 유지한다. 긴 설명·자동 실행 상태는 Tooltip으로 보존하고 기록·상태 페이지·Refresh·Statistics 동작은 유지한다.
+- 새 native smoke에 컨트롤 경계/겹침, 일반 Codex 3줄/Claude 4줄의 실제 텍스트 높이와 주입 시각의 카운트다운 감소 검사를 연결했다. Windows 빌드·회귀·공통 검사와 Mac API/trim 분석은 통과했으며 **0.1.1의 실제 Mac 재빌드·native smoke·한 화면 가독성 확인은 다음 단계**다.
 - 빌드 중단 보완: NU1900은 빌드 전용 HTTP 캐시로, IL2026 두 건은 `QuotaJsonContext` source generation으로 해결됐다. 기존 캐시 호환성 검사 9건과 reflection 비활성화 검사 10건도 통과했다. [실제 Mac 빌드 성공 기록](MACOS_PORT.md#12-실제-mac-release-bundle-빌드-성공).
 - Windows 2.2.2 dist·자동 시작·사용자 DB는 교체하지 않았다. Mac/Windows DB 동기화, Gemini 개인 한도, 한도 회복 알림, 정식 배포 서명·공증은 이번 preview 범위에 포함하지 않는다.
 
 ## 다음 수정: ChatGPT 한도 영역 표시 정리
 
 - 기록일: 2026-10-03 KST.
-- 상태: **Windows는 다음 UI 수정 때 반영 예정**이며 2.2.2 한도 제목과 배포본은 그대로다. Mac preview 소스에는 `ChatGPT` 제목과 그 아래 `Work/Codex`를 적용했고 실제 화면 검증은 남아 있다.
+- 상태: **Windows는 다음 UI 수정 때 반영 예정**이며 2.2.2 한도 제목과 배포본은 그대로다. Mac preview에는 `ChatGPT` 제목과 그 아래 `Work/Codex`를 적용했고 실제 0.1.0 화면에서 확인했다.
 - 한도 영역의 상단 제목 `Work / Codex`를 `ChatGPT`로 바꾼다.
 - 제목 아래 한도가 표시되는 부분에 `Work/Codex`를 넣어 실제 조회 범위를 구분한다.
 - 조회 대상·한도 값·리셋 카운트다운·조회 주기는 유지하고 표시 문구와 배치만 변경한다.

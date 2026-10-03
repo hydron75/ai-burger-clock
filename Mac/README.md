@@ -1,8 +1,8 @@
-# AI Burger Clock · macOS preview 0.1.0
+# AI Burger Clock · macOS preview 0.1.1
 
 Apple Silicon / macOS 27을 위한 C# AppKit 메뉴바 앱입니다. Windows 2.2.2 배포본과 별도 앱이지만, 시간표·공식 상태·권고·한도 조회·기록·통계 계산 코드는 같은 저장소의 원본 소스를 링크해서 사용합니다. Windows 코드를 복사해 따로 유지하지 않습니다.
 
-이 폴더는 **일반 사용 검증을 진행 중인 preview 소스**입니다. 2026-10-03 KST 실제 Mac에서 공통 검사 244,347건, Release `.app` 생성, 로컬 서명 검사와 ARM64 SQLite 포함에 이어 native smoke도 종료 코드 0으로 통과했습니다. 일반 사용 화면·알림 노출·로그인 자동 실행·절전/네트워크 복구·Mac의 Codex/Claude 계정 조회는 아직 별도 확인이 필요합니다. 임시 DB 실행 검사를 실제 계정 사용 성공으로 간주하지 않습니다. [native smoke 기록](../MACOS_PORT.md#13-실제-mac-native-smoke-통과)
+이 폴더는 **일반 사용 검증을 진행 중인 preview 소스**입니다. 2026-10-03 KST 실제 Mac에서 기존 0.1.0의 공통 검사 244,347건, Release `.app` 생성, 로컬 서명 검사와 ARM64 SQLite 포함, native smoke 종료 코드 0을 확인했습니다. 이후 CLI 설치로 ChatGPT/Claude 한도가 정상 수신되고 세 Provider 상태·Schedule·메뉴바도 표시됐습니다. **0.1.1은 한 화면에 정보를 모은 배치 수정이며 새 Mac 빌드와 화면 확인은 아직 필요합니다.** 실제 알림·재로그인·절전/연결 복구와 장기 사용은 별도 검증 항목입니다. [최신 화면과 수정 기록](../MACOS_PORT.md#15-cli-조회-성공과-011-한-화면-배치-수정)
 
 ## 들어 있는 기능
 
@@ -15,6 +15,23 @@ Apple Silicon / macOS 27을 위한 C# AppKit 메뉴바 앱입니다. Windows 2.2
 - 메뉴바 또는 Provider의 기록 메뉴에서 Success·Slow·Error·Interrupted를 기록. 메모는 선택 사항입니다.
 - Statistics의 최근 7일·30일·전체 및 Provider·KST 시간대·Schedule/DST·공식 상태별 비교. n·No data·소표본을 표시합니다.
 - macOS 네이티브 Schedule/공식 상태 변화 알림과 로그인 자동 실행 옵션. **계정 한도 리셋/회복 알림과 크레딧은 구현하지 않았습니다.**
+
+## 0.1.1: 한 화면에 모은 상태 창
+
+전체 화면 스크롤을 없애고 상태 창을 430×660 point로 줄였습니다. Schedule·US 시간·세 Provider 상태·ChatGPT/Claude의 일반 한도·조회 시각·버튼·옵션을 한 화면에 놓습니다. 한도 조회·저장·자동 실행 로직과 메뉴바는 바꾸지 않습니다.
+
+- 긴 Provider 이유·공휴일·안내 메시지는 끝을 줄여 표시하고 마우스를 올리면 원문을 볼 수 있습니다.
+- ChatGPT의 일반 5시간/주간+조회 정보와 Claude 세션/주간 전체/모델별 한도+조회 정보를 위한 높이를 확보했습니다. 반환된 모델별 한도가 더 많거나 오류 설명이 길면 해당 한도 상자 안에서만 스크롤합니다. 한도 행을 삭제하거나 수치를 추정하지 않습니다.
+- 새 native smoke는 컨트롤 경계/겹침과 일반 3줄/4줄의 실제 글꼴 높이를 검사합니다. **Windows의 참조 컴파일은 실제 Mac 화면 검증을 대신하지 않습니다.**
+
+현재 Mac 앱을 메뉴바 → **종료**로 닫은 뒤 저장소 루트에서 업데이트·빌드하세요. 기존 자동 실행 옵션은 변경하지 않으며 `.app` 위치도 그대로 둡니다.
+
+```sh
+git pull --ff-only
+bash Mac/build.sh
+```
+
+빌드가 성공하면 아래 안전한 네이티브 검사를 실행한 뒤 일반 실행으로 한 화면에 모두 보이는지 확인합니다.
 
 ## Mac에서 빌드
 
@@ -79,7 +96,7 @@ NUGET_HTTP_CACHE_PATH="$PWD/artifacts/mac-build/nuget-http-cache" bash Mac/build
 
 공통 검사 이후 `UsageStore.cs`의 JSON 저장·읽기에서 IL2026이 나오면 최신 `feature/macos-native` 소스를 받아 위와 같이 다시 빌드하세요. Apple SDK의 trimming 검사에서 런타임 reflection 기반 직렬화를 경고하는 문제였으며, `QuotaJsonContext`로 타입 정보를 미리 생성하도록 수정했습니다. JSON 형식·기존 캐시·DB schema 2는 유지하고, 경고 억제나 새 NuGet 패키지는 추가하지 않았습니다. [Microsoft source generation 안내](https://learn.microsoft.com/en-us/dotnet/standard/serialization/system-text-json/source-generation)
 
-수정 후 Windows의 Release/회귀·공통 검사, Mac 참조 코드의 trimming 분석과 reflection 비활성화 캐시 검사를 통과했습니다. 이어서 소스 `302aee8`의 **실제 Mac `.app` 빌드·서명 검사와 native smoke까지 통과**했습니다. 일반 사용·실제 계정 조회는 아직 확인 전입니다. [정확한 검증 범위](../MACOS_PORT.md#13-실제-mac-native-smoke-통과).
+수정 후 Windows의 Release/회귀·공통 검사, Mac 참조 코드의 trimming 분석과 reflection 비활성화 캐시 검사를 통과했습니다. 이어서 소스 `302aee8`의 **실제 Mac `.app` 빌드·서명 검사와 native smoke까지 통과**했고 CLI 설치 후 실제 한도 수신도 확인했습니다. 0.1.1은 별도 UI 수정본이며 새 빌드/실행 검증이 필요합니다. [이전 빌드의 정확한 검증 범위](../MACOS_PORT.md#13-실제-mac-native-smoke-통과).
 
 ### 빌드 결과
 
@@ -111,30 +128,46 @@ Mac에서 사용하는 Codex와 Claude는 **그 Mac에 별도로 설치·로그�
 
 빌드된 bundle의 실행 파일을 직접 실행합니다.
 
-이미 `bash Mac/build.sh`가 성공한 경우 재빌드 없이 아래 검사로 진행합니다. 저장소 루트에서 실행하세요.
+현재 소스의 `bash Mac/build.sh`가 성공한 뒤 아래 검사로 진행합니다. 저장소 루트에서 실행하세요. 실행 중인 일반 앱이 있으면 메뉴바에서 종료합니다.
 
 ```sh
 "Mac/bin/Release/net10.0-macos27.0/osx-arm64/AI Burger Clock.app/Contents/MacOS/AI Burger Clock" --smoke-test
 echo "검사 종료 코드: $?"
 ```
 
-메뉴바·창을 만들고 상태/통계 창의 닫기·재열기·Visible 상태를 확인합니다. 새 임시 DB에서 4종 실측/메모·표본수/No data·한도 카운트다운 표시를 검사한 뒤 종료합니다. 실제 계정 조회·HTTP·브라우저 열기·알림 권한 요청·자동 실행 변경을 하지 않습니다. 이 검사가 통과해도 실제 OS 알림, 로그인 항목 등록, 계정별 CLI 응답 및 장시간 절전 복귀는 별도 검증 대상입니다.
+메뉴바·창을 만들고 상태/통계 창의 닫기·재열기·Visible 상태를 확인합니다. 전체 상태 창 스크롤 부재·컨트롤 경계/겹침·일반 한도 3줄/4줄의 글꼴 높이, 새 임시 DB의 4종 실측/메모·표본수/No data와 주입 시각의 한도 카운트다운 감소를 검사한 뒤 종료합니다. 실제 계정 조회·HTTP·브라우저 열기·알림 권한 요청·자동 실행 변경을 하지 않습니다. 실제 OS 알림·재로그인 및 장시간 절전 복귀는 별도 검증 대상입니다.
 
 성공 기준은 `PASS: native controls/window close-reopen...` 출력과 종료 코드 `0`입니다. 오류가 있으면 출력과 종료 코드를 보존하고 일반 실행·자동 시작 설정 전에 원인을 확인합니다.
 
-2026-10-03 KST 사용자 Mac에서 이 검사와 종료 코드 0을 확인했습니다. 이미 통과한 경우 반복하지 않고 아래 일반 실행으로 진행하세요.
+2026-10-03 KST 사용자 Mac에서 이전 0.1.0 검사의 종료 코드 0을 확인했습니다. 새 배치 검사를 추가한 0.1.1은 재빌드한 bundle로 다시 확인해야 하며, 성공 출력에는 `compact one-screen layout/standard quota rows`가 포함됩니다.
 
 ## 일반 실행 확인
 
-기존 bundle을 재빌드 없이 실행합니다. 저장소 루트에서 실행하세요.
+현재 소스로 빌드한 bundle을 실행합니다. 저장소 루트에서 실행하세요.
 
 ```sh
 open "Mac/bin/Release/net10.0-macos27.0/osx-arm64/AI Burger Clock.app"
 ```
 
-일반 실행은 Mac 전용 사용자 DB를 생성/열고 공식 상태 페이지와 설치된 CLI의 한도를 조회합니다. 알림 권한 창이 나오면 사용자가 허용 여부를 선택합니다. **로그인 자동 실행은 `.app`를 고정 위치로 옮긴 뒤 확인하며 지금은 켜지 않습니다.**
+일반 실행은 Mac 전용 사용자 DB를 생성/열고 공식 상태 페이지와 설치된 CLI의 한도를 조회합니다. 알림 권한 창이 나오면 사용자가 허용 여부를 선택합니다. 로그인 자동 실행은 현재 옵션을 유지합니다. 앱 위치를 나중에 변경하면 시스템 설정 → 일반 → 로그인 항목에서 등록 경로/승인 상태를 다시 확인하세요.
 
-메뉴바 아이콘 클릭으로 상태 창이 열리는지, Schedule과 카운트다운이 표시되는지, Provider 공식 상태·ChatGPT/Claude 한도 조회 결과를 확인합니다. 그 Mac에 공식 CLI가 설치·로그인되어 있지 않으면 한도 조회 불가가 나올 수 있습니다. Windows의 로그인은 자동 복사하지 않습니다. 이 안내 자체는 일반 실행·계정 조회 검증을 완료했다는 뜻이 아닙니다.
+메뉴바 → 상태 창 열기에서 Schedule·Provider 공식 상태·ChatGPT/Claude 한도·버튼이 전체 화면 스크롤 없이 보이는지 확인합니다. 한도 카운트다운과 긴 이유의 Tooltip도 확인하세요. CLI 설치 후 실제 한도 수신은 이전 스크린샷에서 확인했으며, 새 배치의 가독성은 아직 확인 전입니다. 다른 Mac에서 CLI가 설치·로그인되지 않았다면 한도 조회 불가가 표시됩니다. Windows의 로그인은 자동 복사하지 않습니다.
+
+## CLI를 찾지 못하는 경우
+
+첫 일반 실행 스크린샷에서는 두 계정 한도에 `공식 CLI를 찾지 못했습니다`가 표시됐고, 이후 사용자가 CLI를 설치해 정상 수신했습니다. 이 메시지는 인증 응답이 아니라 실행 파일 탐색 실패입니다. 다른 설치에서 같은 문제가 생기면 미설치·GUI에 보이지 않는 설치 경로·실행 권한을 구분합니다.
+
+앱은 GUI 프로세스의 PATH와 `~/.local/bin`, `/opt/homebrew/bin`, `/usr/local/bin`을 확인합니다. 터미널의 셸 프로필은 읽거나 실행하지 않으므로 터미널에서 명령이 보여도 GUI 앱에는 안 보일 수 있습니다. 먼저 맥 터미널에서 아래 읽기 전용 확인 결과를 확인하세요.
+
+```sh
+for task_cli in codex claude node npm
+do
+  printf '%s: ' "$task_cli"
+  command -v "$task_cli" || printf '없음\n'
+done
+```
+
+이 명령은 설치 경로만 읽으며 CLI 실행·계정 조회·로그인·설치·설정 변경을 하지 않습니다. 정상 수신 중이면 반복할 필요가 없습니다. `.app 위치 확인 필요`라는 자동 실행 문구는 별도 항목이며, 한도 조회 실패와 혼동하지 않습니다.
 
 ## 네이티브 구현 기준
 

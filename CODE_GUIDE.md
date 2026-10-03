@@ -1,6 +1,6 @@
 # 소스코드, 쉬운 말로 읽기
 
-Windows 2.2.2와 macOS preview 0.1.0 소스 기준입니다. Windows 사용법부터 보고 싶다면 [README](README.md), Mac 준비와 아직 남은 검증은 [Mac 안내](Mac/README.md)로 이동하세요. 아래 기존 실행·UI 설명은 Windows 기준이며 Mac의 차이는 12절에 정리했습니다.
+Windows 2.2.2와 macOS preview 0.1.1 소스 기준입니다. Windows 사용법부터 보고 싶다면 [README](README.md), Mac 준비와 아직 남은 검증은 [Mac 안내](Mac/README.md)로 이동하세요. 아래 기존 실행·UI 설명은 Windows 기준이며 Mac의 차이는 12절에 정리했습니다.
 
 코드를 한 줄씩 번역한 문서는 아닙니다. **각 파일이 무엇을 맡고, 서로 어떻게 연결되는지** 설명합니다. 루트·Properties의 C# 47개, Mac 호스트 5개, 공통 검사 입구 1개로 총 53개와 빌드 설정을 다룹니다. 컴퓨터가 만든 `bin`·`obj`와 로컬 검증용 `artifacts`는 대상에서 뺍니다.
 
@@ -363,7 +363,7 @@ Windows 내부 승인 형식은 알려진 경우만 해석합니다. 낯선 값�
 |---|---|
 | [Mac/Program.cs](Mac/Program.cs) | Mac 실행 입구, 중복 실행 잠금, 임시 DB native smoke 분기 |
 | [Mac/MacApplication.cs](Mac/MacApplication.cs) | AppKit 메뉴바와 공통 조회·저장·알림·복귀·종료 연결 |
-| [Mac/MacStatusWindow.cs](Mac/MacStatusWindow.cs) | Mac 상태·잔여 한도 창과 사용 경험 메뉴 |
+| [Mac/MacStatusWindow.cs](Mac/MacStatusWindow.cs) | 한 화면에 배치한 Mac 상태·일반 한도 창과 사용 경험 메뉴. 추가 한도만 내부 스크롤 |
 | [Mac/MacStatisticsWindow.cs](Mac/MacStatisticsWindow.cs) | 공통 계산 결과를 보여주는 Mac 통계 창 |
 | [Mac/MacServices.cs](Mac/MacServices.cs) | macOS 알림 권한과 로그인 항목 등록 |
 | [Shared.Tests/Program.cs](Shared.Tests/Program.cs) | OS UI 없이 기존 검사들을 실행하는 공통 입구 |
@@ -402,7 +402,9 @@ Mac의 시간대 ID는 `America/New_York`, `America/Los_Angeles`, `Asia/Seoul`�
 
 Mac은 `~/Library/Application Support/AIBurgerClock`에 별도 DB를 쓰고 `SMAppService.MainApp`으로 로그인 항목을 관리합니다. CLI는 절대 실행 경로와 실행 권한을 확인하고, shell 프로필·Keychain·인증 파일은 읽지 않습니다. 기능 규칙을 함께 써도 **두 컴퓨터의 DB와 로그인은 자동 동기화되지 않습니다.**
 
-Windows 버전은 2.2.2 그대로이고 Mac은 아직 0.1.0 preview입니다. 실제 Mac의 공통 검사 244,347건과 Release `.app` 빌드·서명 검사에 이어 native smoke도 종료 코드 0으로 통과했습니다. 메뉴바 생성·상태/통계 창 닫기와 재열기·임시 SQLite 기록/메모·통계·테스트 한도 표시를 확인했습니다. 일반 사용 화면, 실제 알림·로그인 항목·CLI 한도는 아직 별도 확인이 필요합니다. [작업 기록](MACOS_PORT.md#13-실제-mac-native-smoke-통과)에 임시 검사와 실제 계정 사용을 구분합니다.
+Windows 버전은 2.2.2 그대로이고 Mac 소스는 0.1.1 preview입니다. 실제 Mac의 기존 0.1.0 빌드/native smoke와 CLI 설치 후 ChatGPT/Claude 한도 수신을 확인했습니다. `MacCliPaths`는 GUI 앱의 PATH와 `~/.local/bin`, `/opt/homebrew/bin`, `/usr/local/bin`에서 실행 가능한 공식 명령을 찾으며 인증 파일은 읽지 않습니다. 0.1.1의 새 Mac 빌드·화면 확인과 실제 알림·재로그인·절전 복귀 검증은 남아 있습니다. [작업 기록](MACOS_PORT.md#15-cli-조회-성공과-011-한-화면-배치-수정)에 이전 실행 확인과 새 수정본 검증을 구분합니다.
+
+`MacStatusWindow`는 전체 document 스크롤을 없애고 430×660 point의 고정 AppKit 창에 Schedule·세 Provider·ChatGPT/Claude 한도·버튼을 놓습니다. Provider 설명은 두 줄로 제한하고 전체 내용을 Tooltip에 보존합니다. 일반 Codex 2개 창+조회 정보와 Claude 3개 창+조회 정보를 위한 한도 상자는 54/74 point이며 더 많은 모델별 한도는 상자 내부에서 스크롤합니다. `VerifyCompactLayout`은 native smoke에서만 호출하여 전체 화면 스크롤 부재, 컨트롤 경계/겹침, 실제 글꼴 기준 일반 한도 행의 높이를 검사합니다. 상시 조회 로직이나 통계 창의 공통 TextArea 설정은 바꾸지 않습니다.
 
 Mac 빌드 스크립트는 일반 사용자로 실행하고, 기본 NuGet HTTP 캐시는 Git에서 제외한 `artifacts/mac-build/nuget-http-cache`에 둡니다. 이 설정은 빌드와 그 자식 프로세스에만 적용됩니다. 기존 사용자 캐시의 권한·전역 설정·취약성 검사는 바꾸지 않습니다. 앱 자체의 DB 경로나 실행 기능과도 별개입니다.
 

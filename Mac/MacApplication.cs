@@ -337,7 +337,7 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
             schedule.PacificUtcOffsetMinutes, schedule.EasternIsDst, schedule.PacificIsDst,
             schedule.SchedulePolicyVersion, status.Status, RecommendationPolicy.Calculate(schedule.State, status.Status),
             status.RelevantComponent, status.IncidentId, note,
-            typeof(MacApplication).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion.Split('+')[0] ?? "0.1.0",
+            typeof(MacApplication).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion.Split('+')[0] ?? "0.1.1",
             schedule.HolidayAdjustmentEnabled, schedule.IsHolidayExtendedFullThrottle, schedule.HolidayNames);
         Task save = store.AddUsageAsync(measurement);
         pendingWrites.Add(save);
@@ -467,9 +467,22 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
                 throw new InvalidOperationException("Statistics sample sizes/No data were not rendered.");
             var now = DateTimeOffset.UtcNow;
             QuotaState quota = new(QuotaProvider.Codex, new(QuotaProvider.Codex,
-                [new("session", "5시간", 100, now.AddMinutes(15), 300)]), NextCheckUtc: now.AddMinutes(5));
-            if (!MacStatusWindow.QuotaText(quota, now).Contains("0%", StringComparison.Ordinal))
-                throw new InvalidOperationException("Exhausted quota display failed.");
+                [new("session", "5시간", 100, now.AddMinutes(15), 300),
+                 new("weekly", "주간", 9, now.AddDays(6), 10080)]),
+                LastSuccessfulCheckUtc: now, NextCheckUtc: now.AddMinutes(5));
+            if (!MacStatusWindow.QuotaText(quota, now).Contains("0%", StringComparison.Ordinal) ||
+                !MacStatusWindow.QuotaText(quota, now).Contains("00:15:00", StringComparison.Ordinal) ||
+                !MacStatusWindow.QuotaText(quota, now.AddMinutes(1)).Contains("00:14:00", StringComparison.Ordinal))
+                throw new InvalidOperationException("Exhausted quota/countdown display failed.");
+            QuotaState claudeQuota = new(QuotaProvider.Claude, new(QuotaProvider.Claude,
+                [new("session", "세션 (5시간)", 9, now.AddMinutes(98), 300),
+                 new("weekly_all", "주간 전체", 37, now.AddDays(3), 10080),
+                 new("weekly_scoped", "주간 Fable", 2, now.AddDays(3), 10080)]),
+                LastSuccessfulCheckUtc: now, NextCheckUtc: now.AddMinutes(83));
+            ProviderStatus[] healthy = Enum.GetValues<ProviderKind>().Select(provider =>
+                new ProviderStatus(provider, OfficialStatus.Operational, now, now, "관련 서비스 정상")).ToArray();
+            statusWindow.Update(Schedule(now), healthy, [quota, claudeQuota], false, now.AddMinutes(5), "");
+            statusWindow.VerifyCompactLayout();
             ShowStatistics();
             await statisticsWindow!.RefreshAsync();
             if (!statisticsWindow.Window.IsVisible || statisticsWindow.Window.DangerousReleasedWhenClosed)
@@ -481,7 +494,7 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
             await statisticsWindow.RefreshAsync();
             if (!statisticsWindow.Window.IsVisible)
                 throw new InvalidOperationException("Statistics window did not reopen from the menu-bar action.");
-            Console.WriteLine("PASS: native controls/window close-reopen, temporary SQLite, four events/notes, statistics, quota countdown; no account/network/settings changes.");
+            Console.WriteLine("PASS: native controls/window close-reopen, compact one-screen layout/standard quota rows, temporary SQLite, four events/notes, statistics, injected quota countdown; no account/network/settings changes.");
             ExitCode = 0;
         }
         catch (Exception error)
