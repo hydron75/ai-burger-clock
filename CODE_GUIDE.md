@@ -397,6 +397,8 @@ Windows 내부 승인 형식은 알려진 경우만 해석합니다. 낯선 값�
 
 시간표·Provider 파서·권고·조회 주기·저장·통계 규칙의 원본은 루트에 하나만 둡니다. Mac과 공통 검사는 `SharedSources.props`로 그 파일들을 링크해 컴파일합니다. 같은 파일을 두 벌로 복사하거나 WinForms를 다른 프레임워크로 바꾸지 않습니다.
 
+개발도 역할을 나눕니다. Mac 구현·네이티브 빌드/실행 검증은 사용자 Mac의 Claude 로컬 환경에서, Windows 검토·빌드/회귀 검증은 사용자가 요청할 때 이 환경에서 진행합니다. 상대 OS 전용 파일은 각 담당에게 맡기며 **공통 원본은 양쪽 모두 PR로 수정**할 수 있습니다. PR에는 바뀐 공통 파일·동작·상대 OS 확인 항목을 적고 Mac 검사와 Windows 회귀 결과를 구분합니다. OS UI 변경은 다른 UI에 자동 복제되지 않으며 DB·로그인도 동기화되지 않습니다. GitHub로 코드와 검증 기록을 연결하는 흐름이지 자동 감시나 다른 Claude 세션으로의 직접 명령 전달을 설정한 것은 아닙니다. [자세한 분담 및 검증 규칙](AGENTS.md#작업-분담-windows와-mac).
+
 Windows는 원래 `net10.0-windows` 프로젝트를 유지하고 Mac·공통 검사·진단 폴더의 C# 파일은 제외합니다. Mac은 `net10.0-macos27.0` AppKit 호스트입니다. 새 공통 DLL·MAUI·WebView·Electron·Node 사이드카는 추가하지 않았습니다.
 
 Mac의 시간대 ID는 `America/New_York`, `America/Los_Angeles`, `Asia/Seoul`입니다. Windows의 기존 ID는 유지합니다. 두 경우 모두 OS가 제공하는 `TimeZoneInfo` 규칙으로 각 미국 업무 경계를 UTC로 계산합니다. KST 시간표를 별도로 복사하지 않습니다.
