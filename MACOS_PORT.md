@@ -2,7 +2,7 @@
 
 기록일: 2026-10-03 KST. Windows 기준 버전: 2.2.2.
 
-Apple Silicon / macOS 27용 **native AppKit 메뉴바 호스트**를 별도 프로젝트로 준비했다. 기존 Windows WinForms UI·배포본은 유지한다. 앞선 0.1.1의 한 화면 배치·두 계정 한도 수신을 확인한 뒤, 작은 검은 F와 비활성 모니터의 아이콘 누락 보고를 받아 0.1.2에서 20-point 컬러 bitmap으로 수정했다. **0.1.2의 실제 Mac 공통 검사 244,347건·Release `.app`·서명·ARM64 SQLite·native smoke에 이어 일반 컬러 아이콘과 양쪽 메뉴막대 표시까지 확인**했다. OS 알림·재로그인·절전 복귀와 장기 사용은 남아 있다. 앞선 검증은 17~19절, 아이콘 수정은 20절, 새 실제 빌드는 21절, native 검사는 22절, 실제 메뉴막대는 23절에 구분한다. 24절은 이전 빌드에서 bundle 버전이 0.1.0으로 남던 문제의 수정과, 사용자 Mac에서 직접 실행한 첫 로컬 빌드·검사 기록이다. 25절은 PR #12 코드 리뷰 10건의 반영 기록, 26절은 연결 복구·절전 복귀, 27절은 로그아웃 정상 종료와 재로그인 자동 실행 실제 확인, 29절은 알림 권한 확인이다(28절은 별도 PR #14).
+Apple Silicon / macOS 27용 **native AppKit 메뉴바 호스트**를 별도 프로젝트로 준비했다. 기존 Windows WinForms UI·배포본은 유지한다. 앞선 0.1.1의 한 화면 배치·두 계정 한도 수신을 확인한 뒤, 작은 검은 F와 비활성 모니터의 아이콘 누락 보고를 받아 0.1.2에서 20-point 컬러 bitmap으로 수정했다. **0.1.2의 실제 Mac 공통 검사 244,347건·Release `.app`·서명·ARM64 SQLite·native smoke에 이어 일반 컬러 아이콘과 양쪽 메뉴막대 표시까지 확인**했다. OS 알림·재로그인·절전 복귀와 장기 사용은 남아 있다. 앞선 검증은 17~19절, 아이콘 수정은 20절, 새 실제 빌드는 21절, native 검사는 22절, 실제 메뉴막대는 23절에 구분한다. 24절은 이전 빌드에서 bundle 버전이 0.1.0으로 남던 문제의 수정과, 사용자 Mac에서 직접 실행한 첫 로컬 빌드·검사 기록이다. 25절은 PR #12 코드 리뷰 10건의 반영 기록, 26절은 연결 복구·절전 복귀, 27절은 로그아웃 정상 종료와 재로그인 자동 실행 실제 확인, 29절은 알림 권한 확인, 30절은 UI 조작 확인과 Tooltip·ChatGPT 표시 이름·앱 아이콘 수정이다(28절은 별도 PR #14).
 
 Mac 개발 도구 준비와 실행 순서는 [Mac/README.md](Mac/README.md)를 따른다.
 
@@ -676,3 +676,40 @@ DB는 원본을 직접 열지 않고 scratch 폴더로 복사해 읽었다. 이 
 
 - **결과:** 앱의 `UNUserNotificationCenter` 권한 요청이 허용된 상태다. 실제 배너가 화면에 뜨는지는 다음 Schedule 전환(2026-10-05 월 22:00 KST)이나 Provider 권고 변화 때 확인한다.
 - **관찰:** 알림 목록의 앱 아이콘이 빈 아이콘이다. bundle에 앱 아이콘이 없어서다(`CFBundleIconFile`·`Resources`의 아이콘 없음). 메뉴바 아이콘과는 별개이며, Finder와 로그인 항목 목록에도 같은 빈 아이콘이 보인다. 개선 후보로 BACKLOG에 남긴다.
+
+## 30. UI 조작 확인과 Tooltip·표시 이름·앱 아이콘 수정
+
+2026-10-04 KST 00:58, 사용자가 상태 창을 직접 조작해 확인했다. 화면 제어 도구는 Dock에 없는 메뉴바 전용 앱을 대상으로 잡지 못해 사용자가 조작했다.
+
+| 항목 | 결과 |
+|---|---|
+| Provider 설명 Tooltip | **문제:** 나타났다 금방 사라져 내용 확인이 어려움 |
+| Provider 제목 `↗` 공식 상태 링크 | 정상으로 브라우저에서 열림 |
+| Statistics 열기·닫기·재열기 | 정상 |
+| 사용 경험 기록 | 실제 사용자 DB에 1건 저장(OpenAI · Slow), 상태 창에 `OpenAI · Slow 저장됨 (00:58 KST)` 표시 |
+
+사용자 요청: 화면의 Provider 이름 중 "OpenAI"만 회사 이름이고 Claude·Gemini는 제품 이름이니 "ChatGPT"로 바꾼다. 앱 아이콘도 추가한다(29절 관찰).
+
+### 수정
+
+| 항목 | 원인 / 내용 | 파일 |
+|---|---|---|
+| Tooltip이 금방 사라짐 | 상태 창은 1초마다 `Update`되며, 그때마다 바뀌지 않은 `ToolTip`·텍스트도 다시 지정했다. AppKit은 Tooltip을 다시 지정하면 떠 있던 Tooltip을 닫는다. 표시 시간 문제가 아니므로, 값이 바뀔 때만 지정하도록 고쳤다(`SetText`·`SetTip`). 메뉴바 아이콘 Tooltip도 바뀔 때만 지정한다. 다만 메뉴바 Tooltip은 카운트다운이 들어 있어 매초 바뀐다 | `Mac/MacStatusWindow.cs`, `Mac/MacApplication.cs` |
+| OpenAI → ChatGPT | 화면에 보이는 이름만 바꾼다. 상태 창 제목, 메뉴바 메뉴, 기록 창 제목, 저장 안내, Provider 알림 제목, 통계 창 행, 메뉴바 Tooltip이 대상이다. `ProviderKind.OpenAI`, DB에 저장되는 값, 공식 상태 주소는 그대로다 | `Mac/MacStatusWindow.cs`(`ProviderName`), `Mac/MacApplication.cs`, `Mac/MacStatisticsWindow.cs` |
+| 공통 Tooltip 표시 이름 | 공통 `TrayPresentation.Tooltip`에 선택 인자 `displayName`을 추가했다. 기본값은 enum 이름이라 Windows 동작은 같다 | `TrayPresentation.cs`, 검사 `PortablePlatformTests.cs` +2 |
+| 앱 아이콘 | 초록 그라데이션 바탕에 흰 시계 테두리와 F를 그렸다. 10개 크기를 `Mac/tools/make-app-icon.swift`로 생성해 `Mac/Assets.xcassets/AppIcon.appiconset`에 두고 csproj에 `<AppIcon>AppIcon</AppIcon>`을 지정했다. `actool`이 만든 부분 Info.plist가 매니페스트 입력이라, 증분 빌드에서도 `CFBundleIconFile`·`CFBundleIconName`이 반영됐다 | `Mac/AiBurgerClock.Mac.csproj`, 신규 `Mac/tools/make-app-icon.swift`, `Mac/Assets.xcassets/**` |
+
+### 검증
+
+| 검사 | 결과 |
+|---|---|
+| `Mac/build.sh` | 종료 코드 0. 공통 검사 244,349건(+2, Tooltip 표시 이름). native Release 경고 0 / 오류 0 |
+| bundle | `Resources/AppIcon.icns`·`Assets.car`, Info.plist `CFBundleIconFile`/`CFBundleIconName` = `AppIcon`. 버전 0.1.2 / 3. `codesign` 통과 |
+| `--smoke-test` | PASS / 종료 코드 0. 레이아웃 검사에 OpenAI 행 제목이 "ChatGPT "로 시작하는지 추가 |
+| 시스템 아이콘 | `NSWorkspace.icon(forFile:)`로 추출하니 macOS가 둥근 사각형으로 마스킹한 초록 시계·F 아이콘이 나왔다 |
+
+**실행으로 확인하지 않은 것:**
+- Tooltip이 이제 사라지지 않는지는 사용자가 다시 확인해야 한다. 원인 코드는 고쳤지만, Tooltip이 떠 있는 상태를 자동 검사로 재현할 방법은 없다.
+- 알림 설정·Finder·로그인 항목에 새 아이콘이 반영되는 시점은 macOS 아이콘 캐시에 따라 늦을 수 있다.
+
+**공통 PR #14와의 관계:** PR #14는 Provider 알림 문구를 공통 함수 `ProviderNotification(ProviderKind, …)`로 옮긴다. 이 브랜치에 병합할 때 Mac 알림 제목이 다시 "OpenAI"가 되지 않도록 표시 이름을 넘기게 맞춘다.

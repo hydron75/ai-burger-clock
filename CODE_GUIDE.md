@@ -382,6 +382,7 @@ Windows 내부 승인 형식은 알려진 경우만 해석합니다. 낯선 값�
 | [Shared/SharedSources.props](Shared/SharedSources.props) | 공통 C# 원본 19개를 Mac과 검사 프로젝트에 연결하는 목록 |
 | [Shared.Tests/AiBurgerClock.Shared.Tests.csproj](Shared.Tests/AiBurgerClock.Shared.Tests.csproj) | net10.0 공통 검사, 임시 DB와 가짜 HTTP·CLI 사용 |
 | [Mac/AiBurgerClock.Mac.csproj](Mac/AiBurgerClock.Mac.csproj) | native AppKit, net10.0-macos27.0, osx-arm64, preview 버전과 bundle 버전(`ApplicationDisplayVersion`/`ApplicationVersion`) 지정 |
+| [Mac/tools/make-app-icon.swift](Mac/tools/make-app-icon.swift) | Mac 앱 아이콘 10개 크기를 코드로 생성해 `Mac/Assets.xcassets/AppIcon.appiconset`에 저장. 아이콘을 바꿀 때만 실행 |
 | [Mac/Info.plist](Mac/Info.plist) | Mac 앱 식별자·메뉴바 앱 설정·최소 OS. 버전은 적지 않음(증분 빌드에 반영되지 않음) |
 | [Mac/build.sh](Mac/build.sh) | 진행 단계·도구 오류 표시 → 공통 검사 → Mac Release 빌드 → bundle 서명·SQLite 포함 확인 |
 | bin | 일반 빌드 결과 |

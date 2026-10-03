@@ -41,6 +41,7 @@ open "/Users/hydron/ai-burger-clock/Mac/bin/Release/net10.0-macos27.0/osx-arm64/
 - ChatGPT 제목 아래 Work/Codex 한도, Claude 한도. 설치·로그인된 공식 CLI가 조회하며 앱은 토큰·Keychain·쿠키를 읽지 않습니다. Gemini **개인 계정 한도**는 포함하지 않습니다.
 - 기본 6시간, 잔여 0% 초과~10% 미만 1시간, 정확히 0%는 15분, 리셋 전후 각 15분은 5분 조회. 조건이 겹치면 짧은 주기가 적용됩니다. 예정 리셋 시각 경과만으로 100% 회복을 가정하지 않습니다.
 - 수동 Refresh, 절전 복귀 조회, 연결 복구 조회(네트워크 이벤트는 1분 제한), 정상 종료 시 작업 취소.
+- 화면의 Provider 이름은 ChatGPT·Claude·Gemini 제품 이름으로 표시합니다. 저장되는 값과 공식 상태 주소는 그대로입니다(OpenAI 상태 페이지).
 - 메뉴바 또는 Provider의 기록 메뉴에서 Success·Slow·Error·Interrupted를 기록. 메모는 선택 사항이며 Windows와 같이 최대 1,000자입니다.
 - Statistics의 최근 7일·30일·전체 및 Provider·KST 시간대·Schedule/DST·공식 상태별 비교. n·No data·소표본을 표시합니다.
 - macOS 네이티브 Schedule/공식 상태 변화 알림과 로그인 자동 실행 옵션. **계정 한도 리셋/회복 알림과 크레딧은 구현하지 않았습니다.**
@@ -193,6 +194,8 @@ echo "검사 종료 코드: $?"
 ```
 
 메뉴바·창을 만들고 상태/통계 창의 닫기·재열기·Visible 상태를 확인합니다. 20-point 아이콘의 실제 1x/2x 색·투명도·흰 글자, 전체 상태 창 스크롤 부재·컨트롤 경계/겹침·일반 한도 3줄/4줄의 글꼴 높이, 새 임시 DB의 4종 실측/메모·표본수/No data와 주입 시각의 한도 카운트다운 감소를 검사한 뒤 종료합니다. 실제 계정 조회·HTTP·브라우저 열기·알림 권한 요청·자동 실행 변경을 하지 않습니다. 다중 모니터 메뉴막대·OS 알림·재로그인 및 장시간 절전 복귀는 별도 검증 대상입니다.
+
+앱 아이콘은 `Mac/Assets.xcassets/AppIcon.appiconset`에 있습니다. 바꿀 때는 `swift Mac/tools/make-app-icon.swift`로 다시 생성합니다.
 
 성공 기준은 `PASS: bundle version, menu-tracking countdown timer, 1,000-char note limit, native controls/window close-reopen...` 출력과 종료 코드 `0`입니다. 소스 `66fb868`부터 bundle의 `CFBundleShortVersionString`이 앱 버전과 다르면 `FAIL: Bundle version ...`으로 실패합니다. Mac 버전은 `Mac/AiBurgerClock.Mac.csproj`의 `Version`·`ApplicationVersion`에서만 바꾸고 `Info.plist`에는 적지 않습니다. SDK가 `Info.plist`만 바뀐 증분 빌드에서 bundle manifest를 다시 만들지 않기 때문입니다. 오류가 있으면 출력과 종료 코드를 보존하고 일반 실행·자동 시작 설정 전에 원인을 확인합니다.
 
