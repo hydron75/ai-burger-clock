@@ -3,7 +3,7 @@
 ## macOS native preview 0.1.0
 
 - 기록일: 2026-10-03 KST.
-- 상태: `feature/macos-native`에서 Apple Silicon / macOS 27용 AppKit 메뉴바 소스와 빌드 안내를 준비했다. **실제 Mac Release 빌드·실행은 아직 미검증**이며 안정판 배포나 main 병합을 완료한 상태가 아니다. [작업 기록](MACOS_PORT.md), [Mac 빌드 안내](Mac/README.md).
+- 상태: `feature/macos-native`에서 Apple Silicon / macOS 27용 AppKit 메뉴바 소스와 빌드 안내를 준비하고 [Draft PR #12](https://github.com/hydron75/ai-burger-clock/pull/12)에 올렸다. **실제 Mac Release 빌드·실행은 아직 미검증**이며 안정판 배포나 main 병합을 완료한 상태가 아니다. [작업 기록](MACOS_PORT.md), [Mac 빌드 안내](Mac/README.md).
 - Schedule/DST/공휴일, 공식 상태·권고, CLI 한도·조회 주기, SQLite schema 2와 통계는 루트의 같은 원본을 빌드한다. Windows WinForms와 Mac AppKit UI·알림·자동 실행은 각각 관리한다.
 - Windows Release 빌드 경고·오류 0, 자체 검사 250,741건과 공통 검사 244,338건을 통과했다. Mac의 C# 참조 API 컴파일도 경고·오류 0이지만 `.app` 생성·네이티브 실행 검증을 대신하지 않는다.
 - 다음 확인: Mac의 .NET 10 ARM64 SDK·macos workload 준비 → 공통 검사와 실제 Release 빌드 → 임시 DB native smoke → 실제 메뉴바·알림·로그인 실행·CLI·절전 복귀 확인.

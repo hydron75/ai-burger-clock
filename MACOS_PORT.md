@@ -128,7 +128,9 @@ Mac UI 크기·알림 노출·로그인 등록과 이동된 bundle의 동작은 
 ## 9. Git 기준점과 Windows 보존
 
 - 개발 브랜치: `feature/macos-native`.
+- 검토: [Draft PR #12](https://github.com/hydron75/ai-burger-clock/pull/12). 실제 Mac 검증을 기다리는 상태이며 병합하지 않았다.
 - 작업 전 main: `fbcba72f9ad41e23ab2e668352f9f137c5803557`.
+- preview 구현·검증 소스 커밋: `2c7e360ff6a9d8cde59a84c38c7ca2cf4faeae89`. 이후 PR 번호·기록만 갱신한 문서 커밋은 코드 변경이 아니다.
 - Windows 배포본 버전: 2.2.2, 변경하지 않음.
 - 보존한 `dist/win-x64/AI Burger Clock.exe` SHA-256: `56250BAF25C192314B513C02977A2A40A1E1D72836C43B0CF20803C2F98E2A10`.
 
