@@ -2,7 +2,7 @@
 
 Windows 2.2.2와 macOS preview 0.1.2 소스 기준입니다. Windows 사용법부터 보고 싶다면 [README](README.md), Mac 준비와 아직 남은 검증은 [Mac 안내](Mac/README.md)로 이동하세요. 아래 기존 실행·UI 설명은 Windows 기준이며 Mac의 차이는 12절에 정리했습니다.
 
-코드를 한 줄씩 번역한 문서는 아닙니다. **각 파일이 무엇을 맡고, 서로 어떻게 연결되는지** 설명합니다. 루트·Properties의 C# 47개, Mac 호스트 5개, 공통 검사 입구 1개로 총 53개와 빌드 설정을 다룹니다. 컴퓨터가 만든 `bin`·`obj`와 로컬 검증용 `artifacts`는 대상에서 뺍니다.
+코드를 한 줄씩 번역한 문서는 아닙니다. **각 파일이 무엇을 맡고, 서로 어떻게 연결되는지** 설명합니다. 루트·Properties의 C# 48개, Mac 호스트 6개, 공통 검사 입구 1개로 총 55개와 빌드 설정을 다룹니다. 컴퓨터가 만든 `bin`·`obj`와 로컬 검증용 `artifacts`는 대상에서 뺍니다.
 
 공식 조회 방식의 변경을 조사하는 외부 모니터링 현황은 [BACKLOG](BACKLOG.md)에 있습니다. 이 조사는 아래 앱 코드의 계정 한도 조회 루프와 별개이며, 새 SDK가 공개됐다고 앱의 CLI나 의존성을 자동으로 바꾸지는 않습니다.
 
@@ -293,7 +293,7 @@ Windows 내부 승인 형식은 알려진 경우만 해석합니다. 낯선 값�
 
 이름을 눌러 소스를 열 수 있습니다. 역할을 알고 필요한 파일부터 읽으면 됩니다.
 
-### 실제 앱 기능: 26개
+### 실제 앱 기능: 27개
 
 | 파일 | 맡은 일 |
 |---|---|
@@ -309,11 +309,12 @@ Windows 내부 승인 형식은 알려진 경우만 해석합니다. 낯선 값�
 | [AgentSchedule.cs](AgentSchedule.cs) | 미국 업무시간과 다음 전환 계산 |
 | [UsFederalHolidays.cs](UsFederalHolidays.cs) | 정기 연방 공휴일의 관측 날짜 계산 |
 | [Phase2Models.cs](Phase2Models.cs) | 공통 상태·기록 카드·권고 규칙 |
-| [ProviderStatusClient.cs](ProviderStatusClient.cs) | 공식 JSON을 읽고 관련 상태로 해석 |
+| [ProviderStatusClient.cs](ProviderStatusClient.cs) | 공식 JSON을 읽고 관련 상태로 해석. 두 OS가 함께 쓰는 HTTP 연결 설정 |
 | [ProviderStatusPages.cs](ProviderStatusPages.cs) | 공식 상태 페이지의 고정 주소와 열기 |
 | [StatusMonitor.cs](StatusMonitor.cs) | 정기 조회, 실패 격리, 오래된 정보 판정 |
 | [RecommendationNotifications.cs](RecommendationNotifications.cs) | 마지막 확정 권고 기억, 중복 알림 방지 |
-| [TrayPresentation.cs](TrayPresentation.cs) | 트레이 문자·색상·짧은 도움말 결정 |
+| [TrayPresentation.cs](TrayPresentation.cs) | 트레이 문자·색상·짧은 도움말 결정. 두 OS가 함께 쓰는 전환·Provider 알림 문구 |
+| [NetworkRefreshScheduler.cs](NetworkRefreshScheduler.cs) | 네트워크 변화 뒤 5초 대기 후 재조회, 1분에 한 번 제한, 연속 변화는 마지막 변화 기준 한 번으로 합침 |
 | [UsageStore.cs](UsageStore.cs) | SQLite 생성·업그레이드·백업·설정·저장·일부 해석 불가 행 구분 |
 | [QuotaJsonContext.cs](QuotaJsonContext.cs) | 한도 캐시를 JSON으로 읽고 쓰는 타입 정보를 빌드 때 생성. Mac trimming 검사와 기존 캐시 호환성 유지 |
 | [AutoStartManager.cs](AutoStartManager.cs) | Windows 자동 시작 등록과 상태 판정 |
@@ -379,7 +380,7 @@ Windows 내부 승인 형식은 알려진 경우만 해석합니다. 낯선 값�
 | [build.ps1](build.ps1) | 빌드와 자체 검사를 실행하는 순서 |
 | [Portable.pubxml](Properties/PublishProfiles/Portable.pubxml) | 배포용 단일 EXE 설정 |
 | [app.manifest](app.manifest) | Windows 권한·호환 설정. 관리자 권한으로 자동 상승하지 않음 |
-| [Shared/SharedSources.props](Shared/SharedSources.props) | 공통 C# 원본 19개를 Mac과 검사 프로젝트에 연결하는 목록 |
+| [Shared/SharedSources.props](Shared/SharedSources.props) | 공통 C# 원본 20개를 Mac과 검사 프로젝트에 연결하는 목록 |
 | [Shared.Tests/AiBurgerClock.Shared.Tests.csproj](Shared.Tests/AiBurgerClock.Shared.Tests.csproj) | net10.0 공통 검사, 임시 DB와 가짜 HTTP·CLI 사용 |
 | [Mac/AiBurgerClock.Mac.csproj](Mac/AiBurgerClock.Mac.csproj) | native AppKit, net10.0-macos27.0, osx-arm64, preview 버전과 bundle 버전(`ApplicationDisplayVersion`/`ApplicationVersion`) 지정 |
 | [Mac/Info.plist](Mac/Info.plist) | Mac 앱 식별자·메뉴바 앱 설정·최소 OS. 버전은 적지 않음(증분 빌드에 반영되지 않음) |

@@ -2,7 +2,7 @@
 
 기록일: 2026-10-03 KST. Windows 기준 버전: 2.2.2.
 
-Apple Silicon / macOS 27용 **native AppKit 메뉴바 호스트**를 별도 프로젝트로 준비했다. 기존 Windows WinForms UI·배포본은 유지한다. 앞선 0.1.1의 한 화면 배치·두 계정 한도 수신을 확인한 뒤, 작은 검은 F와 비활성 모니터의 아이콘 누락 보고를 받아 0.1.2에서 20-point 컬러 bitmap으로 수정했다. **0.1.2의 실제 Mac 공통 검사 244,347건·Release `.app`·서명·ARM64 SQLite·native smoke에 이어 일반 컬러 아이콘과 양쪽 메뉴막대 표시까지 확인**했다. OS 알림·재로그인·절전 복귀와 장기 사용은 남아 있다. 앞선 검증은 17~19절, 아이콘 수정은 20절, 새 실제 빌드는 21절, native 검사는 22절, 실제 메뉴막대는 23절에 구분한다. 24절은 이전 빌드에서 bundle 버전이 0.1.0으로 남던 문제의 수정과, 사용자 Mac에서 직접 실행한 첫 로컬 빌드·검사 기록이다. 25절은 PR #12 코드 리뷰 10건의 반영 기록, 26절은 연결 복구·절전 복귀, 27절은 로그아웃 정상 종료와 재로그인 자동 실행 실제 확인이다.
+Apple Silicon / macOS 27용 **native AppKit 메뉴바 호스트**를 별도 프로젝트로 준비했다. 기존 Windows WinForms UI·배포본은 유지한다. 앞선 0.1.1의 한 화면 배치·두 계정 한도 수신을 확인한 뒤, 작은 검은 F와 비활성 모니터의 아이콘 누락 보고를 받아 0.1.2에서 20-point 컬러 bitmap으로 수정했다. **0.1.2의 실제 Mac 공통 검사 244,347건·Release `.app`·서명·ARM64 SQLite·native smoke에 이어 일반 컬러 아이콘과 양쪽 메뉴막대 표시까지 확인**했다. OS 알림·재로그인·절전 복귀와 장기 사용은 남아 있다. 앞선 검증은 17~19절, 아이콘 수정은 20절, 새 실제 빌드는 21절, native 검사는 22절, 실제 메뉴막대는 23절에 구분한다. 24절은 이전 빌드에서 bundle 버전이 0.1.0으로 남던 문제의 수정과, 사용자 Mac에서 직접 실행한 첫 로컬 빌드·검사 기록이다. 25절은 PR #12 코드 리뷰 10건의 반영 기록, 26절은 연결 복구·절전 복귀, 27절은 로그아웃 정상 종료와 재로그인 자동 실행 실제 확인, 28절은 공통 원본 정리와 연결 복구 지연 조회(별도 PR)다.
 
 Mac 개발 도구 준비와 실행 순서는 [Mac/README.md](Mac/README.md)를 따른다.
 
@@ -11,7 +11,7 @@ Mac 개발 도구 준비와 실행 순서는 [Mac/README.md](Mac/README.md)를 �
 영구적인 Windows/Mac 브랜치를 따로 유지하지 않는다. `feature/macos-native`는 개발·검증용 임시 브랜치다. Mac 검증 후 main 병합 여부를 판단하고, 공통 기능 개선은 한 원본에서 두 호스트에 반영한다.
 
 ```text
-루트의 공통 C# 원본 19개
+루트의 공통 C# 원본 20개
   ├─ Windows: 기존 WinForms 프로젝트가 직접 컴파일
   ├─ macOS: SharedSources.props로 링크 → AppKit 호스트
   └─ 공통 검사: 같은 원본과 기존 검사들을 링크
@@ -660,3 +660,58 @@ DB는 원본을 직접 열지 않고 scratch 폴더로 복사해 읽었다. 이 
 - 로그아웃 때 진행 중인 저장 작업이 남아 있는 경우의 종료. 이번에는 대기 작업이 없을 때의 종료만 봤다.
 
 이번 기록은 문서만 바꾼다.
+
+## 28. 공통 원본 정리와 연결 복구 지연 조회 (별도 PR)
+
+25절에서 보류한 공통 파일 정리와 26절의 공통 개선 후보를 `feature/macos-native` 대상의 별도 PR로 진행했다. Windows 전용 파일의 호출부는 사용자 승인에 따라 이번에 한해 Mac 담당이 수정했고, 실제 Windows 검사는 AGENTS.md 규칙대로 Windows 담당에 요청한다.
+
+### 공통 원본 변경
+
+| 파일 | 변경 | 동작 변화 |
+|---|---|---|
+| `NetworkRefreshScheduler.cs` (신규, 공통 원본 20번째) | 네트워크 변화 뒤 재조회 스케줄러 | **있음.** 아래 참조 |
+| `ProviderStatusClient.cs` | `CreateHttpHandler()` / `CreateHttpClient()` 추가 | 없음. 두 OS가 이미 같은 값을 쓰던 것을 한 곳으로 옮김 |
+| `TrayPresentation.cs` | `TransitionNotification()` / `ProviderNotification()` 추가 | 없음. 25절에서 맞춘 문구를 한 곳으로 옮김 |
+| `MonitorTests.cs` (공통 검사) | HTTP 설정·알림 문구·스케줄러 검사 11건 추가 | — |
+| `Shared/SharedSources.props` | 새 공통 원본 연결 | — |
+
+연결 복구 조회의 바뀐 동작:
+
+- **이전:** 네트워크가 사용 가능해지면 즉시 조회했다. 직전 조회에서 1분이 지나지 않았으면 그 변화는 버렸다.
+- **이후:**
+  - 변화 뒤 **5초 기다렸다가** 조회한다.
+  - 기다리는 동안 또 바뀌면 마지막 변화에서 다시 5초를 센다.
+  - 조회는 여전히 1분에 한 번이다. 다만 1분 안에 생긴 변화도 버리지 않고 1분이 되는 시점으로 미뤄 한 번 조회한다. 그래서 연속 변화가 끝난 마지막 네트워크 상태는 항상 조회된다.
+- **이유:** 26절에서 유선 재연결 직후의 계정 한도 CLI 조회가 성공하지 못했다. 1분 안의 변화를 버리면, 재연결 직후 실패한 조회를 다음 정기 조회 때까지 회복하지 못할 수 있었다.
+- **변하지 않는 것:** 절전 복귀(Windows `PowerModeChanged`, Mac `DidWakeNotification`)와 수동 Refresh는 지연 없이 즉시 조회한다.
+
+### 호스트 변경
+
+- Windows `TrayApplicationContext.cs`:
+  - `CreateHttpClient()`와 두 알림 문구 함수를 사용한다.
+  - `TryClaimNetworkRefresh`·`NetworkRefreshMinimumInterval`·`lastNetworkRefreshTick`을 지우고 스케줄러를 사용하며, 종료 때 스케줄러를 정리한다.
+  - 공휴일 보정 알림 문구는 Windows 전용이라 그대로 둔다.
+- Windows `TrayPresentationTests.cs`: 기존 1분 제한 검사 3건을 지운다. 같은 내용은 공통 `MonitorTests`가 확인한다.
+- Mac `MacApplication.cs`: Windows와 같은 공통 함수와 스케줄러를 사용하도록 바꾼다.
+
+### 이 Mac에서 수행한 검증
+
+| 검사 | 결과 |
+|---|---|
+| Windows 대상 컴파일 `dotnet build AiBurgerClock.csproj -c Release -warnaserror -p:EnableWindowsTargeting=true` | 경고 0 / 오류 0 (실행 검사 아님) |
+| `Mac/build.sh` | 종료 코드 0, 공통 검사 **244,358건**(+11), native Release 경고 0 / 오류 0 |
+| 서명·smoke | `codesign` 통과, `--smoke-test` PASS / 종료 코드 0 |
+| 변형 검사 | 5초 대기를 빼면 `First network change refreshes after the settle delay` 실패. 1분 안 변화를 버리는 이전 방식으로 되돌리면 `A change within a minute is deferred to the one-minute limit, not dropped` 실패. 원복 후 244,358건 통과 |
+
+스케줄러 검사는 가짜 시계와 가짜 대기를 쓴다. 첫 변화 5초 뒤 조회, 1분 안 변화는 1분 시점으로 연기, 대기 중 변화는 마지막 변화 5초 뒤 한 번으로 합침, 종료 뒤에는 조회 없음을 확인한다.
+
+### Windows에서 확인할 항목
+
+1. `build.ps1`: 경고·오류 0, `--self-test` 종료 코드 0. Windows 검사 수는 공통 +11, `TrayPresentationTests` −3으로 바뀐다.
+2. `--smoke-test`: 전환·Provider 풍선 알림 문구와 기존 `HolidayUiChecks`(공휴일 문구 포함)가 그대로 통과하는지.
+3. 실제 Windows에서 네트워크 어댑터를 끊었다 다시 연결하면 약 5초 뒤 공식 상태·계정 한도가 다시 조회되는지(선택).
+
+### 아직 하지 않은 것
+
+- Mac에서 실제 네트워크를 다시 끊어 5초 지연 뒤 계정 한도 조회가 성공하는지 확인하는 것(사용자 조작 필요).
+- Windows 실행 검사 전체.
