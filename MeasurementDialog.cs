@@ -11,7 +11,7 @@ internal sealed class MeasurementDialog : Form
     public MeasurementDialog(ProviderKind provider, UsageEventType initial)
     {
         SuspendLayout();
-        Text = provider + " · 사용 경험";
+        Text = WindowsProviderNames.Provider(provider) + " · 사용 경험";
         AutoScaleMode = AutoScaleMode.Dpi;
         AutoScaleDimensions = new SizeF(96, 96);
         ClientSize = new Size(360, 245);

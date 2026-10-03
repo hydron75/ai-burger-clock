@@ -78,7 +78,7 @@ namespace AiBurgerClock
             menu.Items.Add(countdownMenuItem);
             menu.Items.Add(new ToolStripSeparator());
             menu.Items.Add(showItem);
-            var refreshItem = new ToolStripMenuItem("상태·한도 새로 고침") { ToolTipText = "공식 서비스 상태와 Work / Codex·Claude 계정 한도를 함께 갱신" };
+            var refreshItem = new ToolStripMenuItem("상태·한도 새로 고침") { ToolTipText = "공식 서비스 상태와 ChatGPT (Work/Codex)·Claude 계정 한도를 함께 갱신" };
             refreshItem.Click += (_, _) => RefreshAll();
             menu.Items.Add(refreshItem);
             var recordRoot = new ToolStripMenuItem("사용 경험 기록");
@@ -86,7 +86,7 @@ namespace AiBurgerClock
             {
                 var recordMenu = StatusWindow.CreateRecordingMenu(provider, RecordMeasurement);
                 recordMenus.Add(recordMenu);
-                var recordItem = new ToolStripMenuItem(provider.ToString()) { DropDown = recordMenu };
+                var recordItem = new ToolStripMenuItem(WindowsProviderNames.Provider(provider)) { DropDown = recordMenu };
                 recordRoot.DropDownItems.Add(recordItem);
             }
             menu.Items.Add(recordRoot);
@@ -295,7 +295,7 @@ namespace AiBurgerClock
                 ReplaceTrayIcon(appearance);
                 currentAppearance = appearance;
             }
-            trayIcon.Text = TrayPresentation.Tooltip(schedule, providers);
+            trayIcon.Text = TrayPresentation.Tooltip(schedule, providers, WindowsProviderNames.Provider);
             foreach (var status in providers)
             {
                 var current = RecommendationPolicy.Calculate(schedule.State, status.Status);
@@ -303,7 +303,7 @@ namespace AiBurgerClock
                 {
                     bool recovered = current == Recommendation.Go;
                     (trayIcon.BalloonTipTitle, trayIcon.BalloonTipText) =
-                        TrayPresentation.ProviderNotification(status.Provider, current, status.Reason);
+                        TrayPresentation.ProviderNotification(status.Provider, current, status.Reason, WindowsProviderNames.Provider);
                     trayIcon.BalloonTipIcon = recovered ? ToolTipIcon.Info : ToolTipIcon.Warning;
                     trayIcon.ShowBalloonTip(6000);
                     providerNotificationSerial++;
@@ -365,7 +365,7 @@ namespace AiBurgerClock
                 await save;
                 if (!disposed)
                 {
-                    statusWindow.SetFeedback($"{provider} · {type} 저장됨 ({schedule.NowKst:HH:mm} KST)");
+                    statusWindow.SetFeedback($"{WindowsProviderNames.Provider(provider)} · {type} 저장됨 ({schedule.NowKst:HH:mm} KST)");
                     if (!exiting) statusWindow.ShowNearTray();
                 }
             }

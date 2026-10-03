@@ -17,6 +17,9 @@ internal static class UIRegressionChecks
         var monitor = context.ProviderMonitor ?? throw new InvalidOperationException("Test monitor missing");
         var mouseClick = typeof(Control).GetMethod("OnMouseClick", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
         var panels = context.StatusWindow.Controls.OfType<Panel>().ToArray();
+        Check(panels[0].Controls.OfType<Label>().Any(l => l.Text.StartsWith("ChatGPT   ", StringComparison.Ordinal)) &&
+            panels[0].AccessibleDescription?.Contains("ChatGPT 공식 상태 페이지", StringComparison.Ordinal) == true,
+            "Windows official status heading and accessible link display ChatGPT");
         foreach (var provider in Enum.GetValues<ProviderKind>())
         {
             var panel = panels[(int)provider];
@@ -69,8 +72,12 @@ internal static class UIRegressionChecks
         context.RefreshStatus(true);
         Check(notices.SequenceEqual(new[] { (ProviderKind.OpenAI, Recommendation.Hold) }), "GO -> HOLD notification reaches tray handler");
         Check(context.CurrentAppearance == new TrayAppearance(AgentState.FullThrottle, TrayAttention.Orange) &&
-            context.TrayIcon.Text.Contains("OpenAI HOLD") && context.TrayIcon.Text.Contains("Claude GO") &&
+            context.TrayIcon.Text.Contains("ChatGPT HOLD") && context.TrayIcon.Text.Contains("Claude GO") &&
             context.TrayIcon.Text.Contains("Gemini GO"), "Degraded provider makes orange F and independent tooltip recommendations");
+        Check(context.TrayIcon.BalloonTipTitle == "ChatGPT 작업 권고 변경" &&
+            context.TrayIcon.BalloonTipText == TrayPresentation.ProviderNotification(ProviderKind.OpenAI, Recommendation.Hold,
+                monitor.Snapshot().Single(s => s.Provider == ProviderKind.OpenAI).Reason).Body,
+            "Native Provider warning uses ChatGPT with unchanged body wording");
         await monitor.RefreshOnceAsync();
         context.RefreshStatus(true);
         Check(notices.Count == 1, "Repeated official status does not repeat notification");
@@ -82,7 +89,7 @@ internal static class UIRegressionChecks
         context.ShowWindow();
         SmokeTest.RenderAndCheckLayout(context.StatusWindow, "provider-outage.png", reportDirectory);
         Check(Descendants(context.StatusWindow).OfType<Label>().Any(l => l.Text == "Claude   GO") &&
-            Descendants(context.StatusWindow).OfType<Label>().Any(l => l.Text == "Gemini   GO"), "OpenAI STOP leaves Claude and Gemini GO in UI");
+            Descendants(context.StatusWindow).OfType<Label>().Any(l => l.Text == "Gemini   GO"), "ChatGPT STOP leaves Claude and Gemini GO in UI");
         var deactivate = typeof(Form).GetMethod("OnDeactivate", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
         context.StatusWindow.WithoutAutoHide(() => deactivate.Invoke(context.StatusWindow, [EventArgs.Empty]));
         Check(context.StatusWindow.Visible, "Owned warning message does not auto-hide the status window");
@@ -123,6 +130,7 @@ internal static class UIRegressionChecks
         await monitor.RefreshOnceAsync();
         context.RefreshStatus(true);
         Check(notices.Count == 8 && notices.Last() == (ProviderKind.OpenAI, Recommendation.Go), "Recovery after uncertainty notifies once");
+        Check(context.TrayIcon.BalloonTipTitle == "ChatGPT 정상화", "Native Provider recovery title displays ChatGPT");
         Check(context.StatusWindow.Controls.OfType<Label>().Any(l => l.Text.StartsWith("최근 조회 시도:")), "UI labels attempted time explicitly");
 
         // Synchronous sequence: the 1-second UI timer cannot run between these calls.
@@ -133,11 +141,11 @@ internal static class UIRegressionChecks
         const string storageFailure = "로컬 저장 확인 필요: synthetic";
         ShowStorage(storageFailure);
         Check(feedback.Text == storageFailure && feedback.ForeColor == Color.Firebrick, "Storage error appears in feedback");
-        context.StatusWindow.SetFeedback("OpenAI · Success 저장됨");
+        context.StatusWindow.SetFeedback("ChatGPT · Success 저장됨");
         ShowStorage(storageFailure);
-        Check(feedback.Text == "OpenAI · Success 저장됨", "Repeated storage error does not overwrite newer feedback");
+        Check(feedback.Text == "ChatGPT · Success 저장됨", "Repeated storage error does not overwrite newer feedback");
         ShowStorage("");
-        Check(feedback.Text == "OpenAI · Success 저장됨", "Storage recovery keeps unrelated feedback");
+        Check(feedback.Text == "ChatGPT · Success 저장됨", "Storage recovery keeps unrelated feedback");
         ShowStorage(storageFailure);
         ShowStorage("");
         Check(!feedback.Text.Contains("synthetic") && feedback.ForeColor != Color.Firebrick, "Storage recovery clears a still-visible error");
@@ -147,7 +155,7 @@ internal static class UIRegressionChecks
         int total = 0;
         foreach (var provider in Enum.GetValues<ProviderKind>())
         {
-            var trayProvider = trayRoot.DropDownItems.OfType<ToolStripMenuItem>().Single(i => i.Text == provider.ToString());
+            var trayProvider = trayRoot.DropDownItems.OfType<ToolStripMenuItem>().Single(i => i.Text == WindowsProviderNames.Provider(provider));
             foreach (var type in Enum.GetValues<UsageEventType>())
             {
                 var menu = provider == ProviderKind.OpenAI ? rowMenus[(int)provider].Items : trayProvider.DropDownItems;
@@ -157,6 +165,8 @@ internal static class UIRegressionChecks
             }
         }
         Check(total == 12, "Provider row/tray menu handlers store all 3 providers x 4 event types");
+        Check(trayRoot.DropDownItems.OfType<ToolStripMenuItem>().Select(i => i.Text).SequenceEqual(new[] { "ChatGPT", "Claude", "Gemini" }),
+            "Windows recording menu shows ChatGPT without changing provider order");
         var events = await store.ReadUsageAsync(null);
         Check(events.All(e => e.SchedulePolicyVersion == AgentSchedule.HolidayPolicyVersion && e.HolidayAdjustmentEnabled == true &&
             !e.HolidayExtendedFullThrottle && e.EasternIsDst &&
@@ -176,6 +186,7 @@ internal static class UIRegressionChecks
                 dialogTimer.Stop();
                 Descendants(dialog).OfType<ComboBox>().Single().SelectedItem = UsageEventType.Interrupted;
                 Descendants(dialog).OfType<TextBox>().Single().Text = "검증 메모 · synthetic only";
+                Check(dialog.Text == "ChatGPT · 사용 경험", "Windows note dialog title displays ChatGPT");
                 SaveFormImage(dialog, "measurement-dialog.png", reportDirectory);
                 dialogFilled = true;
                 Descendants(dialog).OfType<Button>().Single(b => b.Text == "저장").PerformClick();
@@ -187,6 +198,9 @@ internal static class UIRegressionChecks
         events = await store.ReadUsageAsync(null);
         Check(dialogFilled && events.Any(e => e.UserNote == "검증 메모 · synthetic only" && e.EventType == UsageEventType.Interrupted),
             "Note dialog save handler stores selected event and Unicode note");
+        Check(events.Count(e => e.Provider == ProviderKind.OpenAI) == 5 &&
+            context.StatusWindow.FeedbackLabel.Text.StartsWith("ChatGPT · Interrupted 저장됨", StringComparison.Ordinal),
+            "ChatGPT recording feedback preserves stored OpenAI identities");
         Check((await new UsageStore(store.DatabasePath).ReadUsageAsync(null)).Count == 13, "UI input persists across database reopen");
 
         context.ShowStatistics();
@@ -203,6 +217,10 @@ internal static class UIRegressionChecks
             Check(Descendants(statistics).OfType<DataGridView>().Count() == 5, $"Statistics period {index}: all five tables populated");
         }
         Check(Descendants(statistics).OfType<DataGridView>().First().Rows.Count == 3, "Statistics provider counts rendered for all providers");
+        foreach (var grid in Descendants(statistics).OfType<DataGridView>())
+            Check(grid.Rows.Cast<DataGridViewRow>().Any(r => r.Cells[0].Value as string == "ChatGPT") &&
+                grid.Rows.Cast<DataGridViewRow>().All(r => r.Cells[0].Value as string != "OpenAI"),
+                "Every Windows statistics tab displays ChatGPT while shared analysis keeps stored names");
         foreach (var label in Descendants(statistics).OfType<Label>())
         {
             var required = TextRenderer.MeasureText(label.Text, label.Font,

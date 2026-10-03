@@ -143,7 +143,7 @@ internal sealed class StatisticsWindow : Form
             foreach (StatisticsRow row in rows)
             {
                 EventCounts c = row.Counts;
-                int index = grid.Rows.Add(row.Provider, row.Group, c.Total == 0 ? "n=0" : $"n={c.Total:N0}",
+                int index = grid.Rows.Add(WindowsProviderNames.Provider(row.Provider), row.Group, c.Total == 0 ? "n=0" : $"n={c.Total:N0}",
                     c.Cell(c.Success), c.Cell(c.Slow), c.Cell(c.Error), c.Cell(c.Interrupted), c.Cell(c.Adverse));
                 grid.Rows[index].DefaultCellStyle.ForeColor = c.Total == 0 ? Color.Gray : Color.FromArgb(40, 40, 40);
                 grid.Rows[index].Cells[1].ToolTipText = row.Group;

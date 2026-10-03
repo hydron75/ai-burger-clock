@@ -48,10 +48,17 @@ internal static class AccountQuotaUiChecks
         var appearance = context.CurrentAppearance;
         var size = context.StatusWindow.ClientSize;
         context.StatusWindow.QuotaButton.PerformClick();
-        Check(context.StatusWindow.QuotaView.Visible, "Quota toggle shows Work / Codex and Claude without enlarging the popup");
+        Check(context.StatusWindow.QuotaView.Visible, "Quota toggle shows ChatGPT Work/Codex and Claude without enlarging the popup");
         var labels = context.StatusWindow.QuotaView.Controls.OfType<Label>().ToArray();
-        Check(labels.Any(l => l.Text.Contains("Work / Codex")) && labels.Any(l => l.Text.Contains("Claude")) &&
+        Check(labels.Any(l => l.Text == "ChatGPT") && labels.Any(l => l.Text == "Work/Codex") && labels.Any(l => l.Text.Contains("Claude")) &&
             !labels.Any(l => l.Text.Contains("Gemini")), "Only requested account quota providers appear; no Gemini quota substitute");
+        var chatGptHeading = labels.Single(l => l.Text == "ChatGPT");
+        var scope = labels.Single(l => l.Text == "Work/Codex");
+        Check(scope.Top >= chatGptHeading.Bottom && labels.Any(l => l.Top >= scope.Bottom && l.Text.StartsWith("5시간", StringComparison.Ordinal)),
+            "ChatGPT quota heading has Work/Codex on a separate line above its limits");
+        Check(labels.All(l => l.Bottom <= context.StatusWindow.QuotaView.ClientSize.Height) &&
+            !context.StatusWindow.QuotaView.VerticalScroll.Visible,
+            "Standard Codex two-window and Claude three-window quotas fit the existing panel without scrolling");
         Check(labels.Any(l => l.Text.Contains("100%")) && labels.Any(l => l.Text.Contains("55%")) && labels.Any(l => l.Text.Contains("99%")),
             "UI converts consumed percentages into remaining percentages and retains model-scoped windows");
         Check(labels.Any(l => l.AccessibleDescription?.Contains("잔여 0%는 15분") == true),
@@ -99,5 +106,16 @@ internal static class AccountQuotaUiChecks
         Check(!context.StatusWindow.QuotaView.Visible && context.StatusWindow.Controls.OfType<Panel>().Count(p => p.Visible) == 3,
             "Status toggle restores all three official status rows including Gemini");
         Check(context.StatusWindow.Controls.OfType<Label>().Any(l => l.Text.Contains("최근 조회 시도:")), "Status footer is restored immediately");
+
+        var previousCodex = monitor.Snapshot().Single(s => s.Provider == QuotaProvider.Codex) with { IsPrevious = true, Error = "Synthetic offline condition" };
+        context.StatusWindow.UpdateQuotas([previousCodex], clock());
+        Check(context.StatusWindow.QuotaView.Controls.OfType<Label>().Any(l => l.Text == "ChatGPT · 이전 조회값") &&
+            context.StatusWindow.QuotaView.Controls.OfType<Label>().Any(l => l.Text == "Work/Codex"),
+            "Previous Codex values keep the ChatGPT heading and Work/Codex scope");
+        context.StatusWindow.UpdateQuotas([previousCodex with { IsRefreshing = true }], clock());
+        Check(context.StatusWindow.QuotaView.Controls.OfType<Label>().Any(l => l.Text == "ChatGPT · 확인 중") &&
+            context.StatusWindow.QuotaView.Controls.OfType<Label>().Any(l => l.Text == "Work/Codex"),
+            "Refreshing Codex values keep the ChatGPT heading and Work/Codex scope");
+        context.RefreshStatus(false);
     }
 }

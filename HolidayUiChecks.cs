@@ -86,7 +86,7 @@ internal static class HolidayUiChecks
         await monitor.RefreshOnceAsync();
         context.RefreshStatus(true);
         Check(context.CurrentAppearance == new TrayAppearance(AgentState.FullThrottle, TrayAttention.Red) &&
-            context.TrayIcon.Text.Contains("OpenAI STOP") && context.TrayIcon.Text.Contains("Claude GO"),
+            context.TrayIcon.Text.Contains("ChatGPT STOP") && context.TrayIcon.Text.Contains("Claude GO"),
             "Holiday FULL never hides provider outage or lowers other providers");
         // Freshness still affects icon without an extra polling timer or HTTP request.
         setNow(Kst(11, 26, 23, 21));
