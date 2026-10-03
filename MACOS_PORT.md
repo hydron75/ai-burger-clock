@@ -968,3 +968,34 @@ Draft를 해제하자 Codex 자동 리뷰가 `6681109`에 P2 지적 2건을 남�
 - **검증:** Windows 대상 컴파일 경고 0 / 오류 0, `Mac/build.sh` 종료 코드 0, `codesign` 통과, smoke PASS / 종료 코드 0.
 - **버전:** 0.1.5 / 6을 유지한다. 34절의 SHA-256은 소스 `53ae21f` 기준이고, 지금 실행 중인 bundle은 이 수정이 들어간 더 새 소스다. 최종 bundle 기록은 main 병합 때 정리한다.
 - **Windows 재검증:** PR HEAD가 바뀌었으므로 최종 Windows 검증은 새 HEAD로 요청한다.
+
+### 35-2. main 대비 Windows 최종 검증과 병합
+
+**Windows 최종 검증(ChatGPT, 2026-10-04):** PR HEAD `b9d07c958553c3b65c04bb3ddb4f8c9c2d20e788`와 main `2297cbed93916eafd9d94aff3ea8f76ba2c68264`에서 각각 새로 실행했다. [PR 코멘트](https://github.com/hydron75/ai-burger-clock/pull/12#issuecomment-5973882081)
+
+- Release 경고 0 / 오류 0. 자체 검사 250,708 → 250,771건(+63), 두 커밋 모두 실제 프로세스 ExitCode 0.
+- 검사 그룹별 차이:
+  - MonitorTests +20, AccountQuotaMonitorTests +9, PortablePlatformTests +37(신규)
+  - TrayPresentationTests −3: 기존 Windows 1분 제한 검사를 공통 스케줄러 검사로 옮겼다.
+  - 나머지 그룹은 같다.
+- smoke: 두 커밋 모두 종료 코드 0, PASS 121건, `BalloonTipShown` 15회.
+- **Windows 화면:** smoke가 저장한 PNG 10쌍이 main과 바이트 단위로 같다. Windows UI 변경은 없다. Provider 표시는 `OpenAI`, 한도 제목은 `Work / Codex` 그대로다.
+- 기존 Windows dist SHA-256은 검증 전후 같았다.
+- 미수행: 실제 네트워크 단절·재연결, 실제 절전·재부팅, 실계정 조회, 알림 배너 수동 확인.
+
+**같은 검증에서 지적된 검사 결함과 수정:** 공통 `MonitorTests`의 첫 스케줄러 타이밍 검사가 연결 여부를 주입하지 않았다. 그래서 기본 `HasUsableNetwork()`가 실행 PC의 실제 인터페이스를 읽었고, 오프라인 PC에서는 자체 검사가 실패할 수 있었다.
+- 이 Mac에서 연결 없음(`() => false`)을 주입하자 `First network change refreshes after the settle delay`가 실패해 지적을 확인했다.
+- 수정: 그 검사에 `networkAvailable: () => true`를 주입했다. 검사 수는 같다(244,371건).
+- Windows 대상 컴파일은 경고 0 / 오류 0이다.
+- 앱 코드는 바뀌지 않아 Windows 실행 재검증은 생략하고 main에 병합한다.
+
+**최종 Mac bundle (0.1.5 / build 6):** 앱 소스 `b9d07c9`. 이후 커밋은 공통 검사 1줄과 문서뿐이라 앱 바이너리는 같다.
+
+| 항목 | 값 |
+|---|---|
+| 경로 | `Mac/bin/Release/net10.0-macos27.0/osx-arm64/AI Burger Clock.app` |
+| 버전 | 0.1.5 / 6, `codesign` 통과, 124M |
+| SHA-256 실행 파일 | `fa5dfff2e836f31fef42c41a2a353e6d9a64d280d3047816256c691a500a4c2b` |
+| SHA-256 앱 DLL | `6bbdc3abcd2c7f7f032eb96056a7a1b62aa3ae826671d93f6a374da14f05097c` |
+
+34절의 SHA-256(`53ae21f`)은 35-1절 Codex 리뷰 반영 전 bundle이다. 위 값이 main 병합 시점의 최종 bundle이다.

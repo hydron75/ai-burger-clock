@@ -239,7 +239,7 @@ internal static class MonitorTests
             hook?.Invoke();
             clock += (long)span.TotalMilliseconds;
             return Task.CompletedTask;
-        });
+        }, () => true); // Timing checks must not depend on the build machine's real network.
         long settle = (long)NetworkRefreshScheduler.SettleDelay.TotalMilliseconds;
         long minimum = (long)NetworkRefreshScheduler.MinimumInterval.TotalMilliseconds;
         network.OnNetworkAvailable();
