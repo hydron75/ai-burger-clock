@@ -2,7 +2,7 @@
 
 Apple Silicon / macOS 27을 위한 C# AppKit 메뉴바 앱입니다. Windows 2.2.2 배포본과 별도 앱이지만, 시간표·공식 상태·권고·한도 조회·기록·통계 계산 코드는 같은 저장소의 원본 소스를 링크해서 사용합니다. Windows 코드를 복사해 따로 유지하지 않습니다.
 
-이 폴더는 **일반 사용 검증을 진행 중인 preview 소스**입니다. 2026-10-03 KST **0.1.2의 실제 Mac 공통 검사 244,347건·Release `.app`·서명·ARM64 SQLite·native smoke PASS에 이어, 일반 실행의 커진 컬러 아이콘과 양쪽 메뉴막대 표시도 확인했습니다.** 앞선 0.1.1의 한 화면 배치·두 계정 한도 수신도 확인했습니다. OS 알림·재로그인·절전/연결 복구·장기 사용은 남아 있습니다. [실제 Mac 빌드](../MACOS_PORT.md#21-012-실제-mac-release-빌드-성공), [native 검사](../MACOS_PORT.md#22-012-아이콘-native-smoke-pass), [실제 메뉴막대](../MACOS_PORT.md#23-012-실제-컬러-아이콘과-양쪽-메뉴막대-확인)
+이 폴더는 **일반 사용 검증을 진행 중인 preview 소스**입니다. 2026-10-03 KST **0.1.2의 실제 Mac 공통 검사 244,347건·Release `.app`·서명·ARM64 SQLite·native smoke PASS에 이어, 일반 실행의 커진 컬러 아이콘과 양쪽 메뉴막대 표시도 확인했습니다.** 앞선 0.1.1의 한 화면 배치·두 계정 한도 수신도 확인했습니다. 이후 이 Mac에서 직접 빌드해 보니 **이전 bundle은 `Info.plist` 버전이 0.1.0 / 1로 남아 있었습니다.** 소스 `66fb868`에서 버전을 csproj로 옮겨 0.1.2 / 3이 반영되도록 고쳤고, native smoke가 bundle 버전도 검사합니다. OS 알림·재로그인·절전/연결 복구·장기 사용은 남아 있습니다. [버전 수정과 로컬 검증](../MACOS_PORT.md#24-012-bundle-버전-미반영-수정과-첫-로컬-mac-검증), [실제 Mac 빌드](../MACOS_PORT.md#21-012-실제-mac-release-빌드-성공), [native 검사](../MACOS_PORT.md#22-012-아이콘-native-smoke-pass), [실제 메뉴막대](../MACOS_PORT.md#23-012-실제-컬러-아이콘과-양쪽-메뉴막대-확인)
 
 ## 0.1.2: 더 큰 컬러 메뉴바 아이콘
 
@@ -194,7 +194,7 @@ echo "검사 종료 코드: $?"
 
 메뉴바·창을 만들고 상태/통계 창의 닫기·재열기·Visible 상태를 확인합니다. 20-point 아이콘의 실제 1x/2x 색·투명도·흰 글자, 전체 상태 창 스크롤 부재·컨트롤 경계/겹침·일반 한도 3줄/4줄의 글꼴 높이, 새 임시 DB의 4종 실측/메모·표본수/No data와 주입 시각의 한도 카운트다운 감소를 검사한 뒤 종료합니다. 실제 계정 조회·HTTP·브라우저 열기·알림 권한 요청·자동 실행 변경을 하지 않습니다. 다중 모니터 메뉴막대·OS 알림·재로그인 및 장시간 절전 복귀는 별도 검증 대상입니다.
 
-성공 기준은 `PASS: native controls/window close-reopen...` 출력과 종료 코드 `0`입니다. 오류가 있으면 출력과 종료 코드를 보존하고 일반 실행·자동 시작 설정 전에 원인을 확인합니다.
+성공 기준은 `PASS: bundle version, native controls/window close-reopen...` 출력과 종료 코드 `0`입니다. 소스 `66fb868`부터 bundle의 `CFBundleShortVersionString`이 앱 버전과 다르면 `FAIL: Bundle version ...`으로 실패합니다. Mac 버전은 `Mac/AiBurgerClock.Mac.csproj`의 `Version`·`ApplicationVersion`에서만 바꾸고 `Info.plist`에는 적지 않습니다. SDK가 `Info.plist`만 바뀐 증분 빌드에서 bundle manifest를 다시 만들지 않기 때문입니다. 오류가 있으면 출력과 종료 코드를 보존하고 일반 실행·자동 시작 설정 전에 원인을 확인합니다.
 
 2026-10-03 KST 사용자 Mac에서 이전 0.1.0뿐 아니라 새 0.1.1의 종료 코드 0도 확인했습니다. 0.1.1 성공 출력에는 `compact one-screen layout/standard quota rows`와 `injected quota countdown`이 포함됐습니다. 가짜 한도 데이터로 실행한 검사이므로 실제 CLI 계정 조회 성공이나 OS 알림 노출을 뜻하지 않습니다. [검사 기록](../MACOS_PORT.md#18-011-새-native-smoke-통과)
 

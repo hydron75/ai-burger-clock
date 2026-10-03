@@ -2,7 +2,7 @@
 
 기록일: 2026-10-03 KST. Windows 기준 버전: 2.2.2.
 
-Apple Silicon / macOS 27용 **native AppKit 메뉴바 호스트**를 별도 프로젝트로 준비했다. 기존 Windows WinForms UI·배포본은 유지한다. 앞선 0.1.1의 한 화면 배치·두 계정 한도 수신을 확인한 뒤, 작은 검은 F와 비활성 모니터의 아이콘 누락 보고를 받아 0.1.2에서 20-point 컬러 bitmap으로 수정했다. **0.1.2의 실제 Mac 공통 검사 244,347건·Release `.app`·서명·ARM64 SQLite·native smoke에 이어 일반 컬러 아이콘과 양쪽 메뉴막대 표시까지 확인**했다. OS 알림·재로그인·절전 복귀와 장기 사용은 남아 있다. 앞선 검증은 17~19절, 아이콘 수정은 20절, 새 실제 빌드는 21절, native 검사는 22절, 실제 메뉴막대는 23절에 구분한다.
+Apple Silicon / macOS 27용 **native AppKit 메뉴바 호스트**를 별도 프로젝트로 준비했다. 기존 Windows WinForms UI·배포본은 유지한다. 앞선 0.1.1의 한 화면 배치·두 계정 한도 수신을 확인한 뒤, 작은 검은 F와 비활성 모니터의 아이콘 누락 보고를 받아 0.1.2에서 20-point 컬러 bitmap으로 수정했다. **0.1.2의 실제 Mac 공통 검사 244,347건·Release `.app`·서명·ARM64 SQLite·native smoke에 이어 일반 컬러 아이콘과 양쪽 메뉴막대 표시까지 확인**했다. OS 알림·재로그인·절전 복귀와 장기 사용은 남아 있다. 앞선 검증은 17~19절, 아이콘 수정은 20절, 새 실제 빌드는 21절, native 검사는 22절, 실제 메뉴막대는 23절에 구분한다. 24절은 이전 빌드에서 bundle 버전이 0.1.0으로 남던 문제의 수정과, 사용자 Mac에서 직접 실행한 첫 로컬 빌드·검사 기록이다.
 
 Mac 개발 도구 준비와 실행 순서는 [Mac/README.md](Mac/README.md)를 따른다.
 
@@ -500,3 +500,46 @@ PASS: native controls/window close-reopen, 20pt color menu icon/1x-2x pixels, co
 - 일반 화면에서 관찰한 상태는 초록색 F다. B·주황·빨강·회색의 실제 서비스 전환을 이번 화면으로 검증한 것은 아니며 8개 문자/색 조합은 22절의 주입 native 검사로 구분한다.
 
 이번 요청의 아이콘 수정은 이 환경에서 검증 완료다. 스크린샷 원본·계정 값은 GitHub에 올리지 않고 확인 사실만 문서와 기존 Draft PR #12에 기록한다. Windows 2.2.2 / Mac 0.1.2 버전, 앱 코드·의존성·사용자 DB·자동 실행 설정·배포본은 바꾸지 않으며 재빌드·검사 반복은 필요 없다. 실제 OS 알림·재로그인·절전/연결 복구·장기 사용과 PR 병합은 별도 남은 항목이다.
+
+## 24. 0.1.2 bundle 버전 미반영 수정과 첫 로컬 Mac 검증
+
+2026-10-03 KST부터 사용자 Mac mini(macOS 27.0.1 / arm64)에서 Claude Code로 직접 빌드·검사한다. 이전 절까지는 사용자가 전달한 출력을 기록했지만, 이 절은 **같은 Mac에서 명령을 직접 실행하고 종료 코드를 관측한 결과**다. 저장소는 GitHub `hydron75` 계정 인증으로 push까지 가능함을 `git push --dry-run`으로 확인했다.
+
+### 발견한 문제
+
+작업 전 HEAD `ddae35d780c7c83bfa81e6d6026894122822600c`를 그대로 빌드한 bundle의 `Contents/Info.plist`는 **`CFBundleShortVersionString` 0.1.0 / `CFBundleVersion` 1**이었다. 소스의 `Mac/Info.plist`는 0.1.2 / 3이었고, DLL·실행 파일·`_CodeSignature`는 새로 갱신됐지만 `Info.plist`와 `obj/.../AppManifest.plist`만 0.1.0 첫 빌드 시각에 머물러 있었다.
+
+- 원인: Microsoft.macOS.Sdk 27.0.10722의 `_CompileAppManifest`는 `_CompileAppManifest.inputs`(MSBuild 속성 목록)·글꼴·partial manifest만 Inputs로 쓴다. 원본 `Info.plist` 파일은 Inputs에 없어서, plist의 버전만 바꾼 증분 빌드는 "최신 상태"로 건너뛴다. `-v:d` 빌드 로그에서 `_CompileAppManifest`와 `_WriteAppManifest`가 모두 건너뛰어지는 것을 확인했다.
+- 영향: 같은 `bin/Release` 경로를 재사용한 **0.1.1·0.1.2 bundle은 Finder·시스템 정보에서 0.1.0 / 1로 표시됐을 것**이다. 17·21절의 빌드 출력은 버전 값을 출력하지 않아 당시에는 드러나지 않았다. plist에서 바뀐 키는 두 버전 값뿐이므로 아이콘·한 화면 배치·조회 등 C# 코드의 검증 결과에는 영향이 없다. 실측 기록의 앱 버전은 assembly 버전(0.1.2)을 쓰므로 DB에도 영향이 없다.
+
+### 수정 (소스 `66fb8689043154e8bf6b1fafe04f9c317b2f0ec1`)
+
+| 파일 | 변경 |
+|---|---|
+| `Mac/AiBurgerClock.Mac.csproj` | `ApplicationDisplayVersion=$(Version)`, `ApplicationVersion=3` 추가. SDK가 inputs 파일에 기록하는 속성이라 값이 바뀌면 manifest를 다시 만든다. 버전은 csproj 한 곳에서 관리한다 |
+| `Mac/Info.plist` | `CFBundleShortVersionString`·`CFBundleVersion` 제거 |
+| `Mac/MacApplication.cs` | native smoke가 `NSBundle.MainBundle`의 `CFBundleShortVersionString`과 assembly 버전을 비교하고, 다르면 FAIL. PASS 문구 앞에 `bundle version` 추가 |
+
+Mac 버전은 **0.1.2 / build 3 그대로**다. 원래 의도한 값이 이번에 실제 bundle에 반영된 것이며 기능 변경은 없다. Windows 2.2.2·공통 원본 19개·DB schema·NuGet 의존성·자동 실행 경로는 바꾸지 않았다. 새 소스 파일이 없어 CODE_GUIDE의 파일 수도 그대로다.
+
+### 직접 수행한 검증
+
+Xcode 27.0 / build 27A266a(실행별 `DEVELOPER_DIR`), .NET SDK 10.0.401(`/usr/local/share/dotnet`), macos workload 27.0.10722. 실행 중이던 일반 앱은 정상 종료(Quit) 후 검사했고 검사 뒤 새 bundle로 다시 실행했다.
+
+| 검사 | 수정 전 `ddae35d` | 수정 후 `66fb868` |
+|---|---|---|
+| `Mac/build.sh` 종료 코드 | 0 | 0 (clean 없이 증분 빌드) |
+| 공통 검사 | `PASS ALL SHARED: 244,347 assertions` | 같음 |
+| native Release | 경고 0 / 오류 0, 15.6초 | 경고 0 / 오류 0, 14.8초 |
+| `codesign --verify --deep --strict` | 통과 | 통과 |
+| SQLite | `libe_sqlite3.dylib` Mach-O 64-bit arm64 | 같음 |
+| bundle 버전 | **0.1.0 / 1** | **0.1.2 / 3** |
+| `--smoke-test` | PASS, 종료 코드 0 | `PASS: bundle version, native controls/...`, **종료 코드 0** |
+
+음성 검사: 수정 후 bundle을 scratch 폴더에 복사해 `CFBundleShortVersionString`을 0.1.0으로 바꾸고 ad-hoc 재서명한 뒤 실행하자 `FAIL: Bundle version 0.1.0 does not match app version 0.1.2.` / 종료 코드 1이 나왔다. 복사본은 검사 뒤 삭제했다. 로그는 Git에서 제외한 `artifacts/mac-local/`에 있다.
+
+같은 자리에서 읽기 전용으로 로그인 항목 등록도 확인했다. `sfltool dumpbtm`에 `com.hydron75.aiburgerclock`가 `enabled, allowed`로 등록돼 있다. 등록 상태 확인일 뿐 실제 재로그인 실행 검증은 아니다.
+
+### 남은 항목
+
+OS 알림 노출·실제 재로그인 자동 실행·절전/연결 복구·장기 사용과 main 병합은 7절 그대로 남아 있다. Draft PR #12를 유지한다.
