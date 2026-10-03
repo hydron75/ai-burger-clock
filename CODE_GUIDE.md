@@ -402,7 +402,7 @@ Mac의 시간대 ID는 `America/New_York`, `America/Los_Angeles`, `Asia/Seoul`�
 
 Mac은 `~/Library/Application Support/AIBurgerClock`에 별도 DB를 쓰고 `SMAppService.MainApp`으로 로그인 항목을 관리합니다. CLI는 절대 실행 경로와 실행 권한을 확인하고, shell 프로필·Keychain·인증 파일은 읽지 않습니다. 기능 규칙을 함께 써도 **두 컴퓨터의 DB와 로그인은 자동 동기화되지 않습니다.**
 
-Windows 버전은 2.2.2 그대로이고 Mac은 아직 0.1.0 preview입니다. 실제 Mac의 공통 검사 244,347건과 Release `.app` 생성·로컬 서명 검사·ARM64 SQLite 포함을 확인했습니다. 메뉴바·창의 네이티브 실행, 실제 알림·로그인 항목·CLI 한도는 아직 별도 확인이 필요합니다. [작업 기록](MACOS_PORT.md#12-실제-mac-release-bundle-빌드-성공)에 빌드 성공과 남은 실행 검증을 구분합니다.
+Windows 버전은 2.2.2 그대로이고 Mac은 아직 0.1.0 preview입니다. 실제 Mac의 공통 검사 244,347건과 Release `.app` 빌드·서명 검사에 이어 native smoke도 종료 코드 0으로 통과했습니다. 메뉴바 생성·상태/통계 창 닫기와 재열기·임시 SQLite 기록/메모·통계·테스트 한도 표시를 확인했습니다. 일반 사용 화면, 실제 알림·로그인 항목·CLI 한도는 아직 별도 확인이 필요합니다. [작업 기록](MACOS_PORT.md#13-실제-mac-native-smoke-통과)에 임시 검사와 실제 계정 사용을 구분합니다.
 
 Mac 빌드 스크립트는 일반 사용자로 실행하고, 기본 NuGet HTTP 캐시는 Git에서 제외한 `artifacts/mac-build/nuget-http-cache`에 둡니다. 이 설정은 빌드와 그 자식 프로세스에만 적용됩니다. 기존 사용자 캐시의 권한·전역 설정·취약성 검사는 바꾸지 않습니다. 앱 자체의 DB 경로나 실행 기능과도 별개입니다.
 

@@ -2,7 +2,7 @@
 
 Apple Silicon / macOS 27을 위한 C# AppKit 메뉴바 앱입니다. Windows 2.2.2 배포본과 별도 앱이지만, 시간표·공식 상태·권고·한도 조회·기록·통계 계산 코드는 같은 저장소의 원본 소스를 링크해서 사용합니다. Windows 코드를 복사해 따로 유지하지 않습니다.
 
-이 폴더는 **네이티브 실행 검증을 진행 중인 preview 소스**입니다. 2026-10-03 KST 실제 Mac에서 공통 검사 244,347건, Release `.app` 생성, 로컬 서명 검사와 ARM64 SQLite 포함이 통과했습니다. 앱 실행·알림 노출·로그인 자동 실행·절전/네트워크 복구·Mac의 Codex/Claude 계정 조회는 아직 별도 확인이 필요합니다. 빌드 성공을 실행 성공으로 간주하지 않습니다. [실제 Mac 빌드 기록](../MACOS_PORT.md#12-실제-mac-release-bundle-빌드-성공)
+이 폴더는 **일반 사용 검증을 진행 중인 preview 소스**입니다. 2026-10-03 KST 실제 Mac에서 공통 검사 244,347건, Release `.app` 생성, 로컬 서명 검사와 ARM64 SQLite 포함에 이어 native smoke도 종료 코드 0으로 통과했습니다. 일반 사용 화면·알림 노출·로그인 자동 실행·절전/네트워크 복구·Mac의 Codex/Claude 계정 조회는 아직 별도 확인이 필요합니다. 임시 DB 실행 검사를 실제 계정 사용 성공으로 간주하지 않습니다. [native smoke 기록](../MACOS_PORT.md#13-실제-mac-native-smoke-통과)
 
 ## 들어 있는 기능
 
@@ -79,7 +79,7 @@ NUGET_HTTP_CACHE_PATH="$PWD/artifacts/mac-build/nuget-http-cache" bash Mac/build
 
 공통 검사 이후 `UsageStore.cs`의 JSON 저장·읽기에서 IL2026이 나오면 최신 `feature/macos-native` 소스를 받아 위와 같이 다시 빌드하세요. Apple SDK의 trimming 검사에서 런타임 reflection 기반 직렬화를 경고하는 문제였으며, `QuotaJsonContext`로 타입 정보를 미리 생성하도록 수정했습니다. JSON 형식·기존 캐시·DB schema 2는 유지하고, 경고 억제나 새 NuGet 패키지는 추가하지 않았습니다. [Microsoft source generation 안내](https://learn.microsoft.com/en-us/dotnet/standard/serialization/system-text-json/source-generation)
 
-수정 후 Windows의 Release/회귀·공통 검사, Mac 참조 코드의 trimming 분석과 reflection 비활성화 캐시 검사를 통과했습니다. 이어서 소스 `302aee8`의 **실제 Mac `.app` 빌드와 서명 검사까지 통과**했으며 앱 실행은 아직 확인 전입니다. [정확한 검증 범위](../MACOS_PORT.md#12-실제-mac-release-bundle-빌드-성공).
+수정 후 Windows의 Release/회귀·공통 검사, Mac 참조 코드의 trimming 분석과 reflection 비활성화 캐시 검사를 통과했습니다. 이어서 소스 `302aee8`의 **실제 Mac `.app` 빌드·서명 검사와 native smoke까지 통과**했습니다. 일반 사용·실제 계정 조회는 아직 확인 전입니다. [정확한 검증 범위](../MACOS_PORT.md#13-실제-mac-native-smoke-통과).
 
 ### 빌드 결과
 
@@ -121,6 +121,20 @@ echo "검사 종료 코드: $?"
 메뉴바·창을 만들고 상태/통계 창의 닫기·재열기·Visible 상태를 확인합니다. 새 임시 DB에서 4종 실측/메모·표본수/No data·한도 카운트다운 표시를 검사한 뒤 종료합니다. 실제 계정 조회·HTTP·브라우저 열기·알림 권한 요청·자동 실행 변경을 하지 않습니다. 이 검사가 통과해도 실제 OS 알림, 로그인 항목 등록, 계정별 CLI 응답 및 장시간 절전 복귀는 별도 검증 대상입니다.
 
 성공 기준은 `PASS: native controls/window close-reopen...` 출력과 종료 코드 `0`입니다. 오류가 있으면 출력과 종료 코드를 보존하고 일반 실행·자동 시작 설정 전에 원인을 확인합니다.
+
+2026-10-03 KST 사용자 Mac에서 이 검사와 종료 코드 0을 확인했습니다. 이미 통과한 경우 반복하지 않고 아래 일반 실행으로 진행하세요.
+
+## 일반 실행 확인
+
+기존 bundle을 재빌드 없이 실행합니다. 저장소 루트에서 실행하세요.
+
+```sh
+open "Mac/bin/Release/net10.0-macos27.0/osx-arm64/AI Burger Clock.app"
+```
+
+일반 실행은 Mac 전용 사용자 DB를 생성/열고 공식 상태 페이지와 설치된 CLI의 한도를 조회합니다. 알림 권한 창이 나오면 사용자가 허용 여부를 선택합니다. **로그인 자동 실행은 `.app`를 고정 위치로 옮긴 뒤 확인하며 지금은 켜지 않습니다.**
+
+메뉴바 아이콘 클릭으로 상태 창이 열리는지, Schedule과 카운트다운이 표시되는지, Provider 공식 상태·ChatGPT/Claude 한도 조회 결과를 확인합니다. 그 Mac에 공식 CLI가 설치·로그인되어 있지 않으면 한도 조회 불가가 나올 수 있습니다. Windows의 로그인은 자동 복사하지 않습니다. 이 안내 자체는 일반 실행·계정 조회 검증을 완료했다는 뜻이 아닙니다.
 
 ## 네이티브 구현 기준
 

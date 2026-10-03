@@ -2,7 +2,7 @@
 
 기록일: 2026-10-03 KST. Windows 기준 버전: 2.2.2.
 
-Apple Silicon / macOS 27용 **native AppKit 메뉴바 호스트**를 별도 프로젝트로 준비했다. 기존 Windows WinForms UI·배포본은 유지한다. 소스 구현·Windows 회귀 검사·Mac 참조 API 컴파일에 이어 **실제 Mac의 공통 검사 244,347건과 Release `.app` 생성·로컬 서명 검사·ARM64 SQLite 포함을 확인**했다. 네이티브 앱 실행·알림·로그인 항목·실제 CLI 조회는 아직 확인 전이다. 최신 결과는 12절에 별도로 기록한다.
+Apple Silicon / macOS 27용 **native AppKit 메뉴바 호스트**를 별도 프로젝트로 준비했다. 기존 Windows WinForms UI·배포본은 유지한다. 소스 구현·Windows 회귀 검사·Mac 참조 API 컴파일에 이어 **실제 Mac의 공통 검사 244,347건과 Release `.app` 생성·로컬 서명 검사·ARM64 SQLite 포함 및 native smoke 종료 코드 0을 확인**했다. 일반 사용 화면·알림·로그인 항목·실제 CLI 조회는 아직 확인 전이다. 최신 결과는 13절에 별도로 기록한다.
 
 Mac 개발 도구 준비와 실행 순서는 [Mac/README.md](Mac/README.md)를 따른다.
 
@@ -72,7 +72,7 @@ Windows DB는 기존 `%LOCALAPPDATA%\AIBurgerClock\burgerclock.db`, Mac DB는 �
 ~/Library/Application Support/AIBurgerClock/burgerclock.db
 ```
 
-SQLite schema 2와 migration은 그대로다. 공통 검사는 새 임시 DB에서 생성·저장·재오픈·이전 schema 이관·메모·상태·설정·한도 캐시와 1만 건 통계를 확인했다. 11절의 실제 Mac 공통 검사에서도 SQLite 저장·통계가 통과했지만, **최종 `.app`에 포함되는 ARM64 SQLite 라이브러리 로딩은 아직 미확인**이다. 양쪽 사용자 DB를 읽거나 자동 동기화하지 않았다.
+SQLite schema 2와 migration은 그대로다. 공통 검사는 새 임시 DB에서 생성·저장·재오픈·이전 schema 이관·메모·상태·설정·한도 캐시와 1만 건 통계를 확인했다. 실제 Mac 공통 검사에 이어 13절의 최종 `.app` native smoke에서도 SQLite 임시 DB의 생성·기록·읽기와 통계가 통과했다. 일반 사용자 DB의 재시작/장기 사용 검증이나 양쪽 DB 자동 동기화는 별개이며 수행하지 않았다.
 
 ## 6. 이번에 실제로 수행한 검증
 
@@ -103,7 +103,7 @@ Mac 참조 패키지는 공식 `Microsoft.macOS.Ref.net10.0_27.0` 27.0.10722다.
 
 1. 완료: .NET SDK 10.0.401 ARM64 / Xcode 27.0 준비와 build.sh의 macos workload preflight 통과. 정확한 설치 workload set의 별도 출력은 받지 않았다.
 2. 완료: `bash Mac/build.sh`에서 Mac OS 시간대 공통 검사 244,347건, native Release 빌드, ad-hoc 서명 검사·ARM64 SQLite dylib 포함 확인.
-3. 만들어진 실행 파일의 `--smoke-test`: 임시 DB 4종 이벤트·메모·통계·No data·한도 표시와 종료 코드 확인.
+3. 완료: 만들어진 실행 파일의 `--smoke-test`에서 임시 DB 4종 이벤트·메모·통계·No data·한도 표시, 창 닫기/재열기와 종료 코드 0 확인.
 4. 실제 UI의 메뉴바·상태 창·한도 스크롤·기록·통계·공식 페이지 클릭 확인.
 5. 별도 설치·로그인된 Mac CLI에서 실제 한도 수신과 실패 표시 확인. Windows 성공을 Mac 계정 조회 성공으로 간주하지 않음.
 6. 사용자 승인하에 알림 권한·배너와 로그인 항목 등록/해제·재로그인 확인.
@@ -181,11 +181,11 @@ Mac UI 크기·알림 노출·로그인 등록과 이동된 bundle의 동작은 
 
 reflection 비활성화 진단 프로젝트는 Git에서 제외한 `artifacts/mac-json-check/`에 두었다. 계정 조회·사용자 DB·인증 파일·레지스트리·Windows 배포본은 변경하지 않았다. 이 검증은 macOS native registrar/linker/signing·ARM64 runtime을 실행한 결과가 아니다.
 
-이 수정본의 Mac 재빌드는 이후 성공했으며 결과를 12절에 기록한다. 다음은 7절의 native smoke와 실제 UI·알림·로그인 항목 검증이다. Draft PR #12는 유지하고 main 병합은 하지 않는다.
+이 수정본의 Mac 재빌드는 이후 성공했으며 결과를 12절에 기록한다. native smoke 결과는 13절에 남긴다. 일반 사용 UI·알림·로그인 항목 검증은 별도로 이어가며 Draft PR #12는 유지하고 main 병합은 하지 않는다.
 
 ## 12. 실제 Mac Release bundle 빌드 성공
 
-2026-10-03 KST 사용자가 `302aee8a9d2dda73c9dd79c0612123a25504bac2`를 받아 `bash Mac/build.sh`로 빌드한 출력으로 다음을 확인했다. 계정 테스트나 앱 실행 출력은 아직 받지 않았으며 빌드 성공과 구분한다.
+2026-10-03 KST 사용자가 `302aee8a9d2dda73c9dd79c0612123a25504bac2`를 받아 `bash Mac/build.sh`로 빌드한 출력으로 다음을 확인했다. 이 빌드 시점에는 계정 테스트나 앱 실행 출력을 받지 않았으며, 이후 별도로 전달받은 native smoke 결과는 13절에 기록한다.
 
 | 확인 항목 | 사용자 Mac의 결과 |
 |---|---|
@@ -208,4 +208,29 @@ reflection 비활성화 진단 프로젝트는 Git에서 제외한 `artifacts/ma
 echo "검사 종료 코드: $?"
 ```
 
-성공 기준은 `PASS: native controls/window close-reopen...`와 종료 코드 0이다. native smoke의 실제 결과는 아직 대기 중이며, 성공한 뒤 일반 앱 실행·메뉴바·알림·로그인 항목·Mac CLI·절전/연결 복구를 순서대로 확인한다.
+성공 기준은 `PASS: native controls/window close-reopen...`와 종료 코드 0이다. 이후 사용자 Mac에서 통과한 결과를 13절에 기록했다. 일반 앱 실행·화면·알림·로그인 항목·Mac CLI·절전/연결 복구는 아직 별도 확인이 필요하다.
+
+## 13. 실제 Mac native smoke 통과
+
+2026-10-03 KST 사용자가 위 bundle의 실행 파일에 `--smoke-test`를 붙여 실행한 뒤 다음 출력을 전달했다. 재빌드 출력은 없으며 검사 대상은 12절에서 생성한 소스 `302aee8a9d2dda73c9dd79c0612123a25504bac2`의 `.app`다.
+
+```text
+PASS: native controls/window close-reopen, temporary SQLite, four events/notes, statistics, quota countdown; no account/network/settings changes.
+검사 종료 코드: 0
+```
+
+### 확인한 범위
+
+- native 메뉴바와 상태/통계 창 생성, 창 닫기 후 메뉴바 동작으로 재열기, Visible 상태와 창 수명 유지.
+- 실제 `.app` 실행에서 새 GUID 임시 SQLite DB에 Success/Slow/Error/Interrupted 및 메모 저장·읽기.
+- 통계 표본수 `n=4`와 빈 시간대 `No data`, 통계 창 갱신·닫기/재열기.
+- 테스트 한도 데이터의 0% 표시. PASS 메시지는 quota countdown을 포함하지만 실제 서버 리셋이나 시간이 흐를 때의 카운트다운 갱신을 검증한 결과는 아니다.
+- 종료 경로를 거쳐 프로세스 종료 코드 0 반환.
+
+### 남은 범위와 다음 단계
+
+이 smoke는 임시 DB와 테스트 한도만 사용하며 실제 HTTP·계정 CLI·브라우저·알림 권한 요청·로그인 항목 변경을 하지 않는다. 실제 Provider 응답·Mac CLI 계정 한도·알림 노출·자동 실행·절전/연결 복구·일반 사용자 DB 재시작·장기 사용·화면 가독성은 검증하지 않았다.
+
+이번에도 README·CODE_GUIDE·BACKLOG·Mac/README와 이 기록만 갱신한다. 버전은 Windows 2.2.2 / Mac preview 0.1.0 유지, 소스·패키지·배포본·설정은 변경하지 않았다. 문서 검사 후 같은 `feature/macos-native`와 Draft PR #12에 반영하고 병합하지 않는다. 통과한 빌드/검사를 다시 실행할 필요는 없다.
+
+다음은 `open`으로 기존 `.app`를 일반 실행해 메뉴바 클릭·화면·카운트다운과 Provider/CLI 조회 결과를 확인하는 것이다. 일반 실행은 Mac 전용 사용자 DB와 공식 상태/CLI 조회를 사용한다. 알림 권한은 사용자가 선택하고, 로그인 자동 실행은 `.app`를 고정 위치로 옮긴 뒤 별도 확인한다. 새 소프트웨어를 자동 설치하거나 Windows 인증을 복사하지 않는다.
