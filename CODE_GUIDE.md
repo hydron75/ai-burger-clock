@@ -1,8 +1,8 @@
 # 소스코드, 쉬운 말로 읽기
 
-Windows 2.2.2와 macOS preview 0.1.5 소스 기준입니다. Windows 사용법부터 보고 싶다면 [README](README.md), Mac 준비와 아직 남은 검증은 [Mac 안내](Mac/README.md)로 이동하세요. 아래 기존 실행·UI 설명은 Windows 기준이며 Mac의 차이는 12절에 정리했습니다.
+Windows 2.2.3과 macOS preview 0.1.5 소스 기준입니다. Windows 사용법부터 보고 싶다면 [README](README.md), Mac 준비와 아직 남은 검증은 [Mac 안내](Mac/README.md)로 이동하세요. 아래 기존 실행·UI 설명은 Windows 기준이며 Mac의 차이는 12절에 정리했습니다.
 
-코드를 한 줄씩 번역한 문서는 아닙니다. **각 파일이 무엇을 맡고, 서로 어떻게 연결되는지** 설명합니다. 루트·Properties의 C# 48개, Mac 호스트 6개, 공통 검사 입구 1개로 총 55개와 빌드 설정을 다룹니다. 컴퓨터가 만든 `bin`·`obj`와 로컬 검증용 `artifacts`는 대상에서 뺍니다.
+코드를 한 줄씩 번역한 문서는 아닙니다. **각 파일이 무엇을 맡고, 서로 어떻게 연결되는지** 설명합니다. 루트·Properties의 C# 49개, Mac 호스트 6개, 공통 검사 입구 1개로 총 56개와 빌드 설정을 다룹니다. 컴퓨터가 만든 `bin`·`obj`와 로컬 검증용 `artifacts`는 대상에서 뺍니다.
 
 공식 조회 방식의 변경을 조사하는 외부 모니터링 현황은 [BACKLOG](BACKLOG.md)에 있습니다. 이 조사는 아래 앱 코드의 계정 한도 조회 루프와 별개이며, 새 SDK가 공개됐다고 앱의 CLI나 의존성을 자동으로 바꾸지는 않습니다.
 
@@ -183,7 +183,7 @@ UNKNOWN/STALE인 BURGER는 BURGER + CHECK입니다. **공식 상태로 시간표
 
 ## 7. 내 기록은 어떻게 저장되나요?
 
-OpenAI 행을 우클릭하고 Slow를 고른 경우입니다.
+ChatGPT 행을 우클릭하고 Slow를 고른 경우입니다. 화면 이름은 [WindowsProviderNames.cs](WindowsProviderNames.cs)에서 바꾸지만 전달하는 식별자는 여전히 `ProviderKind.OpenAI`입니다.
 
 1. [StatusWindow.cs](StatusWindow.cs)가 클릭을 알아챕니다.
 2. `TrayApplicationContext`에 “OpenAI, Slow를 기록해 주세요”라고 알립니다.
@@ -213,7 +213,7 @@ Cache는 “마지막으로 읽은 메모”, History는 “중요한 변화 기
 
 ### 기록장 구조가 바뀌면요?
 
-현재 DB 구조 버전은 2입니다. 앱 버전 2.2.2와는 다른 번호이며, 2.1.0 이후 바뀌지 않았습니다.
+현재 DB 구조 버전은 2입니다. 앱 버전 2.2.3과는 다른 번호이며, 2.1.0 이후 바뀌지 않았습니다.
 
 기존 구조 1을 열면 먼저 SQLite 백업 기능으로 복사본을 만듭니다. 본체 옆의 WAL에 이미 저장된 내용도 포함합니다. WAL은 기록을 안전하게 반영하기 위한 보조 파일입니다.
 
@@ -237,7 +237,7 @@ Cache는 “마지막으로 읽은 메모”, History는 “중요한 변화 기
 
 아니요. [StatisticsAnalysis.cs](StatisticsAnalysis.cs)의 `StatisticsAnalysis`가 기록을 골라 세고 비율을 계산합니다. 기존 계산식을 그대로 UI 밖으로 옮겨 Windows와 Mac이 함께 사용하며, [StatisticsWindow.cs](StatisticsWindow.cs)는 Windows의 통계 화면만 맡습니다.
 
-OpenAI 기록 열 개 중 Slow가 두 개면 그 열 개 안에서 Slow는 20%입니다. **관찰하지 않은 작업까지 포함한 OpenAI 전체의 속도 통계가 아닙니다.**
+ChatGPT 기록 열 개 중 Slow가 두 개면 그 열 개 안에서 Slow는 20%입니다. **관찰하지 않은 작업까지 포함한 ChatGPT 전체의 속도 통계가 아닙니다.** 기존 `OpenAI`로 저장한 기록도 통계 화면에서만 ChatGPT로 표시하며 원래 값은 수정하지 않습니다.
 
 - 최근 7일·30일은 지금부터 거슬러 올라간 7×24시간·30×24시간입니다.
 - 통계 창도 앱과 같은 시계를 받으므로 테스트용 시각을 넣었을 때 실제 PC 날짜가 섞이지 않습니다.
@@ -293,7 +293,7 @@ Windows 내부 승인 형식은 알려진 경우만 해석합니다. 낯선 값�
 
 이름을 눌러 소스를 열 수 있습니다. 역할을 알고 필요한 파일부터 읽으면 됩니다.
 
-### 실제 앱 기능: 27개
+### 실제 앱 기능: 28개
 
 | 파일 | 맡은 일 |
 |---|---|
@@ -314,6 +314,7 @@ Windows 내부 승인 형식은 알려진 경우만 해석합니다. 낯선 값�
 | [StatusMonitor.cs](StatusMonitor.cs) | 정기 조회, 실패 격리, 오래된 정보 판정 |
 | [RecommendationNotifications.cs](RecommendationNotifications.cs) | 마지막 확정 권고 기억, 중복 알림 방지 |
 | [TrayPresentation.cs](TrayPresentation.cs) | 트레이 문자·색상·짧은 도움말 결정. 두 OS가 함께 쓰는 전환·Provider 알림 문구 |
+| [WindowsProviderNames.cs](WindowsProviderNames.cs) | Windows 화면·메뉴·기록·통계·Tooltip·알림에서 OpenAI를 ChatGPT로 표시. 저장 식별자와 공식 URL은 유지 |
 | [NetworkRefreshScheduler.cs](NetworkRefreshScheduler.cs) | 네트워크 변화 뒤 5초 대기 후 재조회, 1분에 한 번 제한, 연속 변화는 마지막 변화 기준 한 번으로 합침. 대기 끝에 쓸 수 있는 연결(링크 로컬이 아닌 주소)이 없으면 건너뜀 |
 | [UsageStore.cs](UsageStore.cs) | SQLite 생성·업그레이드·백업·설정·저장·일부 해석 불가 행 구분 |
 | [QuotaJsonContext.cs](QuotaJsonContext.cs) | 한도 캐시를 JSON으로 읽고 쓰는 타입 정보를 빌드 때 생성. Mac trimming 검사와 기존 캐시 호환성 유지 |
@@ -323,7 +324,7 @@ Windows 내부 승인 형식은 알려진 경우만 해석합니다. 낯선 값�
 | [AccountQuotaClient.cs](AccountQuotaClient.cs) | PATH 등 표준 설치 경로의 native CLI 실행, 제한시간·출력 크기·취소·모델 호출 없는 결과 확인 |
 | [AccountQuotaPolicy.cs](AccountQuotaPolicy.cs) | 6시간·1시간·잔여 0%의 15분·리셋 전후 5분 규칙, 리셋 15분 전 진입, 실패 재시도 상한 계산 |
 | [AccountQuotaMonitor.cs](AccountQuotaMonitor.cs) | 두 독립 조회 루프, 마지막 성공값·실패 횟수·다음 조회·재시작 캐시 |
-| [AccountQuotaView.cs](AccountQuotaView.cs) | 기존 창 안에서 바꿔 보는 잔여량·리셋 카운트다운·조회 시각 |
+| [AccountQuotaView.cs](AccountQuotaView.cs) | 기존 창 안에서 바꿔 보는 잔여량·리셋 카운트다운·조회 시각. ChatGPT 제목 아래 별도 Work/Codex 행 |
 
 ### 검사와 진단: 20개
 
@@ -407,7 +408,7 @@ Mac의 시간대 ID는 `America/New_York`, `America/Los_Angeles`, `Asia/Seoul`�
 
 Mac은 `~/Library/Application Support/AIBurgerClock`에 별도 DB를 쓰고 `SMAppService.MainApp`으로 로그인 항목을 관리합니다. CLI는 절대 실행 경로와 실행 권한을 확인하고, shell 프로필·Keychain·인증 파일은 읽지 않습니다. 기능 규칙을 함께 써도 **두 컴퓨터의 DB와 로그인은 자동 동기화되지 않습니다.**
 
-Windows 버전은 2.2.2 그대로이고 Mac 소스는 0.1.5 preview입니다. `MacCliPaths`는 GUI 앱의 PATH와 `~/.local/bin`, `/opt/homebrew/bin`, `/usr/local/bin`에서 실행 가능한 공식 명령을 찾으며 인증 파일은 읽지 않습니다. 앞선 0.1.1의 두 CLI 한도와 한 화면 배치는 확인했습니다. 새 0.1.2는 시스템 심볼/tint 대신 20-point 상태색 bitmap과 흰색 F/B를 표준 status item에 넣습니다. 1x·2x 모두 같은 논리 크기입니다. **실제 Mac 공통 검사 244,347건·Release `.app`·서명·ARM64 SQLite와 native smoke PASS에 이어, 일반 화면의 커진 컬러 F와 양쪽 메뉴막대 표시도 확인했습니다.** native smoke의 8개 문자/색 조합 검사와 사용자 일반 실행 관찰은 별도 근거로 기록합니다. 종전 비활성 모니터 누락은 사용자 Mac에서 해소됐지만 정확한 원인을 이미지 수명 하나로 확정하지는 않습니다. bundle 버전은 csproj에서만 지정하며 native smoke가 bundle의 `CFBundleShortVersionString`과 앱 버전을 비교합니다. OS 알림·재로그인·절전 복귀는 남아 있습니다. [버전 수정](MACOS_PORT.md#24-012-bundle-버전-미반영-수정과-첫-로컬-mac-검증), [아이콘 수정](MACOS_PORT.md#20-012-메뉴바-아이콘-크기색상-수정과-다중-모니터-재검증), [native 검사](MACOS_PORT.md#22-012-아이콘-native-smoke-pass), [일반 메뉴막대 확인](MACOS_PORT.md#23-012-실제-컬러-아이콘과-양쪽-메뉴막대-확인)에 구분해서 기록합니다.
+Windows 버전은 2.2.3이고 Mac 소스는 0.1.5 preview입니다. `MacCliPaths`는 GUI 앱의 PATH와 `~/.local/bin`, `/opt/homebrew/bin`, `/usr/local/bin`에서 실행 가능한 공식 명령을 찾으며 인증 파일은 읽지 않습니다. 앞선 0.1.1의 두 CLI 한도와 한 화면 배치는 확인했습니다. 새 0.1.2는 시스템 심볼/tint 대신 20-point 상태색 bitmap과 흰색 F/B를 표준 status item에 넣습니다. 1x·2x 모두 같은 논리 크기입니다. **실제 Mac 공통 검사 244,347건·Release `.app`·서명·ARM64 SQLite와 native smoke PASS에 이어, 일반 화면의 커진 컬러 F와 양쪽 메뉴막대 표시도 확인했습니다.** native smoke의 8개 문자/색 조합 검사와 사용자 일반 실행 관찰은 별도 근거로 기록합니다. 종전 비활성 모니터 누락은 사용자 Mac에서 해소됐지만 정확한 원인을 이미지 수명 하나로 확정하지는 않습니다. bundle 버전은 csproj에서만 지정하며 native smoke가 bundle의 `CFBundleShortVersionString`과 앱 버전을 비교합니다. OS 알림·재로그인·절전 복귀는 남아 있습니다. [버전 수정](MACOS_PORT.md#24-012-bundle-버전-미반영-수정과-첫-로컬-mac-검증), [아이콘 수정](MACOS_PORT.md#20-012-메뉴바-아이콘-크기색상-수정과-다중-모니터-재검증), [native 검사](MACOS_PORT.md#22-012-아이콘-native-smoke-pass), [일반 메뉴막대 확인](MACOS_PORT.md#23-012-실제-컬러-아이콘과-양쪽-메뉴막대-확인)에 구분해서 기록합니다.
 
 `MacStatusWindow`는 전체 document 스크롤을 없애고 430×660 point의 고정 AppKit 창에 Schedule·세 Provider·ChatGPT/Claude 한도·버튼을 놓습니다. Provider 설명은 두 줄로 제한하고 전체 내용을 Tooltip에 보존합니다. 일반 Codex 2개 창+조회 정보와 Claude 3개 창+조회 정보를 위한 한도 상자는 54/74 point이며 더 많은 모델별 한도는 상자 내부에서 스크롤합니다. `VerifyCompactLayout`은 native smoke에서만 호출하여 전체 화면 스크롤 부재, 컨트롤 경계/겹침, 실제 글꼴 기준 일반 한도 행의 높이를 검사합니다. 상시 조회 로직이나 통계 창의 공통 TextArea 설정은 바꾸지 않습니다.
 
@@ -444,7 +445,7 @@ $result.ExitCode
 
 검사는 가짜 현재 시각을 전달하므로 Windows 시스템 시계를 바꾸지 않습니다. UI 검사에서 공식 페이지 열기는 실제 브라우저 대신 주소를 받는 함수로 확인합니다.
 
-검사 통과와 실제 재부팅 성공, 사용자 화면의 알림 노출은 다른 증거입니다. 최신 검증은 [2.2.2 기록](MAINTENANCE_2_2_2.md), 이전 배포 검증은 [2.2.1 기록](MAINTENANCE_2_2_1.md), 한도 기능 도입 당시 검증은 [2.2.0 기록](ACCOUNT_QUOTAS.md)을 참고하세요.
+검사 통과와 실제 재부팅 성공, 사용자 화면의 알림 노출은 다른 증거입니다. 최신 검증은 [2.2.3 기록](MAINTENANCE_2_2_3.md), 이전 배포 검증은 [2.2.2 기록](MAINTENANCE_2_2_2.md)·[2.2.1 기록](MAINTENANCE_2_2_1.md), 한도 기능 도입 당시 검증은 [2.2.0 기록](ACCOUNT_QUOTAS.md)을 참고하세요.
 
 공통 검사만 실행하려면 OS와 관계없이 다음 명령을 사용합니다. 가짜 응답과 임시 DB만 사용하며 계정·사용자 DB·자동 실행 설정은 건드리지 않습니다. Windows WinForms 검사를 대체하는 것은 아닙니다.
 
@@ -458,7 +459,7 @@ Mac native smoke는 실제 Mac에서만 실행하며 Windows의 옵션을 그대
 
 - **앱 전체 흐름:** Program → TrayApplicationContext.
 - **왜 지금 FULL/BURGER인지:** AgentSchedule → UsFederalHolidays → ScheduleTests / HolidayScheduleTests.
-- **왜 OpenAI만 STOP인지:** ProviderStatusClient → Phase2Models → RecommendationNotifications.
+- **왜 ChatGPT만 STOP인지:** ProviderStatusClient → Phase2Models → RecommendationNotifications. WindowsProviderNames는 표시만 바꾸며 판정은 바꾸지 않습니다.
 - **왜 트레이가 이 색인지:** TrayPresentation → TrayApplicationContext.
 - **기록이 어떻게 쌓이는지:** Phase2Models → UsageStore → StatisticsAnalysis → OS별 통계 창.
 - **버튼이 하는 일:** StatusWindow → TrayApplicationContext.
