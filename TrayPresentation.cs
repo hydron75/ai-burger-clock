@@ -56,8 +56,9 @@ internal static class TrayPresentation
     }
 
     // displayName lets a host show its own provider label; the default keeps the enum name.
+    // minutePrecision keeps the text stable within a minute for hosts that reassign it every second.
     public static string Tooltip(ScheduleSnapshot schedule, IReadOnlyList<ProviderStatus> states,
-        Func<ProviderKind, string>? displayName = null)
+        Func<ProviderKind, string>? displayName = null, bool minutePrecision = false)
     {
         string state = StateName(schedule.State);
         string holiday = schedule.IsHolidayExtendedFullThrottle ? " · 공휴일" : "";
@@ -71,6 +72,9 @@ internal static class TrayPresentation
             return (displayName?.Invoke(provider) ?? provider.ToString()) + " " + label;
         }));
         // Fixed provider names and bounded labels fit NotifyIcon's 127-character limit.
-        return $"AI Burger Clock · {state}{holiday}\n전환까지 {DisplayFormatting.FormatRemaining(schedule.Remaining)}\n{providers}";
+        string remaining = minutePrecision
+            ? DisplayFormatting.FormatRemainingMinutes(schedule.Remaining)
+            : DisplayFormatting.FormatRemaining(schedule.Remaining);
+        return $"AI Burger Clock · {state}{holiday}\n전환까지 {remaining}\n{providers}";
     }
 }

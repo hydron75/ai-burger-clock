@@ -224,7 +224,8 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
                 previous?.Dispose();
                 lastAppearance = appearance;
             }
-            string tooltip = TrayPresentation.Tooltip(snapshot, providers, MacStatusWindow.ProviderName);
+            // Minute precision: a per-second change would close the tooltip while it is being read.
+            string tooltip = TrayPresentation.Tooltip(snapshot, providers, MacStatusWindow.ProviderName, minutePrecision: true);
             if (button.ToolTip != tooltip) button.ToolTip = tooltip;
         }
         statusWindow?.Update(snapshot, providers, quotaMonitor?.Snapshot() ??

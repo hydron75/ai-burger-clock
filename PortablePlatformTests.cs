@@ -76,6 +76,15 @@ internal static class PortablePlatformTests
             "tray tooltip keeps enum provider names by default");
         Check(renamedTip.Contains("\nChatGPT GO", StringComparison.Ordinal) && renamedTip.Contains("\nClaude GO", StringComparison.Ordinal) &&
             !renamedTip.Contains("OpenAI", StringComparison.Ordinal), "tray tooltip uses a host display name");
+        Check(DisplayFormatting.FormatRemainingMinutes(TimeSpan.FromSeconds(3_659)) == "01:00" &&
+            DisplayFormatting.FormatRemainingMinutes(TimeSpan.FromHours(60)) == "60:00" &&
+            DisplayFormatting.FormatRemainingMinutes(TimeSpan.FromSeconds(-1)) == "00:00", "minute-precision countdown");
+        var withinMinute = AgentSchedule.GetSnapshot(DateTimeOffset.Parse("2026-10-03T06:00:20Z"), true);
+        var tenSecondsLater = AgentSchedule.GetSnapshot(DateTimeOffset.Parse("2026-10-03T06:00:30Z"), true);
+        Check(TrayPresentation.Tooltip(withinMinute, healthy, minutePrecision: true) ==
+                TrayPresentation.Tooltip(tenSecondsLater, healthy, minutePrecision: true) &&
+            TrayPresentation.Tooltip(withinMinute, healthy) != TrayPresentation.Tooltip(tenSecondsLater, healthy),
+            "minute-precision tooltip stays the same within a minute; the default still shows seconds");
         return count;
     }
 }

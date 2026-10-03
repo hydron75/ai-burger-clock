@@ -954,3 +954,17 @@ Windows·Mac 호스트 파일은 바꾸지 않았다. 두 호스트 모두 기�
 | 재부팅 후 자동 실행 | 미확인. 로그아웃·재로그인은 확인(27절) |
 
 PR #12는 공통 원본 외에 Windows 파일도 바꾼다. `AiBurgerClock.csproj`, `TrayApplicationContext.cs`, `StatusWindow.cs`, `StatisticsWindow.cs`, `AccountQuotaView.cs`, `SelfTest.cs` 등이며, 앞선 Mac 이식 작업과 PR #14에서 바뀌었다. 그래서 main 병합 전에 PR #12 최종 HEAD를 main(`2297cbe`)과 비교하는 Windows 검증을 요청한다. Windows 버전(2.2.2)과 Windows dist는 이 병합으로 바뀌지 않는다.
+
+### 35-1. Draft 해제 뒤 Codex 리뷰 반영
+
+Draft를 해제하자 Codex 자동 리뷰가 `6681109`에 P2 지적 2건을 남겼다. 둘 다 반영했다.
+
+| 지적 | 처리 |
+|---|---|
+| 메뉴바 아이콘 Tooltip이 초 단위 카운트다운 때문에 매초 바뀌어, 읽기 전에 닫힌다 | 공통 `TrayPresentation.Tooltip`에 선택 인자 `minutePrecision`, 공통 `DisplayFormatting.FormatRemainingMinutes`를 추가했다. Mac 메뉴바 Tooltip은 `전환까지 HH:MM`만 보여 1분에 한 번만 바뀐다. 기본값은 지금처럼 초까지 보여 Windows 트레이는 그대로다 |
+| README가 현재 0.1.5 bundle을 "새 bundle은 0.1.2 / build 3"으로 적었다 | 당시 버전으로 구분하고 현재 bundle 0.1.5 / build 6을 명시했다 |
+
+- **검사:** 공통 검사 3건을 추가했다(244,371건). 분 단위 형식, 같은 분 안 두 시각의 Tooltip 동일, 기본값은 초를 보여 달라짐을 확인한다.
+- **검증:** Windows 대상 컴파일 경고 0 / 오류 0, `Mac/build.sh` 종료 코드 0, `codesign` 통과, smoke PASS / 종료 코드 0.
+- **버전:** 0.1.5 / 6을 유지한다. 34절의 SHA-256은 소스 `53ae21f` 기준이고, 지금 실행 중인 bundle은 이 수정이 들어간 더 새 소스다. 최종 bundle 기록은 main 병합 때 정리한다.
+- **Windows 재검증:** PR HEAD가 바뀌었으므로 최종 Windows 검증은 새 HEAD로 요청한다.

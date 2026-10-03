@@ -6,6 +6,10 @@ internal static class DisplayFormatting
     internal static string FormatRemaining(TimeSpan remaining) =>
         $"{Math.Max(0, (int)remaining.TotalHours):00}:{Math.Max(0, remaining.Minutes):00}:{Math.Max(0, remaining.Seconds):00}";
 
+    // Minute precision for text that must not change every second (a tooltip is closed when reassigned).
+    internal static string FormatRemainingMinutes(TimeSpan remaining) =>
+        $"{Math.Max(0, (int)remaining.TotalHours):00}:{Math.Max(0, remaining.Minutes):00}";
+
     internal static string Offset(int minutes) => $"UTC{(minutes >= 0 ? "+" : "-")}{Math.Abs(minutes) / 60}" +
         (minutes % 60 == 0 ? "" : $":{Math.Abs(minutes) % 60:00}");
 
