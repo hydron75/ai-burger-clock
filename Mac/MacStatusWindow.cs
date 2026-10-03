@@ -134,11 +134,22 @@ internal sealed class MacStatusWindow : IDisposable
         }
         foreach (QuotaState state in quotaStates)
         {
-            quotas[state.Provider].Value = QuotaText(state, snapshot.NowUtc);
-            quotas[state.Provider].ToolTip = "공식 CLI 응답 수신 시각이며 서버 데이터 생성 시각을 보장하지 않습니다.\n" +
+            NSTextView view = quotas[state.Provider];
+            string text = QuotaText(state, snapshot.NowUtc);
+            // Rewrite only on change, keeping the user's scroll position in the extra-rows box.
+            if (view.Value != text)
+            {
+                NSClipView? clip = view.EnclosingScrollView?.ContentView;
+                CGPoint origin = clip?.Bounds.Location ?? CGPoint.Empty;
+                view.Value = text;
+                clip?.ScrollToPoint(origin);
+                if (view.EnclosingScrollView is { } scroll) scroll.ReflectScrolledClipView(clip!);
+            }
+            string tooltip = "공식 CLI 응답 수신 시각이며 서버 데이터 생성 시각을 보장하지 않습니다.\n" +
                 "기본 6시간 · 잔여 0% 초과~10% 미만은 1시간 · 잔여 0%는 15분 · 리셋 전후 15분은 5분.\n" +
                 "리셋 시각 경과만으로 한도 회복을 가정하지 않습니다. 크레딧·리셋 알림은 제외합니다.\n" +
                 state.Error + "\n" + state.CacheError;
+            if (view.ToolTip != tooltip) view.ToolTip = tooltip;
         }
         DateTimeOffset latest = states.Max(state => state.CheckedAtUtc);
         checkedAt.StringValue = "Checked: " + (latest == DateTimeOffset.MinValue ? "—" : AgentSchedule.ToKst(latest).ToString("HH:mm:ss")) + " KST";

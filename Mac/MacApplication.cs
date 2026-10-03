@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Net.NetworkInformation;
 using System.Reflection;
 using AppKit;
@@ -39,6 +40,7 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
     private bool stopped;
     private int uiRefreshQueued;
     private long lastNetworkRefreshTick;
+    private int timerTicks;
     internal int ExitCode { get; private set; }
 
     public override void DidFinishLaunching(NSNotification notification)
@@ -56,7 +58,13 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
         }
         RefreshDisplay(false);
         // One existing-style countdown timer; Schedule itself caches its date/policy calculations.
-        timer = NSTimer.CreateRepeatingScheduledTimer(TimeSpan.FromSeconds(1), _ => RefreshDisplay(true));
+        // Common modes keep it running while the menu-bar menu is open (event-tracking mode).
+        timer = NSTimer.CreateRepeatingTimer(TimeSpan.FromSeconds(1), _ =>
+        {
+            timerTicks++;
+            RefreshDisplay(true);
+        });
+        NSRunLoop.Main.AddTimer(timer, NSRunLoopMode.Common);
         initialization = InitializeAsync();
     }
 
@@ -100,6 +108,24 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
         {
             await store.InitializeAsync(lifetime.Token);
             holidayEnabled = await store.GetHolidayAdjustmentAsync(lifetime.Token);
+        }
+        catch (OperationCanceledException) when (lifetime.IsCancellationRequested) { return; }
+        catch (Exception error)
+        {
+            // Never silently apply an unconfirmed policy; keep official-status and quota polling running.
+            holidayEnabled = false;
+            statusWindow?.SetFeedback("공휴일 설정 확인 실패 · 보정 OFF: " + error.Message);
+            if (smoke)
+            {
+                ExitCode = 1;
+                Console.Error.WriteLine("FAIL: native smoke initialization: " + error.Message);
+                // Queue instead of calling here: shutdown awaits this initialization task.
+                BeginInvokeOnMainThread(() => NSApplication.SharedApplication.Terminate(null));
+                return;
+            }
+        }
+        try
+        {
             if (stopping) return;
             holidayReady = true;
             RefreshHolidayControls();
@@ -109,7 +135,13 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
                 await RunSmokeAsync();
                 return;
             }
-            http = new HttpClient { Timeout = Timeout.InfiniteTimeSpan };
+            http = new HttpClient(new SocketsHttpHandler
+            {
+                UseCookies = false,
+                PooledConnectionLifetime = TimeSpan.FromMinutes(10),
+                ConnectTimeout = TimeSpan.FromSeconds(5),
+                AutomaticDecompression = System.Net.DecompressionMethods.GZip | System.Net.DecompressionMethods.Deflate
+            }) { Timeout = StatusMonitor.RequestTimeout };
             statusMonitor = new(new ProviderStatusClient(http), store, scheduleAt: Schedule);
             quotaMonitor = new(new AccountQuotaClient(), store);
             statusMonitor.Changed += QueueDisplayRefresh;
@@ -135,11 +167,14 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
             if (smoke)
             {
                 ExitCode = 1;
-                Console.Error.WriteLine("FAIL: native smoke initialization");
-                NSApplication.SharedApplication.Terminate(null);
+                Console.Error.WriteLine("FAIL: native smoke initialization: " + error.Message);
+                BeginInvokeOnMainThread(() => NSApplication.SharedApplication.Terminate(null));
             }
         }
     }
+
+    internal static string AppVersion { get; } = typeof(MacApplication).Assembly
+        .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion.Split('+')[0] ?? "unknown";
 
     private ScheduleSnapshot Schedule(DateTimeOffset at) => AgentSchedule.GetSnapshot(at, holidayEnabled);
 
@@ -156,7 +191,7 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
         });
     }
 
-    private void RefreshDisplay(bool notify)
+    private void RefreshDisplay(bool notify, bool notifyProviders = false)
     {
         if (stopping) return;
         ScheduleSnapshot snapshot = Schedule(DateTimeOffset.UtcNow);
@@ -164,21 +199,23 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
         bool changed = lastSchedule.HasValue && lastSchedule != snapshot.State;
         if (notify && changed)
         {
+            // Same wording as the Windows tray balloons.
             string body = snapshot.State == AgentState.FullThrottle
                 ? (snapshot.IsHolidayExtendedFullThrottle ? "미국 공휴일이 포함된 연장 FULL 구간입니다. " : "미국 업무시간 밖입니다. ") +
-                    $"다음 전환: {snapshot.NextTransitionKst:MM-dd HH:mm} KST. Provider별 상태를 확인하세요."
-                : "새 대형 Agent 작업은 다음 FULL THROTTLE까지 미뤄두세요.";
+                    $"다음 전환: {snapshot.NextTransitionKst:MM-dd HH:mm} KST. Provider별 공식 상태와 작업 권고도 확인하세요."
+                : "새로운 대형 Agent 작업은 다음 FULL THROTTLE까지 미뤄두세요.";
             notifications?.Show(TrayPresentation.StateName(snapshot.State) + " 시작", body);
         }
         lastSchedule = snapshot.State;
+        // A policy-only refresh must not consume a concurrently arrived provider incident.
         foreach (ProviderStatus status in providers)
         {
             var recommendation = RecommendationPolicy.Calculate(snapshot.State, status.Status);
-            if (recommendationNotifications.Observe(status.Provider, snapshot.State, recommendation, notify && !changed))
+            if (recommendationNotifications.Observe(status.Provider, snapshot.State, recommendation, (notify || notifyProviders) && !changed))
                 notifications?.Show(status.Provider + (recommendation == Recommendation.Go ? " 정상화" : " 작업 권고 변경"),
                     recommendation == Recommendation.Go
                         ? "관련 서비스가 정상화되었습니다. 현재 FULL THROTTLE이므로 대규모 작업 재개 가능."
-                        : $"FULL THROTTLE이지만 공식 서비스 문제가 있습니다. {RecommendationPolicy.Label(recommendation)}: 새 대형 작업을 미루세요.\n{status.Reason}");
+                        : $"현재 FULL THROTTLE이지만 공식 서비스 문제가 있습니다. {RecommendationPolicy.Label(recommendation)}: 새 대형 작업을 미루세요.\n{status.Reason}");
         }
         if (scheduleItem is not null) scheduleItem.Title = TrayPresentation.StateName(snapshot.State);
         if (countdownItem is not null) countdownItem.Title = "전환까지 " + DisplayFormatting.FormatRemaining(snapshot.Remaining);
@@ -249,9 +286,8 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
             await save;
             if (stopping) return;
             holidayEnabled = enabled;
-            // Changing the user's policy isn't a clock transition or a new service incident.
-            lastSchedule = null;
-            RefreshDisplay(false);
+            // A policy change isn't a clock transition, but provider changes arriving now still notify.
+            RefreshDisplay(false, notifyProviders: true);
             statusWindow?.SetFeedback("미국 연방 공휴일 보정 " + (enabled ? "켜짐" : "꺼짐"));
         }
         catch (OperationCanceledException) when (lifetime.IsCancellationRequested) { }
@@ -326,7 +362,10 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
                 if (value is null || stopping) return;
                 (type, note) = value.Value;
             }
-            await SaveMeasurementAsync(provider, type, note);
+            string limited = LimitNote(note);
+            await SaveMeasurementAsync(provider, type, limited);
+            if (limited.Length < note.Length && !stopping)
+                statusWindow?.SetFeedback($"메모가 {MaximumNoteLength:N0}자를 넘어 앞부분 {limited.Length:N0}자만 저장했습니다.");
         }
         catch (Exception error)
         {
@@ -343,8 +382,7 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
             schedule.State, schedule.IsWeekendExtendedFullThrottle, schedule.EasternUtcOffsetMinutes,
             schedule.PacificUtcOffsetMinutes, schedule.EasternIsDst, schedule.PacificIsDst,
             schedule.SchedulePolicyVersion, status.Status, RecommendationPolicy.Calculate(schedule.State, status.Status),
-            status.RelevantComponent, status.IncidentId, note,
-            typeof(MacApplication).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion.Split('+')[0] ?? "0.1.2",
+            status.RelevantComponent, status.IncidentId, note, AppVersion,
             schedule.HolidayAdjustmentEnabled, schedule.IsHolidayExtendedFullThrottle, schedule.HolidayNames);
         Task save = store.AddUsageAsync(measurement);
         pendingWrites.Add(save);
@@ -367,7 +405,7 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
         using var choice = new NSPopUpButton(new CGRect(0, 54, 164, 27), false);
         choice.AddItems(Enum.GetNames<UsageEventType>());
         choice.SelectItem((int)type);
-        using var note = new NSTextField(new CGRect(0, 8, 330, 34)) { PlaceholderString = "선택적 메모 (최대 2,000자)" };
+        using var note = new NSTextField(new CGRect(0, 8, 330, 34)) { PlaceholderString = $"선택적 메모 (최대 {MaximumNoteLength:N0}자)" };
         accessory.AddSubview(choice);
         accessory.AddSubview(note);
         alert.AccessoryView = accessory;
@@ -375,8 +413,20 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
         alert.AddButton("취소");
         NSApplication.SharedApplication.Activate();
         if (alert.RunModal() != 1000) return null;
-        string text = note.StringValue.Trim();
-        return ((UsageEventType)(int)choice.IndexOfSelectedItem, text.Length <= 2000 ? text : text[..2000]);
+        return ((UsageEventType)(int)choice.IndexOfSelectedItem, note.StringValue.Trim());
+    }
+
+    // Same limit as the Windows note box (UTF-16 units); never split a character or emoji.
+    internal const int MaximumNoteLength = 1000;
+
+    internal static string LimitNote(string text)
+    {
+        if (text.Length <= MaximumNoteLength) return text;
+        var elements = StringInfo.GetTextElementEnumerator(text);
+        int end = 0;
+        while (elements.MoveNext() && elements.ElementIndex + elements.GetTextElement().Length <= MaximumNoteLength)
+            end = elements.ElementIndex + elements.GetTextElement().Length;
+        return text[..end];
     }
 
     public override NSApplicationTerminateReply ApplicationShouldTerminate(NSApplication sender)
@@ -455,11 +505,20 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
         {
             if (statusItem?.Button is null || menu is null || statusWindow is null)
                 throw new InvalidOperationException("Native menu-bar/window controls were not created.");
-            string assemblyVersion = typeof(MacApplication).Assembly
-                .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion.Split('+')[0] ?? "";
             string bundleVersion = NSBundle.MainBundle.ObjectForInfoDictionary("CFBundleShortVersionString")?.ToString() ?? "";
-            if (bundleVersion != assemblyVersion)
-                throw new InvalidOperationException($"Bundle version {bundleVersion} does not match app version {assemblyVersion}.");
+            if (bundleVersion != AppVersion)
+                throw new InvalidOperationException($"Bundle version {bundleVersion} does not match app version {AppVersion}.");
+            int ticks = timerTicks;
+            // Run only the menu event-tracking mode; each pass may return after one input source.
+            DateTime deadline = DateTime.UtcNow.AddSeconds(2.5);
+            while (timerTicks == ticks && DateTime.UtcNow < deadline)
+                NSRunLoop.Main.RunUntil(NSRunLoopMode.EventTracking, NSDate.FromTimeIntervalSinceNow(0.25));
+            if (timerTicks == ticks)
+                throw new InvalidOperationException("The countdown timer stopped while a menu was tracking events.");
+            string longNote = new string('a', MaximumNoteLength - 1) + "🍔";
+            if (LimitNote(longNote) != longNote[..(MaximumNoteLength - 1)] || LimitNote("짧은 메모") != "짧은 메모" ||
+                LimitNote(new string('b', MaximumNoteLength)).Length != MaximumNoteLength)
+                throw new InvalidOperationException("Note length limit split a character or changed a short note.");
             MacStatusIcon.VerifyImages();
             if (statusItem.Button.Image is not { } icon || icon.Template ||
                 icon.Size.Width != MacStatusIcon.Size || icon.Size.Height != MacStatusIcon.Size)
@@ -511,7 +570,7 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
             await statisticsWindow.RefreshAsync();
             if (!statisticsWindow.Window.IsVisible)
                 throw new InvalidOperationException("Statistics window did not reopen from the menu-bar action.");
-            Console.WriteLine("PASS: bundle version, native controls/window close-reopen, 20pt color menu icon/1x-2x pixels, compact one-screen layout/standard quota rows, temporary SQLite, four events/notes, statistics, injected quota countdown; no account/network/settings changes.");
+            Console.WriteLine("PASS: bundle version, menu-tracking countdown timer, 1,000-char note limit, native controls/window close-reopen, 20pt color menu icon/1x-2x pixels, compact one-screen layout/standard quota rows, temporary SQLite, four events/notes, statistics, injected quota countdown; no account/network/settings changes.");
             ExitCode = 0;
         }
         catch (Exception error)

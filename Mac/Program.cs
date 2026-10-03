@@ -9,7 +9,9 @@ internal static class Program
     private static int Main(string[] args)
     {
         bool smoke = args.Contains("--smoke-test", StringComparer.Ordinal);
-        if (args.Any(arg => arg != "--smoke-test"))
+        // Normal launches ignore extra arguments (`open --args -AppleLanguages …`, debugger flags).
+        // A smoke run stays strict so a mistyped command line never starts the real app.
+        if (smoke && args.Length != 1)
         {
             Console.Error.WriteLine("지원 옵션: --smoke-test (임시 DB, 네트워크·CLI·계정·설정 변경 없음)");
             return 2;
