@@ -4,7 +4,8 @@ AI Burger Clock 저장소에서 코드를 고치는 사람과 에이전트를 �
 
 ## 대상 환경
 
-- Windows 11 x64 전용 WinForms 앱입니다. `net10.0-windows`, `PlatformTarget` x64, `RuntimeIdentifier` win-x64.
+- 본체는 Windows 11 x64용 WinForms 앱입니다. `net10.0-windows`, `PlatformTarget` x64, `RuntimeIdentifier` win-x64.
+- macOS 27 / Apple Silicon용 AppKit 메뉴바 앱은 `Mac/`의 별도 프로젝트입니다. `net10.0-macos27.0`, `osx-arm64`이며 공통 원본은 `Shared/SharedSources.props`로 링크합니다. 빌드와 검사는 [Mac/README](Mac/README.md)를 따릅니다.
 - SDK는 `global.json` 기준 10.0.100 이상, 같은 10.0의 최신 기능 밴드를 허용합니다. 미리보기 SDK는 쓰지 않습니다.
 - 직접 NuGet 의존성은 `Microsoft.Data.Sqlite 10.0.12` 하나입니다. 새 의존성은 추가하지 않는 것을 기본으로 합니다.
 - 배포본은 framework-dependent 단일 EXE입니다. .NET 10 Desktop Runtime x64가 별도로 필요하며 trimming과 NativeAOT는 쓰지 않습니다.
@@ -49,10 +50,11 @@ AI Burger Clock 저장소에서 코드를 고치는 사람과 에이전트를 �
 | 대상 | 담당 | 범위 |
 |---|---|---|
 | Windows 버전 | ChatGPT | WinForms UI, `build.ps1`, Windows csproj, Windows 버전 기록 문서 |
-| macOS 버전 | 사용자 Mac의 Claude Code | `Mac/` 폴더, `feature/macos-native` 브랜치(Draft PR #12), [MACOS_PORT](https://github.com/hydron75/ai-burger-clock/blob/feature/macos-native/MACOS_PORT.md) 기록 |
+| macOS 버전 | 사용자 Mac의 Claude Code | `Mac/` 폴더, Mac 버전(`Mac/AiBurgerClock.Mac.csproj`), [MACOS_PORT](MACOS_PORT.md) 기록 |
 
+- macOS 버전은 PR #12로 2026-10-04 main에 병합됐습니다. 이후 Mac 작업도 main에서 새 브랜치를 만들어 PR로 올립니다. Mac 쪽 검증과 기록은 MACOS_PORT.md에 절을 이어 씁니다.
 - 각 담당은 상대 버전 전용 파일을 고치지 않습니다.
-- **공통 원본은 양쪽 모두 고칠 수 있습니다.** Windows와 Mac이 함께 컴파일하는 루트의 공통 C# 원본(Mac 브랜치의 `Shared/SharedSources.props` 목록)과 그 검사가 대상입니다. 고칠 때는 반드시 PR로 올립니다.
+- **공통 원본은 양쪽 모두 고칠 수 있습니다.** Windows와 Mac이 함께 컴파일하는 루트의 공통 C# 원본(`Shared/SharedSources.props` 목록)과 그 검사가 대상입니다. 고칠 때는 반드시 PR로 올립니다.
 - 공통 원본을 고친 PR 본문에는 "공통 원본 변경" 절을 두어 바뀐 파일, 동작 변화, 상대 버전에서 확인할 항목을 적습니다.
 - Mac 쪽에서 공통 원본을 고치면 `dotnet build -c Release -warnaserror -p:EnableWindowsTargeting=true`로 Windows 컴파일까지 확인합니다. 실제 Windows 검사는 위 "Windows 검증" 방식으로 ChatGPT가 진행합니다.
 - Windows 쪽에서 공통 원본을 고치면 Mac 공통 검사·native smoke 확인을 PR에 요청 항목으로 적습니다. Mac 담당이 그 PR HEAD로 `Mac/build.sh`와 `--smoke-test`를 실행하고 결과를 PR 코멘트로 남깁니다.
