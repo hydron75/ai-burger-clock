@@ -4,6 +4,7 @@ internal static class AccountQuotaPolicy
 {
     public static readonly TimeSpan DefaultInterval = TimeSpan.FromHours(6);
     public static readonly TimeSpan LowRemainingInterval = TimeSpan.FromHours(1);
+    public static readonly TimeSpan ExhaustedInterval = TimeSpan.FromMinutes(15);
     public static readonly TimeSpan ResetInterval = TimeSpan.FromMinutes(5);
     public static readonly TimeSpan ResetMargin = TimeSpan.FromMinutes(15);
     public static readonly TimeSpan FailureRetryInterval = TimeSpan.FromMinutes(15);
@@ -45,9 +46,13 @@ internal static class AccountQuotaPolicy
         return delay < regular ? delay : regular;
     }
 
-    private static TimeSpan RegularInterval(IReadOnlyList<QuotaWindow> windows) =>
-        windows.Any(window => double.IsFinite(window.UsedPercent)
-            && window.UsedPercent is > 90 and <= 100) ? LowRemainingInterval : DefaultInterval;
+    private static TimeSpan RegularInterval(IReadOnlyList<QuotaWindow> windows)
+    {
+        // Use the verified raw percentage, not a rounded "0%" display label.
+        if (windows.Any(window => window.UsedPercent == 100)) return ExhaustedInterval;
+        return windows.Any(window => double.IsFinite(window.UsedPercent)
+            && window.UsedPercent is > 90 and < 100) ? LowRemainingInterval : DefaultInterval;
+    }
 
     private static bool IsResetPeriod(DateTimeOffset instant, IEnumerable<DateTimeOffset> anchors) =>
         anchors.Any(reset => instant >= reset - ResetMargin && instant <= reset + ResetMargin);

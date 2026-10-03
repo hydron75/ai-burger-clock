@@ -18,6 +18,7 @@ internal static class AccountQuotaMonitorTests
         try
         {
             await StateTestsAsync(Check);
+            await ExhaustedPollingTestsAsync(Check);
             await OverlapTestsAsync(Check);
             await PollingTestsAsync(Check);
             await CacheTestsAsync(directory, Check);
@@ -101,6 +102,66 @@ internal static class AccountQuotaMonitorTests
         await monitor.RefreshOnceAsync(QuotaProvider.Codex);
         check(State(monitor, QuotaProvider.Codex).NextCheckUtc == now.AddMinutes(15),
             "A new failure after recovery restarts backoff at 15 minutes");
+        await monitor.StopAsync();
+    }
+
+    private static async Task ExhaustedPollingTestsAsync(Action<bool, string> check)
+    {
+        DateTimeOffset now = Now;
+        double codexUsed = 45;
+        double claudeWeeklyUsed = 100;
+        QuotaReading CurrentReading(QuotaProvider provider) => provider == QuotaProvider.Codex
+            ? Reading(provider, codexUsed)
+            : new(provider, [new("session", "5시간", 20, null, 300), new("weekly_all", "주간", claudeWeeklyUsed, null, 10080)]);
+        var client = new FakeClient((provider, _) => Task.FromResult(CurrentReading(provider)));
+        using var monitor = new AccountQuotaMonitor(client, utcNow: () => now);
+        await Task.WhenAll(monitor.RefreshOnceAsync(QuotaProvider.Codex), monitor.RefreshOnceAsync(QuotaProvider.Claude));
+        check(State(monitor, QuotaProvider.Claude).NextCheckUtc == now.AddMinutes(15),
+            "One exhausted weekly window enables 15m polling even while the 5h window has remaining quota");
+        check(State(monitor, QuotaProvider.Codex).NextCheckUtc == now.AddHours(6),
+            "Claude exhaustion cannot shorten Codex's independent normal polling interval");
+
+        client.Handler = (_, _) => Task.FromException<QuotaReading>(new IOException("Synthetic exhausted-query failure"));
+        for (int failure = 1; failure <= 3; failure++)
+        {
+            now = now.AddMinutes(15);
+            await monitor.RefreshOnceAsync(QuotaProvider.Claude);
+            QuotaState claude = State(monitor, QuotaProvider.Claude);
+            check(claude.NextCheckUtc == now.AddMinutes(15),
+                $"Exhausted failure {failure} cannot back off beyond 15m");
+            check(claude.IsPrevious && claude.Reading?.Windows[1].RemainingPercent == 0 && claude.LastSuccessfulCheckUtc == Now,
+                "Failed exhausted read preserves the known zero and its original successful time");
+        }
+        check(State(monitor, QuotaProvider.Codex).NextCheckUtc == Now.AddHours(6) && State(monitor, QuotaProvider.Codex).Error.Length == 0,
+            "Repeated Claude failures cannot alter another provider's cadence or error state");
+
+        now = now.AddMinutes(15);
+        client.Handler = (provider, _) => Task.FromResult(Reading(provider, 101));
+        await monitor.RefreshOnceAsync(QuotaProvider.Claude);
+        check(State(monitor, QuotaProvider.Claude).NextCheckUtc == now.AddMinutes(15)
+            && State(monitor, QuotaProvider.Claude).Reading?.Windows[1].RemainingPercent == 0,
+            "Invalid fresh usage cannot replace the last exhausted reading or weaken its retry cap");
+
+        now = now.AddMinutes(15);
+        claudeWeeklyUsed = 95;
+        client.Handler = (provider, _) => Task.FromResult(CurrentReading(provider));
+        await monitor.RefreshOnceAsync(QuotaProvider.Claude);
+        QuotaState recovered = State(monitor, QuotaProvider.Claude);
+        check(recovered.NextCheckUtc == now.AddHours(1) && !recovered.IsPrevious && recovered.Error.Length == 0
+            && recovered.LastSuccessfulCheckUtc == now,
+            "A successful partial recovery clears failures and returns to low-remaining hourly checks");
+
+        now = now.AddHours(1);
+        claudeWeeklyUsed = 0;
+        await monitor.RefreshOnceAsync(QuotaProvider.Claude);
+        check(State(monitor, QuotaProvider.Claude).NextCheckUtc == now.AddHours(6),
+            "A successful full recovery returns the provider to normal 6h polling");
+
+        codexUsed = 100;
+        await Task.WhenAll(monitor.RefreshOnceAsync(QuotaProvider.Codex), monitor.RefreshOnceAsync(QuotaProvider.Claude));
+        check(State(monitor, QuotaProvider.Codex).NextCheckUtc == now.AddMinutes(15)
+            && State(monitor, QuotaProvider.Claude).NextCheckUtc == now.AddHours(6),
+            "The same exhausted rule applies to Codex without changing recovered Claude's cadence");
         await monitor.StopAsync();
     }
 
