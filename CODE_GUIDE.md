@@ -1,6 +1,6 @@
 # 소스코드, 쉬운 말로 읽기
 
-Windows 2.2.2와 macOS preview 0.1.2 소스 기준입니다. Windows 사용법부터 보고 싶다면 [README](README.md), Mac 준비와 아직 남은 검증은 [Mac 안내](Mac/README.md)로 이동하세요. 아래 기존 실행·UI 설명은 Windows 기준이며 Mac의 차이는 12절에 정리했습니다.
+Windows 2.2.2와 macOS preview 0.1.3 소스 기준입니다. Windows 사용법부터 보고 싶다면 [README](README.md), Mac 준비와 아직 남은 검증은 [Mac 안내](Mac/README.md)로 이동하세요. 아래 기존 실행·UI 설명은 Windows 기준이며 Mac의 차이는 12절에 정리했습니다.
 
 코드를 한 줄씩 번역한 문서는 아닙니다. **각 파일이 무엇을 맡고, 서로 어떻게 연결되는지** 설명합니다. 루트·Properties의 C# 47개, Mac 호스트 5개, 공통 검사 입구 1개로 총 53개와 빌드 설정을 다룹니다. 컴퓨터가 만든 `bin`·`obj`와 로컬 검증용 `artifacts`는 대상에서 뺍니다.
 
@@ -406,7 +406,7 @@ Mac의 시간대 ID는 `America/New_York`, `America/Los_Angeles`, `Asia/Seoul`�
 
 Mac은 `~/Library/Application Support/AIBurgerClock`에 별도 DB를 쓰고 `SMAppService.MainApp`으로 로그인 항목을 관리합니다. CLI는 절대 실행 경로와 실행 권한을 확인하고, shell 프로필·Keychain·인증 파일은 읽지 않습니다. 기능 규칙을 함께 써도 **두 컴퓨터의 DB와 로그인은 자동 동기화되지 않습니다.**
 
-Windows 버전은 2.2.2 그대로이고 Mac 소스는 0.1.2 preview입니다. `MacCliPaths`는 GUI 앱의 PATH와 `~/.local/bin`, `/opt/homebrew/bin`, `/usr/local/bin`에서 실행 가능한 공식 명령을 찾으며 인증 파일은 읽지 않습니다. 앞선 0.1.1의 두 CLI 한도와 한 화면 배치는 확인했습니다. 새 0.1.2는 시스템 심볼/tint 대신 20-point 상태색 bitmap과 흰색 F/B를 표준 status item에 넣습니다. 1x·2x 모두 같은 논리 크기입니다. **실제 Mac 공통 검사 244,347건·Release `.app`·서명·ARM64 SQLite와 native smoke PASS에 이어, 일반 화면의 커진 컬러 F와 양쪽 메뉴막대 표시도 확인했습니다.** native smoke의 8개 문자/색 조합 검사와 사용자 일반 실행 관찰은 별도 근거로 기록합니다. 종전 비활성 모니터 누락은 사용자 Mac에서 해소됐지만 정확한 원인을 이미지 수명 하나로 확정하지는 않습니다. bundle 버전은 csproj에서만 지정하며 native smoke가 bundle의 `CFBundleShortVersionString`과 앱 버전을 비교합니다. OS 알림·재로그인·절전 복귀는 남아 있습니다. [버전 수정](MACOS_PORT.md#24-012-bundle-버전-미반영-수정과-첫-로컬-mac-검증), [아이콘 수정](MACOS_PORT.md#20-012-메뉴바-아이콘-크기색상-수정과-다중-모니터-재검증), [native 검사](MACOS_PORT.md#22-012-아이콘-native-smoke-pass), [일반 메뉴막대 확인](MACOS_PORT.md#23-012-실제-컬러-아이콘과-양쪽-메뉴막대-확인)에 구분해서 기록합니다.
+Windows 버전은 2.2.2 그대로이고 Mac 소스는 0.1.3 preview입니다. `MacCliPaths`는 GUI 앱의 PATH와 `~/.local/bin`, `/opt/homebrew/bin`, `/usr/local/bin`에서 실행 가능한 공식 명령을 찾으며 인증 파일은 읽지 않습니다. 앞선 0.1.1의 두 CLI 한도와 한 화면 배치는 확인했습니다. 새 0.1.2는 시스템 심볼/tint 대신 20-point 상태색 bitmap과 흰색 F/B를 표준 status item에 넣습니다. 1x·2x 모두 같은 논리 크기입니다. **실제 Mac 공통 검사 244,347건·Release `.app`·서명·ARM64 SQLite와 native smoke PASS에 이어, 일반 화면의 커진 컬러 F와 양쪽 메뉴막대 표시도 확인했습니다.** native smoke의 8개 문자/색 조합 검사와 사용자 일반 실행 관찰은 별도 근거로 기록합니다. 종전 비활성 모니터 누락은 사용자 Mac에서 해소됐지만 정확한 원인을 이미지 수명 하나로 확정하지는 않습니다. bundle 버전은 csproj에서만 지정하며 native smoke가 bundle의 `CFBundleShortVersionString`과 앱 버전을 비교합니다. OS 알림·재로그인·절전 복귀는 남아 있습니다. [버전 수정](MACOS_PORT.md#24-012-bundle-버전-미반영-수정과-첫-로컬-mac-검증), [아이콘 수정](MACOS_PORT.md#20-012-메뉴바-아이콘-크기색상-수정과-다중-모니터-재검증), [native 검사](MACOS_PORT.md#22-012-아이콘-native-smoke-pass), [일반 메뉴막대 확인](MACOS_PORT.md#23-012-실제-컬러-아이콘과-양쪽-메뉴막대-확인)에 구분해서 기록합니다.
 
 `MacStatusWindow`는 전체 document 스크롤을 없애고 430×660 point의 고정 AppKit 창에 Schedule·세 Provider·ChatGPT/Claude 한도·버튼을 놓습니다. Provider 설명은 두 줄로 제한하고 전체 내용을 Tooltip에 보존합니다. 일반 Codex 2개 창+조회 정보와 Claude 3개 창+조회 정보를 위한 한도 상자는 54/74 point이며 더 많은 모델별 한도는 상자 내부에서 스크롤합니다. `VerifyCompactLayout`은 native smoke에서만 호출하여 전체 화면 스크롤 부재, 컨트롤 경계/겹침, 실제 글꼴 기준 일반 한도 행의 높이를 검사합니다. 상시 조회 로직이나 통계 창의 공통 TextArea 설정은 바꾸지 않습니다.
 

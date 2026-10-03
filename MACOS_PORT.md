@@ -1,8 +1,8 @@
-# macOS preview 0.1.2 — 소스 준비와 검증 기록
+# macOS preview 0.1.3 — 소스 준비와 검증 기록
 
 기록일: 2026-10-03 KST. Windows 기준 버전: 2.2.2.
 
-Apple Silicon / macOS 27용 **native AppKit 메뉴바 호스트**를 별도 프로젝트로 준비했다. 기존 Windows WinForms UI·배포본은 유지한다. 앞선 0.1.1의 한 화면 배치·두 계정 한도 수신을 확인한 뒤, 작은 검은 F와 비활성 모니터의 아이콘 누락 보고를 받아 0.1.2에서 20-point 컬러 bitmap으로 수정했다. **0.1.2의 실제 Mac 공통 검사 244,347건·Release `.app`·서명·ARM64 SQLite·native smoke에 이어 일반 컬러 아이콘과 양쪽 메뉴막대 표시까지 확인**했다. OS 알림·재로그인·절전 복귀와 장기 사용은 남아 있다. 앞선 검증은 17~19절, 아이콘 수정은 20절, 새 실제 빌드는 21절, native 검사는 22절, 실제 메뉴막대는 23절에 구분한다. 24절은 이전 빌드에서 bundle 버전이 0.1.0으로 남던 문제의 수정과, 사용자 Mac에서 직접 실행한 첫 로컬 빌드·검사 기록이다. 25절은 PR #12 코드 리뷰 10건의 반영 기록, 26절은 연결 복구·절전 복귀, 27절은 로그아웃 정상 종료와 재로그인 자동 실행 실제 확인, 29절은 알림 권한 확인, 30절은 UI 조작 확인과 Tooltip·ChatGPT 표시 이름·앱 아이콘 수정이다(28절은 별도 PR #14).
+Apple Silicon / macOS 27용 **native AppKit 메뉴바 호스트**를 별도 프로젝트로 준비했다. 기존 Windows WinForms UI·배포본은 유지한다. 앞선 0.1.1의 한 화면 배치·두 계정 한도 수신을 확인한 뒤, 작은 검은 F와 비활성 모니터의 아이콘 누락 보고를 받아 0.1.2에서 20-point 컬러 bitmap으로 수정했다. **0.1.2의 실제 Mac 공통 검사 244,347건·Release `.app`·서명·ARM64 SQLite·native smoke에 이어 일반 컬러 아이콘과 양쪽 메뉴막대 표시까지 확인**했다. OS 알림·재로그인·절전 복귀와 장기 사용은 남아 있다. 앞선 검증은 17~19절, 아이콘 수정은 20절, 새 실제 빌드는 21절, native 검사는 22절, 실제 메뉴막대는 23절에 구분한다. 24절은 이전 빌드에서 bundle 버전이 0.1.0으로 남던 문제의 수정과, 사용자 Mac에서 직접 실행한 첫 로컬 빌드·검사 기록이다. 25절은 PR #12 코드 리뷰 10건의 반영 기록, 26절은 연결 복구·절전 복귀, 27절은 로그아웃 정상 종료와 재로그인 자동 실행 실제 확인, 29절은 알림 권한 확인, 30절은 UI 조작 확인과 Tooltip·ChatGPT 표시 이름·앱 아이콘 수정, 31절은 0.1.3 버전 정리다(28절은 별도 PR #14).
 
 Mac 개발 도구 준비와 실행 순서는 [Mac/README.md](Mac/README.md)를 따른다.
 
@@ -738,3 +738,34 @@ DB는 원본을 직접 열지 않고 scratch 폴더로 복사해 읽었다. 이 
 - smoke 레이아웃 검사에 다음을 추가했다: 두 ⓘ 버튼의 심볼·설명 존재, 팝오버 열림·닫힘. PASS 문구에 `quota info popover`가 붙는다.
 - 검증: `Mac/build.sh` 종료 코드 0(공통 검사 244,349건, 경고·오류 0), `codesign` 통과, smoke PASS / 종료 코드 0.
 - 사용자 확인 필요: ⓘ의 Tooltip과 팝오버가 실제로 보기 좋은지.
+
+## 31. 0.1.3 버전 정리
+
+2026-10-04 KST, 사용자가 한도 ⓘ의 Tooltip과 팝오버가 잘 보인다고 확인했다(30-2절). 0.1.2 이후 사용자에게 보이는 변경을 묶어 Mac 버전을 **0.1.3 / build 4**로 올렸다. Windows 2.2.2·DB schema·NuGet 의존성은 그대로다.
+
+0.1.3에 들어간 변경:
+
+| 절 | 내용 |
+|---|---|
+| 24 | bundle 버전을 csproj에서 관리하고 smoke에서 확인 |
+| 25 | PR #12 리뷰 10건 반영: 초기화 실패, 공휴일 저장 알림, 메뉴 타이머, HTTP 설정, 한도 표시, 알림 문구, 메모 1,000자, 추가 인수 |
+| 30 | 상태 창 Tooltip 유지, 화면 표시 이름 ChatGPT, 서비스 상태·한도 구간 제목과 구분선(창 430×720), 한도 ⓘ 팝오버, 앱 아이콘 |
+
+PR #14(28절)의 공통 원본 정리와 연결 복구 지연 조회는 아직 이 브랜치에 병합되지 않아 0.1.3에 포함되지 않는다.
+
+### 빌드와 검사 (이 Mac)
+
+| 항목 | 결과 |
+|---|---|
+| 소스 | `8e8d9b8edb0af8c7c88914dfb207c1581072f8cc` (`feature/macos-native`) |
+| 도구 | Xcode 27.0 / 27A266a, .NET SDK 10.0.401, macos workload 27.0.10722 |
+| `Mac/build.sh` | 종료 코드 0, 공통 검사 244,349건, native Release 경고 0 / 오류 0, 15.4초. clean 없이 증분 빌드 |
+| bundle | `Mac/bin/Release/net10.0-macos27.0/osx-arm64/AI Burger Clock.app`, `CFBundleShortVersionString` 0.1.3, `CFBundleVersion` 4, `CFBundleIconFile` AppIcon, 크기 124M |
+| 서명 | `codesign --verify --deep --strict` 통과(ad-hoc) |
+| `--smoke-test` | PASS / 종료 코드 0 (bundle 버전 검사 포함) |
+| SHA-256 실행 파일 | `21dc4094e52580f05801559a83862db2fe3f7d0755c25109198394b87218a477` (`Contents/MacOS/AI Burger Clock`) |
+| SHA-256 앱 DLL | `2e12980246365a1b63c06a8a8b8d53e86d58bfa41a2909f0d20f2e21c4c4467d` (`Contents/MonoBundle/AI Burger Clock.dll`) |
+
+0.1.2에서 csproj 대신 `Info.plist`만 바꾸던 방식이었다면, 이번 증분 빌드에서도 버전이 반영되지 않았을 것이다. 24절 수정 뒤에는 증분 빌드에서 바로 0.1.3 / 4가 반영됐다.
+
+앱은 같은 경로의 새 bundle로 다시 실행했다. 로그인 항목은 경로 기준이라 그대로 유지된다.

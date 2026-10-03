@@ -1,4 +1,4 @@
-# AI Burger Clock · macOS preview 0.1.2
+# AI Burger Clock · macOS preview 0.1.3
 
 Apple Silicon / macOS 27을 위한 C# AppKit 메뉴바 앱입니다. Windows 2.2.2 배포본과 별도 앱이지만, 시간표·공식 상태·권고·한도 조회·기록·통계 계산 코드는 같은 저장소의 원본 소스를 링크해서 사용합니다. Windows 코드를 복사해 따로 유지하지 않습니다.
 
