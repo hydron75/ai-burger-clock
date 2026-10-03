@@ -1,11 +1,12 @@
 # 다음 개선 항목
 
-## macOS native preview 0.1.1
+## macOS native preview 0.1.2
 
 - 기록일: 2026-10-03 KST.
-- 상태: `feature/macos-native`의 Apple Silicon / macOS 27용 AppKit 소스를 [Draft PR #12](https://github.com/hydron75/ai-burger-clock/pull/12)에서 검증 중이다. **0.1.1의 실제 Release·서명·ARM64 SQLite·native smoke 종료 코드 0과 일반 상태 창의 한 화면 표시·메뉴바·두 계정 한도 수신을 확인**했다. 실제 알림·재로그인·절전 복귀 검증은 남아 있다. 안정판 배포나 main 병합은 하지 않았다. [작업 기록](MACOS_PORT.md), [Mac 빌드 안내](Mac/README.md).
+- 상태: `feature/macos-native`의 Apple Silicon / macOS 27용 AppKit 소스를 [Draft PR #12](https://github.com/hydron75/ai-burger-clock/pull/12)에서 검증 중이다. **앞선 0.1.1의 실제 Release·서명·ARM64 SQLite·native smoke 종료 코드 0과 일반 상태 창의 한 화면 표시·두 계정 한도 수신은 확인**했다. 새 0.1.2 아이콘 수정의 실제 Mac 빌드·native smoke·다중 모니터 표시와 실제 알림·재로그인·절전 복귀 검증은 남아 있다. 안정판 배포나 main 병합은 하지 않았다. [작업 기록](MACOS_PORT.md), [Mac 빌드 안내](Mac/README.md).
+- 0.1.2 아이콘 수정: 기존 작은 검은 F와 비활성 모니터 누락 보고를 받아, 20-point 색상 원+흰색 F/B를 20px/40px bitmap에 직접 그린다. 정사각 status item·1x/2x 해상도·명시적 이미지 수명을 사용하고 tint에 의존하지 않는다. native smoke에 8개 문자/색 조합의 1x/2x 실제 RGB·투명도·흰 글자와 버튼 이미지 크기 검사를 연결했다. **다중 모니터 문제가 해결됐다고 아직 판정하지 않는다.** [수정·검증 범위](MACOS_PORT.md#20-012-메뉴바-아이콘-크기색상-수정과-다중-모니터-재검증).
 - Schedule/DST/공휴일, 공식 상태·권고, CLI 한도·조회 주기, SQLite schema 2와 통계는 루트의 같은 원본을 빌드한다. Windows WinForms와 Mac AppKit UI·알림·자동 실행은 각각 관리한다.
-- Windows Release 빌드 경고·오류 0, 자체 검사 250,750건과 공통 검사 244,347건을 통과했다. Mac 참조 C# 컴파일과 trimming 분석도 경고·오류 0이지만 `.app` 생성·네이티브 실행 검증을 대신하지 않는다.
+- 새 0.1.2 소스에서도 Windows Release 빌드 경고·오류 0, 자체 검사 250,750건과 공통 검사 244,347건을 통과했다. Mac 호스트 6개와 공통 원본 19개의 참조 C# 컴파일/trimming 분석도 경고·오류 0이지만 `.app` 생성·네이티브 실행 검증을 대신하지 않는다.
 - Mac SDK 10.0.401 / Xcode 27.0에서 기존 공통 검사 244,347건, Release `.app`·로컬 서명·ARM64 SQLite와 native smoke가 통과했다. 이후 Schedule/US DST, 세 Provider 정상 상태, ChatGPT 주간·Claude 세션/주간 전체/모델별 한도 수신과 메뉴바를 확인했다. 로그인 자동 실행 체크와 등록 성공 안내는 보였지만 실제 재로그인 실행은 확인 전이다. [최신 화면 기록](MACOS_PORT.md#15-cli-조회-성공과-011-한-화면-배치-수정).
 - 0.1.1 배치 수정: 창 720→660 point, 전체 스크롤 제거, Provider 간격 91→62 point, 한도 상자 108/111→54/74 point. 일반 한도는 한 화면에 두고 추가 모델 한도만 내부 스크롤을 유지한다. 긴 설명·자동 실행 상태는 Tooltip으로 보존하고 기록·상태 페이지·Refresh·Statistics 동작은 유지한다.
 - 새 native smoke에 컨트롤 경계/겹침, 일반 Codex 3줄/Claude 4줄의 실제 텍스트 높이와 주입 시각의 카운트다운 감소 검사를 연결했고 **실제 Mac 0.1.1에서 종료 코드 0으로 통과**했다. 임시 SQLite·4종 이벤트/메모·통계·창 재열기도 함께 확인했다. 이후 일반 화면에서 Schedule·세 Provider·두 한도·하단 버튼/옵션이 스크롤 없이 함께 보이는 것까지 확인했다. [새 빌드 결과](MACOS_PORT.md#17-011-실제-mac-release-재빌드-성공), [새 native 검사](MACOS_PORT.md#18-011-새-native-smoke-통과), [일반 화면](MACOS_PORT.md#19-011-일반-상태-창과-메뉴바-확인).

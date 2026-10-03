@@ -1,6 +1,6 @@
 # 소스코드, 쉬운 말로 읽기
 
-Windows 2.2.2와 macOS preview 0.1.1 소스 기준입니다. Windows 사용법부터 보고 싶다면 [README](README.md), Mac 준비와 아직 남은 검증은 [Mac 안내](Mac/README.md)로 이동하세요. 아래 기존 실행·UI 설명은 Windows 기준이며 Mac의 차이는 12절에 정리했습니다.
+Windows 2.2.2와 macOS preview 0.1.2 소스 기준입니다. Windows 사용법부터 보고 싶다면 [README](README.md), Mac 준비와 아직 남은 검증은 [Mac 안내](Mac/README.md)로 이동하세요. 아래 기존 실행·UI 설명은 Windows 기준이며 Mac의 차이는 12절에 정리했습니다.
 
 코드를 한 줄씩 번역한 문서는 아닙니다. **각 파일이 무엇을 맡고, 서로 어떻게 연결되는지** 설명합니다. 루트·Properties의 C# 47개, Mac 호스트 5개, 공통 검사 입구 1개로 총 53개와 빌드 설정을 다룹니다. 컴퓨터가 만든 `bin`·`obj`와 로컬 검증용 `artifacts`는 대상에서 뺍니다.
 
@@ -357,12 +357,13 @@ Windows 내부 승인 형식은 알려진 경우만 해석합니다. 낯선 값�
 
 [Properties/AssemblyInfo.cs](Properties/AssemblyInfo.cs)는 프로그램 식별 정보 일부를 담습니다. 버전은 여기 아닌 프로젝트 파일에서 관리하고, 나머지 정보는 SDK가 생성합니다.
 
-### Mac 호스트: 5개 / 공통 검사 입구: 1개
+### Mac 호스트: 6개 / 공통 검사 입구: 1개
 
 | 파일 | 맡은 일 |
 |---|---|
 | [Mac/Program.cs](Mac/Program.cs) | Mac 실행 입구, 중복 실행 잠금, 임시 DB native smoke 분기 |
 | [Mac/MacApplication.cs](Mac/MacApplication.cs) | AppKit 메뉴바와 공통 조회·저장·알림·복귀·종료 연결 |
+| [Mac/MacStatusIcon.cs](Mac/MacStatusIcon.cs) | 20-point 상태색 원과 흰색 F/B의 1x·2x 이미지 생성. native smoke에서 실제 색·투명도·글자 픽셀 확인 |
 | [Mac/MacStatusWindow.cs](Mac/MacStatusWindow.cs) | 한 화면에 배치한 Mac 상태·일반 한도 창과 사용 경험 메뉴. 추가 한도만 내부 스크롤 |
 | [Mac/MacStatisticsWindow.cs](Mac/MacStatisticsWindow.cs) | 공통 계산 결과를 보여주는 Mac 통계 창 |
 | [Mac/MacServices.cs](Mac/MacServices.cs) | macOS 알림 권한과 로그인 항목 등록 |
@@ -402,7 +403,7 @@ Mac의 시간대 ID는 `America/New_York`, `America/Los_Angeles`, `Asia/Seoul`�
 
 Mac은 `~/Library/Application Support/AIBurgerClock`에 별도 DB를 쓰고 `SMAppService.MainApp`으로 로그인 항목을 관리합니다. CLI는 절대 실행 경로와 실행 권한을 확인하고, shell 프로필·Keychain·인증 파일은 읽지 않습니다. 기능 규칙을 함께 써도 **두 컴퓨터의 DB와 로그인은 자동 동기화되지 않습니다.**
 
-Windows 버전은 2.2.2 그대로이고 Mac 소스는 0.1.1 preview입니다. `MacCliPaths`는 GUI 앱의 PATH와 `~/.local/bin`, `/opt/homebrew/bin`, `/usr/local/bin`에서 실행 가능한 공식 명령을 찾으며 인증 파일은 읽지 않습니다. 0.1.1의 실제 Mac 공통 검사 244,347건·Release `.app`·서명·ARM64 SQLite와 새 native smoke 종료 코드 0을 통과했고, 일반 화면에서 두 CLI 한도와 한 화면 배치도 확인했습니다. 실제 알림·재로그인·절전 복귀 검증은 남아 있습니다. [새 빌드 기록](MACOS_PORT.md#17-011-실제-mac-release-재빌드-성공), [새 native 검사](MACOS_PORT.md#18-011-새-native-smoke-통과), [일반 화면 확인](MACOS_PORT.md#19-011-일반-상태-창과-메뉴바-확인)에 이전 실행 확인과 새 수정본 검증을 구분합니다.
+Windows 버전은 2.2.2 그대로이고 Mac 소스는 0.1.2 preview입니다. `MacCliPaths`는 GUI 앱의 PATH와 `~/.local/bin`, `/opt/homebrew/bin`, `/usr/local/bin`에서 실행 가능한 공식 명령을 찾으며 인증 파일은 읽지 않습니다. 앞선 0.1.1의 실제 Mac 공통 검사 244,347건·Release `.app`·서명·ARM64 SQLite와 native smoke 종료 코드 0, 두 CLI 한도와 한 화면 배치는 확인했습니다. 새 0.1.2는 메뉴바의 작은 검은 F와 비활성 모니터 누락 보고를 받아, 시스템 심볼/tint 대신 색이 들어 있는 20-point bitmap을 표준 status item에 넣습니다. 1x·2x 모두 같은 논리 크기이며 글자는 흰색입니다. 새 native smoke는 실제 색·투명도·글자와 버튼에 보존된 이미지 크기를 검사하지만 양쪽 모니터의 표시까지 증명하지는 않습니다. **0.1.2 실제 Mac 빌드·native smoke·다중 모니터 확인과 OS 알림·재로그인·절전 복귀 검증은 남아 있습니다.** [앞선 빌드](MACOS_PORT.md#17-011-실제-mac-release-재빌드-성공), [앞선 native 검사](MACOS_PORT.md#18-011-새-native-smoke-통과), [새 아이콘 수정](MACOS_PORT.md#20-012-메뉴바-아이콘-크기색상-수정과-다중-모니터-재검증)에 각각 구분해서 기록합니다.
 
 `MacStatusWindow`는 전체 document 스크롤을 없애고 430×660 point의 고정 AppKit 창에 Schedule·세 Provider·ChatGPT/Claude 한도·버튼을 놓습니다. Provider 설명은 두 줄로 제한하고 전체 내용을 Tooltip에 보존합니다. 일반 Codex 2개 창+조회 정보와 Claude 3개 창+조회 정보를 위한 한도 상자는 54/74 point이며 더 많은 모델별 한도는 상자 내부에서 스크롤합니다. `VerifyCompactLayout`은 native smoke에서만 호출하여 전체 화면 스크롤 부재, 컨트롤 경계/겹침, 실제 글꼴 기준 일반 한도 행의 높이를 검사합니다. 상시 조회 로직이나 통계 창의 공통 TextArea 설정은 바꾸지 않습니다.
 

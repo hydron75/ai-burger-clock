@@ -11,9 +11,9 @@
     <ApplicationId>com.hydron75.aiburgerclock</ApplicationId>
     <ApplicationTitle>AI Burger Clock</ApplicationTitle>
     <Title>AI Burger Clock</Title>
-    <Version>0.1.1</Version>
-    <AssemblyVersion>0.1.1.0</AssemblyVersion>
-    <FileVersion>0.1.1.0</FileVersion>
+    <Version>0.1.2</Version>
+    <AssemblyVersion>0.1.2.0</AssemblyVersion>
+    <FileVersion>0.1.2.0</FileVersion>
     <SelfContained>true</SelfContained>
     <!-- Apple SDK requires its trimmer pipeline even when preserving managed code. -->
     <TrimMode>copy</TrimMode>

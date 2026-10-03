@@ -1,8 +1,8 @@
-# macOS preview 0.1.1 — 소스 준비와 검증 기록
+# macOS preview 0.1.2 — 소스 준비와 검증 기록
 
 기록일: 2026-10-03 KST. Windows 기준 버전: 2.2.2.
 
-Apple Silicon / macOS 27용 **native AppKit 메뉴바 호스트**를 별도 프로젝트로 준비했다. 기존 Windows WinForms UI·배포본은 유지한다. **전체 상태 창 스크롤을 없앤 0.1.1의 실제 공통 검사 244,347건·Release `.app`·서명·ARM64 SQLite와 새 native smoke 종료 코드 0을 확인**했다. 일반 상태 창에서 주요 정보의 한 화면 표시·메뉴바·ChatGPT/Claude 한도 수신도 확인했다. 실제 알림·재로그인·절전 복귀와 장기 사용은 남아 있다. 배치 수정은 15절, 최신 빌드·native 검사·일반 화면은 17~19절에 기록한다.
+Apple Silicon / macOS 27용 **native AppKit 메뉴바 호스트**를 별도 프로젝트로 준비했다. 기존 Windows WinForms UI·배포본은 유지한다. **전체 상태 창 스크롤을 없앤 앞선 0.1.1의 실제 공통 검사 244,347건·Release `.app`·서명·ARM64 SQLite와 native smoke 종료 코드 0, 한 화면 배치・두 계정 한도 수신은 확인**했다. 이후 작은 검은 F와 비활성 모니터의 아이콘 누락 보고를 받아 0.1.2에서 20-point 컬러 bitmap으로 수정했다. **0.1.2의 실제 Mac 재빌드・native smoke・다중 모니터 표시 검증은 대기 중**이다. OS 알림·재로그인·절전 복귀와 장기 사용도 남아 있다. 앞선 실제 검증은 17~19절, 새 아이콘 수정은 20절에 구분한다.
 
 Mac 개발 도구 준비와 실행 순서는 [Mac/README.md](Mac/README.md)를 따른다.
 
@@ -43,7 +43,7 @@ DB·CLI 로그인: 각 컴퓨터에 따로 유지
 - 공통 보조: `AppPaths.cs`, `DisplayFormatting.cs`, `MacCliPaths.cs`, `StatisticsAnalysis.cs`, `QuotaJsonContext.cs`.
 - 검사: `PortablePlatformTests.cs`, `Shared.Tests/Program.cs`, `Shared.Tests/AiBurgerClock.Shared.Tests.csproj`.
 - 원본 연결: `Shared/SharedSources.props`.
-- Mac 호스트: `Mac/Program.cs`, `Mac/MacApplication.cs`, `Mac/MacStatusWindow.cs`, `Mac/MacStatisticsWindow.cs`, `Mac/MacServices.cs`.
+- Mac 호스트: `Mac/Program.cs`, `Mac/MacApplication.cs`, `Mac/MacStatusIcon.cs`, `Mac/MacStatusWindow.cs`, `Mac/MacStatisticsWindow.cs`, `Mac/MacServices.cs`.
 - Mac 빌드·설명: `Mac/AiBurgerClock.Mac.csproj`, `Mac/Info.plist`, `Mac/build.sh`, `Mac/README.md`.
 - 이번 기록: `MACOS_PORT.md`.
 
@@ -414,3 +414,42 @@ open "/Users/hydron/ai-burger-clock/Mac/bin/Release/net10.0-macos27.0/osx-arm64/
 새 일반 화면에서 두 계정 한도와 성공 조회 시각도 표시되었다. 이번 화면의 계정 사용률 수치는 추가로 공개 기록하지 않으며 스크린샷·계정 데이터 파일도 업로드하지 않는다. 정상/GO 표시 역시 해당 시점의 앱 화면 관찰이며 별도의 장애 시나리오 재검증은 아니다.
 
 이번 배치 수정의 **실제 Mac Release·공통 검사·새 native smoke·일반 한 화면 표시 확인을 완료**했다. 실제 링크/기록 메뉴/Tooltip 조작, 일반 사용자 DB 재시작·OS 알림·재로그인·절전/연결 복구·장기 사용은 별도 항목이다. 추가 코드 변경이나 재빌드는 하지 않고 확인 결과만 동일 feature 브랜치/Draft PR #12와 안내 문서에 반영한다.
+
+## 20. 0.1.2 메뉴바 아이콘 크기·색상 수정과 다중 모니터 재검증
+
+2026-10-03 KST 사용자는 듀얼 모니터에서 다른 아이콘은 양쪽 메뉴막대에 흰색으로 보이지만 Burger Clock만 활성 모니터에 표시된다고 알렸다. 비활성 모니터에서는 실제로 아이콘이 없다고 추가 확인했으므로 단순 대비 부족으로 설명하지 않는다. 메뉴막대 이미지에서도 주변보다 작은 검은 F가 보였고 크기 확대를 요청했다. 이미지는 관찰 자료로만 읽으며 저장소에 올리지 않는다.
+
+### 확인한 코드와 수정
+
+- 기존 코드는 `f.circle.fill`/`b.circle.fill` 시스템 심볼과 `ContentTintColor`를 사용했지만 화면에서는 작은 검은 F가 보였다. 심볼 부재 시 title fallback인지, tint/메뉴막대 복제 문제인지 native 관측 없이 확정하지 않는다. 모니터 포커스에 따라 항목을 숨기는 코드도 없다.
+- 새 `MacStatusIcon`은 20-point 이미지에 지름 19-point 상태색 원과 중앙의 흰색 F/B를 CoreGraphics/CoreText로 직접 그린다. 바깥 배경은 투명하다. 20×20px와 40×40px 표현 모두 논리 크기 20×20 point이며 `Template=false`다. 색상은 기존 `TrayPresentation`을 그대로 사용한다.
+- 표준 정사각 status item을 만들고 `ImageOnly`/`NSImageScale.None`으로 표시한다. 버튼 tint・시스템 심볼에는 의존하지 않는다. 화면별 중복 항목이나 모니터 polling・OS 설정 변경은 추가하지 않는다.
+- 앱이 최종 NSImage를 보유하고 상태색/문자가 바뀔 때만 교체한다. 새 그림을 버튼에 넣은 뒤 이전 그림을 Dispose하고 종료 때 마지막 그림도 정리한다. 공식 retain 계약상 기존 `using`만으로 원인을 확정할 수는 없다.
+- 새 native smoke는 두 문자×네 색의 1x/2x 픽셀 RGB・alpha・흰 글자・크기와 버튼 이미지 보존을 검사한다. 기존 창・임시 SQLite・4종 이벤트・메모・통계・카운트다운 검사를 유지한다. 새 PASS에는 `20pt color menu icon/1x-2x pixels`가 포함된다.
+- Mac 버전만 0.1.2 / bundle build 3으로 맞췄다. Windows 2.2.2・공통 원본・DB schema 2・NuGet 의존성・조회 주기・자동 실행 경로・dist는 변경하지 않는다.
+
+기존 수정 파일은 `Mac/MacApplication.cs`, `Mac/AiBurgerClock.Mac.csproj`, `Mac/Info.plist`, `README.md`, `CODE_GUIDE.md`, `BACKLOG.md`, `Mac/README.md`, `MACOS_PORT.md`이며 새 소스는 `Mac/MacStatusIcon.cs`다. SDK-style Mac 프로젝트가 새 파일을 자동 포함하고 Windows 프로젝트는 기존 `Mac/**/*.cs` 제외 규칙을 유지한다. 작업 전 Git 기준점은 `be29b06421007cda935b4849869857eaeb0faecd`다. 검증 소스는 동일 `feature/macos-native` / Draft PR #12의 이번 변경이며, GitHub 갱신 때 실제 커밋을 확인한다. 기존 배포본 교체가 없으므로 사용자 DB・EXE 백업 작업도 하지 않는다.
+
+### 여기서 수행한 검증
+
+SDK 10.0.401, Windows 환경:
+
+| 검사 | 결과 |
+|---|---|
+| Windows Release, warnings-as-errors | 경고 0 / 오류 0 / exit 0 |
+| Windows 자체 검사 | 250,750 assertions / exit 0 |
+| net10.0 공통 검사 | 244,347 assertions / exit 0 |
+| 공식 Microsoft.macOS 27.0.10722 참조 API + trim analyzer | Mac 호스트 6개 + 공통 19개, 경고 0 / 오류 0 / exit 0 |
+
+로그 위치는 Git에서 제외한 `artifacts/mac-icon/`이며 실제 계정・사용자 DB・레지스트리・Mac 설정・앱 배포본은 건드리지 않는다. 참조 컴파일에서 발견한 RGB 인수의 double/NFloat 불일치는 float 입력으로 수정하고 일반 NuGet audit 설정으로 다시 컴파일해 통과했다. Mac workload를 설치하거나 참조 DLL을 실행하지 않았다.
+
+### 남은 실제 Mac 확인
+
+**이번 0.1.2의 `.app` 빌드・native pixel smoke는 아직 Mac에서 실행하지 않았다.** 앞선 0.1.1 성공을 새 수정본 성공으로 바꾸지 않는다. 실제 다중 모니터 누락의 원인이나 해결 여부도 확정하지 않는다.
+
+1. 기존 앱을 종료하고 0.1.2 소스를 받아 같은 경로에서 `Mac/build.sh`로 다시 빌드한다. 사용자 확인된 전체 Xcode 경로는 실행별 `DEVELOPER_DIR`로 지정한다.
+2. 새 bundle의 `--smoke-test`가 위 새 문구와 종료 코드 0을 보이는지 확인한다. 계정・HTTP・설정 변경 없는 임시 데이터 검사다.
+3. 일반 앱에서 20-point 크기・흰색 글자・상태색과 메뉴 클릭을 확인한다. 각 모니터를 번갈아 활성화했을 때 비활성 쪽에도 아이콘이 남아 있는지 실제로 확인한다. 실패하면 양쪽 메뉴막대 화면과 활성 모니터를 근거로 후속 진단한다.
+4. 다중 모니터에서 해결 여부를 확인할 때까지 Draft PR #12를 유지한다. 별도 남은 OS 알림・재로그인・절전/연결 복구・장기 사용도 유지한다.
+
+공식 API 근거: [Retina 이미지 표현](https://developer.apple.com/library/archive/documentation/GraphicsAnimation/Conceptual/HighResolutionOSX/Optimizing/Optimizing.html), [NSImageRep logical size](https://developer.apple.com/documentation/appkit/nsimagerep/size), [representation retain](https://developer.apple.com/documentation/appkit/nsimage/addrepresentation(_:)), [사용 SDK 바인딩](https://github.com/dotnet/macios/blob/d813e2baef17cd3a2bb5adc1e37610258d01cda3/src/appkit.cs). 이 계약은 실제 메뉴막대 복제 버그 해결을 보증하지 않는다.

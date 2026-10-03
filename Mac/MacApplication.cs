@@ -21,6 +21,7 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
     private MacStatisticsWindow? statisticsWindow;
     private MacNotifications? notifications;
     private NSStatusItem? statusItem;
+    private NSImage? statusImage;
     private NSMenu? menu;
     private NSMenuItem? scheduleItem;
     private NSMenuItem? countdownItem;
@@ -46,8 +47,13 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
         statusWindow = new(RefreshAll, ShowStatistics, enabled => _ = ChangeHolidayAsync(enabled), ChangeAutoStart,
             OpenStatusPage, (provider, type, note) => _ = RecordAsync(provider, type, note), smoke);
         CreateMenu();
-        statusItem = NSStatusBar.SystemStatusBar.CreateStatusItem(NSStatusItemLength.Variable);
+        statusItem = NSStatusBar.SystemStatusBar.CreateStatusItem(NSStatusItemLength.Square);
         statusItem.Menu = menu;
+        if (statusItem.Button is { } button)
+        {
+            button.ImagePosition = NSCellImagePosition.ImageOnly;
+            button.ImageScaling = NSImageScale.None;
+        }
         RefreshDisplay(false);
         // One existing-style countdown timer; Schedule itself caches its date/policy calculations.
         timer = NSTimer.CreateRepeatingScheduledTimer(TimeSpan.FromSeconds(1), _ => RefreshDisplay(true));
@@ -181,11 +187,12 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
         {
             if (lastAppearance != appearance)
             {
-                // SF Symbols stay sharp at all menu-bar scales; same policy/color as Windows.
-                using var image = NSImage.GetSystemSymbol(appearance.Glyph.ToLowerInvariant() + ".circle.fill", appearance.Glyph);
+                NSImage image = MacStatusIcon.Create(appearance);
+                NSImage? previous = statusImage;
                 button.Image = image;
-                button.Title = image is null ? appearance.Glyph : "";
-                button.ContentTintColor = MacStatusWindow.Color(appearance.Color);
+                button.Title = "";
+                statusImage = image;
+                previous?.Dispose();
                 lastAppearance = appearance;
             }
             button.ToolTip = TrayPresentation.Tooltip(snapshot, providers);
@@ -337,7 +344,7 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
             schedule.PacificUtcOffsetMinutes, schedule.EasternIsDst, schedule.PacificIsDst,
             schedule.SchedulePolicyVersion, status.Status, RecommendationPolicy.Calculate(schedule.State, status.Status),
             status.RelevantComponent, status.IncidentId, note,
-            typeof(MacApplication).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion.Split('+')[0] ?? "0.1.1",
+            typeof(MacApplication).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion.Split('+')[0] ?? "0.1.2",
             schedule.HolidayAdjustmentEnabled, schedule.IsHolidayExtendedFullThrottle, schedule.HolidayNames);
         Task save = store.AddUsageAsync(measurement);
         pendingWrites.Add(save);
@@ -417,6 +424,7 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
             statusWindow?.Dispose();
             if (statusItem is not null) NSStatusBar.SystemStatusBar.RemoveStatusItem(statusItem);
             statusItem?.Dispose();
+            statusImage?.Dispose();
             menu?.Dispose();
             timer?.Dispose();
             lifetime.Dispose();
@@ -447,6 +455,10 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
         {
             if (statusItem?.Button is null || menu is null || statusWindow is null)
                 throw new InvalidOperationException("Native menu-bar/window controls were not created.");
+            MacStatusIcon.VerifyImages();
+            if (statusItem.Button.Image is not { } icon || icon.Template ||
+                icon.Size.Width != MacStatusIcon.Size || icon.Size.Height != MacStatusIcon.Size)
+                throw new InvalidOperationException("The menu-bar button did not retain its 20-point color icon.");
             statusWindow.Show();
             if (!statusWindow.Window.IsVisible || statusWindow.Window.DangerousReleasedWhenClosed)
                 throw new InvalidOperationException("Status window is not visible/retained.");
@@ -494,7 +506,7 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
             await statisticsWindow.RefreshAsync();
             if (!statisticsWindow.Window.IsVisible)
                 throw new InvalidOperationException("Statistics window did not reopen from the menu-bar action.");
-            Console.WriteLine("PASS: native controls/window close-reopen, compact one-screen layout/standard quota rows, temporary SQLite, four events/notes, statistics, injected quota countdown; no account/network/settings changes.");
+            Console.WriteLine("PASS: native controls/window close-reopen, 20pt color menu icon/1x-2x pixels, compact one-screen layout/standard quota rows, temporary SQLite, four events/notes, statistics, injected quota countdown; no account/network/settings changes.");
             ExitCode = 0;
         }
         catch (Exception error)
