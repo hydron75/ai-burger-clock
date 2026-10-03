@@ -1,6 +1,6 @@
 # 2.2.2 — 잔여 0%의 15분 한도 조회
 
-2026-10-03 KST. 사용자의 요청에 따라 Work / Codex·Claude 한도 조회에 **잔여 0%이면 15분마다 확인**하는 조건을 추가했다. 기존 2.2.1 배포본과 DB를 백업하고, 새 단일 EXE의 자체·WinForms 검사를 통과한 뒤 기존 dist 경로에 적용했다.
+2026-10-03 KST. 사용자의 요청에 따라 Work / Codex·Claude 한도 조회에 **잔여 0%이면 15분마다 확인**하는 조건을 추가했다. 기존 2.2.1 배포본과 DB를 백업하고, 새 단일 EXE의 자체·WinForms 검사를 통과한 뒤 기존 dist 경로에 적용했다. 소스·문서는 [PR #11](https://github.com/hydron75/ai-burger-clock/pull/11)에 반영했고 main 병합은 보류했다.
 
 Windows 11 x64 / WinForms / `net10.0-windows`를 유지한다. 새 패키지, DB migration, 인증 방식 변경, 크레딧 처리, 한도 리셋 알림은 추가하지 않았다. Gemini 계정 한도도 이번 범위 밖이다.
 
@@ -44,6 +44,7 @@ Provider별로 마지막 성공 응답의 유효한 한도 창을 보고 가장 
 |---|---|
 | 작업 전 로컬·원격 main / PR #10 병합 | `4641d926cf06167202e114afeb0d5406ab0f7f4b` |
 | 기능·버전·검사 / 최종 EXE 소스 | `f456c6952829ee8646456cce3967a11035810930` |
+| 최종 EXE와 실행 코드 동일성을 확인한 PR #11 HEAD (링크 기록 전) | `4e229f7f9421cb24126e23df8753541f3a775ccd` |
 | 작업 브랜치 | `feature/exhausted-quota-polling-2.2.2` |
 | PR 병합 | 이 작업에서 main으로 병합하지 않았다 |
 
