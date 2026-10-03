@@ -1,8 +1,8 @@
-# macOS preview 0.1.2 — 소스 준비와 검증 기록
+# macOS preview 0.1.3 — 소스 준비와 검증 기록
 
 기록일: 2026-10-03 KST. Windows 기준 버전: 2.2.2.
 
-Apple Silicon / macOS 27용 **native AppKit 메뉴바 호스트**를 별도 프로젝트로 준비했다. 기존 Windows WinForms UI·배포본은 유지한다. 앞선 0.1.1의 한 화면 배치·두 계정 한도 수신을 확인한 뒤, 작은 검은 F와 비활성 모니터의 아이콘 누락 보고를 받아 0.1.2에서 20-point 컬러 bitmap으로 수정했다. **0.1.2의 실제 Mac 공통 검사 244,347건·Release `.app`·서명·ARM64 SQLite·native smoke에 이어 일반 컬러 아이콘과 양쪽 메뉴막대 표시까지 확인**했다. OS 알림·재로그인·절전 복귀와 장기 사용은 남아 있다. 앞선 검증은 17~19절, 아이콘 수정은 20절, 새 실제 빌드는 21절, native 검사는 22절, 실제 메뉴막대는 23절에 구분한다. 24절은 이전 빌드에서 bundle 버전이 0.1.0으로 남던 문제의 수정과, 사용자 Mac에서 직접 실행한 첫 로컬 빌드·검사 기록이다. 25절은 PR #12 코드 리뷰 10건의 반영 기록, 26절은 연결 복구·절전 복귀, 27절은 로그아웃 정상 종료와 재로그인 자동 실행 실제 확인, 28절은 공통 원본 정리와 연결 복구 지연 조회(별도 PR)다.
+Apple Silicon / macOS 27용 **native AppKit 메뉴바 호스트**를 별도 프로젝트로 준비했다. 기존 Windows WinForms UI·배포본은 유지한다. 앞선 0.1.1의 한 화면 배치·두 계정 한도 수신을 확인한 뒤, 작은 검은 F와 비활성 모니터의 아이콘 누락 보고를 받아 0.1.2에서 20-point 컬러 bitmap으로 수정했다. **0.1.2의 실제 Mac 공통 검사 244,347건·Release `.app`·서명·ARM64 SQLite·native smoke에 이어 일반 컬러 아이콘과 양쪽 메뉴막대 표시까지 확인**했다. OS 알림·재로그인·절전 복귀와 장기 사용은 남아 있다. 앞선 검증은 17~19절, 아이콘 수정은 20절, 새 실제 빌드는 21절, native 검사는 22절, 실제 메뉴막대는 23절에 구분한다. 24절은 이전 빌드에서 bundle 버전이 0.1.0으로 남던 문제의 수정과, 사용자 Mac에서 직접 실행한 첫 로컬 빌드·검사 기록이다. 25절은 PR #12 코드 리뷰 10건의 반영 기록, 26절은 연결 복구·절전 복귀, 27절은 로그아웃 정상 종료와 재로그인 자동 실행 실제 확인, 29절은 알림 권한 확인, 30절은 UI 조작 확인과 Tooltip·ChatGPT 표시 이름·앱 아이콘 수정, 31절은 0.1.3 버전 정리다(28절은 별도 PR #14).
 
 Mac 개발 도구 준비와 실행 순서는 [Mac/README.md](Mac/README.md)를 따른다.
 
@@ -106,7 +106,7 @@ Mac 참조 패키지는 공식 `Microsoft.macOS.Ref.net10.0_27.0` 27.0.10722다.
 3. 완료: 0.1.0과 새 compact layout 검사가 포함된 0.1.1의 `--smoke-test` 종료 코드 0을 확인했다. 새 검사의 임시 DB·4종 이벤트/메모·통계·창 재열기·주입 시각 카운트다운 결과는 18절에 기록한다.
 4. 완료: 0.1.1 일반 화면의 한 화면 배치·메뉴바·Schedule·공식 상태·두 계정 한도 표시 확인. 실제 기록/통계 UI 조작·Tooltip·공식 페이지 클릭은 추가 확인.
 5. 완료: CLI 설치 후 Mac에서 실제 ChatGPT/Claude 한도 수신 확인. CLI 미발견 실패 표시도 앞선 화면에서 확인했으며 설치 CLI 버전 출력은 받지 않음.
-6. 완료: 로그인 옵션 ON·등록 성공 안내, 실제 재로그인 자동 실행과 로그아웃 정상 종료(27절), 등록 해제(사용자 확인). 알림 권한/배너는 남음.
+6. 완료: 로그인 옵션 ON·등록 성공 안내, 실제 재로그인 자동 실행과 로그아웃 정상 종료(27절), 등록 해제(사용자 확인), 알림 권한 허용(29절). 실제 알림 배너는 남음.
 7. 완료: 연결 복구·절전 복귀 자동 조회(26절), 로그아웃 시 정상 종료(27절). 장시간 실행은 남음.
 
 native smoke는 별도의 GUID 임시 DB만 쓰며 HTTP·계정 CLI·브라우저·알림 권한 요청·로그인 항목 변경을 하지 않는다. 실제 알림/자동 실행을 검증한 것으로 표시하지 않는다.
@@ -731,3 +731,125 @@ PR 코드로 빌드한 앱(PID 39587)으로 확인했다. 사용자가 Wi-Fi를 
 ### 아직 하지 않은 것
 
 - Windows 실행 검사 전체.
+
+### Windows 검증과 병합
+
+- **Windows 검증(ChatGPT, 2026-10-04):** PR HEAD `7abc69a46dcb908d77c96088ca37ef27ea4f6c2f`에서 실행했다. [PR 코멘트](https://github.com/hydron75/ai-burger-clock/pull/14#issuecomment-5971116094)
+  - 기준 `a60fefd`와 비교했다.
+  - SDK 10.0.401, Release 경고 0 / 오류 0.
+  - 자체 검사 250,750 → 250,758건(+8: MonitorTests +11, TrayPresentationTests −3), 두 커밋 모두 종료 코드 0.
+  - `--smoke-test` 종료 코드 0. HolidayUiChecks·전환/Provider 알림 경로·Refresh·모의 절전 복귀 통과.
+  - 실제 어댑터 차단·재연결과 배너의 시각적 노출은 미수행.
+- **병합 충돌 정리:** 그사이 바뀐 `feature/macos-native`를 PR 브랜치에 병합했다(rebase 없음). `BACKLOG.md`·`MACOS_PORT.md`는 양쪽 내용을 모두 살렸다. `Mac/MacApplication.cs`는 공통 `ProviderNotification`을 쓰도록 정리했다.
+- **표시 이름 인자 추가:** 30절의 ChatGPT 표시 이름이 Mac 알림 제목에서 유지되도록, 공통 `TrayPresentation.ProviderNotification`에 선택 인자 `displayName`을 추가했다. 기본값은 enum 이름이라 Windows 동작은 같다. 공통 검사 1건을 추가했다.
+- **병합 전 검증(이 Mac):** Windows 대상 컴파일 경고 0 / 오류 0, `Mac/build.sh` 종료 코드 0(공통 검사 244,361건), `codesign` 통과, smoke PASS / 종료 코드 0.
+- **Windows 재검증 범위:** 병합 정리 뒤 Windows 쪽 변경은 공통 함수의 선택 인자 1개와 공통 검사 1건뿐이다. Windows 실행 검사는 PR #12 최종 검증 때 함께 한다.
+
+## 29. macOS 알림 권한 확인
+
+2026-10-04 KST 00:5x, 시스템 설정 → 알림을 읽기 전용으로 확인했다. 설정은 바꾸지 않았다.
+
+| 항목 | 값 |
+|---|---|
+| 응용 프로그램 알림 목록 | `AI Burger Clock` 등록됨 |
+| 알림 허용 | 켬 |
+| 표시 위치 | 데스크탑·알림 센터·잠금 화면 모두 체크 |
+| 알림 스타일 | 임시(배너) |
+| 미리보기 / 그룹 | 기본 설정 / 자동 |
+| 알림 요약 | 켬 (macOS 기본값으로 보임) |
+
+- **결과:** 앱의 `UNUserNotificationCenter` 권한 요청이 허용된 상태다. 실제 배너가 화면에 뜨는지는 다음 Schedule 전환(2026-10-05 월 22:00 KST)이나 Provider 권고 변화 때 확인한다.
+- **관찰:** 알림 목록의 앱 아이콘이 빈 아이콘이다. bundle에 앱 아이콘이 없어서다(`CFBundleIconFile`·`Resources`의 아이콘 없음). 메뉴바 아이콘과는 별개이며, Finder와 로그인 항목 목록에도 같은 빈 아이콘이 보인다. 개선 후보로 BACKLOG에 남긴다.
+
+## 30. UI 조작 확인과 Tooltip·표시 이름·앱 아이콘 수정
+
+2026-10-04 KST 00:58, 사용자가 상태 창을 직접 조작해 확인했다. 화면 제어 도구는 Dock에 없는 메뉴바 전용 앱을 대상으로 잡지 못해 사용자가 조작했다.
+
+| 항목 | 결과 |
+|---|---|
+| Provider 설명 Tooltip | **문제:** 나타났다 금방 사라져 내용 확인이 어려움 |
+| Provider 제목 `↗` 공식 상태 링크 | 정상으로 브라우저에서 열림 |
+| Statistics 열기·닫기·재열기 | 정상 |
+| 사용 경험 기록 | 실제 사용자 DB에 1건 저장(OpenAI · Slow), 상태 창에 `OpenAI · Slow 저장됨 (00:58 KST)` 표시 |
+
+사용자 요청: 화면의 Provider 이름 중 "OpenAI"만 회사 이름이고 Claude·Gemini는 제품 이름이니 "ChatGPT"로 바꾼다. 앱 아이콘도 추가한다(29절 관찰).
+
+### 수정
+
+| 항목 | 원인 / 내용 | 파일 |
+|---|---|---|
+| Tooltip이 금방 사라짐 | 상태 창은 1초마다 `Update`되며, 그때마다 바뀌지 않은 `ToolTip`·텍스트도 다시 지정했다. AppKit은 Tooltip을 다시 지정하면 떠 있던 Tooltip을 닫는다. 표시 시간 문제가 아니므로, 값이 바뀔 때만 지정하도록 고쳤다(`SetText`·`SetTip`). 메뉴바 아이콘 Tooltip도 바뀔 때만 지정한다. 다만 메뉴바 Tooltip은 카운트다운이 들어 있어 매초 바뀐다 | `Mac/MacStatusWindow.cs`, `Mac/MacApplication.cs` |
+| OpenAI → ChatGPT | 화면에 보이는 이름만 바꾼다. 상태 창 제목, 메뉴바 메뉴, 기록 창 제목, 저장 안내, Provider 알림 제목, 통계 창 행, 메뉴바 Tooltip이 대상이다. `ProviderKind.OpenAI`, DB에 저장되는 값, 공식 상태 주소는 그대로다 | `Mac/MacStatusWindow.cs`(`ProviderName`), `Mac/MacApplication.cs`, `Mac/MacStatisticsWindow.cs` |
+| 공통 Tooltip 표시 이름 | 공통 `TrayPresentation.Tooltip`에 선택 인자 `displayName`을 추가했다. 기본값은 enum 이름이라 Windows 동작은 같다 | `TrayPresentation.cs`, 검사 `PortablePlatformTests.cs` +2 |
+| 앱 아이콘 | 초록 그라데이션 바탕에 흰 시계 테두리와 F를 그렸다. 10개 크기를 `Mac/tools/make-app-icon.swift`로 생성해 `Mac/Assets.xcassets/AppIcon.appiconset`에 두고 csproj에 `<AppIcon>AppIcon</AppIcon>`을 지정했다. `actool`이 만든 부분 Info.plist가 매니페스트 입력이라, 증분 빌드에서도 `CFBundleIconFile`·`CFBundleIconName`이 반영됐다 | `Mac/AiBurgerClock.Mac.csproj`, 신규 `Mac/tools/make-app-icon.swift`, `Mac/Assets.xcassets/**` |
+
+### 검증
+
+| 검사 | 결과 |
+|---|---|
+| `Mac/build.sh` | 종료 코드 0. 공통 검사 244,349건(+2, Tooltip 표시 이름). native Release 경고 0 / 오류 0 |
+| bundle | `Resources/AppIcon.icns`·`Assets.car`, Info.plist `CFBundleIconFile`/`CFBundleIconName` = `AppIcon`. 버전 0.1.2 / 3. `codesign` 통과 |
+| `--smoke-test` | PASS / 종료 코드 0. 레이아웃 검사에 OpenAI 행 제목이 "ChatGPT "로 시작하는지 추가 |
+| 시스템 아이콘 | `NSWorkspace.icon(forFile:)`로 추출하니 macOS가 둥근 사각형으로 마스킹한 초록 시계·F 아이콘이 나왔다 |
+
+**실행으로 확인하지 않은 것:**
+- Tooltip이 이제 사라지지 않는지는 사용자가 다시 확인해야 한다. 원인 코드는 고쳤지만, Tooltip이 떠 있는 상태를 자동 검사로 재현할 방법은 없다.
+- 알림 설정·Finder·로그인 항목에 새 아이콘이 반영되는 시점은 macOS 아이콘 캐시에 따라 늦을 수 있다.
+
+**공통 PR #14와의 관계:** PR #14는 Provider 알림 문구를 공통 함수 `ProviderNotification(ProviderKind, …)`로 옮긴다. 이 브랜치에 병합할 때 Mac 알림 제목이 다시 "OpenAI"가 되지 않도록 표시 이름을 넘기게 맞춘다.
+
+### 30-1. 한도 Tooltip과 구간 구분 (후속)
+
+사용자 재확인 결과, Provider 설명의 Tooltip은 이제 유지됐다. 개인 한도 상자의 Tooltip은 여전히 금방 사라졌다. 또 서비스 상태와 한도 구간을 구분하고, 제목을 크게 해 달라는 요청을 받았다.
+
+- **한도 Tooltip:**
+  - 원인: 한도 상자는 24시간 미만 리셋 카운트다운이 초 단위라 텍스트가 매초 실제로 바뀐다. 그때마다 텍스트 교체와 스크롤 위치 복원이 일어나 텍스트 뷰에 붙은 Tooltip이 닫힌다.
+  - 수정: Tooltip을 바뀌지 않는 바깥 상자(`NSScrollView`)와 "ChatGPT"·"Claude" 소제목으로 옮겼다. 스크롤 위치는 실제로 움직였을 때만 복원한다.
+- **구간 구분:**
+  - 창 높이를 660 → 720 point로 늘렸다.
+  - Schedule, 서비스 상태, 개인 계정 잔여 한도, 하단 버튼 사이에 구분선(`NSBox` separator) 3개를 넣었다.
+  - "서비스 상태" 제목을 새로 넣었고, "개인 계정 잔여 한도" 제목은 12 → 15 point로 키웠다(두 제목 모두 15 point 굵게).
+- **검증:** `Mac/build.sh` 종료 코드 0(공통 검사 244,349건, 경고·오류 0), `codesign` 통과. smoke PASS / 종료 코드 0이며, 구분선을 포함한 모든 컨트롤의 경계·겹침 검사와 한도 행 높이 검사가 새 배치에서도 통과했다.
+- **사용자 확인 필요:** 한도 Tooltip이 이제 유지되는지와 새 배치의 외관.
+
+### 30-2. 한도 설명을 ⓘ 버튼으로 이동 (후속)
+
+30-1의 상자 Tooltip은 사용자 재확인에서도 금방 사라졌다. 상자 안 텍스트가 매초 바뀌는 동안에는 상자 위 어느 위치의 Tooltip도 유지되지 않는 것으로 판단했다. 그래서 설명을 바뀌지 않는 컨트롤로 옮겼다.
+
+- "ChatGPT"·"Claude" 한도 소제목 옆에 ⓘ 버튼(`info.circle` 심볼)을 두었다.
+- ⓘ에 마우스를 올리면 Tooltip이 나오고, 누르면 같은 설명이 팝오버로 뜬다. 팝오버는 바깥을 누를 때까지 유지된다. 소제목에도 같은 Tooltip을 둔다.
+- 효과가 없던 상자 Tooltip은 지웠다.
+- smoke 레이아웃 검사에 다음을 추가했다: 두 ⓘ 버튼의 심볼·설명 존재, 팝오버 열림·닫힘. PASS 문구에 `quota info popover`가 붙는다.
+- 검증: `Mac/build.sh` 종료 코드 0(공통 검사 244,349건, 경고·오류 0), `codesign` 통과, smoke PASS / 종료 코드 0.
+- 사용자 확인 필요: ⓘ의 Tooltip과 팝오버가 실제로 보기 좋은지.
+
+## 31. 0.1.3 버전 정리
+
+2026-10-04 KST, 사용자가 한도 ⓘ의 Tooltip과 팝오버가 잘 보인다고 확인했다(30-2절). 0.1.2 이후 사용자에게 보이는 변경을 묶어 Mac 버전을 **0.1.3 / build 4**로 올렸다. Windows 2.2.2·DB schema·NuGet 의존성은 그대로다.
+
+0.1.3에 들어간 변경:
+
+| 절 | 내용 |
+|---|---|
+| 24 | bundle 버전을 csproj에서 관리하고 smoke에서 확인 |
+| 25 | PR #12 리뷰 10건 반영: 초기화 실패, 공휴일 저장 알림, 메뉴 타이머, HTTP 설정, 한도 표시, 알림 문구, 메모 1,000자, 추가 인수 |
+| 30 | 상태 창 Tooltip 유지, 화면 표시 이름 ChatGPT, 서비스 상태·한도 구간 제목과 구분선(창 430×720), 한도 ⓘ 팝오버, 앱 아이콘 |
+
+PR #14(28절)의 공통 원본 정리와 연결 복구 지연 조회는 아직 이 브랜치에 병합되지 않아 0.1.3에 포함되지 않는다.
+
+### 빌드와 검사 (이 Mac)
+
+| 항목 | 결과 |
+|---|---|
+| 소스 | `8e8d9b8edb0af8c7c88914dfb207c1581072f8cc` (`feature/macos-native`) |
+| 도구 | Xcode 27.0 / 27A266a, .NET SDK 10.0.401, macos workload 27.0.10722 |
+| `Mac/build.sh` | 종료 코드 0, 공통 검사 244,349건, native Release 경고 0 / 오류 0, 15.4초. clean 없이 증분 빌드 |
+| bundle | `Mac/bin/Release/net10.0-macos27.0/osx-arm64/AI Burger Clock.app`, `CFBundleShortVersionString` 0.1.3, `CFBundleVersion` 4, `CFBundleIconFile` AppIcon, 크기 124M |
+| 서명 | `codesign --verify --deep --strict` 통과(ad-hoc) |
+| `--smoke-test` | PASS / 종료 코드 0 (bundle 버전 검사 포함) |
+| SHA-256 실행 파일 | `21dc4094e52580f05801559a83862db2fe3f7d0755c25109198394b87218a477` (`Contents/MacOS/AI Burger Clock`) |
+| SHA-256 앱 DLL | `2e12980246365a1b63c06a8a8b8d53e86d58bfa41a2909f0d20f2e21c4c4467d` (`Contents/MonoBundle/AI Burger Clock.dll`) |
+
+0.1.2에서 csproj 대신 `Info.plist`만 바꾸던 방식이었다면, 이번 증분 빌드에서도 버전이 반영되지 않았을 것이다. 24절 수정 뒤에는 증분 빌드에서 바로 0.1.3 / 4가 반영됐다.
+
+앱은 같은 경로의 새 bundle로 다시 실행했다. 로그인 항목은 경로 기준이라 그대로 유지된다.

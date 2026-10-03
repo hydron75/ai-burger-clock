@@ -30,10 +30,11 @@ internal static class TrayPresentation
                 $"다음 전환: {snapshot.NextTransitionKst:MM-dd HH:mm} KST. Provider별 공식 상태와 작업 권고도 확인하세요."
             : "새로운 대형 Agent 작업은 다음 FULL THROTTLE까지 미뤄두세요.");
 
-    public static (string Title, string Body) ProviderNotification(ProviderKind provider, Recommendation current, string reason) =>
+    public static (string Title, string Body) ProviderNotification(ProviderKind provider, Recommendation current, string reason,
+        Func<ProviderKind, string>? displayName = null) =>
         current == Recommendation.Go
-            ? (provider + " 정상화", "관련 서비스가 정상화되었습니다. 현재 FULL THROTTLE이므로 대규모 작업 재개 가능.")
-            : (provider + " 작업 권고 변경",
+            ? ((displayName?.Invoke(provider) ?? provider.ToString()) + " 정상화", "관련 서비스가 정상화되었습니다. 현재 FULL THROTTLE이므로 대규모 작업 재개 가능.")
+            : ((displayName?.Invoke(provider) ?? provider.ToString()) + " 작업 권고 변경",
                 $"현재 FULL THROTTLE이지만 공식 서비스 문제가 있습니다. {RecommendationPolicy.Label(current)}: 새 대형 작업을 미루세요.\n{reason}");
 
     public static Color StateColor(AgentState state) =>
@@ -54,7 +55,9 @@ internal static class TrayPresentation
         return new(schedule, attention);
     }
 
-    public static string Tooltip(ScheduleSnapshot schedule, IReadOnlyList<ProviderStatus> states)
+    // displayName lets a host show its own provider label; the default keeps the enum name.
+    public static string Tooltip(ScheduleSnapshot schedule, IReadOnlyList<ProviderStatus> states,
+        Func<ProviderKind, string>? displayName = null)
     {
         string state = StateName(schedule.State);
         string holiday = schedule.IsHolidayExtendedFullThrottle ? " · 공휴일" : "";
@@ -65,7 +68,7 @@ internal static class TrayPresentation
                 .Replace("BURGER TIME", "BURGER", StringComparison.Ordinal)
                 .Replace(" ", "", StringComparison.Ordinal);
             if (official == OfficialStatus.Stale) label += "/STALE";
-            return provider + " " + label;
+            return (displayName?.Invoke(provider) ?? provider.ToString()) + " " + label;
         }));
         // Fixed provider names and bounded labels fit NotifyIcon's 127-character limit.
         return $"AI Burger Clock · {state}{holiday}\n전환까지 {DisplayFormatting.FormatRemaining(schedule.Remaining)}\n{providers}";

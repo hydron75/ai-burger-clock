@@ -10,7 +10,7 @@ namespace AiBurgerClock;
 internal sealed class MacStatusWindow : IDisposable
 {
     private const int WindowWidth = 430;
-    private const int WindowHeight = 660;
+    private const int WindowHeight = 720;
     internal NSWindow Window { get; }
     private readonly NSTextField schedule;
     private readonly NSTextField countdown;
@@ -25,6 +25,9 @@ internal sealed class MacStatusWindow : IDisposable
     private readonly NSButton autoStart;
     private readonly Dictionary<ProviderKind, (NSButton Heading, NSTextField Detail)> providers = [];
     private readonly Dictionary<QuotaProvider, NSTextView> quotas = [];
+    private readonly Dictionary<QuotaProvider, (NSTextField Title, NSButton Info)> quotaTitles = [];
+    private readonly Dictionary<QuotaProvider, string> quotaInfo = [];
+    private NSPopover? infoPopover;
 
     internal MacStatusWindow(Action requestRefresh, Action showStatistics, Action<bool> changeHoliday,
         Action<bool> changeAutoStart, Action<ProviderKind> openPage,
@@ -39,21 +42,24 @@ internal sealed class MacStatusWindow : IDisposable
         };
         var root = new NSView(new CGRect(0, 0, WindowWidth, WindowHeight));
         Window.ContentView = root;
-        Label(root, "AI AGENT TRAFFIC", 626, 20, 13, true);
-        schedule = Label(root, "FULL THROTTLE", 594, 30, 22, true);
-        countdown = Label(root, "전환까지 —", 569, 23, 14);
-        countdown.Frame = new CGRect(14, 569, 205, 23);
-        next = Label(root, "다음: — KST", 569, 23, 11);
-        next.Frame = new CGRect(232, 569, 184, 23);
-        usTime = Label(root, "US: —", 546, 20, 11);
-        extended = Label(root, "", 525, 19, 11);
+        Label(root, "AI AGENT TRAFFIC", 686, 20, 13, true);
+        schedule = Label(root, "FULL THROTTLE", 654, 30, 22, true);
+        countdown = Label(root, "전환까지 —", 629, 23, 14);
+        countdown.Frame = new CGRect(14, 629, 205, 23);
+        next = Label(root, "다음: — KST", 629, 23, 11);
+        next.Frame = new CGRect(232, 629, 184, 23);
+        usTime = Label(root, "US: —", 606, 20, 11);
+        extended = Label(root, "", 585, 19, 11);
         extended.UsesSingleLineMode = true;
         extended.LineBreakMode = NSLineBreakMode.TruncatingTail;
-        int y = 492;
+        // Three sections: schedule, official service status, personal account quotas.
+        Separator(root, 577);
+        Label(root, "서비스 상태", 548, 22, SectionTitleSize, true);
+        int y = 520;
         foreach (ProviderKind provider in Enum.GetValues<ProviderKind>())
         {
             ProviderKind captured = provider;
-            NSButton heading = Button(root, provider + " · CHECK ↗", new CGRect(14, y, 324, 24), () => openPage(captured));
+            NSButton heading = Button(root, ProviderName(provider) + " · CHECK ↗", new CGRect(14, y, 324, 24), () => openPage(captured));
             heading.Bordered = false;
             heading.Alignment = NSTextAlignment.Left;
             heading.Font = Font(13, true);
@@ -72,13 +78,15 @@ internal sealed class MacStatusWindow : IDisposable
             providers.Add(provider, (heading, detail));
             y -= 62;
         }
-        Label(root, "개인 계정 잔여 한도", 305, 20, 12, true);
-        Label(root, "ChatGPT", 281, 22, 13, true);
-        Label(root, "Work/Codex", 263, 17, 11);
-        quotas[QuotaProvider.Codex] = TextArea(root, new CGRect(14, 207, 402, 54), 11);
-        Label(root, "Claude", 183, 22, 13, true);
-        quotas[QuotaProvider.Claude] = TextArea(root, new CGRect(14, 107, 402, 74), 11);
+        Separator(root, 352);
+        Label(root, "개인 계정 잔여 한도", 322, 22, SectionTitleSize, true);
+        quotaTitles[QuotaProvider.Codex] = QuotaTitle(root, QuotaProvider.Codex, "ChatGPT", 298);
+        Label(root, "Work/Codex", 280, 17, 11);
+        quotas[QuotaProvider.Codex] = TextArea(root, new CGRect(14, 224, 402, 54), 11);
+        quotaTitles[QuotaProvider.Claude] = QuotaTitle(root, QuotaProvider.Claude, "Claude", 200);
+        quotas[QuotaProvider.Claude] = TextArea(root, new CGRect(14, 124, 402, 74), 11);
         foreach (NSTextView quota in quotas.Values) quota.TextContainerInset = new CGSize(2, 2);
+        Separator(root, 112);
         checkedAt = Label(root, "Checked: — KST", 86, 18, 10);
         checkedAt.Frame = new CGRect(14, 86, 190, 18);
         nextCheck = Label(root, "Next check: — KST", 86, 18, 10);
@@ -111,45 +119,56 @@ internal sealed class MacStatusWindow : IDisposable
     internal void Update(ScheduleSnapshot snapshot, IReadOnlyList<ProviderStatus> states,
         IReadOnlyList<QuotaState> quotaStates, bool refreshing, DateTimeOffset? due, string storageError)
     {
-        schedule.StringValue = TrayPresentation.StateName(snapshot.State);
+        // Update() runs every second. Reassigning an unchanged tooltip closes it while it is shown,
+        // so text and tooltips are written only when their value changes.
+        SetText(schedule, TrayPresentation.StateName(snapshot.State));
         schedule.TextColor = Color(TrayPresentation.StateColor(snapshot.State));
-        countdown.StringValue = "전환까지  " + DisplayFormatting.FormatRemaining(snapshot.Remaining);
-        next.StringValue = $"다음: {snapshot.NextTransitionKst:ddd HH:mm} KST";
+        SetText(countdown, "전환까지  " + DisplayFormatting.FormatRemaining(snapshot.Remaining));
+        SetText(next, $"다음: {snapshot.NextTransitionKst:ddd HH:mm} KST");
         string mode = snapshot.EasternIsDst == snapshot.PacificIsDst
             ? snapshot.EasternIsDst ? "DST" : "Standard" : "Mixed DST";
-        usTime.StringValue = $"US: {mode} · ET {DisplayFormatting.Offset(snapshot.EasternUtcOffsetMinutes)} / PT {DisplayFormatting.Offset(snapshot.PacificUtcOffsetMinutes)}";
-        usTime.ToolTip = $"Eastern: {snapshot.EasternLocalTime:yyyy-MM-dd HH:mm zzz}\nPacific: {snapshot.PacificLocalTime:yyyy-MM-dd HH:mm zzz}\n{snapshot.SchedulePolicyVersion}";
-        extended.StringValue = snapshot.IsHolidayExtendedFullThrottle
+        SetText(usTime, $"US: {mode} · ET {DisplayFormatting.Offset(snapshot.EasternUtcOffsetMinutes)} / PT {DisplayFormatting.Offset(snapshot.PacificUtcOffsetMinutes)}");
+        SetTip(usTime, $"Eastern: {snapshot.EasternLocalTime:yyyy-MM-dd HH:mm zzz}\nPacific: {snapshot.PacificLocalTime:yyyy-MM-dd HH:mm zzz}\n{snapshot.SchedulePolicyVersion}");
+        SetText(extended, snapshot.IsHolidayExtendedFullThrottle
             ? "공휴일 연장: " + snapshot.HolidayNames
-            : snapshot.IsWeekendExtendedFullThrottle ? "Weekend / Extended Full Throttle" : "";
-        extended.ToolTip = extended.StringValue;
+            : snapshot.IsWeekendExtendedFullThrottle ? "Weekend / Extended Full Throttle" : "");
+        SetTip(extended, extended.StringValue);
         foreach (ProviderStatus state in states)
         {
             var row = providers[state.Provider];
             Recommendation recommendation = RecommendationPolicy.Calculate(snapshot.State, state.Status);
-            row.Heading.Title = state.Provider + "  " + RecommendationPolicy.Label(recommendation) + " ↗";
+            string heading = ProviderName(state.Provider) + "  " + RecommendationPolicy.Label(recommendation) + " ↗";
+            if (row.Heading.Title != heading) row.Heading.Title = heading;
             row.Heading.ContentTintColor = RecommendationColor(recommendation);
-            row.Detail.StringValue = "Official: " + RecommendationPolicy.OfficialLabel(state.Status) + "\n" + state.Reason;
-            row.Detail.ToolTip = state.Reason + "\n" + state.RelevantComponent + "\n" + state.IncidentTitle;
+            SetText(row.Detail, "Official: " + RecommendationPolicy.OfficialLabel(state.Status) + "\n" + state.Reason);
+            SetTip(row.Detail, state.Reason + "\n" + state.RelevantComponent + "\n" + state.IncidentTitle);
         }
         foreach (QuotaState state in quotaStates)
         {
             NSTextView view = quotas[state.Provider];
             string text = QuotaText(state, snapshot.NowUtc);
-            // Rewrite only on change, keeping the user's scroll position in the extra-rows box.
+            // The reset countdown changes this text every second. Rewrite only on change and
+            // restore the scroll position only if the rewrite moved it.
             if (view.Value != text)
             {
                 NSClipView? clip = view.EnclosingScrollView?.ContentView;
                 CGPoint origin = clip?.Bounds.Location ?? CGPoint.Empty;
                 view.Value = text;
-                clip?.ScrollToPoint(origin);
-                if (view.EnclosingScrollView is { } scroll) scroll.ReflectScrolledClipView(clip!);
+                if (clip is not null && clip.Bounds.Location != origin)
+                {
+                    clip.ScrollToPoint(origin);
+                    view.EnclosingScrollView!.ReflectScrolledClipView(clip);
+                }
             }
             string tooltip = "공식 CLI 응답 수신 시각이며 서버 데이터 생성 시각을 보장하지 않습니다.\n" +
                 "기본 6시간 · 잔여 0% 초과~10% 미만은 1시간 · 잔여 0%는 15분 · 리셋 전후 15분은 5분.\n" +
                 "리셋 시각 경과만으로 한도 회복을 가정하지 않습니다. 크레딧·리셋 알림은 제외합니다.\n" +
                 state.Error + "\n" + state.CacheError;
-            if (view.ToolTip != tooltip) view.ToolTip = tooltip;
+            // A tooltip anywhere on the box closes on its per-second countdown rewrite, so the
+            // explanation lives on the unchanging title and ⓘ button; clicking ⓘ keeps it open.
+            quotaInfo[state.Provider] = tooltip.TrimEnd();
+            SetTip(quotaTitles[state.Provider].Title, quotaInfo[state.Provider]);
+            SetTip(quotaTitles[state.Provider].Info, quotaInfo[state.Provider]);
         }
         DateTimeOffset latest = states.Max(state => state.CheckedAtUtc);
         checkedAt.StringValue = "Checked: " + (latest == DateTimeOffset.MinValue ? "—" : AgentSchedule.ToKst(latest).ToString("HH:mm:ss")) + " KST";
@@ -179,9 +198,24 @@ internal sealed class MacStatusWindow : IDisposable
 
     internal void SetFeedback(string text)
     {
-        feedback.StringValue = text;
-        feedback.ToolTip = text;
+        SetText(feedback, text);
+        SetTip(feedback, text);
     }
+
+    private static void SetText(NSTextField field, string text)
+    {
+        if (field.StringValue != text) field.StringValue = text;
+    }
+
+    private static void SetTip(NSView view, string tip)
+    {
+        if (view.ToolTip != tip) view.ToolTip = tip;
+    }
+
+    // Display name only: the shared ProviderKind and stored values stay "OpenAI".
+    // The row names the product like Claude and Gemini do.
+    internal static string ProviderName(ProviderKind provider) =>
+        provider == ProviderKind.OpenAI ? "ChatGPT" : provider.ToString();
 
     internal void VerifyCompactLayout()
     {
@@ -189,6 +223,17 @@ internal sealed class MacStatusWindow : IDisposable
         if (root.Bounds.Width != WindowWidth || root.Bounds.Height != WindowHeight ||
             providers.Count != 3 || quotas.Count != 2)
             throw new InvalidOperationException("Compact status window dimensions/rows changed.");
+        if (!providers[ProviderKind.OpenAI].Heading.Title.StartsWith("ChatGPT ", StringComparison.Ordinal))
+            throw new InvalidOperationException("The OpenAI row does not show the ChatGPT product name.");
+        foreach (var (provider, (_, info)) in quotaTitles)
+        {
+            if (string.IsNullOrEmpty(info.ToolTip) || info.Image is null)
+                throw new InvalidOperationException("Quota info button has no symbol or explanation.");
+            ShowQuotaInfo(info, provider);
+            if (infoPopover is not { Shown: true })
+                throw new InvalidOperationException("Quota info popover did not open.");
+            infoPopover.Close();
+        }
         NSView[] controls = root.Subviews;
         NSScrollView[] scrolls = controls.OfType<NSScrollView>().ToArray();
         if (scrolls.Length != 2 || scrolls.Any(scroll => scroll.DocumentView is not NSTextView))
@@ -250,6 +295,43 @@ internal sealed class MacStatusWindow : IDisposable
         return menu;
     }
 
+    private const int SectionTitleSize = 15;
+
+    private (NSTextField Title, NSButton Info) QuotaTitle(NSView root, QuotaProvider provider, string text, int y)
+    {
+        NSTextField title = Label(root, text, y, 22, 13, true);
+        title.SizeToFit();
+        title.Frame = new CGRect(14, y, Math.Ceiling(title.Frame.Width) + 4, 22);
+        var info = new NSButton(new CGRect(title.Frame.Right + 2, y + 1, 20, 20))
+        {
+            Bordered = false, Title = "", ImagePosition = NSCellImagePosition.ImageOnly,
+            Image = NSImage.GetSystemSymbol("info.circle", "한도 조회 설명"),
+            ContentTintColor = NSColor.SecondaryLabel
+        };
+        info.Activated += (_, _) => ShowQuotaInfo(info, provider);
+        root.AddSubview(info);
+        return (title, info);
+    }
+
+    private void ShowQuotaInfo(NSButton anchor, QuotaProvider provider)
+    {
+        infoPopover?.Close();
+        NSTextField text = NSTextField.CreateWrappingLabel(quotaInfo.GetValueOrDefault(provider, ""));
+        text.Font = Font(12);
+        text.Frame = new CGRect(12, 10, 336, 100);
+        var content = new NSView(new CGRect(0, 0, 360, 120));
+        content.AddSubview(text);
+        infoPopover = new NSPopover
+        {
+            Behavior = NSPopoverBehavior.Transient,
+            ContentViewController = new NSViewController { View = content }
+        };
+        infoPopover.Show(anchor.Bounds, anchor, NSRectEdge.MaxYEdge);
+    }
+
+    private static void Separator(NSView view, int y) =>
+        view.AddSubview(new NSBox(new CGRect(14, y, view.Frame.Width - 28, 1)) { BoxType = NSBoxType.NSBoxSeparator });
+
     internal static NSTextField Label(NSView view, string text, int y, int height, int size = 12, bool bold = false)
     {
         var label = new NSTextField(new CGRect(14, y, view.Frame.Width - 28, height))
@@ -303,6 +385,8 @@ internal sealed class MacStatusWindow : IDisposable
 
     public void Dispose()
     {
+        infoPopover?.Close();
+        infoPopover?.Dispose();
         Window.Close();
         Window.Dispose();
     }

@@ -223,6 +223,9 @@ internal static class MonitorTests
         var (stopTitle, stopBody) = TrayPresentation.ProviderNotification(ProviderKind.OpenAI, Recommendation.Stop, "API 장애");
         Check(stopTitle == "OpenAI 작업 권고 변경" && stopBody.StartsWith("현재 FULL THROTTLE이지만 공식 서비스 문제가 있습니다. ", StringComparison.Ordinal) &&
             stopBody.EndsWith("\nAPI 장애", StringComparison.Ordinal), "Provider incident wording keeps the reason");
+        Check(TrayPresentation.ProviderNotification(ProviderKind.OpenAI, Recommendation.Go, "",
+                provider => provider == ProviderKind.OpenAI ? "ChatGPT" : provider.ToString()).Title == "ChatGPT 정상화",
+            "Provider notification title uses a host display name");
 
         // Network-recovery refresh: settle delay, debounce, one refresh per minute, nothing after dispose.
         long clock = 1_000;

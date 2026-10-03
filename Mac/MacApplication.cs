@@ -82,12 +82,12 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
         foreach (ProviderKind provider in Enum.GetValues<ProviderKind>())
         {
             ProviderKind captured = provider;
-            var item = new NSMenuItem(provider + " 사용 경험 기록")
+            var item = new NSMenuItem(MacStatusWindow.ProviderName(provider) + " 사용 경험 기록")
             {
                 Submenu = MacStatusWindow.RecordMenu(provider, (p, type, note) => _ = RecordAsync(p, type, note))
             };
             menu.AddItem(item);
-            menu.AddItem(new NSMenuItem(provider + " 공식 상태 ↗", (_, _) => OpenStatusPage(captured)));
+            menu.AddItem(new NSMenuItem(MacStatusWindow.ProviderName(provider) + " 공식 상태 ↗", (_, _) => OpenStatusPage(captured)));
         }
         menu.AddItem(NSMenuItem.SeparatorItem);
         holidayItem = new NSMenuItem("미국 연방 공휴일 보정", (_, _) => _ = ChangeHolidayAsync(!holidayEnabled)) { Enabled = false };
@@ -204,7 +204,8 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
             var recommendation = RecommendationPolicy.Calculate(snapshot.State, status.Status);
             if (recommendationNotifications.Observe(status.Provider, snapshot.State, recommendation, (notify || notifyProviders) && !changed))
             {
-                var (title, body) = TrayPresentation.ProviderNotification(status.Provider, recommendation, status.Reason);
+                var (title, body) = TrayPresentation.ProviderNotification(status.Provider, recommendation, status.Reason,
+                    MacStatusWindow.ProviderName);
                 notifications?.Show(title, body);
             }
         }
@@ -223,7 +224,8 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
                 previous?.Dispose();
                 lastAppearance = appearance;
             }
-            button.ToolTip = TrayPresentation.Tooltip(snapshot, providers);
+            string tooltip = TrayPresentation.Tooltip(snapshot, providers, MacStatusWindow.ProviderName);
+            if (button.ToolTip != tooltip) button.ToolTip = tooltip;
         }
         statusWindow?.Update(snapshot, providers, quotaMonitor?.Snapshot() ??
             Enum.GetValues<QuotaProvider>().Select(provider => new QuotaState(provider)).ToArray(),
@@ -376,7 +378,7 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
         try
         {
             await save;
-            if (!stopping) statusWindow?.SetFeedback($"{provider} · {type} 저장됨 ({schedule.NowKst:HH:mm} KST)");
+            if (!stopping) statusWindow?.SetFeedback($"{MacStatusWindow.ProviderName(provider)} · {type} 저장됨 ({schedule.NowKst:HH:mm} KST)");
         }
         finally { pendingWrites.Remove(save); }
     }
@@ -385,7 +387,7 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
     {
         using var alert = new NSAlert
         {
-            MessageText = provider + " 사용 경험 기록",
+            MessageText = MacStatusWindow.ProviderName(provider) + " 사용 경험 기록",
             InformativeText = "메모는 선택 사항입니다. Prompt·답변·계정 정보는 기록하지 마세요."
         };
         using var accessory = new NSView(new CGRect(0, 0, 330, 87));
@@ -558,7 +560,7 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
             await statisticsWindow.RefreshAsync();
             if (!statisticsWindow.Window.IsVisible)
                 throw new InvalidOperationException("Statistics window did not reopen from the menu-bar action.");
-            Console.WriteLine("PASS: bundle version, menu-tracking countdown timer, 1,000-char note limit, native controls/window close-reopen, 20pt color menu icon/1x-2x pixels, compact one-screen layout/standard quota rows, temporary SQLite, four events/notes, statistics, injected quota countdown; no account/network/settings changes.");
+            Console.WriteLine("PASS: bundle version, menu-tracking countdown timer, 1,000-char note limit, native controls/window close-reopen, 20pt color menu icon/1x-2x pixels, compact one-screen layout/standard quota rows/quota info popover, temporary SQLite, four events/notes, statistics, injected quota countdown; no account/network/settings changes.");
             ExitCode = 0;
         }
         catch (Exception error)
