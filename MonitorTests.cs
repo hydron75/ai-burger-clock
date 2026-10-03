@@ -1,4 +1,5 @@
 using System.Net;
+using System.Net.NetworkInformation;
 using System.Text;
 
 namespace AiBurgerClock;
@@ -258,6 +259,57 @@ internal static class MonitorTests
         network.OnNetworkAvailable();
         network.OnNetworkAvailable();
         Check(refreshedAt.Count == 3, "Dispose cancels a pending refresh and ignores later changes");
+
+        // No network when the wait ends: skip without using the one-minute slot.
+        clock = 1_000;
+        refreshedAt.Clear();
+        bool online = true;
+        var offlineAware = new NetworkRefreshScheduler(() => refreshedAt.Add(clock), () => clock, (span, _) =>
+        {
+            clock += (long)span.TotalMilliseconds;
+            return Task.CompletedTask;
+        }, () => online);
+        offlineAware.OnNetworkAvailable();
+        long firstRefresh = refreshedAt.Single();
+        clock = firstRefresh + 70_000;
+        online = false;
+        offlineAware.OnNetworkAvailable();
+        Check(refreshedAt.Count == 1, "No refresh when every network is down after the settle delay");
+        online = true;
+        clock += 3_000;
+        long reconnectAt = clock;
+        offlineAware.OnNetworkAvailable();
+        Check(refreshedAt.Count == 2 && refreshedAt[1] == reconnectAt + settle,
+            "A skipped offline refresh does not take the one-minute slot; reconnect refreshes after the settle delay");
+        clock = refreshedAt[1] + 10_000;
+        online = false;
+        offlineAware.OnNetworkAvailable();
+        Check(refreshedAt.Count == 2, "An offline change within a minute of a refresh is skipped when its slot arrives");
+        online = true;
+        clock += 1_000;
+        reconnectAt = clock;
+        offlineAware.OnNetworkAvailable();
+        Check(refreshedAt.Count == 3 && refreshedAt[2] == reconnectAt + settle,
+            "Reconnect after that skip refreshes after the settle delay, not another minute later");
+
+        // Usable network: up, not loopback/tunnel, and a non-link-local address.
+        static (OperationalStatus, NetworkInterfaceType, IEnumerable<IPAddress>) Nic(
+            bool up, NetworkInterfaceType type, params string[] addresses) =>
+            (up ? OperationalStatus.Up : OperationalStatus.Down,
+             type, addresses.Select(IPAddress.Parse));
+        var ethernet = NetworkInterfaceType.Ethernet;
+        var unknown = NetworkInterfaceType.Unknown;
+        Check(!NetworkRefreshScheduler.HasUsableNetwork([
+                Nic(true, NetworkInterfaceType.Loopback, "127.0.0.1", "::1"),
+                Nic(true, unknown, "fe80::7575:796:dc16:f688"), Nic(true, unknown, "fe80::17c9:20d7:a1c3:ea37"),
+                Nic(false, ethernet, "192.168.50.161")]),
+            "macOS utun links with only link-local addresses do not count as a network (observed)");
+        Check(!NetworkRefreshScheduler.HasUsableNetwork([Nic(true, ethernet, "169.254.10.20", "fe80::1")]),
+            "Self-assigned IPv4 and link-local IPv6 do not count");
+        Check(NetworkRefreshScheduler.HasUsableNetwork([Nic(true, unknown, "fe80::1"), Nic(true, ethernet, "fe80::2", "192.168.50.161")]),
+            "An up interface with a LAN IPv4 address counts");
+        Check(NetworkRefreshScheduler.HasUsableNetwork([Nic(true, NetworkInterfaceType.Wireless80211, "2001:db8::5")]),
+            "An up interface with a global IPv6 address counts");
         return count;
     }
 

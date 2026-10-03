@@ -1,3 +1,7 @@
+using System.Net;
+using System.Net.NetworkInformation;
+using System.Net.Sockets;
+
 namespace AiBurgerClock;
 
 // Refresh after a network change; shared by the Windows and macOS hosts.
@@ -5,6 +9,8 @@ namespace AiBurgerClock;
 // quota CLIs, so refreshes run at most once per minute. A short settle delay lets DHCP/DNS
 // finish: on macOS a refresh started as soon as an address appeared failed its quota CLI call.
 // A change during the wait only moves the pending refresh, so the final state is still refreshed.
+// If no network is up when the wait ends (the first change was one adapter of several going down),
+// the refresh is skipped without using the one-minute slot; reconnecting raises the next change.
 internal sealed class NetworkRefreshScheduler : IDisposable
 {
     internal static readonly TimeSpan MinimumInterval = TimeSpan.FromMinutes(1);
@@ -13,6 +19,7 @@ internal sealed class NetworkRefreshScheduler : IDisposable
     private readonly Action refresh;
     private readonly Func<long> ticks;
     private readonly Func<TimeSpan, CancellationToken, Task> delay;
+    private readonly Func<bool> networkAvailable;
     // Only canceled, never disposed: a pending wait may still read its token.
     private readonly CancellationTokenSource lifetime = new();
     private readonly object sync = new();
@@ -21,12 +28,40 @@ internal sealed class NetworkRefreshScheduler : IDisposable
     private bool pending;
 
     internal NetworkRefreshScheduler(Action refresh, Func<long>? ticks = null,
-        Func<TimeSpan, CancellationToken, Task>? delay = null)
+        Func<TimeSpan, CancellationToken, Task>? delay = null, Func<bool>? networkAvailable = null)
     {
         this.refresh = refresh;
         this.ticks = ticks ?? (() => Environment.TickCount64);
         this.delay = delay ?? Task.Delay;
+        this.networkAvailable = networkAvailable ?? HasUsableNetwork;
     }
+
+    // NetworkInterface.GetIsNetworkAvailable() is not enough: macOS keeps utun/awdl interfaces up
+    // with only link-local addresses, so it reported "available" with every real network down.
+    internal static bool HasUsableNetwork()
+    {
+        try
+        {
+            return HasUsableNetwork(NetworkInterface.GetAllNetworkInterfaces().Select(nic =>
+                (nic.OperationalStatus, nic.NetworkInterfaceType,
+                 nic.GetIPProperties().UnicastAddresses.Select(address => address.Address))));
+        }
+        catch (NetworkInformationException) { return true; } // Unknown: refresh as before.
+    }
+
+    internal static bool HasUsableNetwork(
+        IEnumerable<(OperationalStatus Status, NetworkInterfaceType Type, IEnumerable<IPAddress> Addresses)> interfaces) =>
+        interfaces.Any(nic => nic.Status == OperationalStatus.Up &&
+            nic.Type is not (NetworkInterfaceType.Loopback or NetworkInterfaceType.Tunnel) &&
+            nic.Addresses.Any(IsUsableAddress));
+
+    private static bool IsUsableAddress(IPAddress address) => address.AddressFamily switch
+    {
+        AddressFamily.InterNetwork => !IPAddress.IsLoopback(address) &&
+            !(address.GetAddressBytes() is [169, 254, ..]),
+        AddressFamily.InterNetworkV6 => !IPAddress.IsLoopback(address) && !address.IsIPv6LinkLocal,
+        _ => false
+    };
 
     // Thread-safe: NetworkChange raises its events off the UI thread.
     internal void OnNetworkAvailable()
@@ -58,6 +93,7 @@ internal sealed class NetworkRefreshScheduler : IDisposable
                     if (wait <= 0)
                     {
                         pending = false;
+                        if (!networkAvailable()) return;
                         lastRefreshTick = ticks();
                         break;
                     }
