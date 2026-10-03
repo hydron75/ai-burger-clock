@@ -2,7 +2,7 @@
 
 기록일: 2026-10-03 KST. Windows 기준 버전: 2.2.2.
 
-Apple Silicon / macOS 27용 **native AppKit 메뉴바 호스트**를 별도 프로젝트로 준비했다. 기존 Windows WinForms UI·배포본은 유지한다. 앞선 0.1.1의 native smoke 종료 코드 0·한 화면 배치·두 계정 한도 수신을 확인한 뒤, 작은 검은 F와 비활성 모니터의 아이콘 누락 보고를 받아 0.1.2에서 20-point 컬러 bitmap으로 수정했다. **0.1.2도 실제 Mac 공통 검사 244,347건·Release `.app`·서명·ARM64 SQLite 포함을 통과**했다. 새 아이콘 native smoke·외관·다중 모니터 표시 검증은 다음 단계다. OS 알림·재로그인·절전 복귀와 장기 사용도 남아 있다. 앞선 검증은 17~19절, 아이콘 수정은 20절, 새 실제 빌드는 21절에 구분한다.
+Apple Silicon / macOS 27용 **native AppKit 메뉴바 호스트**를 별도 프로젝트로 준비했다. 기존 Windows WinForms UI·배포본은 유지한다. 앞선 0.1.1의 한 화면 배치·두 계정 한도 수신을 확인한 뒤, 작은 검은 F와 비활성 모니터의 아이콘 누락 보고를 받아 0.1.2에서 20-point 컬러 bitmap으로 수정했다. **0.1.2도 실제 Mac 공통 검사 244,347건·Release `.app`·서명·ARM64 SQLite와 새 아이콘 native smoke PASS를 확인**했다. 일반 메뉴막대의 외관·다중 모니터 표시는 별도 확인 단계다. OS 알림·재로그인·절전 복귀와 장기 사용도 남아 있다. 앞선 검증은 17~19절, 아이콘 수정은 20절, 새 실제 빌드는 21절, 새 native 검사는 22절에 구분한다.
 
 Mac 개발 도구 준비와 실행 순서는 [Mac/README.md](Mac/README.md)를 따른다.
 
@@ -445,10 +445,10 @@ SDK 10.0.401, Windows 환경:
 
 ### 남은 실제 Mac 확인
 
-이 수정의 최초 준비 당시에는 실제 Mac 빌드와 native pixel smoke를 실행하지 않았다. **이후 21절에서 0.1.2의 실제 `.app` 빌드는 확인했고 새 native pixel smoke는 아직 결과 대기 중이다.** 앞선 0.1.1 성공을 새 아이콘 실행 검증으로 바꾸지 않는다. 실제 다중 모니터 누락의 원인이나 해결 여부도 확정하지 않는다.
+이 수정의 최초 준비 당시에는 실제 Mac 빌드와 native pixel smoke를 실행하지 않았다. **이후 21절에서 0.1.2의 실제 `.app` 빌드를, 22절에서 새 native pixel smoke PASS를 확인했다.** 앞선 0.1.1 성공과 별도의 새 실행 근거다. 실제 다중 모니터 누락의 원인이나 해결 여부는 아직 확정하지 않는다.
 
 1. 완료: 소스 `dd3f596`에서 기존과 같은 bundle 경로로 0.1.2를 빌드했다. 전체 Xcode 경로는 실행별 `DEVELOPER_DIR`로 지정했다. 문서-only 후속 갱신 때문에 다시 빌드하지 않는다.
-2. 새 bundle의 `--smoke-test`가 위 새 문구와 종료 코드 0을 보이는지 확인한다. 계정・HTTP・설정 변경 없는 임시 데이터 검사다.
+2. 완료: 새 bundle의 `--smoke-test`가 위 새 PASS 문구를 출력했다. shell 종료 코드의 별도 출력은 없었으며 실제 메뉴막대 확인은 이 검사와 구분한다. 계정・HTTP・설정 변경 없는 임시 데이터 검사다.
 3. 일반 앱에서 20-point 크기・흰색 글자・상태색과 메뉴 클릭을 확인한다. 각 모니터를 번갈아 활성화했을 때 비활성 쪽에도 아이콘이 남아 있는지 실제로 확인한다. 실패하면 양쪽 메뉴막대 화면과 활성 모니터를 근거로 후속 진단한다.
 4. 다중 모니터에서 해결 여부를 확인할 때까지 Draft PR #12를 유지한다. 별도 남은 OS 알림・재로그인・절전/연결 복구・장기 사용도 유지한다.
 
@@ -468,10 +468,24 @@ SDK 10.0.401, Windows 환경:
 | bundle/서명 | 최종 `.app` 경로 출력. `set -e` 스크립트가 `codesign --verify --deep --strict` 이후 단계까지 정상 도달 |
 | SQLite | bundle의 `libe_sqlite3.dylib`, Mach-O 64-bit dynamically linked shared library / arm64 |
 
-이 결과로 `.app` 생성·서명·ARM64 SQLite 포함은 확인했다. **새 20-point 아이콘의 픽셀 검사·실제 메뉴막대 크기/색상·비활성 모니터 표시를 확인한 결과는 아직 아니다.** 빌드 스크립트의 공통 검사는 가짜 HTTP/CLI와 임시 SQLite를 사용하며 실제 계정 조회 성공이나 사용자 DB 동작 확인으로 확대하지 않는다.
+이 빌드 출력으로 `.app` 생성·서명·ARM64 SQLite 포함을 확인했다. 빌드만으로 새 아이콘 픽셀·실제 메뉴막대 외관·비활성 모니터 표시를 검증한 것은 아니다. 픽셀 검사의 별도 실행 결과는 이후 22절에 기록한다. 빌드 스크립트의 공통 검사는 가짜 HTTP/CLI와 임시 SQLite를 사용하며 실제 계정 조회 성공이나 사용자 DB 동작 확인으로 확대하지 않는다.
 
 현재 bundle은 `/Users/hydron/ai-burger-clock/Mac/bin/Release/net10.0-macos27.0/osx-arm64/AI Burger Clock.app`이다. 앱이 실행 중이면 종료하고 이 bundle의 `--smoke-test`를 실행한다. `20pt color menu icon/1x-2x pixels`가 들어 있는 PASS와 종료 코드 0을 받은 뒤 일반 실행의 외관·양쪽 모니터 표시를 확인한다. 이 단계에서 코드·계정·로그인 설정을 자동 변경하지 않는다.
 
 최초 검사 시도는 실행 명령 뒤에 `echo` 명령이 같은 줄로 붙어 지원 옵션 안내만 출력했다. native smoke가 시작된 결과가 아니므로 성공/실패 검증으로 집계하지 않는다. 실행 명령만 별도 한 줄로 다시 요청했다.
 
-이번 후속 커밋은 README·CODE_GUIDE·BACKLOG·Mac 안내·이 기록만 갱신한다. Windows 2.2.2 / Mac 0.1.2 버전, C#·DB·배포본은 그대로이며 방금 만든 bundle을 다시 빌드할 필요가 없다. 실제 native pixel smoke·다중 모니터와 별도 OS 동작 확인이 남아 있어 Draft PR #12를 유지한다.
+이 빌드 결과를 기록한 후속 커밋은 문서만 갱신했다. Windows 2.2.2 / Mac 0.1.2 버전, C#·DB·배포본은 그대로여서 bundle을 다시 빌드하지 않았다. 당시 다음 단계였던 native pixel smoke는 이후 22절에서 PASS했으며 다중 모니터와 별도 OS 동작 확인이 남아 Draft PR #12를 유지한다.
+
+## 22. 0.1.2 아이콘 native smoke PASS
+
+2026-10-03 KST 사용자가 21절에서 생성한 bundle의 실행 명령만 별도 한 줄로 실행해 다음 출력을 전달했다. 재빌드나 추가 코드 변경 없이 새 `dd3f596` 아이콘 코드의 실제 Mac 실행 근거를 받았다.
+
+```text
+PASS: native controls/window close-reopen, 20pt color menu icon/1x-2x pixels, compact one-screen layout/standard quota rows, temporary SQLite, four events/notes, statistics, injected quota countdown; no account/network/settings changes.
+```
+
+두 Schedule 문자×네 상태색의 1x/2x RGB·투명도·흰 글자 픽셀·논리/픽셀 크기와 버튼 이미지, compact layout·창 재열기·임시 SQLite·4종 이벤트/메모·통계·주입 카운트다운 검사를 통과했다. shell의 종료 코드 숫자는 별도로 출력되지 않았다. 소스의 PASS 경로는 `ExitCode = 0`으로 설정하지만 이를 별도로 관측한 종료 코드로 기록하지 않는다.
+
+**일반 메뉴막대의 외관·모니터별 항목 표시·실제 OS 알림/재로그인/절전 복귀 검증은 아니다.** 검사에서는 HTTP·계정 CLI·사용자 DB·로그인 항목을 사용하거나 변경하지 않았다. 실제 계정 수치를 추가로 공개하지 않는다.
+
+다음은 이미 만든 `.app`을 일반 실행하여 더 큰 상태색 원/흰색 F/B·메뉴 클릭을 확인하고, 각 모니터를 번갈아 활성화하면서 비활성 쪽에도 아이콘이 남는지 확인하는 것이다. 새 실패나 소스 변경 없이 native smoke·빌드 검사를 반복하지 않는다. 이번에도 문서와 기존 Draft PR #12의 기록만 갱신하며 Windows 2.2.2 / Mac 0.1.2 버전·C#·DB·배포본은 변경하지 않는다.
