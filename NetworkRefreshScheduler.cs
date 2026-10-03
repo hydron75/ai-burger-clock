@@ -1,3 +1,7 @@
+using System.Net;
+using System.Net.NetworkInformation;
+using System.Net.Sockets;
+
 namespace AiBurgerClock;
 
 // Refresh after a network change; shared by the Windows and macOS hosts.
@@ -29,8 +33,35 @@ internal sealed class NetworkRefreshScheduler : IDisposable
         this.refresh = refresh;
         this.ticks = ticks ?? (() => Environment.TickCount64);
         this.delay = delay ?? Task.Delay;
-        this.networkAvailable = networkAvailable ?? System.Net.NetworkInformation.NetworkInterface.GetIsNetworkAvailable;
+        this.networkAvailable = networkAvailable ?? HasUsableNetwork;
     }
+
+    // NetworkInterface.GetIsNetworkAvailable() is not enough: macOS keeps utun/awdl interfaces up
+    // with only link-local addresses, so it reported "available" with every real network down.
+    internal static bool HasUsableNetwork()
+    {
+        try
+        {
+            return HasUsableNetwork(NetworkInterface.GetAllNetworkInterfaces().Select(nic =>
+                (nic.OperationalStatus, nic.NetworkInterfaceType,
+                 nic.GetIPProperties().UnicastAddresses.Select(address => address.Address))));
+        }
+        catch (NetworkInformationException) { return true; } // Unknown: refresh as before.
+    }
+
+    internal static bool HasUsableNetwork(
+        IEnumerable<(OperationalStatus Status, NetworkInterfaceType Type, IEnumerable<IPAddress> Addresses)> interfaces) =>
+        interfaces.Any(nic => nic.Status == OperationalStatus.Up &&
+            nic.Type is not (NetworkInterfaceType.Loopback or NetworkInterfaceType.Tunnel) &&
+            nic.Addresses.Any(IsUsableAddress));
+
+    private static bool IsUsableAddress(IPAddress address) => address.AddressFamily switch
+    {
+        AddressFamily.InterNetwork => !IPAddress.IsLoopback(address) &&
+            !(address.GetAddressBytes() is [169, 254, ..]),
+        AddressFamily.InterNetworkV6 => !IPAddress.IsLoopback(address) && !address.IsIPv6LinkLocal,
+        _ => false
+    };
 
     // Thread-safe: NetworkChange raises its events off the UI thread.
     internal void OnNetworkAvailable()
