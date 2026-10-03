@@ -16,6 +16,7 @@
     <Compile Include="$(MSBuildThisFileDirectory)../AccountQuotaPolicy.cs" Link="Shared/AccountQuotaPolicy.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)../AccountQuotaMonitor.cs" Link="Shared/AccountQuotaMonitor.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)../RecommendationNotifications.cs" Link="Shared/RecommendationNotifications.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)../NetworkRefreshScheduler.cs" Link="Shared/NetworkRefreshScheduler.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)../TrayPresentation.cs" Link="Shared/TrayPresentation.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)../StatisticsAnalysis.cs" Link="Shared/StatisticsAnalysis.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)../DisplayFormatting.cs" Link="Shared/DisplayFormatting.cs" />

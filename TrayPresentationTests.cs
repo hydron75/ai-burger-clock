@@ -153,10 +153,7 @@ internal static class TrayPresentationTests
             }
         }
 
-        long lastNetworkRefresh = 0;
-        Check(TrayApplicationContext.TryClaimNetworkRefresh(ref lastNetworkRefresh, 1_000), "First network recovery refreshes");
-        Check(!TrayApplicationContext.TryClaimNetworkRefresh(ref lastNetworkRefresh, 60_999), "Network flaps within one minute are coalesced");
-        Check(TrayApplicationContext.TryClaimNetworkRefresh(ref lastNetworkRefresh, 61_000), "Network recovery after one minute refreshes again");
+        // Network-recovery refresh timing is checked with the shared scheduler in MonitorTests.
         return count;
     }
 

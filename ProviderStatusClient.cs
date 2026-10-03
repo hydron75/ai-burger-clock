@@ -17,6 +17,18 @@ internal sealed class ProviderStatusClient(HttpClient client, Func<DateTimeOffse
     internal const string GoogleProductsUrl = "https://www.google.com/appsstatus/dashboard/products.json";
     internal const string GoogleIncidentsUrl = "https://www.google.com/appsstatus/dashboard/incidents.json";
     internal const int MaxResponseBytes = 4 * 1024 * 1024;
+    // One long-lived client per app: no cookies, and pooled connections are recycled so a
+    // menu-bar/tray app that runs for days follows network and VPN changes.
+    internal static SocketsHttpHandler CreateHttpHandler() => new()
+    {
+        UseCookies = false,
+        PooledConnectionLifetime = TimeSpan.FromMinutes(10),
+        ConnectTimeout = TimeSpan.FromSeconds(5),
+        AutomaticDecompression = System.Net.DecompressionMethods.GZip | System.Net.DecompressionMethods.Deflate
+    };
+
+    internal static HttpClient CreateHttpClient() => new(CreateHttpHandler()) { Timeout = StatusMonitor.RequestTimeout };
+
     // The only User-Agent sent to status feeds; follows the version in AiBurgerClock.csproj.
     internal static readonly string UserAgent = "AIBurgerClock/" +
         (typeof(ProviderStatusClient).Assembly.GetName().Version?.ToString(3) ?? "0.0.0");
