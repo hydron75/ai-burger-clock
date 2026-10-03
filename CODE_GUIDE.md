@@ -403,6 +403,8 @@ Mac은 `~/Library/Application Support/AIBurgerClock`에 별도 DB를 쓰고 `SMA
 
 Windows 버전은 2.2.2 그대로이고 Mac은 아직 0.1.0 preview입니다. 실제 Mac 빌드·실행 검증은 [작업 기록](MACOS_PORT.md)에 남긴 후에 안정판 여부를 판단합니다.
 
+Mac 빌드 스크립트는 일반 사용자로 실행하고, 기본 NuGet HTTP 캐시는 Git에서 제외한 `artifacts/mac-build/nuget-http-cache`에 둡니다. 이 설정은 빌드와 그 자식 프로세스에만 적용됩니다. 기존 사용자 캐시의 권한·전역 설정·취약성 검사는 바꾸지 않습니다. 앱 자체의 DB 경로나 실행 기능과도 별개입니다.
+
 ## 13. 검사는 어떻게 실행하나요?
 
 일반 사용자는 건너뛰어도 됩니다. 문서만 읽으려면 명령을 실행할 필요가 없습니다.

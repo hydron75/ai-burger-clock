@@ -137,3 +137,17 @@ Mac UI 크기·알림 노출·로그인 등록과 이동된 bundle의 동작은 
 사용자 DB·레지스트리·자동 시작 경로·실행 중인 앱을 변경하지 않았다. 이번 단계는 배포 교체가 아니므로 DB 백업/복원이나 기존 앱 종료를 요구하지 않았다. 원래 Windows 소스 상태는 위 기준 커밋으로 확인할 수 있다. 기존 변경을 강제로 되돌리는 명령은 실행하지 않는다.
 
 실제 Mac 검증 결과를 받은 뒤 이 기록과 README·CODE_GUIDE·BACKLOG를 갱신하고, 병합·안정판 배포는 별도 판단한다.
+
+## 10. 첫 Mac 빌드의 HTTP 캐시 권한 오류
+
+2026-10-03 KST 사용자 전달 출력에서 SDK 10.0.401 / Xcode 27.0의 빌드 시작을 확인했다. 공통 검사 프로젝트의 NuGet 복원 단계에서 사용자 홈의 `NuGet/http-cache` 접근 거부로 NU1900이 발생했고, 경고를 오류로 처리하는 규칙에 따라 중단됐다. **공통 검사의 Mac 실행이나 native 앱 빌드 성공 결과는 아직 없다.**
+
+직접 확인된 원인은 캐시 경로 접근 거부다. 앞선 관리자 권한 workload 설치가 캐시 소유권에 영향을 줬을 가능성은 있으나 소유자/ACL은 확인하지 않았으므로 확정하지 않는다.
+
+`Mac/build.sh`의 기본 HTTP 캐시를 저장소의 `artifacts/mac-build/nuget-http-cache`로 분리했다. 기존 `NUGET_HTTP_CACHE_PATH`가 지정되어 있으면 보존하고, 캐시 폴더 쓰기 가능 여부를 확인한다. root 실행은 거부하고 일반 사용자로 빌드하도록 안내한다. 이 설정은 빌드 프로세스에만 적용하며 기존 캐시·전역 NuGet 설정·패키지 저장소·권한을 수정하거나 삭제하지 않는다.
+
+취약성 검사와 경고를 오류로 처리하는 정책은 유지했다. Windows 코드·배포본·DB·Mac runtime 소스·앱 버전은 변경하지 않았다. 사용법과 소스 지도, BACKLOG도 같은 수정 범위에 맞췄다. 재시도는 [Mac 안내](Mac/README.md#nu1900--http-캐시-접근-거부)를 따른다. [공식 HTTP 캐시 설정](https://learn.microsoft.com/en-us/nuget/consume-packages/managing-the-global-packages-and-cache-folders).
+
+로컬 검증은 Windows의 Git Bash 5.3.15에서 수행했다. `bash -n Mac/build.sh`와 실제 스크립트의 캐시 블록을 이용한 기본 경로·명시적 경로(공백 포함)·빈 override 3가지 검사, 자식 프로세스 전달을 통과했다. SDK 10.0.401의 `dotnet nuget locals http-cache --list`에서도 지정 경로를 인식했다. 종료 코드는 모두 0이며 로그는 Git에서 제외한 `artifacts/mac-cache/`에 있다. C# 변경이 없어 기존 전체 앱 검사를 반복하지 않았다.
+
+같은 Draft PR #12에 빌드 보완과 문서를 반영한다. 실제 Mac에서 이 수정으로 복원·빌드가 완료되는지는 사용자 재시도 결과로 확인한다.

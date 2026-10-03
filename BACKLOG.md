@@ -7,6 +7,7 @@
 - Schedule/DST/공휴일, 공식 상태·권고, CLI 한도·조회 주기, SQLite schema 2와 통계는 루트의 같은 원본을 빌드한다. Windows WinForms와 Mac AppKit UI·알림·자동 실행은 각각 관리한다.
 - Windows Release 빌드 경고·오류 0, 자체 검사 250,741건과 공통 검사 244,338건을 통과했다. Mac의 C# 참조 API 컴파일도 경고·오류 0이지만 `.app` 생성·네이티브 실행 검증을 대신하지 않는다.
 - 다음 확인: Mac의 .NET 10 ARM64 SDK·macos workload 준비 → 공통 검사와 실제 Release 빌드 → 임시 DB native smoke → 실제 메뉴바·알림·로그인 실행·CLI·절전 복귀 확인.
+- 첫 실제 Mac 빌드 결과: SDK 10.0.401 / Xcode 27.0까지 확인됐지만 공통 검사 패키지 복원 중 NuGet HTTP 캐시 접근 거부(NU1900)로 중단됐다. 기본 캐시를 빌드 전용 폴더로 분리하고 sudo 빌드를 막았다. 보안 검사는 유지하며 Mac 재시도 결과는 아직 대기 중이다. [후속 기록](MACOS_PORT.md#10-첫-mac-빌드의-http-캐시-권한-오류).
 - Windows 2.2.2 dist·자동 시작·사용자 DB는 교체하지 않았다. Mac/Windows DB 동기화, Gemini 개인 한도, 한도 회복 알림, 정식 배포 서명·공증은 이번 preview 범위에 포함하지 않는다.
 
 ## 다음 수정: ChatGPT 한도 영역 표시 정리

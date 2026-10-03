@@ -54,6 +54,29 @@ bash Mac/build.sh
 
 스크립트는 공통 코드의 가짜 응답/임시 DB 검사를 먼저 실행하고, 경고를 오류로 취급해 네이티브 Release를 빌드합니다. 이후 bundle의 서명 검증과 SQLite 네이티브 라이브러리 포함 여부를 확인합니다. 앱·계정 조회를 자동 실행하지는 않습니다.
 
+앱 빌드는 **sudo 없이** 실행합니다. 기본 NuGet HTTP 캐시는 저장소의 `artifacts/mac-build/nuget-http-cache`에 두고 Git에서는 제외합니다. 사용자가 `NUGET_HTTP_CACHE_PATH`를 지정했다면 그 경로를 그대로 사용합니다. 취약성 검사·패키지 저장소 설정·전역 패키지 캐시는 변경하지 않습니다.
+
+### NU1900 / HTTP 캐시 접근 거부
+
+첫 Mac 빌드에서 사용자 홈의 NuGet HTTP 캐시에 접근하지 못해 취약성 데이터 조회가 실패한 사례가 있습니다. 관리자 권한으로 개발 도구를 설치하면서 캐시 소유권이 달라졌을 가능성이 있지만, 소유권을 확인하기 전에는 확정할 수 없습니다.
+
+최신 preview를 받아 일반 사용자로 다시 빌드하세요. 저장소 루트에서 실행합니다.
+
+```sh
+git pull --ff-only
+bash Mac/build.sh
+```
+
+업데이트 전에 한 번만 캐시 경로를 지정해서 실행할 수도 있습니다.
+
+```sh
+NUGET_HTTP_CACHE_PATH="$PWD/artifacts/mac-build/nuget-http-cache" bash Mac/build.sh
+```
+
+이 방법은 기존 캐시를 삭제하거나 권한을 바꾸지 않습니다. `NuGetAudit=false`·경고 무시·`sudo bash Mac/build.sh`로 문제를 숨기지 않습니다. 접근 거부가 다른 경로에서도 나오면 해당 오류와 경로를 확인한 뒤 별도로 진단합니다. 캐시 변경 후의 실제 Mac 빌드 성공은 다시 확인해야 합니다. [NuGet 캐시 경로 공식 안내](https://learn.microsoft.com/en-us/nuget/consume-packages/managing-the-global-packages-and-cache-folders)
+
+### 빌드 결과
+
 빌드하면 기본적으로 다음 bundle이 생성됩니다.
 
 ```text
