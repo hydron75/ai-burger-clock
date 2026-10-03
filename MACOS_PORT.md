@@ -2,7 +2,7 @@
 
 기록일: 2026-10-03 KST. Windows 기준 버전: 2.2.2.
 
-Apple Silicon / macOS 27용 **native AppKit 메뉴바 호스트**를 별도 프로젝트로 준비했다. 기존 Windows WinForms UI·배포본은 유지한다. 앞선 0.1.1의 한 화면 배치·두 계정 한도 수신을 확인한 뒤, 작은 검은 F와 비활성 모니터의 아이콘 누락 보고를 받아 0.1.2에서 20-point 컬러 bitmap으로 수정했다. **0.1.2의 실제 Mac 공통 검사 244,347건·Release `.app`·서명·ARM64 SQLite·native smoke에 이어 일반 컬러 아이콘과 양쪽 메뉴막대 표시까지 확인**했다. OS 알림·재로그인·절전 복귀와 장기 사용은 남아 있다. 앞선 검증은 17~19절, 아이콘 수정은 20절, 새 실제 빌드는 21절, native 검사는 22절, 실제 메뉴막대는 23절에 구분한다. 24절은 이전 빌드에서 bundle 버전이 0.1.0으로 남던 문제의 수정과, 사용자 Mac에서 직접 실행한 첫 로컬 빌드·검사 기록이다.
+Apple Silicon / macOS 27용 **native AppKit 메뉴바 호스트**를 별도 프로젝트로 준비했다. 기존 Windows WinForms UI·배포본은 유지한다. 앞선 0.1.1의 한 화면 배치·두 계정 한도 수신을 확인한 뒤, 작은 검은 F와 비활성 모니터의 아이콘 누락 보고를 받아 0.1.2에서 20-point 컬러 bitmap으로 수정했다. **0.1.2의 실제 Mac 공통 검사 244,347건·Release `.app`·서명·ARM64 SQLite·native smoke에 이어 일반 컬러 아이콘과 양쪽 메뉴막대 표시까지 확인**했다. OS 알림·재로그인·절전 복귀와 장기 사용은 남아 있다. 앞선 검증은 17~19절, 아이콘 수정은 20절, 새 실제 빌드는 21절, native 검사는 22절, 실제 메뉴막대는 23절에 구분한다. 24절은 이전 빌드에서 bundle 버전이 0.1.0으로 남던 문제의 수정과, 사용자 Mac에서 직접 실행한 첫 로컬 빌드·검사 기록이다. 25절은 PR #12 코드 리뷰 10건의 반영 기록이다.
 
 Mac 개발 도구 준비와 실행 순서는 [Mac/README.md](Mac/README.md)를 따른다.
 
@@ -543,3 +543,42 @@ Xcode 27.0 / build 27A266a(실행별 `DEVELOPER_DIR`), .NET SDK 10.0.401(`/usr/l
 ### 남은 항목
 
 OS 알림 노출·실제 재로그인 자동 실행·절전/연결 복구·장기 사용과 main 병합은 7절 그대로 남아 있다. Draft PR #12를 유지한다.
+
+## 25. PR #12 코드 리뷰 지적 사항 반영
+
+2026-10-04 KST, 별도 Claude Code 세션이 `ddae35d` 기준으로 PR #12를 코드만 읽고 리뷰해 10건을 지적했다. 이 Mac에서 현재 코드(`9a678ec`)와 대조해 10건 모두 해당함을 확인했다. Mac 파일만으로 고칠 수 있는 범위는 소스 **`50668fa2b6cf35410a2177e369dcab66562b9cd9`**에서 반영했다. 공통 원본으로 옮기는 부분(5·7번)은 Windows 파일도 바꿔야 해서 AGENTS.md의 작업 분담 규칙에 따라 보류했다.
+
+| # | 지적 | 처리 |
+|---|---|---|
+| 1 | smoke 초기화 실패 catch에서 `Terminate(null)`를 바로 호출해, 초기화를 기다리는 종료 처리와 서로 기다리며 멈출 수 있음 | 종료 요청을 메인 스레드에 예약(`BeginInvokeOnMainThread`). `RunSmokeAsync`와 같은 방식 |
+| 2 | DB·공휴일 설정 읽기 실패 시 `StatusMonitor`·`AccountQuotaMonitor`를 만들지 않아 세 Provider가 UNKNOWN으로 남음 | Windows처럼 공휴일 보정 OFF + "공휴일 설정 확인 실패 · 보정 OFF" 안내 후 조회는 계속. smoke에서는 그대로 실패 처리 |
+| 3 | 공휴일 설정 저장 직후 `RefreshDisplay(false)`가 동시에 들어온 권고 변화를 알림 없이 소비 | `RefreshDisplay(false, notifyProviders: true)`. Windows `RefreshStatus(false, notifyProviders: true)`와 같은 규칙 |
+| 4 | 1초 타이머가 기본 run-loop 모드에만 있어 메뉴바 메뉴를 연 동안 카운트다운·전환 알림이 멈춤 | `NSRunLoopMode.Common`에 등록 |
+| 5 | Mac은 기본 `HttpClient` | Windows와 같은 `SocketsHttpHandler`(쿠키 끔, 연결 재사용 10분, 연결 제한 5초, gzip/deflate)와 요청 제한 `StatusMonitor.RequestTimeout`. **공통 파일로 옮기는 것은 보류** |
+| 6 | 한도 표시를 매초 다시 써서 스크롤·선택이 풀림 | 내용이 바뀔 때만 다시 쓰고 내부 스크롤 위치 유지. 24시간 미만 리셋 카운트다운은 초 단위라 그 동안은 매초 바뀜(Windows와 같음) |
+| 7 | 알림 문구·연결 복구 1분 제한을 Windows에서 복사, 문구가 이미 달라짐 | 문구를 Windows와 같게 맞춤. 1분 제한 값은 원래 같음. **공통 파일로 옮기는 것은 보류** |
+| 8 | 버전이 csproj·`Info.plist`·코드의 `"0.1.2"` 기본값 세 곳에 있음 | `Info.plist`는 24절에서 제거. 코드 기본값을 없애고 `AppVersion` 한 곳에서 assembly 버전을 읽음 |
+| 9 | 메모 2,000자, 알림 없이 잘리고 이모지 중간이 잘릴 수 있음 | Windows와 같은 1,000자(UTF-16), 문자 경계에서 자르고 잘렸으면 상태 창에 안내 |
+| 10 | `--smoke-test`가 아닌 인수가 있으면 종료 코드 2로 조용히 끝남 | 일반 실행은 추가 인수를 무시. smoke는 지금처럼 `--smoke-test` 하나만 허용 |
+
+변경 파일은 `Mac/MacApplication.cs`, `Mac/MacStatusWindow.cs`, `Mac/Program.cs`다. 새 파일·패키지·공통 원본 변경은 없고, Windows 2.2.2와 Mac 0.1.2 / 3 버전도 그대로다.
+
+### 직접 수행한 검증
+
+Xcode 27.0 / 27A266a, .NET SDK 10.0.401. 실행 중이던 앱은 Quit 후 검사했고 검사 뒤 다시 실행했다.
+
+| 검사 | 결과 |
+|---|---|
+| `Mac/build.sh` | 종료 코드 0, 공통 검사 244,347건, native Release 경고 0 / 오류 0, 15.2초 |
+| 서명·버전 | `codesign --verify --deep --strict` 통과, bundle 0.1.2 / 3 |
+| `--smoke-test` | `PASS: bundle version, menu-tracking countdown timer, 1,000-char note limit, native controls/...`, **종료 코드 0** |
+| 타이머 음성 검사 | 타이머를 기존 `CreateRepeatingScheduledTimer`로 임시로 되돌리면 smoke가 `FAIL: The countdown timer stopped while a menu was tracking events.` / 종료 코드 1. 원래 코드로 복원 후 위 PASS |
+| 인수 처리 | `--smoke-test echo`는 안내 출력 후 종료 코드 2. `open … --args -AppleLanguages "(ko)"` 일반 실행은 정상 시작 |
+
+새 smoke 검사는 실제 메뉴를 클릭하지 않는다. 대신 메인 run loop를 메뉴 추적과 같은 `EventTracking` 모드로만 돌려 타이머가 실행되는지 본다. 메모 검사는 999자+🍔(1,001 UTF-16) → 999자, 1,000자 유지, 짧은 메모 유지를 확인한다.
+
+**실행으로 재현하지 않은 것:** 1·2번의 DB 초기화 실패, 3번의 공휴일 저장과 장애 알림이 겹치는 상황, 6번의 실제 스크롤 위치 유지, 9번의 안내 문구 표시. 실패를 주입할 경로가 없어 코드와 Windows 구현의 대조로 확인했다.
+
+### 보류: 공통 원본으로 옮기기 (5·7번)
+
+HTTP 설정과 알림 문구·연결 복구 제한을 루트 공통 파일로 옮기면 Windows의 `TrayApplicationContext.cs`도 바뀐다. AGENTS.md의 작업 분담 규칙에 따라 별도 PR의 "공통 원본 변경" 절로 알리고 Windows 검증을 받는 작업으로 남긴다. 지금은 두 버전의 값과 문구가 같다.
