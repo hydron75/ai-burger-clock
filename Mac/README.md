@@ -73,7 +73,13 @@ bash Mac/build.sh
 NUGET_HTTP_CACHE_PATH="$PWD/artifacts/mac-build/nuget-http-cache" bash Mac/build.sh
 ```
 
-이 방법은 기존 캐시를 삭제하거나 권한을 바꾸지 않습니다. `NuGetAudit=false`·경고 무시·`sudo bash Mac/build.sh`로 문제를 숨기지 않습니다. 접근 거부가 다른 경로에서도 나오면 해당 오류와 경로를 확인한 뒤 별도로 진단합니다. 캐시 변경 후의 실제 Mac 빌드 성공은 다시 확인해야 합니다. [NuGet 캐시 경로 공식 안내](https://learn.microsoft.com/en-us/nuget/consume-packages/managing-the-global-packages-and-cache-folders)
+이 방법은 기존 캐시를 삭제하거나 권한을 바꾸지 않습니다. `NuGetAudit=false`·경고 무시·`sudo bash Mac/build.sh`로 문제를 숨기지 않습니다. 접근 거부가 다른 경로에서도 나오면 해당 오류와 경로를 확인한 뒤 별도로 진단합니다. 2026-10-03 KST 재시도에서 공통 검사 244,338건이 통과해 이 캐시 문제 해결은 확인했습니다. [NuGet 캐시 경로 공식 안내](https://learn.microsoft.com/en-us/nuget/consume-packages/managing-the-global-packages-and-cache-folders)
+
+### IL2026 / 한도 캐시 JSON
+
+공통 검사 이후 `UsageStore.cs`의 JSON 저장·읽기에서 IL2026이 나오면 최신 `feature/macos-native` 소스를 받아 위와 같이 다시 빌드하세요. Apple SDK의 trimming 검사에서 런타임 reflection 기반 직렬화를 경고하는 문제였으며, `QuotaJsonContext`로 타입 정보를 미리 생성하도록 수정했습니다. JSON 형식·기존 캐시·DB schema 2는 유지하고, 경고 억제나 새 NuGet 패키지는 추가하지 않았습니다. [Microsoft source generation 안내](https://learn.microsoft.com/en-us/dotnet/standard/serialization/system-text-json/source-generation)
+
+수정 후 Windows의 Release/회귀·공통 검사, Mac 참조 코드의 trimming 분석과 reflection 비활성화 캐시 검사를 통과했습니다. **수정된 실제 Mac `.app`의 완성과 실행은 아직 확인 전**입니다. [정확한 검증 범위](../MACOS_PORT.md#11-실제-mac-공통-검사-통과와-json-il2026-보완).
 
 ### 빌드 결과
 

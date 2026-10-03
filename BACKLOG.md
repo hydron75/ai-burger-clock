@@ -5,9 +5,9 @@
 - 기록일: 2026-10-03 KST.
 - 상태: `feature/macos-native`에서 Apple Silicon / macOS 27용 AppKit 메뉴바 소스와 빌드 안내를 준비하고 [Draft PR #12](https://github.com/hydron75/ai-burger-clock/pull/12)에 올렸다. **실제 Mac Release 빌드·실행은 아직 미검증**이며 안정판 배포나 main 병합을 완료한 상태가 아니다. [작업 기록](MACOS_PORT.md), [Mac 빌드 안내](Mac/README.md).
 - Schedule/DST/공휴일, 공식 상태·권고, CLI 한도·조회 주기, SQLite schema 2와 통계는 루트의 같은 원본을 빌드한다. Windows WinForms와 Mac AppKit UI·알림·자동 실행은 각각 관리한다.
-- Windows Release 빌드 경고·오류 0, 자체 검사 250,741건과 공통 검사 244,338건을 통과했다. Mac의 C# 참조 API 컴파일도 경고·오류 0이지만 `.app` 생성·네이티브 실행 검증을 대신하지 않는다.
-- 다음 확인: Mac의 .NET 10 ARM64 SDK·macos workload 준비 → 공통 검사와 실제 Release 빌드 → 임시 DB native smoke → 실제 메뉴바·알림·로그인 실행·CLI·절전 복귀 확인.
-- 첫 실제 Mac 빌드 결과: SDK 10.0.401 / Xcode 27.0까지 확인됐지만 공통 검사 패키지 복원 중 NuGet HTTP 캐시 접근 거부(NU1900)로 중단됐다. 기본 캐시를 빌드 전용 폴더로 분리하고 sudo 빌드를 막았다. 보안 검사는 유지하며 Mac 재시도 결과는 아직 대기 중이다. [후속 기록](MACOS_PORT.md#10-첫-mac-빌드의-http-캐시-권한-오류).
+- Windows Release 빌드 경고·오류 0, 자체 검사 250,750건과 공통 검사 244,347건을 통과했다. Mac 참조 C# 컴파일과 trimming 분석도 경고·오류 0이지만 `.app` 생성·네이티브 실행 검증을 대신하지 않는다.
+- Mac 도구 준비와 공통 검사 244,338건의 실제 실행은 확인했다. 다음 확인: JSON 수정본으로 실제 Mac Release 재빌드 → 임시 DB native smoke → 실제 메뉴바·알림·로그인 실행·CLI·절전 복귀 확인.
+- 빌드 중단 보완: NU1900은 빌드 전용 HTTP 캐시로 해결됐다. 이후 IL2026 두 건은 `QuotaJsonContext` source generation으로 보완했고 기존 캐시 호환성 검사 9건과 reflection 비활성화 검사 10건이 통과했다. 실제 Mac `.app` 완성은 재시도 대기 중이다. [후속 기록](MACOS_PORT.md#11-실제-mac-공통-검사-통과와-json-il2026-보완).
 - Windows 2.2.2 dist·자동 시작·사용자 DB는 교체하지 않았다. Mac/Windows DB 동기화, Gemini 개인 한도, 한도 회복 알림, 정식 배포 서명·공증은 이번 preview 범위에 포함하지 않는다.
 
 ## 다음 수정: ChatGPT 한도 영역 표시 정리

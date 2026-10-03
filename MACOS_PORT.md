@@ -2,7 +2,7 @@
 
 기록일: 2026-10-03 KST. Windows 기준 버전: 2.2.2.
 
-Apple Silicon / macOS 27용 **native AppKit 메뉴바 호스트**를 별도 프로젝트로 준비했다. 기존 Windows WinForms UI·배포본은 유지한다. 현재 완료한 것은 소스 구현·Windows 회귀 검사·Mac 참조 API 컴파일이다. **실제 Mac Release 빌드와 실행은 아직 확인하지 않았다.**
+Apple Silicon / macOS 27용 **native AppKit 메뉴바 호스트**를 별도 프로젝트로 준비했다. 기존 Windows WinForms UI·배포본은 유지한다. 소스 구현·Windows 회귀 검사·Mac 참조 API 컴파일과 **실제 Mac의 공통 검사 244,338건**을 확인했다. 이어진 JSON IL2026을 보완했으며 **실제 Mac Release `.app` 완성과 실행은 아직 확인하지 않았다.** 최신 결과는 11절에 별도로 기록한다.
 
 Mac 개발 도구 준비와 실행 순서는 [Mac/README.md](Mac/README.md)를 따른다.
 
@@ -11,7 +11,7 @@ Mac 개발 도구 준비와 실행 순서는 [Mac/README.md](Mac/README.md)를 �
 영구적인 Windows/Mac 브랜치를 따로 유지하지 않는다. `feature/macos-native`는 개발·검증용 임시 브랜치다. Mac 검증 후 main 병합 여부를 판단하고, 공통 기능 개선은 한 원본에서 두 호스트에 반영한다.
 
 ```text
-루트의 공통 C# 원본 18개
+루트의 공통 C# 원본 19개
   ├─ Windows: 기존 WinForms 프로젝트가 직접 컴파일
   ├─ macOS: SharedSources.props로 링크 → AppKit 호스트
   └─ 공통 검사: 같은 원본과 기존 검사들을 링크
@@ -27,7 +27,7 @@ DB·CLI 로그인: 각 컴퓨터에 따로 유지
 | 파일 | 변경 |
 |---|---|
 | AgentSchedule.cs | Windows ID 유지, macOS에서는 IANA ID를 선택. 업무 구간·공휴일·UTC 비교·캐시 계산은 유지 |
-| UsageStore.cs | 기본 DB 경로를 AppPaths에 위임. schema·migration·SQL은 변경 없음 |
+| UsageStore.cs | 기본 DB 경로를 AppPaths에 위임. 한도 캐시는 QuotaJsonContext 사용. schema·migration·SQL은 변경 없음 |
 | AccountQuotaClient.cs | Windows .exe 탐색 유지. Mac은 절대 경로·실행 권한·표준 폴더 탐색과 자식 PATH 구성 추가 |
 | StatisticsWindow.cs | 기존 계산부를 StatisticsAnalysis.cs로 그대로 분리. Windows 통계 UI는 유지 |
 | StatusWindow.cs, AccountQuotaView.cs | 기존 표시 함수를 DisplayFormatting에 위임. Windows 문구·배치·조작은 유지 |
@@ -40,7 +40,7 @@ DB·CLI 로그인: 각 컴퓨터에 따로 유지
 
 ## 3. 새 파일
 
-- 공통 보조: `AppPaths.cs`, `DisplayFormatting.cs`, `MacCliPaths.cs`, `StatisticsAnalysis.cs`.
+- 공통 보조: `AppPaths.cs`, `DisplayFormatting.cs`, `MacCliPaths.cs`, `StatisticsAnalysis.cs`, `QuotaJsonContext.cs`.
 - 검사: `PortablePlatformTests.cs`, `Shared.Tests/Program.cs`, `Shared.Tests/AiBurgerClock.Shared.Tests.csproj`.
 - 원본 연결: `Shared/SharedSources.props`.
 - Mac 호스트: `Mac/Program.cs`, `Mac/MacApplication.cs`, `Mac/MacStatusWindow.cs`, `Mac/MacStatisticsWindow.cs`, `Mac/MacServices.cs`.
@@ -72,7 +72,7 @@ Windows DB는 기존 `%LOCALAPPDATA%\AIBurgerClock\burgerclock.db`, Mac DB는 �
 ~/Library/Application Support/AIBurgerClock/burgerclock.db
 ```
 
-SQLite schema 2와 migration은 그대로다. 공통 검사는 새 임시 DB에서 생성·저장·재오픈·이전 schema 이관·메모·상태·설정·한도 캐시와 1만 건 통계를 확인했다. **실제 Mac ARM64 SQLite 라이브러리 로딩은 아직 미확인**이다. 양쪽 사용자 DB를 읽거나 자동 동기화하지 않았다.
+SQLite schema 2와 migration은 그대로다. 공통 검사는 새 임시 DB에서 생성·저장·재오픈·이전 schema 이관·메모·상태·설정·한도 캐시와 1만 건 통계를 확인했다. 11절의 실제 Mac 공통 검사에서도 SQLite 저장·통계가 통과했지만, **최종 `.app`에 포함되는 ARM64 SQLite 라이브러리 로딩은 아직 미확인**이다. 양쪽 사용자 DB를 읽거나 자동 동기화하지 않았다.
 
 ## 6. 이번에 실제로 수행한 검증
 
@@ -99,7 +99,7 @@ Mac 참조 패키지는 공식 `Microsoft.macOS.Ref.net10.0_27.0` 27.0.10722다.
 
 ## 7. Mac에서 남은 필수 확인
 
-사용자가 전달한 읽기 전용 결과는 macOS 27.0.1 / arm64 / Xcode 27.0이며 `dotnet`은 PATH에서 발견되지 않았다. 이 확인과 실제 앱 빌드 성공은 별개다. 도구를 원격으로 설치하거나 Mac 설정을 변경하지 않았다.
+첫 읽기 전용 결과는 macOS 27.0.1 / arm64 / Xcode 27.0이며 `dotnet`은 PATH에서 발견되지 않았다. 이후 사용자가 SDK 10.0.401을 준비했고 `build.sh`의 macos workload 확인과 공통 검사 실행까지 통과했다. 도구 준비와 최종 앱 빌드 성공은 별개이며, 이 Windows 작업에서 도구를 원격으로 설치하거나 Mac 설정을 변경하지 않았다.
 
 1. .NET SDK 10.0.401 ARM64와 macos workload set 10.0.401.1 준비.
 2. `bash Mac/build.sh`: Mac OS 시간대 데이터로 공통 검사, native Release 빌드, ad-hoc 서명·SQLite dylib 포함 확인.
@@ -140,7 +140,7 @@ Mac UI 크기·알림 노출·로그인 등록과 이동된 bundle의 동작은 
 
 ## 10. 첫 Mac 빌드의 HTTP 캐시 권한 오류
 
-2026-10-03 KST 사용자 전달 출력에서 SDK 10.0.401 / Xcode 27.0의 빌드 시작을 확인했다. 공통 검사 프로젝트의 NuGet 복원 단계에서 사용자 홈의 `NuGet/http-cache` 접근 거부로 NU1900이 발생했고, 경고를 오류로 처리하는 규칙에 따라 중단됐다. **공통 검사의 Mac 실행이나 native 앱 빌드 성공 결과는 아직 없다.**
+2026-10-03 KST 첫 사용자 전달 출력에서 SDK 10.0.401 / Xcode 27.0의 빌드 시작을 확인했다. 공통 검사 프로젝트의 NuGet 복원 단계에서 사용자 홈의 `NuGet/http-cache` 접근 거부로 NU1900이 발생했고, 경고를 오류로 처리하는 규칙에 따라 중단됐다. **이 첫 시도에서는 공통 검사의 Mac 실행이나 native 앱 빌드 성공 결과가 없었다.** 이후 재시도 결과는 11절에 기록한다.
 
 직접 확인된 원인은 캐시 경로 접근 거부다. 앞선 관리자 권한 workload 설치가 캐시 소유권에 영향을 줬을 가능성은 있으나 소유자/ACL은 확인하지 않았으므로 확정하지 않는다.
 
@@ -151,3 +151,34 @@ Mac UI 크기·알림 노출·로그인 등록과 이동된 bundle의 동작은 
 로컬 검증은 Windows의 Git Bash 5.3.15에서 수행했다. `bash -n Mac/build.sh`와 실제 스크립트의 캐시 블록을 이용한 기본 경로·명시적 경로(공백 포함)·빈 override 3가지 검사, 자식 프로세스 전달을 통과했다. SDK 10.0.401의 `dotnet nuget locals http-cache --list`에서도 지정 경로를 인식했다. 종료 코드는 모두 0이며 로그는 Git에서 제외한 `artifacts/mac-cache/`에 있다. C# 변경이 없어 기존 전체 앱 검사를 반복하지 않았다.
 
 같은 Draft PR #12에 빌드 보완과 문서를 반영한다. 실제 Mac에서 이 수정으로 복원·빌드가 완료되는지는 사용자 재시도 결과로 확인한다.
+
+## 11. 실제 Mac 공통 검사 통과와 JSON IL2026 보완
+
+2026-10-03 KST 사용자가 `ba908a6`을 받아 재시도한 출력에서 SDK 10.0.401 / Xcode 27.0과 빌드 전용 캐시 사용, **공통 검사 244,338건의 Mac 실행 통과**를 확인했다. NU1900은 재발하지 않았고 managed C# 컴파일은 진행됐지만, 이후 `UsageStore.cs` 26/44행의 reflection 기반 `JsonSerializer.Serialize/Deserialize`가 Apple SDK의 trimming 분석에서 IL2026 두 건으로 실패했다. managed DLL 출력은 최종 `.app` 완성을 의미하지 않는다.
+
+### 변경과 호환성
+
+- `QuotaJsonContext.cs`를 추가하고 `QuotaCache` 및 하위 타입의 직렬화 metadata를 빌드 때 생성한다. `UsageStore`의 저장·읽기는 `JsonTypeInfo`를 받는 overload로 변경했다.
+- `Shared/SharedSources.props`에도 연결해 Mac·Windows·공통 검사 모두 같은 원본을 사용한다. 공통 원본은 19개다.
+- JSON 필드명·숫자 enum·nullable 값·Unicode·리셋 anchor를 보존한다. `AccountQuota.v1.*` metadata 키와 SQLite schema 2, 데이터 검증·길이 제한은 변경하지 않았다. DB migration·캐시 삭제는 필요하지 않다.
+- `AccountQuotaMonitorTests`에 양쪽 Provider의 이전 JSON 읽기, 새 JSON을 이전 reader로 읽기, 저장·재오픈 및 schema/키 보존 검사 9건을 추가했다.
+- 새 직접 NuGet 패키지·경고 억제·trimming 비활성화는 없다. Windows 2.2.2와 미출시 Mac preview 0.1.0의 버전은 유지한다.
+
+[Microsoft의 JSON source generation 안내](https://learn.microsoft.com/en-us/dotnet/standard/serialization/system-text-json/source-generation)에 따라 타입 정보를 명시적으로 제공했다. 진단 프로젝트의 ILLink 분석 도구는 SDK의 검사 의존성이며 앱의 직접 패키지 추가가 아니다.
+
+### 이번 수정 후 검증
+
+다음은 **Windows / SDK 10.0.401에서 실행한 결과**다. 위의 사용자 전달 Mac 공통 검사 결과와 구분한다.
+
+| 검사 | 결과 |
+|---|---|
+| Windows Release, `-warnaserror` | 경고 0 / 오류 0 |
+| Windows `--self-test` | 250,750 assertions, exit 0 |
+| 공통 Release 실행, warnings-as-errors | 244,347 assertions, exit 0 |
+| Mac 호스트 참조 C# 컴파일 + `EnableTrimAnalyzer=true`, `-warnaserror` | 경고 0 / 오류 0; 호스트 5개 + 공통 19개 |
+| JSON reflection 비활성화 + trim analyzer 진단 | 10 assertions, exit 0; 이전 JSON→실제 UsageStore→SQLite 저장→새 store 재오픈 |
+| 기존 Windows dist EXE SHA-256 | 9절의 해시와 동일 |
+
+reflection 비활성화 진단 프로젝트는 Git에서 제외한 `artifacts/mac-json-check/`에 두었다. 계정 조회·사용자 DB·인증 파일·레지스트리·Windows 배포본은 변경하지 않았다. 이 검증은 macOS native registrar/linker/signing·ARM64 runtime을 실행한 결과가 아니다.
+
+다음은 Mac에서 `git pull --ff-only` 후 `bash Mac/build.sh`를 다시 실행해 실제 `.app` 완성과 서명·SQLite 포함 여부를 확인하는 것이다. 성공 후에만 7절의 native smoke와 실제 UI·알림·로그인 항목 검증을 이어간다. Draft PR #12는 유지하고 main 병합은 하지 않는다.

@@ -2,7 +2,7 @@
 
 Windows 2.2.2와 macOS preview 0.1.0 소스 기준입니다. Windows 사용법부터 보고 싶다면 [README](README.md), Mac 준비와 아직 남은 검증은 [Mac 안내](Mac/README.md)로 이동하세요. 아래 기존 실행·UI 설명은 Windows 기준이며 Mac의 차이는 12절에 정리했습니다.
 
-코드를 한 줄씩 번역한 문서는 아닙니다. **각 파일이 무엇을 맡고, 서로 어떻게 연결되는지** 설명합니다. 루트·Properties의 C# 46개, Mac 호스트 5개, 공통 검사 입구 1개로 총 52개와 빌드 설정을 다룹니다. 컴퓨터가 만든 `bin`·`obj`와 로컬 검증용 `artifacts`는 대상에서 뺍니다.
+코드를 한 줄씩 번역한 문서는 아닙니다. **각 파일이 무엇을 맡고, 서로 어떻게 연결되는지** 설명합니다. 루트·Properties의 C# 47개, Mac 호스트 5개, 공통 검사 입구 1개로 총 53개와 빌드 설정을 다룹니다. 컴퓨터가 만든 `bin`·`obj`와 로컬 검증용 `artifacts`는 대상에서 뺍니다.
 
 공식 조회 방식의 변경을 조사하는 외부 모니터링 현황은 [BACKLOG](BACKLOG.md)에 있습니다. 이 조사는 아래 앱 코드의 계정 한도 조회 루프와 별개이며, 새 SDK가 공개됐다고 앱의 CLI나 의존성을 자동으로 바꾸지는 않습니다.
 
@@ -293,7 +293,7 @@ Windows 내부 승인 형식은 알려진 경우만 해석합니다. 낯선 값�
 
 이름을 눌러 소스를 열 수 있습니다. 역할을 알고 필요한 파일부터 읽으면 됩니다.
 
-### 실제 앱 기능: 25개
+### 실제 앱 기능: 26개
 
 | 파일 | 맡은 일 |
 |---|---|
@@ -315,6 +315,7 @@ Windows 내부 승인 형식은 알려진 경우만 해석합니다. 낯선 값�
 | [RecommendationNotifications.cs](RecommendationNotifications.cs) | 마지막 확정 권고 기억, 중복 알림 방지 |
 | [TrayPresentation.cs](TrayPresentation.cs) | 트레이 문자·색상·짧은 도움말 결정 |
 | [UsageStore.cs](UsageStore.cs) | SQLite 생성·업그레이드·백업·설정·저장·일부 해석 불가 행 구분 |
+| [QuotaJsonContext.cs](QuotaJsonContext.cs) | 한도 캐시를 JSON으로 읽고 쓰는 타입 정보를 빌드 때 생성. Mac trimming 검사와 기존 캐시 호환성 유지 |
 | [AutoStartManager.cs](AutoStartManager.cs) | Windows 자동 시작 등록과 상태 판정 |
 | [AccountQuotaModels.cs](AccountQuotaModels.cs) | 한도 Provider·기간·사용률·리셋 시각과 조회 약속 |
 | [AccountQuotaParsers.cs](AccountQuotaParsers.cs) | 서로 다른 공식 CLI JSON을 검증한 공통 한도로 변환 |
@@ -377,7 +378,7 @@ Windows 내부 승인 형식은 알려진 경우만 해석합니다. 낯선 값�
 | [build.ps1](build.ps1) | 빌드와 자체 검사를 실행하는 순서 |
 | [Portable.pubxml](Properties/PublishProfiles/Portable.pubxml) | 배포용 단일 EXE 설정 |
 | [app.manifest](app.manifest) | Windows 권한·호환 설정. 관리자 권한으로 자동 상승하지 않음 |
-| [Shared/SharedSources.props](Shared/SharedSources.props) | 공통 C# 원본 18개를 Mac과 검사 프로젝트에 연결하는 목록 |
+| [Shared/SharedSources.props](Shared/SharedSources.props) | 공통 C# 원본 19개를 Mac과 검사 프로젝트에 연결하는 목록 |
 | [Shared.Tests/AiBurgerClock.Shared.Tests.csproj](Shared.Tests/AiBurgerClock.Shared.Tests.csproj) | net10.0 공통 검사, 임시 DB와 가짜 HTTP·CLI 사용 |
 | [Mac/AiBurgerClock.Mac.csproj](Mac/AiBurgerClock.Mac.csproj) | native AppKit, net10.0-macos27.0, osx-arm64, preview 버전 지정 |
 | [Mac/Info.plist](Mac/Info.plist) | Mac 앱 식별자·메뉴바 앱 설정·최소 OS |
@@ -404,6 +405,8 @@ Mac은 `~/Library/Application Support/AIBurgerClock`에 별도 DB를 쓰고 `SMA
 Windows 버전은 2.2.2 그대로이고 Mac은 아직 0.1.0 preview입니다. 실제 Mac 빌드·실행 검증은 [작업 기록](MACOS_PORT.md)에 남긴 후에 안정판 여부를 판단합니다.
 
 Mac 빌드 스크립트는 일반 사용자로 실행하고, 기본 NuGet HTTP 캐시는 Git에서 제외한 `artifacts/mac-build/nuget-http-cache`에 둡니다. 이 설정은 빌드와 그 자식 프로세스에만 적용됩니다. 기존 사용자 캐시의 권한·전역 설정·취약성 검사는 바꾸지 않습니다. 앱 자체의 DB 경로나 실행 기능과도 별개입니다.
+
+한도 캐시의 `QuotaJsonContext`는 빌드할 때 JSON 타입 정보를 미리 준비합니다. 실행 중 타입을 찾아내는 reflection에 의존하지 않아 Mac의 IL2026 검사를 피할 수 있습니다. JSON 필드·숫자 enum·리셋 시각·SQLite schema 2와 metadata 키는 그대로이며, 기존 캐시 읽기와 재시작 호환성을 따로 검사합니다. 경고를 숨기거나 새 패키지를 추가한 변경이 아닙니다.
 
 ## 13. 검사는 어떻게 실행하나요?
 
