@@ -22,6 +22,21 @@ internal static class TrayPresentation
     public static string StateName(AgentState state) =>
         state == AgentState.FullThrottle ? "FULL THROTTLE" : "BURGER TIME";
 
+    // Same wording for the Windows balloon and the macOS notification.
+    public static (string Title, string Body) TransitionNotification(ScheduleSnapshot snapshot) => (
+        StateName(snapshot.State) + " 시작",
+        snapshot.State == AgentState.FullThrottle
+            ? (snapshot.IsHolidayExtendedFullThrottle ? "미국 공휴일이 포함된 연장 FULL 구간입니다. " : "미국 업무시간 밖입니다. ") +
+                $"다음 전환: {snapshot.NextTransitionKst:MM-dd HH:mm} KST. Provider별 공식 상태와 작업 권고도 확인하세요."
+            : "새로운 대형 Agent 작업은 다음 FULL THROTTLE까지 미뤄두세요.");
+
+    public static (string Title, string Body) ProviderNotification(ProviderKind provider, Recommendation current, string reason,
+        Func<ProviderKind, string>? displayName = null) =>
+        current == Recommendation.Go
+            ? ((displayName?.Invoke(provider) ?? provider.ToString()) + " 정상화", "관련 서비스가 정상화되었습니다. 현재 FULL THROTTLE이므로 대규모 작업 재개 가능.")
+            : ((displayName?.Invoke(provider) ?? provider.ToString()) + " 작업 권고 변경",
+                $"현재 FULL THROTTLE이지만 공식 서비스 문제가 있습니다. {RecommendationPolicy.Label(current)}: 새 대형 작업을 미루세요.\n{reason}");
+
     public static Color StateColor(AgentState state) =>
         state == AgentState.FullThrottle ? Color.FromArgb(25, 145, 78) : Color.FromArgb(211, 61, 55);
 

@@ -36,8 +36,7 @@ namespace AiBurgerClock
         private readonly RecommendationNotifications providerNotifications = new();
         private int providerNotificationSerial;
         private int providerRefreshQueued;
-        private long lastNetworkRefreshTick;
-        internal static readonly TimeSpan NetworkRefreshMinimumInterval = TimeSpan.FromMinutes(1);
+        private readonly NetworkRefreshScheduler? networkRefresh;
         private readonly Action<Uri> openStatusPage;
         private volatile bool holidayAdjustmentEnabled;
         private bool holidaySettingsReady;
@@ -121,13 +120,7 @@ namespace AiBurgerClock
             {
                 if (statusHttpClient is null)
                 {
-                    ownedHttpClient = new HttpClient(new SocketsHttpHandler
-                    {
-                        UseCookies = false,
-                        PooledConnectionLifetime = TimeSpan.FromMinutes(10),
-                        ConnectTimeout = TimeSpan.FromSeconds(5),
-                        AutomaticDecompression = System.Net.DecompressionMethods.GZip | System.Net.DecompressionMethods.Deflate
-                    }) { Timeout = StatusMonitor.RequestTimeout };
+                    ownedHttpClient = ProviderStatusClient.CreateHttpClient();
                 }
                 HttpClient httpClient = statusHttpClient ?? ownedHttpClient!;
                 monitor = new StatusMonitor(new ProviderStatusClient(httpClient, this.utcNow), store, this.utcNow, scheduleAt: GetSchedule);
@@ -136,6 +129,7 @@ namespace AiBurgerClock
                 monitor.Changed += OnProviderChanged;
                 quotaMonitor.Changed += OnProviderChanged;
                 SystemEvents.PowerModeChanged += OnPowerModeChanged;
+                networkRefresh = new NetworkRefreshScheduler(() => RefreshAll(queueWhileRefreshing: true));
                 NetworkChange.NetworkAvailabilityChanged += OnNetworkAvailabilityChanged;
             }
             RefreshAutoStartChecks();
@@ -233,11 +227,7 @@ namespace AiBurgerClock
         private void ShowTransitionNotification(ScheduleSnapshot snapshot)
         {
             bool full = snapshot.State == AgentState.FullThrottle;
-            trayIcon.BalloonTipTitle = TrayPresentation.StateName(snapshot.State) + " 시작";
-            trayIcon.BalloonTipText = full
-                ? (snapshot.IsHolidayExtendedFullThrottle ? "미국 공휴일이 포함된 연장 FULL 구간입니다. " : "미국 업무시간 밖입니다. ") +
-                    $"다음 전환: {snapshot.NextTransitionKst:MM-dd HH:mm} KST. Provider별 공식 상태와 작업 권고도 확인하세요."
-                : "새로운 대형 Agent 작업은 다음 FULL THROTTLE까지 미뤄두세요.";
+            (trayIcon.BalloonTipTitle, trayIcon.BalloonTipText) = TrayPresentation.TransitionNotification(snapshot);
             trayIcon.BalloonTipIcon = full ? ToolTipIcon.Info : ToolTipIcon.Warning;
             trayIcon.ShowBalloonTip(6000);
             TransitionNotificationRequested?.Invoke(snapshot.State);
@@ -279,20 +269,11 @@ namespace AiBurgerClock
                 RefreshAll(queueWhileRefreshing: true);
         }
 
+        // Raised off the UI thread; the shared scheduler waits for DHCP/DNS and limits flapping adapters.
         internal void OnNetworkAvailabilityChanged(object? sender, NetworkAvailabilityEventArgs e)
         {
-            if (e.IsAvailable && !exiting && !disposed &&
-                TryClaimNetworkRefresh(ref lastNetworkRefreshTick, Environment.TickCount64))
-                RefreshAll(queueWhileRefreshing: true);
-        }
-
-        // Adapters (VPN, virtual switches) can flap, and each refresh starts both quota CLIs.
-        // Raised off the UI thread; at most one network-triggered refresh per minute.
-        internal static bool TryClaimNetworkRefresh(ref long lastTick, long nowTick)
-        {
-            long last = Interlocked.Read(ref lastTick);
-            if (last != 0 && nowTick - last < (long)NetworkRefreshMinimumInterval.TotalMilliseconds) return false;
-            return Interlocked.CompareExchange(ref lastTick, nowTick, last) == last;
+            if (e.IsAvailable && !exiting && !disposed)
+                networkRefresh?.OnNetworkAvailable();
         }
 
         private void RefreshAll(bool queueWhileRefreshing = false)
@@ -321,10 +302,8 @@ namespace AiBurgerClock
                 if (providerNotifications.Observe(status.Provider, schedule.State, current, notify))
                 {
                     bool recovered = current == Recommendation.Go;
-                    trayIcon.BalloonTipTitle = status.Provider + (recovered ? " 정상화" : " 작업 권고 변경");
-                    trayIcon.BalloonTipText = recovered
-                        ? "관련 서비스가 정상화되었습니다. 현재 FULL THROTTLE이므로 대규모 작업 재개 가능."
-                        : $"현재 FULL THROTTLE이지만 공식 서비스 문제가 있습니다. {RecommendationPolicy.Label(current)}: 새 대형 작업을 미루세요.\n{status.Reason}";
+                    (trayIcon.BalloonTipTitle, trayIcon.BalloonTipText) =
+                        TrayPresentation.ProviderNotification(status.Provider, current, status.Reason);
                     trayIcon.BalloonTipIcon = recovered ? ToolTipIcon.Info : ToolTipIcon.Warning;
                     trayIcon.ShowBalloonTip(6000);
                     providerNotificationSerial++;
@@ -534,6 +513,7 @@ namespace AiBurgerClock
                     SystemEvents.PowerModeChanged -= OnPowerModeChanged;
                     NetworkChange.NetworkAvailabilityChanged -= OnNetworkAvailabilityChanged;
                 }
+                networkRefresh?.Dispose();
                 if (quotaMonitor is not null) quotaMonitor.Changed -= OnProviderChanged;
                 quotaMonitor?.Dispose();
                 monitor?.Dispose();

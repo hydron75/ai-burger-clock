@@ -39,7 +39,7 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
     private bool stopping;
     private bool stopped;
     private int uiRefreshQueued;
-    private long lastNetworkRefreshTick;
+    private NetworkRefreshScheduler? networkRefresh;
     private int timerTicks;
     internal int ExitCode { get; private set; }
 
@@ -135,13 +135,7 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
                 await RunSmokeAsync();
                 return;
             }
-            http = new HttpClient(new SocketsHttpHandler
-            {
-                UseCookies = false,
-                PooledConnectionLifetime = TimeSpan.FromMinutes(10),
-                ConnectTimeout = TimeSpan.FromSeconds(5),
-                AutomaticDecompression = System.Net.DecompressionMethods.GZip | System.Net.DecompressionMethods.Deflate
-            }) { Timeout = StatusMonitor.RequestTimeout };
+            http = ProviderStatusClient.CreateHttpClient();
             statusMonitor = new(new ProviderStatusClient(http), store, scheduleAt: Schedule);
             quotaMonitor = new(new AccountQuotaClient(), store);
             statusMonitor.Changed += QueueDisplayRefresh;
@@ -156,6 +150,7 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
             RefreshAutoStart();
             wakeObserver = NSWorkspace.SharedWorkspace.NotificationCenter.AddObserver(NSWorkspace.DidWakeNotification,
                 _ => RefreshAll(queueWhileRefreshing: true));
+            networkRefresh = new NetworkRefreshScheduler(() => RefreshAll(queueWhileRefreshing: true));
             NetworkChange.NetworkAvailabilityChanged += OnNetworkChanged;
             statusMonitor.Start();
             quotaMonitor.Start();
@@ -199,12 +194,8 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
         bool changed = lastSchedule.HasValue && lastSchedule != snapshot.State;
         if (notify && changed)
         {
-            // Same wording as the Windows tray balloons.
-            string body = snapshot.State == AgentState.FullThrottle
-                ? (snapshot.IsHolidayExtendedFullThrottle ? "미국 공휴일이 포함된 연장 FULL 구간입니다. " : "미국 업무시간 밖입니다. ") +
-                    $"다음 전환: {snapshot.NextTransitionKst:MM-dd HH:mm} KST. Provider별 공식 상태와 작업 권고도 확인하세요."
-                : "새로운 대형 Agent 작업은 다음 FULL THROTTLE까지 미뤄두세요.";
-            notifications?.Show(TrayPresentation.StateName(snapshot.State) + " 시작", body);
+            var (title, body) = TrayPresentation.TransitionNotification(snapshot);
+            notifications?.Show(title, body);
         }
         lastSchedule = snapshot.State;
         // A policy-only refresh must not consume a concurrently arrived provider incident.
@@ -212,10 +203,11 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
         {
             var recommendation = RecommendationPolicy.Calculate(snapshot.State, status.Status);
             if (recommendationNotifications.Observe(status.Provider, snapshot.State, recommendation, (notify || notifyProviders) && !changed))
-                notifications?.Show(MacStatusWindow.ProviderName(status.Provider) + (recommendation == Recommendation.Go ? " 정상화" : " 작업 권고 변경"),
-                    recommendation == Recommendation.Go
-                        ? "관련 서비스가 정상화되었습니다. 현재 FULL THROTTLE이므로 대규모 작업 재개 가능."
-                        : $"현재 FULL THROTTLE이지만 공식 서비스 문제가 있습니다. {RecommendationPolicy.Label(recommendation)}: 새 대형 작업을 미루세요.\n{status.Reason}");
+            {
+                var (title, body) = TrayPresentation.ProviderNotification(status.Provider, recommendation, status.Reason,
+                    MacStatusWindow.ProviderName);
+                notifications?.Show(title, body);
+            }
         }
         if (scheduleItem is not null) scheduleItem.Title = TrayPresentation.StateName(snapshot.State);
         if (countdownItem is not null) countdownItem.Title = "전환까지 " + DisplayFormatting.FormatRemaining(snapshot.Remaining);
@@ -264,14 +256,10 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
         quotaMonitor?.RequestRefresh(queueWhileRefreshing);
     }
 
+    // Raised off the main thread; the shared scheduler waits for DHCP/DNS and limits flapping adapters.
     private void OnNetworkChanged(object? sender, NetworkAvailabilityEventArgs args)
     {
-        if (!args.IsAvailable || stopping) return;
-        long now = Environment.TickCount64;
-        long last = Interlocked.Read(ref lastNetworkRefreshTick);
-        if (last != 0 && now - last < 60_000) return;
-        if (Interlocked.CompareExchange(ref lastNetworkRefreshTick, now, last) == last)
-            RefreshAll(queueWhileRefreshing: true);
+        if (args.IsAvailable && !stopping) networkRefresh?.OnNetworkAvailable();
     }
 
     private async Task ChangeHolidayAsync(bool enabled)
@@ -458,6 +446,7 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
         finally
         {
             NetworkChange.NetworkAvailabilityChanged -= OnNetworkChanged;
+            networkRefresh?.Dispose();
             if (wakeObserver is not null)
             {
                 NSWorkspace.SharedWorkspace.NotificationCenter.RemoveObserver(wakeObserver);
