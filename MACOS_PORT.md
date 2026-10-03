@@ -314,3 +314,38 @@ echo "검사 종료 코드: $?"
 ```
 
 `compact one-screen layout/standard quota rows`가 포함된 PASS와 종료 코드 0을 확인한 뒤 `open`으로 실행해 모든 주요 정보가 함께 보이는지 확인한다. 새 빌드·실행과 한 화면 가독성, 실제 알림/재로그인·절전 복귀는 아직 미완료다. 같은 feature 브랜치와 Draft PR #12에서 진행하며 병합하지 않는다.
+
+## 16. Xcode 선택 경로와 조용한 빌드 중단 보완
+
+2026-10-03 KST 사용자가 소스 `91c32c67e277a5550efd77ca667654ca9cac67b3`을 받은 뒤 빌드 결과가 나오지 않는다고 알렸다. 실제 trace는 `xcodebuild -version`의 빈 출력과 종료 코드 1에서 끝났다. 공통 검사·앱 컴파일을 시작하기 전이므로 새 0.1.1의 빌드 실패를 C# 오류나 앱 실행 실패로 판정하지 않는다.
+
+### 확인된 두 원인
+
+- 환경: Apple 오류는 현재 개발 도구 경로 `/Library/Developer/CommandLineTools`가 전체 Xcode가 아니라는 내용이었다. Xcode 앱 자체의 누락·라이선스 문제나 선택 경로가 바뀐 이유는 이 오류로 확정하지 않는다.
+- 스크립트: `task_xcode_version="$(/usr/bin/xcodebuild -version 2>/dev/null)"`가 Apple 오류를 버렸고, `set -e`가 첫 안내 출력보다 먼저 종료했다.
+
+이후 사용자가 `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer`를 **버전 조회 한 번에만** 적용한 출력에서 Xcode 27.0 / build 27A266a를 확인했다. 따라서 전체 Xcode는 이 경로에 있다. 사용자는 별도로 Command Line Tools 27을 새로 설치했다고 알렸으나 재설치 후 기본 선택 경로 출력은 받지 않았다. 재설치가 기본 선택을 고쳤다고 가정하지 않는다.
+
+### 수정과 경계
+
+`Mac/build.sh`의 시작·Xcode 경로/버전·SDK·workload 단계를 즉시 표시한다. 명령 조회 실패는 원래 stderr와 캡처한 stdout을 보존해 출력하고 명시적 종료 코드 2로 끝낸다. 성공하면 기존 캐시·공통 검사·Release·서명/SQLite 검사로 이어진다.
+
+Xcode 설치·전역 `xcode-select` 변경·라이선스 승인은 하지 않는다. 이미 확인된 전체 Xcode 경로를 호출 시 `DEVELOPER_DIR`로 지정하는 대안을 안내하며 이 실행과 자식 프로세스에만 적용한다. 새 의존성이나 C#·DB schema·UI·한도 조회·배포본 변경은 없다. Windows 2.2.2와 미출시 Mac preview 0.1.1 버전은 그대로다.
+
+수정 파일은 `Mac/build.sh`, `Mac/README.md`, `README.md`, `CODE_GUIDE.md`, `BACKLOG.md`, 이 기록 문서다. Git 기준점은 위의 `91c32c6`이며 동일 feature 브랜치/Draft PR #12에 반영한다. 검사 도구와 산출물은 Git에서 제외한 `artifacts/mac-port/`에만 둔다.
+
+### 이번 로컬 검증
+
+- Git Bash에서 `bash -n Mac/build.sh` 구문 검사 통과.
+- 실제 스크립트를 source한 격리 fixture에서 Xcode 경로 조회 실패, Xcode 버전 조회 실패/원래 Apple 오류 보존, 잘못된 Xcode 버전, SDK 조회 실패/stdout 보존, workload 조회 실패/stdout 보존, macos workload 없음, 정상 사전 확인의 **7개 경우** 통과.
+- 실패 경우는 종료 코드 2이고 공통 검사에 도달하지 않는다. 정상 경우는 가짜 `dotnet run` 경계까지 도달한 뒤 의도적 종료 코드 88로 멈춰 실제 검사·컴파일·네트워크·계정 접근을 막았다. 이 88은 fixture에서만 쓰는 값이며 제품 스크립트 성공 코드가 아니다.
+- `build.sh`의 UTF-8 no BOM/LF와 `git diff --check` 확인. C# 변경이 없으므로 이전 15절의 전체 앱 검사를 불필요하게 반복하지 않는다.
+
+이 결과는 실제 macOS 빌드가 아니다. 다음 사용자 재빌드와 0.1.1 native smoke·한 화면 가독성 확인은 아직 필요하다. 먼저 실행 중인 앱을 종료한 뒤 저장소 루트에서 각 줄을 따로 실행한다.
+
+```sh
+git pull --ff-only
+/usr/bin/env DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer /bin/bash Mac/build.sh
+```
+
+빌드 성공 이후에만 15절의 새 bundle native smoke와 일반 실행으로 이어진다. Command Line Tools를 다시 설치하거나 전역 설정을 바꾸는 단계는 이 대안에 필요하지 않다. [Apple 실행별 개발 도구 선택 안내](https://developer.apple.com/documentation/xcode/configuring-command-line-tools-settings).

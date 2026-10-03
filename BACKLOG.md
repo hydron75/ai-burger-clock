@@ -10,6 +10,7 @@
 - 0.1.1 배치 수정: 창 720→660 point, 전체 스크롤 제거, Provider 간격 91→62 point, 한도 상자 108/111→54/74 point. 일반 한도는 한 화면에 두고 추가 모델 한도만 내부 스크롤을 유지한다. 긴 설명·자동 실행 상태는 Tooltip으로 보존하고 기록·상태 페이지·Refresh·Statistics 동작은 유지한다.
 - 새 native smoke에 컨트롤 경계/겹침, 일반 Codex 3줄/Claude 4줄의 실제 텍스트 높이와 주입 시각의 카운트다운 감소 검사를 연결했다. Windows 빌드·회귀·공통 검사와 Mac API/trim 분석은 통과했으며 **0.1.1의 실제 Mac 재빌드·native smoke·한 화면 가독성 확인은 다음 단계**다.
 - 빌드 중단 보완: NU1900은 빌드 전용 HTTP 캐시로, IL2026 두 건은 `QuotaJsonContext` source generation으로 해결됐다. 기존 캐시 호환성 검사 9건과 reflection 비활성화 검사 10건도 통과했다. [실제 Mac 빌드 성공 기록](MACOS_PORT.md#12-실제-mac-release-bundle-빌드-성공).
+- 조용한 빌드 중단 보완: Xcode·SDK·workload 진행 단계와 원래 오류를 표시하도록 `Mac/build.sh`를 수정했다. 선택 경로가 CommandLineTools였고 실행별 경로 지정으로 전체 Xcode 27.0을 확인했다. 격리된 가짜 도구 7개 검사와 shell 구문 검사는 통과했으며 새 native 빌드는 사용자 재시도를 기다린다. 앱 소스 변경이 없어 Windows 2.2.2 / Mac 0.1.1 버전은 유지한다. [원인과 검증 기록](MACOS_PORT.md#16-xcode-선택-경로와-조용한-빌드-중단-보완).
 - Windows 2.2.2 dist·자동 시작·사용자 DB는 교체하지 않았다. Mac/Windows DB 동기화, Gemini 개인 한도, 한도 회복 알림, 정식 배포 서명·공증은 이번 preview 범위에 포함하지 않는다.
 
 ## 다음 수정: ChatGPT 한도 영역 표시 정리

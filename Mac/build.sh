@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+echo "AI Burger Clock macOS 빌드 준비를 확인합니다."
 task_script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 
 if [[ "$(uname -s)" != "Darwin" || "$(uname -m)" != "arm64" ]]; then
@@ -15,22 +16,43 @@ if ! command -v dotnet >/dev/null 2>&1; then
   echo ".NET 10 SDK가 필요합니다. 이 스크립트는 소프트웨어를 설치하지 않습니다." >&2
   exit 2
 fi
-if ! /usr/bin/xcode-select -p >/dev/null 2>&1; then
+echo "Xcode 개발 도구 경로 확인 중..."
+if ! /usr/bin/xcode-select -p; then
   echo "Xcode 27 개발 도구 경로를 먼저 확인하세요." >&2
   exit 2
 fi
-task_xcode_version="$(/usr/bin/xcodebuild -version 2>/dev/null)"
+echo "Xcode 버전 확인 중..."
+# Keep Apple's diagnostic on stderr; do not let set -e silently end an assignment.
+if ! task_xcode_version="$(/usr/bin/xcodebuild -version)"; then
+  printf '%s\n' "$task_xcode_version" >&2
+  echo "Xcode 버전 확인 실패: 위 오류를 확인하세요. 앱 검사와 컴파일은 시작하지 않았습니다." >&2
+  echo "읽기 전용 확인: /usr/bin/xcodebuild -version 및 /usr/bin/xcode-select -p" >&2
+  exit 2
+fi
 if [[ "$task_xcode_version" != Xcode\ 27* ]]; then
   echo "macOS 27 SDK를 제공하는 Xcode 27이 필요합니다. 현재: $task_xcode_version" >&2
   exit 2
 fi
+echo "$task_xcode_version"
 cd "$task_script_dir"
-task_sdk_version="$(dotnet --version)"
+echo ".NET SDK 확인 중..."
+if ! task_sdk_version="$(dotnet --version)"; then
+  printf '%s\n' "$task_sdk_version" >&2
+  echo ".NET SDK 확인에 실패했습니다. 위 오류와 dotnet 설치 경로를 확인하세요." >&2
+  exit 2
+fi
 if [[ "$task_sdk_version" != 10.0.* || "$task_sdk_version" == *-* ]]; then
   echo "안정판 .NET 10 SDK가 필요합니다. 현재: $task_sdk_version" >&2
   exit 2
 fi
-if ! dotnet workload list | awk '$1 == "macos" { found = 1 } END { exit !found }'; then
+echo ".NET SDK: $task_sdk_version"
+echo ".NET macos workload 확인 중..."
+if ! task_workloads="$(dotnet workload list)"; then
+  printf '%s\n' "$task_workloads" >&2
+  echo ".NET workload 조회에 실패했습니다. 설치나 설정은 변경하지 않았습니다." >&2
+  exit 2
+fi
+if ! printf '%s\n' "$task_workloads" | awk '$1 == "macos" { found = 1 } END { exit !found }'; then
   echo ".NET macos workload가 필요합니다. 공식 설치 안내를 확인하세요(자동 설치하지 않음)." >&2
   exit 2
 fi
@@ -45,8 +67,6 @@ if [[ ! -w "$task_http_cache" ]]; then
 fi
 export NUGET_HTTP_CACHE_PATH="$task_http_cache"
 
-echo ".NET SDK: $task_sdk_version"
-echo "$task_xcode_version"
 echo "NuGet HTTP cache: $NUGET_HTTP_CACHE_PATH"
 dotnet run --project ../Shared.Tests/AiBurgerClock.Shared.Tests.csproj -c Release --property:TreatWarningsAsErrors=true
 dotnet build AiBurgerClock.Mac.csproj -c Release -warnaserror

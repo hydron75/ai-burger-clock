@@ -73,6 +73,32 @@ bash Mac/build.sh
 
 앱 빌드는 **sudo 없이** 실행합니다. 기본 NuGet HTTP 캐시는 저장소의 `artifacts/mac-build/nuget-http-cache`에 두고 Git에서는 제외합니다. 사용자가 `NUGET_HTTP_CACHE_PATH`를 지정했다면 그 경로를 그대로 사용합니다. 취약성 검사·패키지 저장소 설정·전역 패키지 캐시는 변경하지 않습니다.
 
+### 출력 없이 종료 / CommandLineTools 선택
+
+소스 `91c32c6`의 빌드에서 `xcodebuild -version` 단계가 실패했지만 오류를 숨겨 조용히 종료한 사례가 있습니다. 최신 스크립트는 시작과 도구 확인 단계를 즉시 표시하고, Xcode·SDK·workload 조회 실패 시 원래 오류를 보존한 채 종료 코드 2로 멈춥니다. 이 경우 공통 검사와 앱 컴파일은 시작하지 않습니다.
+
+`active developer directory '/Library/Developer/CommandLineTools' is a command line tools instance`가 나오면 전체 Xcode 대신 독립 Command Line Tools가 선택된 상태입니다. Command Line Tools 27을 설치하는 것과 전체 Xcode 27을 빌드 도구로 선택하는 것은 다릅니다. 먼저 아래 두 줄을 **각각** 실행해 실제 오류와 선택 경로를 확인합니다.
+
+```sh
+/usr/bin/xcodebuild -version
+/usr/bin/xcode-select -p
+```
+
+전체 Xcode가 기본 위치에 있다면 다음 조회로 확인합니다. 2026-10-03 사용자 Mac에서 이 경로의 Xcode 27.0 / build 27A266a를 확인했습니다.
+
+```sh
+/usr/bin/env DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer /usr/bin/xcodebuild -version
+```
+
+이 조회가 성공하면 실행 중인 앱을 종료한 뒤 저장소 루트에서 다음 두 줄을 각각 실행합니다. Xcode가 다른 위치에 설치됐다면 확인된 실제 경로로 바꿉니다.
+
+```sh
+git pull --ff-only
+/usr/bin/env DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer /bin/bash Mac/build.sh
+```
+
+`DEVELOPER_DIR`는 이 빌드와 자식 프로세스에만 적용합니다. 전역 `xcode-select` 설정·라이선스·설치 상태를 바꾸지 않습니다. 스크립트가 Xcode를 자동 선택하거나 설치하지도 않습니다. [Apple의 개발 도구 선택 안내](https://developer.apple.com/documentation/xcode/configuring-command-line-tools-settings), [원인과 검증 기록](../MACOS_PORT.md#16-xcode-선택-경로와-조용한-빌드-중단-보완).
+
 ### NU1900 / HTTP 캐시 접근 거부
 
 첫 Mac 빌드에서 사용자 홈의 NuGet HTTP 캐시에 접근하지 못해 취약성 데이터 조회가 실패한 사례가 있습니다. 관리자 권한으로 개발 도구를 설치하면서 캐시 소유권이 달라졌을 가능성이 있지만, 소유권을 확인하기 전에는 확정할 수 없습니다.

@@ -382,7 +382,7 @@ Windows 내부 승인 형식은 알려진 경우만 해석합니다. 낯선 값�
 | [Shared.Tests/AiBurgerClock.Shared.Tests.csproj](Shared.Tests/AiBurgerClock.Shared.Tests.csproj) | net10.0 공통 검사, 임시 DB와 가짜 HTTP·CLI 사용 |
 | [Mac/AiBurgerClock.Mac.csproj](Mac/AiBurgerClock.Mac.csproj) | native AppKit, net10.0-macos27.0, osx-arm64, preview 버전 지정 |
 | [Mac/Info.plist](Mac/Info.plist) | Mac 앱 식별자·메뉴바 앱 설정·최소 OS |
-| [Mac/build.sh](Mac/build.sh) | 도구 확인 → 공통 검사 → Mac Release 빌드 → bundle 서명·SQLite 포함 확인 |
+| [Mac/build.sh](Mac/build.sh) | 진행 단계·도구 오류 표시 → 공통 검사 → Mac Release 빌드 → bundle 서명·SQLite 포함 확인 |
 | bin | 일반 빌드 결과 |
 | obj | 중간 결과와 자동 생성 코드 |
 | dist | 사용자에게 전달할 배포 결과 |
@@ -407,6 +407,8 @@ Windows 버전은 2.2.2 그대로이고 Mac 소스는 0.1.1 preview입니다. �
 `MacStatusWindow`는 전체 document 스크롤을 없애고 430×660 point의 고정 AppKit 창에 Schedule·세 Provider·ChatGPT/Claude 한도·버튼을 놓습니다. Provider 설명은 두 줄로 제한하고 전체 내용을 Tooltip에 보존합니다. 일반 Codex 2개 창+조회 정보와 Claude 3개 창+조회 정보를 위한 한도 상자는 54/74 point이며 더 많은 모델별 한도는 상자 내부에서 스크롤합니다. `VerifyCompactLayout`은 native smoke에서만 호출하여 전체 화면 스크롤 부재, 컨트롤 경계/겹침, 실제 글꼴 기준 일반 한도 행의 높이를 검사합니다. 상시 조회 로직이나 통계 창의 공통 TextArea 설정은 바꾸지 않습니다.
 
 Mac 빌드 스크립트는 일반 사용자로 실행하고, 기본 NuGet HTTP 캐시는 Git에서 제외한 `artifacts/mac-build/nuget-http-cache`에 둡니다. 이 설정은 빌드와 그 자식 프로세스에만 적용됩니다. 기존 사용자 캐시의 권한·전역 설정·취약성 검사는 바꾸지 않습니다. 앱 자체의 DB 경로나 실행 기능과도 별개입니다.
+
+Xcode·SDK·workload 확인 단계는 바로 표시하고, 조회가 실패하면 원래 오류와 종료 코드 2를 돌려줍니다. 전체 Xcode 대신 CommandLineTools가 선택된 경우에도 오류를 숨기지 않습니다. 설치된 Xcode를 이번 빌드에서만 쓰려면 호출할 때 `DEVELOPER_DIR`를 지정하며, 스크립트는 전역 개발 도구 선택이나 라이선스를 변경하지 않습니다. [실행별 경로 지정](Mac/README.md#출력-없이-종료--commandlinetools-선택).
 
 한도 캐시의 `QuotaJsonContext`는 빌드할 때 JSON 타입 정보를 미리 준비합니다. 실행 중 타입을 찾아내는 reflection에 의존하지 않아 Mac의 IL2026 검사를 피할 수 있습니다. JSON 필드·숫자 enum·리셋 시각·SQLite schema 2와 metadata 키는 그대로이며, 기존 캐시 읽기와 재시작 호환성을 따로 검사합니다. 경고를 숨기거나 새 패키지를 추가한 변경이 아닙니다.
 
