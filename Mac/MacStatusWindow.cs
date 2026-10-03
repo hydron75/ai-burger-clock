@@ -25,7 +25,9 @@ internal sealed class MacStatusWindow : IDisposable
     private readonly NSButton autoStart;
     private readonly Dictionary<ProviderKind, (NSButton Heading, NSTextField Detail)> providers = [];
     private readonly Dictionary<QuotaProvider, NSTextView> quotas = [];
-    private readonly Dictionary<QuotaProvider, NSTextField> quotaTitles = [];
+    private readonly Dictionary<QuotaProvider, (NSTextField Title, NSButton Info)> quotaTitles = [];
+    private readonly Dictionary<QuotaProvider, string> quotaInfo = [];
+    private NSPopover? infoPopover;
 
     internal MacStatusWindow(Action requestRefresh, Action showStatistics, Action<bool> changeHoliday,
         Action<bool> changeAutoStart, Action<ProviderKind> openPage,
@@ -78,10 +80,10 @@ internal sealed class MacStatusWindow : IDisposable
         }
         Separator(root, 352);
         Label(root, "개인 계정 잔여 한도", 322, 22, SectionTitleSize, true);
-        quotaTitles[QuotaProvider.Codex] = Label(root, "ChatGPT", 298, 22, 13, true);
+        quotaTitles[QuotaProvider.Codex] = QuotaTitle(root, QuotaProvider.Codex, "ChatGPT", 298);
         Label(root, "Work/Codex", 280, 17, 11);
         quotas[QuotaProvider.Codex] = TextArea(root, new CGRect(14, 224, 402, 54), 11);
-        quotaTitles[QuotaProvider.Claude] = Label(root, "Claude", 200, 22, 13, true);
+        quotaTitles[QuotaProvider.Claude] = QuotaTitle(root, QuotaProvider.Claude, "Claude", 200);
         quotas[QuotaProvider.Claude] = TextArea(root, new CGRect(14, 124, 402, 74), 11);
         foreach (NSTextView quota in quotas.Values) quota.TextContainerInset = new CGSize(2, 2);
         Separator(root, 112);
@@ -162,10 +164,11 @@ internal sealed class MacStatusWindow : IDisposable
                 "기본 6시간 · 잔여 0% 초과~10% 미만은 1시간 · 잔여 0%는 15분 · 리셋 전후 15분은 5분.\n" +
                 "리셋 시각 경과만으로 한도 회복을 가정하지 않습니다. 크레딧·리셋 알림은 제외합니다.\n" +
                 state.Error + "\n" + state.CacheError;
-            // A tooltip on the text view itself closes on every per-second rewrite, so it lives on
-            // the enclosing box and the section title, which do not change.
-            if (view.EnclosingScrollView is { } box) SetTip(box, tooltip);
-            SetTip(quotaTitles[state.Provider], tooltip);
+            // A tooltip anywhere on the box closes on its per-second countdown rewrite, so the
+            // explanation lives on the unchanging title and ⓘ button; clicking ⓘ keeps it open.
+            quotaInfo[state.Provider] = tooltip.TrimEnd();
+            SetTip(quotaTitles[state.Provider].Title, quotaInfo[state.Provider]);
+            SetTip(quotaTitles[state.Provider].Info, quotaInfo[state.Provider]);
         }
         DateTimeOffset latest = states.Max(state => state.CheckedAtUtc);
         checkedAt.StringValue = "Checked: " + (latest == DateTimeOffset.MinValue ? "—" : AgentSchedule.ToKst(latest).ToString("HH:mm:ss")) + " KST";
@@ -222,6 +225,15 @@ internal sealed class MacStatusWindow : IDisposable
             throw new InvalidOperationException("Compact status window dimensions/rows changed.");
         if (!providers[ProviderKind.OpenAI].Heading.Title.StartsWith("ChatGPT ", StringComparison.Ordinal))
             throw new InvalidOperationException("The OpenAI row does not show the ChatGPT product name.");
+        foreach (var (provider, (_, info)) in quotaTitles)
+        {
+            if (string.IsNullOrEmpty(info.ToolTip) || info.Image is null)
+                throw new InvalidOperationException("Quota info button has no symbol or explanation.");
+            ShowQuotaInfo(info, provider);
+            if (infoPopover is not { Shown: true })
+                throw new InvalidOperationException("Quota info popover did not open.");
+            infoPopover.Close();
+        }
         NSView[] controls = root.Subviews;
         NSScrollView[] scrolls = controls.OfType<NSScrollView>().ToArray();
         if (scrolls.Length != 2 || scrolls.Any(scroll => scroll.DocumentView is not NSTextView))
@@ -285,6 +297,38 @@ internal sealed class MacStatusWindow : IDisposable
 
     private const int SectionTitleSize = 15;
 
+    private (NSTextField Title, NSButton Info) QuotaTitle(NSView root, QuotaProvider provider, string text, int y)
+    {
+        NSTextField title = Label(root, text, y, 22, 13, true);
+        title.SizeToFit();
+        title.Frame = new CGRect(14, y, Math.Ceiling(title.Frame.Width) + 4, 22);
+        var info = new NSButton(new CGRect(title.Frame.Right + 2, y + 1, 20, 20))
+        {
+            Bordered = false, Title = "", ImagePosition = NSCellImagePosition.ImageOnly,
+            Image = NSImage.GetSystemSymbol("info.circle", "한도 조회 설명"),
+            ContentTintColor = NSColor.SecondaryLabel
+        };
+        info.Activated += (_, _) => ShowQuotaInfo(info, provider);
+        root.AddSubview(info);
+        return (title, info);
+    }
+
+    private void ShowQuotaInfo(NSButton anchor, QuotaProvider provider)
+    {
+        infoPopover?.Close();
+        NSTextField text = NSTextField.CreateWrappingLabel(quotaInfo.GetValueOrDefault(provider, ""));
+        text.Font = Font(12);
+        text.Frame = new CGRect(12, 10, 336, 100);
+        var content = new NSView(new CGRect(0, 0, 360, 120));
+        content.AddSubview(text);
+        infoPopover = new NSPopover
+        {
+            Behavior = NSPopoverBehavior.Transient,
+            ContentViewController = new NSViewController { View = content }
+        };
+        infoPopover.Show(anchor.Bounds, anchor, NSRectEdge.MaxYEdge);
+    }
+
     private static void Separator(NSView view, int y) =>
         view.AddSubview(new NSBox(new CGRect(14, y, view.Frame.Width - 28, 1)) { BoxType = NSBoxType.NSBoxSeparator });
 
@@ -341,6 +385,8 @@ internal sealed class MacStatusWindow : IDisposable
 
     public void Dispose()
     {
+        infoPopover?.Close();
+        infoPopover?.Dispose();
         Window.Close();
         Window.Dispose();
     }

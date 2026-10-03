@@ -571,7 +571,7 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
             await statisticsWindow.RefreshAsync();
             if (!statisticsWindow.Window.IsVisible)
                 throw new InvalidOperationException("Statistics window did not reopen from the menu-bar action.");
-            Console.WriteLine("PASS: bundle version, menu-tracking countdown timer, 1,000-char note limit, native controls/window close-reopen, 20pt color menu icon/1x-2x pixels, compact one-screen layout/standard quota rows, temporary SQLite, four events/notes, statistics, injected quota countdown; no account/network/settings changes.");
+            Console.WriteLine("PASS: bundle version, menu-tracking countdown timer, 1,000-char note limit, native controls/window close-reopen, 20pt color menu icon/1x-2x pixels, compact one-screen layout/standard quota rows/quota info popover, temporary SQLite, four events/notes, statistics, injected quota countdown; no account/network/settings changes.");
             ExitCode = 0;
         }
         catch (Exception error)
