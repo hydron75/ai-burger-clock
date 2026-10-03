@@ -1,0 +1,26 @@
+<Project>
+  <ItemGroup>
+    <!-- Canonical sources stay at the repository root. Both hosts build these
+         files; there are no separately maintained copies of business rules. -->
+    <Compile Include="$(MSBuildThisFileDirectory)../AgentSchedule.cs" Link="Shared/AgentSchedule.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)../UsFederalHolidays.cs" Link="Shared/UsFederalHolidays.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)../Phase2Models.cs" Link="Shared/Phase2Models.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)../ProviderStatusClient.cs" Link="Shared/ProviderStatusClient.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)../ProviderStatusPages.cs" Link="Shared/ProviderStatusPages.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)../StatusMonitor.cs" Link="Shared/StatusMonitor.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)../UsageStore.cs" Link="Shared/UsageStore.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)../QuotaJsonContext.cs" Link="Shared/QuotaJsonContext.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)../AccountQuotaModels.cs" Link="Shared/AccountQuotaModels.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)../AccountQuotaClient.cs" Link="Shared/AccountQuotaClient.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)../AccountQuotaParsers.cs" Link="Shared/AccountQuotaParsers.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)../AccountQuotaPolicy.cs" Link="Shared/AccountQuotaPolicy.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)../AccountQuotaMonitor.cs" Link="Shared/AccountQuotaMonitor.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)../RecommendationNotifications.cs" Link="Shared/RecommendationNotifications.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)../NetworkRefreshScheduler.cs" Link="Shared/NetworkRefreshScheduler.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)../TrayPresentation.cs" Link="Shared/TrayPresentation.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)../StatisticsAnalysis.cs" Link="Shared/StatisticsAnalysis.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)../DisplayFormatting.cs" Link="Shared/DisplayFormatting.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)../AppPaths.cs" Link="Shared/AppPaths.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)../MacCliPaths.cs" Link="Shared/MacCliPaths.cs" />
+  </ItemGroup>
+</Project>

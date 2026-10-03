@@ -1,9 +1,37 @@
 # 다음 개선 항목
 
+## macOS native preview 0.1.5
+
+- 기록일: 2026-10-03 KST.
+- 이후 작업 분담: Mac 구현·빌드·실제 실행 검증은 사용자 Mac의 Claude 로컬 환경에서 진행하고 GitHub 업데이트는 계속한다. Windows 검토·회귀 검증은 요청 시 이 환경에서 수행한다. 상대 OS 전용 파일은 각 담당에게 맡기고 공통 원본은 분리 복사하지 않으며 양쪽 모두 PR로 수정한다. 작업 후 버전·README·CODE_GUIDE·BACKLOG·검증 기록을 맞춘다. 현재 Mac 작업은 기존 `feature/macos-native` / Draft PR #12를 이어간다. 역할 분담 지침은 [PR #13](https://github.com/hydron75/ai-burger-clock/pull/13)으로 main에 병합됐다. [분담 규칙](AGENTS.md#작업-분담-windows와-mac).
+- 상태: `feature/macos-native`의 Apple Silicon / macOS 27용 AppKit 소스를 [Draft PR #12](https://github.com/hydron75/ai-burger-clock/pull/12)에서 검증 중이다. **0.1.2의 실제 Mac 공통 검사 244,347건·Release `.app`·서명·ARM64 SQLite·아이콘 native smoke와 일반 실행의 크기/색상·양쪽 메뉴막대 표시를 확인**했다. 앞선 0.1.1의 한 화면 배치·두 계정 한도 수신도 확인했다. 절전 복귀·연결 복구·재로그인은 이후 실제로 확인했고([26](MACOS_PORT.md#26-연결-복구절전-복귀-실제-확인)·[27절](MACOS_PORT.md#27-로그아웃-정상-종료와-재로그인-자동-실행-실제-확인)), 실제 알림 검증은 남아 있다. 안정판 배포나 main 병합은 하지 않았다. [최신 화면 기록](MACOS_PORT.md#23-012-실제-컬러-아이콘과-양쪽-메뉴막대-확인), [Mac 빌드 안내](Mac/README.md).
+- 0.1.2 실제 Mac 빌드: 소스 `dd3f596bf58f40016b2095867de428bf0b9b80a9`, SDK 10.0.401 / Xcode 27.0 / build 27A266a, 공통 검사 244,347건, native Release 성공(16.4초), `.app`·ad-hoc 서명·ARM64 SQLite 확인. 이어서 새 아이콘 1x/2x 픽셀·크기, 창·임시 SQLite·4종 이벤트/메모·통계·주입 카운트다운의 native smoke PASS를 받았다. shell 종료 코드는 별도 출력되지 않았다. 이후 **사용자 스크린샷에서 커진 초록색 원과 흰색 F, 사용자 직접 확인으로 양쪽 메뉴막대 표시까지 확인**했다. 이번 후속 갱신은 문서만 변경하므로 재빌드·검사 반복은 필요 없다.
+- main 병합: PR #12 최종 HEAD를 main과 비교한 Windows 검증을 통과했다(자체 검사 +63, smoke 종료 코드 0, Windows 화면 PNG 10쌍 동일). 지적된 공통 검사의 실제 네트워크 의존을 고친 뒤 main에 병합한다. 최종 Mac bundle은 0.1.5 / 6. [기록](MACOS_PORT.md#35-2-main-대비-windows-최종-검증과-병합).
+- main 병합 준비: 사용자 결정으로 실제 알림 배너·장기 사용·재부팅 자동 실행은 미확인 상태로 PR #12 병합 절차를 진행한다. 문제가 생기면 별도로 수정한다. PR #12 최종 HEAD의 main 대비 Windows 검증을 요청한다. [기록](MACOS_PORT.md#35-main-병합-준비).
+- 0.1.5 / build 6: PR #15(연결이 없을 때 연결 복구 조회 건너뛰기)를 병합했다. 연결 판정은 macOS utun 때문에 `GetIsNetworkAvailable()` 대신 "링크 로컬이 아닌 주소가 있는 Up 인터페이스"로 한다. Mac 실제 확인에서는 끊긴 동안 Unknown이 없었고 재연결 5초 뒤 회복했다. Windows 자체 검사 +8·smoke 종료 코드 0. 소스 `53ae21fea7d9ebc7a3796ed7aa1d197a21aa53d4`. [기록](MACOS_PORT.md#34-015-정리).
+- 0.1.4 / build 5: PR #14(공통 HTTP 설정·알림 문구, 연결 복구 5초 대기·1분 연기)를 Windows 검증(자체 검사 +8, smoke 종료 코드 0) 뒤 병합했다. Mac 알림 제목도 ChatGPT로 유지된다. 소스 `63d9ec769550f6140fac2af448bdceec74d12588`, 공통 검사 244,361건, smoke 종료 코드 0. 공통 개선 후보였던 "연결 복구 직후 지연 조회"는 이것으로 반영했다. [기록](MACOS_PORT.md#32-pr-14-병합과-014-정리).
+- 0.1.3 / build 4: 0.1.2 이후 리뷰 반영·Tooltip·ChatGPT 표시 이름·구간 구분·한도 ⓘ 팝오버·앱 아이콘을 묶어 버전을 올렸다. 소스 `8e8d9b8edb0af8c7c88914dfb207c1581072f8cc`, bundle 0.1.3 / 4, 공통 검사 244,349건, smoke 종료 코드 0. [기록](MACOS_PORT.md#31-013-버전-정리).
+- UI 확인·표시 이름·앱 아이콘: 공식 상태 링크, Statistics 재열기, 기록 저장은 정상이었다. 상태 창 Tooltip이 금방 사라지던 문제(매초 다시 지정)를 고쳤다. Mac 화면의 "OpenAI"를 제품 이름 "ChatGPT"로 바꿨다(저장 값은 그대로). 앱 아이콘(초록 시계·F)을 추가했다. **Windows 후보:** Windows 화면의 "OpenAI" 표시도 "ChatGPT"로 맞출지는 Windows 담당이 판단한다. 공통 `TrayPresentation.Tooltip`의 `displayName` 인자로 맞출 수 있다. [기록](MACOS_PORT.md#30-ui-조작-확인과-tooltip표시-이름앱-아이콘-수정).
+- 알림 권한·앱 아이콘: 시스템 설정에서 알림이 허용돼 있음을 확인했다(배너, 데스크탑·알림 센터·잠금 화면). 실제 배너는 2026-10-05 22:00 KST 전환 때 확인한다. **개선 후보:** bundle에 앱 아이콘이 없어 알림 설정·Finder·로그인 항목에 빈 아이콘으로 보인다. Mac 전용 `Mac/` 리소스로 추가할 수 있다. [기록](MACOS_PORT.md#29-macos-알림-권한-확인).
+- 공통 원본 정리·연결 복구 지연 조회: HTTP 설정과 알림 문구를 공통 함수로 옮기고, 새 공통 `NetworkRefreshScheduler`로 연결 복구 뒤 5초 대기·1분 제한(연기)·연속 변화 합침을 적용했다. `feature/macos-native` 대상 별도 PR에서 Windows 실행 검증을 기다린다. Mac 공통 검사 244,358건, Windows 대상 컴파일 경고·오류 0. [기록](MACOS_PORT.md#28-공통-원본-정리와-연결-복구-지연-조회-별도-pr).
+- 재로그인 확인: 2026-10-04 로그아웃과 다시 로그인을 두 번 했다. 두 번 모두 `loginwindow`가 로그인 항목 경로로 앱을 자동 실행했고, 로그아웃 때는 quit 이벤트를 받아 약 0.1초 만에 정상 종료했다. 실행 직후 공식 상태·계정 한도 조회도 성공했다. 자동 실행 해제·재등록은 사용자가 별도로 확인했다. 재부팅은 확인하지 않았다. [기록](MACOS_PORT.md#27-로그아웃-정상-종료와-재로그인-자동-실행-실제-확인).
+- 연결 복구·절전 복귀 확인: 2026-10-04 사용자 Mac에서 Wi-Fi·유선 LAN을 끊고 다시 연결하고, 잠자기 후 깨워 봤다. 두 경우 모두 1~2초 안에 공식 상태와 계정 한도를 다시 조회했다. 깨울 때의 조회는 네트워크 변화 없이 일어나 절전 복귀 경로로 판단했다. **공통 개선 후보:** 유선 재연결 직후 계정 한도 조회 한 번은 성공 기록이 없었다. DNS 준비 전이라 실패한 것으로 추정하며, 연결 복구 뒤 몇 초 지연 후 조회하는 방안을 Windows와 함께 검토한다. [기록](MACOS_PORT.md#26-연결-복구절전-복귀-실제-확인).
+- PR #12 리뷰 반영: 별도 리뷰 10건을 소스 `50668fa2b6cf35410a2177e369dcab66562b9cd9`에서 Mac 파일만으로 반영했다. smoke 초기화 실패 시 멈춤, DB 실패 시 조회 미시작, 공휴일 저장 시 장애 알림 소비, 메뉴를 연 동안 타이머 정지, HTTP 설정, 한도 표시 매초 재작성, 알림 문구, 버전 기본값, 메모 1,000자, 추가 인수 처리가 대상이다. 공통 검사 244,347건, 경고·오류 0, smoke 종료 코드 0을 확인했고 타이머 음성 검사도 실패로 구분됐다. **HTTP 설정·알림 문구·연결 복구 제한을 공통 파일로 옮기는 작업은 Windows 파일도 바뀌므로 보류**했다. [기록](MACOS_PORT.md#25-pr-12-코드-리뷰-지적-사항-반영).
+- 0.1.2 bundle 버전 수정: 사용자 Mac에서 직접 빌드한 결과, 이전 bundle의 `Info.plist`가 0.1.0 / 1로 남아 있었다. macOS SDK가 원본 `Info.plist`를 manifest 재생성 입력으로 보지 않기 때문이다. 소스 `66fb8689043154e8bf6b1fafe04f9c317b2f0ec1`에서 버전을 csproj의 `ApplicationDisplayVersion`/`ApplicationVersion`으로 옮기고 native smoke에 bundle 버전 비교를 넣었다. 증분 빌드로 0.1.2 / 3 반영, 공통 검사 244,347건, 경고·오류 0, 서명 통과, smoke PASS·**종료 코드 0을 직접 관측**했고 버전 불일치 음성 검사는 종료 코드 1로 실패했다. 버전은 0.1.2를 유지한다. [기록](MACOS_PORT.md#24-012-bundle-버전-미반영-수정과-첫-로컬-mac-검증).
+- 0.1.2 아이콘 수정: 기존 작은 검은 F와 비활성 모니터 누락 보고를 받아, 20-point 색상 원+흰색 F/B를 20px/40px bitmap에 직접 그린다. 정사각 status item·1x/2x 해상도·명시적 이미지 수명을 사용하고 tint에 의존하지 않는다. native smoke에 8개 문자/색 조합의 1x/2x 실제 RGB·투명도·흰 글자와 버튼 이미지 크기 검사를 연결했다. **사용자 Mac에서 크기·색상·듀얼 모니터 표시 문제의 해소를 확인했다.** [수정 기록](MACOS_PORT.md#20-012-메뉴바-아이콘-크기색상-수정과-다중-모니터-재검증), [실제 화면 확인](MACOS_PORT.md#23-012-실제-컬러-아이콘과-양쪽-메뉴막대-확인).
+- Schedule/DST/공휴일, 공식 상태·권고, CLI 한도·조회 주기, SQLite schema 2와 통계는 루트의 같은 원본을 빌드한다. Windows WinForms와 Mac AppKit UI·알림·자동 실행은 각각 관리한다.
+- 새 0.1.2 소스에서도 Windows Release 빌드 경고·오류 0, 자체 검사 250,750건과 공통 검사 244,347건을 통과했다. Mac 호스트 6개와 공통 원본 19개의 참조 C# 컴파일/trimming 분석도 경고·오류 0이지만 `.app` 생성·네이티브 실행 검증을 대신하지 않는다.
+- Mac SDK 10.0.401 / Xcode 27.0에서 기존 공통 검사 244,347건, Release `.app`·로컬 서명·ARM64 SQLite와 native smoke가 통과했다. 이후 Schedule/US DST, 세 Provider 정상 상태, ChatGPT 주간·Claude 세션/주간 전체/모델별 한도 수신과 메뉴바를 확인했다. 로그인 자동 실행 체크와 등록 성공 안내는 보였지만 실제 재로그인 실행은 확인 전이다. [최신 화면 기록](MACOS_PORT.md#15-cli-조회-성공과-011-한-화면-배치-수정).
+- 0.1.1 배치 수정: 창 720→660 point, 전체 스크롤 제거, Provider 간격 91→62 point, 한도 상자 108/111→54/74 point. 일반 한도는 한 화면에 두고 추가 모델 한도만 내부 스크롤을 유지한다. 긴 설명·자동 실행 상태는 Tooltip으로 보존하고 기록·상태 페이지·Refresh·Statistics 동작은 유지한다.
+- 새 native smoke에 컨트롤 경계/겹침, 일반 Codex 3줄/Claude 4줄의 실제 텍스트 높이와 주입 시각의 카운트다운 감소 검사를 연결했고 **실제 Mac 0.1.1에서 종료 코드 0으로 통과**했다. 임시 SQLite·4종 이벤트/메모·통계·창 재열기도 함께 확인했다. 이후 일반 화면에서 Schedule·세 Provider·두 한도·하단 버튼/옵션이 스크롤 없이 함께 보이는 것까지 확인했다. [새 빌드 결과](MACOS_PORT.md#17-011-실제-mac-release-재빌드-성공), [새 native 검사](MACOS_PORT.md#18-011-새-native-smoke-통과), [일반 화면](MACOS_PORT.md#19-011-일반-상태-창과-메뉴바-확인).
+- 빌드 중단 보완: NU1900은 빌드 전용 HTTP 캐시로, IL2026 두 건은 `QuotaJsonContext` source generation으로 해결됐다. 기존 캐시 호환성 검사 9건과 reflection 비활성화 검사 10건도 통과했다. [실제 Mac 빌드 성공 기록](MACOS_PORT.md#12-실제-mac-release-bundle-빌드-성공).
+- 조용한 빌드 중단 보완: Xcode·SDK·workload 진행 단계와 원래 오류를 표시하도록 `Mac/build.sh`를 수정했다. 격리된 가짜 도구 7개 검사와 shell 구문 검사를 통과했고, 소스 `9f805f8`에서 실행별 전체 Xcode 27 경로 지정으로 실제 Mac 공통 검사 244,347건과 native Release도 성공했다. Windows 2.2.2 / Mac 0.1.1 버전은 유지한다. [원인과 검증 기록](MACOS_PORT.md#16-xcode-선택-경로와-조용한-빌드-중단-보완).
+- Windows 2.2.2 dist·자동 시작·사용자 DB는 교체하지 않았다. Mac/Windows DB 동기화, Gemini 개인 한도, 한도 회복 알림, 정식 배포 서명·공증은 이번 preview 범위에 포함하지 않는다.
+
 ## 다음 수정: ChatGPT 한도 영역 표시 정리
 
 - 기록일: 2026-10-03 KST.
-- 상태: 다음 앱 수정 때 반영 예정. 현재 2.2.2 코드·배포본은 변경하지 않았다.
+- 상태: **Windows는 다음 UI 수정 때 반영 예정**이며 2.2.2 한도 제목과 배포본은 그대로다. Mac preview에는 `ChatGPT` 제목과 그 아래 `Work/Codex`를 적용했고 실제 0.1.0 화면에서 확인했다.
 - 한도 영역의 상단 제목 `Work / Codex`를 `ChatGPT`로 바꾼다.
 - 제목 아래 한도가 표시되는 부분에 `Work/Codex`를 넣어 실제 조회 범위를 구분한다.
 - 조회 대상·한도 값·리셋 카운트다운·조회 주기는 유지하고 표시 문구와 배치만 변경한다.

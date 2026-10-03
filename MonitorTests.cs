@@ -1,4 +1,5 @@
 using System.Net;
+using System.Net.NetworkInformation;
 using System.Text;
 
 namespace AiBurgerClock;
@@ -194,6 +195,121 @@ internal static class MonitorTests
         var watch = System.Diagnostics.Stopwatch.StartNew();
         await blockedMonitor.StopAsync();
         Check(watch.Elapsed < TimeSpan.FromSeconds(2), "Shutdown cancels in-flight HTTP without waiting for timeout");
+
+        // Shared HTTP client settings used by both hosts.
+        using (var sharedHandler = ProviderStatusClient.CreateHttpHandler())
+        {
+            Check(!sharedHandler.UseCookies && sharedHandler.PooledConnectionLifetime == TimeSpan.FromMinutes(10) &&
+                sharedHandler.ConnectTimeout == TimeSpan.FromSeconds(5) &&
+                sharedHandler.AutomaticDecompression == (DecompressionMethods.GZip | DecompressionMethods.Deflate),
+                "Shared HTTP handler: no cookies, 10-minute pool lifetime, 5-second connect timeout, gzip/deflate");
+        }
+        using (var client = ProviderStatusClient.CreateHttpClient())
+            Check(client.Timeout == StatusMonitor.RequestTimeout, "Shared HTTP client uses the status request timeout");
+
+        // Shared notification wording used by both hosts.
+        var (fullTitle, fullBody) = TrayPresentation.TransitionNotification(
+            AgentSchedule.GetSnapshot(DateTimeOffset.Parse("2026-10-03T06:00:00Z"), true));
+        Check(fullTitle == "FULL THROTTLE 시작" && fullBody.StartsWith("미국 업무시간 밖입니다. 다음 전환: ", StringComparison.Ordinal) &&
+            fullBody.EndsWith("KST. Provider별 공식 상태와 작업 권고도 확인하세요.", StringComparison.Ordinal), "FULL transition wording");
+        var (_, holidayBody) = TrayPresentation.TransitionNotification(
+            AgentSchedule.GetSnapshot(DateTimeOffset.Parse("2026-09-07T15:00:00Z"), true));
+        Check(holidayBody.StartsWith("미국 공휴일이 포함된 연장 FULL 구간입니다. ", StringComparison.Ordinal), "Holiday-extended FULL wording");
+        var (burgerTitle, burgerBody) = TrayPresentation.TransitionNotification(
+            AgentSchedule.GetSnapshot(DateTimeOffset.Parse("2026-10-05T15:00:00Z"), true));
+        Check(burgerTitle == "BURGER TIME 시작" && burgerBody == "새로운 대형 Agent 작업은 다음 FULL THROTTLE까지 미뤄두세요.",
+            "BURGER transition wording");
+        Check(TrayPresentation.ProviderNotification(ProviderKind.Claude, Recommendation.Go, "ignored") ==
+            ("Claude 정상화", "관련 서비스가 정상화되었습니다. 현재 FULL THROTTLE이므로 대규모 작업 재개 가능."), "Provider recovery wording");
+        var (stopTitle, stopBody) = TrayPresentation.ProviderNotification(ProviderKind.OpenAI, Recommendation.Stop, "API 장애");
+        Check(stopTitle == "OpenAI 작업 권고 변경" && stopBody.StartsWith("현재 FULL THROTTLE이지만 공식 서비스 문제가 있습니다. ", StringComparison.Ordinal) &&
+            stopBody.EndsWith("\nAPI 장애", StringComparison.Ordinal), "Provider incident wording keeps the reason");
+        Check(TrayPresentation.ProviderNotification(ProviderKind.OpenAI, Recommendation.Go, "",
+                provider => provider == ProviderKind.OpenAI ? "ChatGPT" : provider.ToString()).Title == "ChatGPT 정상화",
+            "Provider notification title uses a host display name");
+
+        // Network-recovery refresh: settle delay, debounce, one refresh per minute, nothing after dispose.
+        long clock = 1_000;
+        var refreshedAt = new List<long>();
+        Action? duringWait = null;
+        var network = new NetworkRefreshScheduler(() => refreshedAt.Add(clock), () => clock, (span, _) =>
+        {
+            var hook = duringWait;
+            duringWait = null;
+            hook?.Invoke();
+            clock += (long)span.TotalMilliseconds;
+            return Task.CompletedTask;
+        }, () => true); // Timing checks must not depend on the build machine's real network.
+        long settle = (long)NetworkRefreshScheduler.SettleDelay.TotalMilliseconds;
+        long minimum = (long)NetworkRefreshScheduler.MinimumInterval.TotalMilliseconds;
+        network.OnNetworkAvailable();
+        Check(refreshedAt.SequenceEqual([1_000 + settle]), "First network change refreshes after the settle delay");
+        clock = refreshedAt[0] + 20_000;
+        network.OnNetworkAvailable();
+        Check(refreshedAt.Count == 2 && refreshedAt[1] == refreshedAt[0] + minimum,
+            "A change within a minute is deferred to the one-minute limit, not dropped");
+        clock = refreshedAt[1] + minimum + 10_000;
+        long secondChange = clock + 3_000;
+        duringWait = () => { clock = secondChange; network.OnNetworkAvailable(); };
+        network.OnNetworkAvailable();
+        Check(refreshedAt.Count == 3 && refreshedAt[2] == secondChange + settle,
+            "Changes during the wait coalesce into one refresh after the last change settles");
+        clock += minimum * 2;
+        duringWait = network.Dispose;
+        network.OnNetworkAvailable();
+        network.OnNetworkAvailable();
+        Check(refreshedAt.Count == 3, "Dispose cancels a pending refresh and ignores later changes");
+
+        // No network when the wait ends: skip without using the one-minute slot.
+        clock = 1_000;
+        refreshedAt.Clear();
+        bool online = true;
+        var offlineAware = new NetworkRefreshScheduler(() => refreshedAt.Add(clock), () => clock, (span, _) =>
+        {
+            clock += (long)span.TotalMilliseconds;
+            return Task.CompletedTask;
+        }, () => online);
+        offlineAware.OnNetworkAvailable();
+        long firstRefresh = refreshedAt.Single();
+        clock = firstRefresh + 70_000;
+        online = false;
+        offlineAware.OnNetworkAvailable();
+        Check(refreshedAt.Count == 1, "No refresh when every network is down after the settle delay");
+        online = true;
+        clock += 3_000;
+        long reconnectAt = clock;
+        offlineAware.OnNetworkAvailable();
+        Check(refreshedAt.Count == 2 && refreshedAt[1] == reconnectAt + settle,
+            "A skipped offline refresh does not take the one-minute slot; reconnect refreshes after the settle delay");
+        clock = refreshedAt[1] + 10_000;
+        online = false;
+        offlineAware.OnNetworkAvailable();
+        Check(refreshedAt.Count == 2, "An offline change within a minute of a refresh is skipped when its slot arrives");
+        online = true;
+        clock += 1_000;
+        reconnectAt = clock;
+        offlineAware.OnNetworkAvailable();
+        Check(refreshedAt.Count == 3 && refreshedAt[2] == reconnectAt + settle,
+            "Reconnect after that skip refreshes after the settle delay, not another minute later");
+
+        // Usable network: up, not loopback/tunnel, and a non-link-local address.
+        static (OperationalStatus, NetworkInterfaceType, IEnumerable<IPAddress>) Nic(
+            bool up, NetworkInterfaceType type, params string[] addresses) =>
+            (up ? OperationalStatus.Up : OperationalStatus.Down,
+             type, addresses.Select(IPAddress.Parse));
+        var ethernet = NetworkInterfaceType.Ethernet;
+        var unknown = NetworkInterfaceType.Unknown;
+        Check(!NetworkRefreshScheduler.HasUsableNetwork([
+                Nic(true, NetworkInterfaceType.Loopback, "127.0.0.1", "::1"),
+                Nic(true, unknown, "fe80::7575:796:dc16:f688"), Nic(true, unknown, "fe80::17c9:20d7:a1c3:ea37"),
+                Nic(false, ethernet, "192.168.50.161")]),
+            "macOS utun links with only link-local addresses do not count as a network (observed)");
+        Check(!NetworkRefreshScheduler.HasUsableNetwork([Nic(true, ethernet, "169.254.10.20", "fe80::1")]),
+            "Self-assigned IPv4 and link-local IPv6 do not count");
+        Check(NetworkRefreshScheduler.HasUsableNetwork([Nic(true, unknown, "fe80::1"), Nic(true, ethernet, "fe80::2", "192.168.50.161")]),
+            "An up interface with a LAN IPv4 address counts");
+        Check(NetworkRefreshScheduler.HasUsableNetwork([Nic(true, NetworkInterfaceType.Wireless80211, "2001:db8::5")]),
+            "An up interface with a global IPv6 address counts");
         return count;
     }
 

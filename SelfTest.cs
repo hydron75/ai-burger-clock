@@ -35,7 +35,9 @@ internal static class SelfTest
             Console.WriteLine($"PASS quota schemas/policy/CLI protocol: {quota + quotaClient:N0} assertions (no account calls)");
             int quotaMonitor = await AccountQuotaMonitorTests.RunAsync();
             Console.WriteLine($"PASS quota polling/isolation/SQLite cache/restart/cancellation: {quotaMonitor:N0} assertions");
-            Console.WriteLine($"PASS ALL: {autoStart + schedule + holidays + tray + sources + monitor + storage + holidayMonitor + quota + quotaClient + quotaMonitor:N0} assertions");
+            int portable = PortablePlatformTests.Run();
+            Console.WriteLine($"PASS shared paths/IANA zones/formatting/macOS CLI candidates: {portable:N0} assertions");
+            Console.WriteLine($"PASS ALL: {autoStart + schedule + holidays + tray + sources + monitor + storage + holidayMonitor + quota + quotaClient + quotaMonitor + portable:N0} assertions");
             return 0;
         }
         catch (Exception error)

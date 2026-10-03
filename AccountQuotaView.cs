@@ -79,14 +79,8 @@ internal sealed class AccountQuotaView : Panel
         }
     }
 
-    internal static string ResetCountdown(DateTimeOffset? reset, DateTimeOffset now)
-    {
-        if (reset is null) return "리셋 미제공";
-        var remaining = reset.Value - now;
-        if (remaining <= TimeSpan.Zero) return "갱신 대기";
-        return remaining.TotalDays >= 1 ? $"{(int)remaining.TotalDays}일 {remaining.Hours:00}:{remaining.Minutes:00}" :
-            $"{remaining.Hours:00}:{remaining.Minutes:00}:{remaining.Seconds:00}";
-    }
+    internal static string ResetCountdown(DateTimeOffset? reset, DateTimeOffset now) =>
+        DisplayFormatting.ResetCountdown(reset, now);
 
     private Label AddRow(int y, Font font)
     {

@@ -13,9 +13,7 @@ internal sealed class UsageStore(string? databasePath = null)
     private const int MaximumQuotaCacheCharacters = 512 * 1024;
     private readonly SemaphoreSlim gate = new(1, 1);
     private Exception? schemaInitializationFailure;
-    public string DatabasePath { get; } = databasePath ?? Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-        "AIBurgerClock", "burgerclock.db");
+    public string DatabasePath { get; } = databasePath ?? Path.Combine(AppPaths.DataDirectory, "burgerclock.db");
 
     public Task InitializeAsync(CancellationToken cancellationToken = default) =>
         ExecuteAsync(_ => true, cancellationToken);
@@ -25,7 +23,7 @@ internal sealed class UsageStore(string? databasePath = null)
         ExecuteAsync(connection =>
         {
             ValidateQuotaCache(cache, cache.Reading.Provider);
-            string json = JsonSerializer.Serialize(cache);
+            string json = JsonSerializer.Serialize(cache, QuotaJsonContext.Default.QuotaCache);
             if (json.Length > MaximumQuotaCacheCharacters) throw new InvalidDataException("Invalid quota cache size.");
             using var command = connection.CreateCommand();
             command.CommandText = "INSERT INTO AppMetadata(Key,Value) VALUES($key,$value) ON CONFLICT(Key) DO UPDATE SET Value=excluded.Value;";
@@ -43,7 +41,7 @@ internal sealed class UsageStore(string? databasePath = null)
             command.Parameters.AddWithValue("$key", "AccountQuota.v1." + provider);
             if (command.ExecuteScalar() is not string json) return null;
             if (json.Length > MaximumQuotaCacheCharacters) throw new InvalidDataException("Invalid quota cache size.");
-            var cache = JsonSerializer.Deserialize<QuotaCache>(json) ?? throw new InvalidDataException("Invalid quota cache.");
+            var cache = JsonSerializer.Deserialize(json, QuotaJsonContext.Default.QuotaCache) ?? throw new InvalidDataException("Invalid quota cache.");
             ValidateQuotaCache(cache, provider);
             return cache;
         }, cancellationToken);

@@ -275,6 +275,37 @@ internal static class AccountQuotaMonitorTests
             "Quota cache does not create measurements or provider-status history");
         check(Scalar(path, "PRAGMA user_version;") == 2, "Quota cache uses metadata without changing schema version");
 
+        string legacyPath = Path.Combine(directory, "quota-legacy-cache.db");
+        var legacyStore = new UsageStore(legacyPath);
+        await legacyStore.InitializeAsync();
+        foreach (var provider in Enum.GetValues<QuotaProvider>())
+        {
+            var legacy = new QuotaCache(1, new(provider,
+                [new("account:5h", "5시간", 100, Now.AddHours(5), 300),
+                 new("weekly_all", "주간", 45, null, 10080),
+                 new("weekly_scoped:fable", "Fable 주간", 1, Now.AddDays(7))]),
+                Now, [Now.AddHours(5), Now.AddDays(7)]);
+            string legacyJson = JsonSerializer.Serialize(legacy);
+            string generatedJson = JsonSerializer.Serialize(legacy, QuotaJsonContext.Default.QuotaCache);
+            check(System.Text.Json.Nodes.JsonNode.DeepEquals(
+                System.Text.Json.Nodes.JsonNode.Parse(legacyJson), System.Text.Json.Nodes.JsonNode.Parse(generatedJson)),
+                "Source-generated quota JSON preserves the legacy cache shape and values");
+            SetCache(legacyPath, provider, legacyJson);
+            var migrated = await new UsageStore(legacyPath).ReadQuotaAsync(provider);
+            check(migrated is not null && SameCache(legacy, migrated),
+                "Source-generated reader opens legacy cache including enums, Unicode, nulls and reset anchors");
+            var oldReader = JsonSerializer.Deserialize<QuotaCache>(generatedJson);
+            check(oldReader is not null && SameCache(legacy, oldReader),
+                "Source-generated cache remains readable by the previous serializer");
+            await legacyStore.SaveQuotaAsync(legacy);
+            var generatedReopened = await new UsageStore(legacyPath).ReadQuotaAsync(provider);
+            check(generatedReopened is not null && SameCache(legacy, generatedReopened),
+                "Source-generated quota save and restart preserve every normalized field");
+        }
+        check(Scalar(legacyPath, "PRAGMA user_version;") == 2 &&
+              Scalar(legacyPath, "SELECT COUNT(*) FROM AppMetadata WHERE Key LIKE 'AccountQuota.v1.%';") == 2,
+            "Source generation changes neither SQLite schema nor quota metadata keys");
+
         var offline = new FakeClient((_, _) => Task.FromException<QuotaReading>(new IOException("Offline")));
         using (var restarted = new AccountQuotaMonitor(offline, reopened, () => Now.AddHours(1)))
         {
@@ -371,6 +402,10 @@ internal static class AccountQuotaMonitorTests
     }
 
     private static DateTimeOffset Now => new(2026, 9, 30, 0, 0, 0, TimeSpan.Zero);
+    private static bool SameCache(QuotaCache expected, QuotaCache actual) =>
+        expected.Version == actual.Version && expected.SuccessfulAtUtc == actual.SuccessfulAtUtc &&
+        expected.Reading.Provider == actual.Reading.Provider && expected.Reading.Windows.SequenceEqual(actual.Reading.Windows) &&
+        expected.ResetAnchors.SequenceEqual(actual.ResetAnchors);
     private static QuotaState State(AccountQuotaMonitor monitor, QuotaProvider provider) =>
         monitor.Snapshot().Single(state => state.Provider == provider);
     private static QuotaReading Reading(QuotaProvider provider, double used, DateTimeOffset? reset = null) =>
