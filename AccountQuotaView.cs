@@ -36,6 +36,13 @@ internal sealed class AccountQuotaView : Panel
             foreach (var state in states)
             {
                 headings[state.Provider] = AddRow(y, headingFont); y += 20;
+                if (state.Provider == QuotaProvider.Codex)
+                {
+                    var scope = AddRow(y, rowFont); y += 20;
+                    scope.Text = "Work/Codex";
+                    scope.ForeColor = Color.DimGray;
+                    Detail(scope, "ChatGPT 계정의 Work/Codex 한도입니다. 일반 채팅의 모든 모델 한도를 뜻하지 않습니다.");
+                }
                 if (state.Reading is { } reading)
                     foreach (var window in reading.Windows) { rows[(state.Provider, window.Id)] = AddRow(y, rowFont); y += 20; }
                 else { rows[(state.Provider, "")] = AddRow(y, rowFont); y += 20; }
@@ -47,12 +54,13 @@ internal sealed class AccountQuotaView : Panel
         foreach (var state in states)
         {
             bool previous = state.IsPrevious;
-            headings[state.Provider].Text = QuotaNames.For(state.Provider) + (state.IsRefreshing ? " · 확인 중" : previous && state.Reading is not null ? " · 이전 조회값" : "");
+            string name = state.Provider == QuotaProvider.Codex ? "ChatGPT" : QuotaNames.For(state.Provider);
+            headings[state.Provider].Text = name + (state.IsRefreshing ? " · 확인 중" : previous && state.Reading is not null ? " · 이전 조회값" : "");
             var succeeded = state.LastSuccessfulCheckUtc is { } success ? AgentSchedule.ToKst(success).ToString("MM-dd HH:mm") : "—";
             var next = state.NextCheckUtc is { } due ? AgentSchedule.ToKst(due).ToString("MM-dd HH:mm") : "—";
             var metadataLabel = metadata[state.Provider];
             metadataLabel.Text = $"성공 {succeeded} · 다음 {next}";
-            string note = $"{QuotaNames.For(state.Provider)} · 모든 시각 KST\n마지막 성공: {succeeded}\n다음 조회: {next}\n최근 시도: {(state.CheckedAtUtc is { } attempt ? AgentSchedule.ToKst(attempt).ToString("MM-dd HH:mm:ss") : "—")}\n" +
+            string note = $"{name}{(state.Provider == QuotaProvider.Codex ? " (Work/Codex)" : "")} · 모든 시각 KST\n마지막 성공: {succeeded}\n다음 조회: {next}\n최근 시도: {(state.CheckedAtUtc is { } attempt ? AgentSchedule.ToKst(attempt).ToString("MM-dd HH:mm:ss") : "—")}\n" +
                 $"{state.Error}\n{state.CacheError}\n기본 6시간 · 잔여 0% 초과~10% 미만 1시간 · 잔여 0%는 15분 · 리셋 전후 15분은 5분 · 실패 시 15분부터 재시도\n공식 CLI 응답 수신 시각이며 서버 데이터 생성 시각을 보장하지 않습니다.";
             Detail(headings[state.Provider], note);
             Detail(metadataLabel, note);

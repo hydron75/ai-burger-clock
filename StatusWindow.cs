@@ -91,7 +91,7 @@ internal sealed class StatusWindow : Form
             SetQuotaCaption();
         };
         Controls.Add(quotaButton);
-        details.SetToolTip(quotaButton, "Work / Codex · Claude 개인 계정 한도. Gemini의 공식 서비스 상태는 그대로 유지합니다.");
+        details.SetToolTip(quotaButton, "ChatGPT (Work/Codex) · Claude 개인 계정 한도. Gemini의 공식 서비스 상태는 그대로 유지합니다.");
         feedbackLabel = AddLabel(DefaultFeedback, 17, 442, 342, 19, 8.5F);
         feedbackLabel.AutoEllipsis = true;
         autoStartCheckBox = new CheckBox { AutoSize = true, Text = "Windows 시작 시 자동 실행", Location = new Point(17, 466) };
@@ -122,7 +122,7 @@ internal sealed class StatusWindow : Form
     private void ConfigureStatusLink(Control control, ProviderKind provider)
     {
         control.Cursor = Cursors.Hand;
-        control.AccessibleDescription = "클릭하면 " + provider + " 공식 상태 페이지를 기본 브라우저로 엽니다. 우클릭하면 사용 경험을 기록합니다.";
+        control.AccessibleDescription = "클릭하면 " + WindowsProviderNames.Provider(provider) + " 공식 상태 페이지를 기본 브라우저로 엽니다. 우클릭하면 사용 경험을 기록합니다.";
         control.MouseClick += (_, e) =>
         {
             if (e.Button == MouseButtons.Left) StatusPageRequested?.Invoke(provider);
@@ -213,7 +213,7 @@ internal sealed class StatusWindow : Form
         {
             var row = rows[status.Provider];
             var recommendation = RecommendationPolicy.Calculate(schedule.State, status.Status);
-            row.Heading.Text = status.Provider + "   " + RecommendationPolicy.Label(recommendation);
+            row.Heading.Text = WindowsProviderNames.Provider(status.Provider) + "   " + RecommendationPolicy.Label(recommendation);
             row.Heading.ForeColor = recommendation switch
             {
                 Recommendation.Go => Color.FromArgb(25, 145, 78),

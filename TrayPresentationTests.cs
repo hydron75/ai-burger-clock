@@ -59,7 +59,7 @@ internal static class TrayPresentationTests
                 "Provider ordering has no effect: " + context);
             Check(statuses.SequenceEqual(original), "Aggregation never modifies provider records: " + context);
 
-            string tooltip = TrayPresentation.Tooltip(schedule, statuses);
+            string tooltip = TrayPresentation.Tooltip(schedule, statuses, WindowsProviderNames.Provider);
             Check(tooltip.Length <= 127, "NotifyIcon tooltip length: " + context + " (" + tooltip.Length + ")");
             Check(tooltip.Contains("전환까지 " + StatusWindow.FormatRemaining(schedule.Remaining), StringComparison.Ordinal),
                 "Tooltip retains countdown: " + context);
@@ -83,7 +83,7 @@ internal static class TrayPresentationTests
                     _ => "BURGER+CHECK"
                 };
                 if (status.Status == OfficialStatus.Stale) expectedLabel += "/STALE";
-                Check(lines.Contains(status.Provider + " " + expectedLabel), "Independent tooltip recommendation: " + context + "/" + status.Provider);
+                Check(lines.Contains(WindowsProviderNames.Provider(status.Provider) + " " + expectedLabel), "Independent tooltip recommendation: " + context + "/" + status.Provider);
             }
         }
         Check(combinations == 2 * 6 * 6 * 6, "All 432 Schedule/provider combinations tested");
@@ -99,7 +99,7 @@ internal static class TrayPresentationTests
                 Check(TrayPresentation.Calculate(schedule.State, available).Attention == TrayAttention.Gray,
                     "A missing provider keeps aggregation uncertain: " + missing);
                 string expected = schedule.State == AgentState.FullThrottle ? "CHECK" : "BURGER+CHECK";
-                Check(TrayPresentation.Tooltip(schedule, available).Split('\n').Contains(missing + " " + expected),
+                Check(TrayPresentation.Tooltip(schedule, available, WindowsProviderNames.Provider).Split('\n').Contains(WindowsProviderNames.Provider(missing) + " " + expected),
                     "Missing provider appears as CHECK in tooltip: " + missing);
                 available[0] = available[0] with { Status = OfficialStatus.PartialOutage };
                 Check(TrayPresentation.Calculate(schedule.State, available).Attention == TrayAttention.Red,
@@ -117,13 +117,28 @@ internal static class TrayPresentationTests
             "Labor Day fixture uses holiday-aware Schedule");
         Check(unadjustedHoliday.State == AgentState.BurgerTime && !unadjustedHoliday.IsHolidayExtendedFullThrottle,
             "Same instant without holiday adjustment stays Burger");
-        string holidayTooltip = TrayPresentation.Tooltip(holiday, allStale);
+        string holidayTooltip = TrayPresentation.Tooltip(holiday, allStale, WindowsProviderNames.Provider);
         Check(holidayTooltip.Contains("공휴일", StringComparison.Ordinal) && holidayTooltip.Length <= 127,
             "Holiday marker remains within tooltip limit with three stale providers");
-        Check(!TrayPresentation.Tooltip(unadjustedHoliday, allStale).Contains("공휴일", StringComparison.Ordinal),
+        Check(!TrayPresentation.Tooltip(unadjustedHoliday, allStale, WindowsProviderNames.Provider).Contains("공휴일", StringComparison.Ordinal),
             "No holiday marker when policy is disabled");
-        Check(TrayPresentation.Tooltip(burger, allStale).Length <= 127,
+        Check(TrayPresentation.Tooltip(burger, allStale, WindowsProviderNames.Provider).Length <= 127,
             "Longest ordinary all-STALE Burger tooltip fits NotifyIcon");
+
+        Check(WindowsProviderNames.Provider(ProviderKind.OpenAI) == "ChatGPT", "Windows provider identity displays ChatGPT");
+        Check(WindowsProviderNames.Provider("OpenAI") == "ChatGPT", "Existing statistics provider text displays ChatGPT");
+        Check(WindowsProviderNames.Provider(ProviderKind.Claude) == "Claude" && WindowsProviderNames.Provider(ProviderKind.Gemini) == "Gemini",
+            "Other Windows provider names stay unchanged");
+        Check(WindowsProviderNames.Provider("Other") == "Other", "Unrecognized statistics text is preserved");
+        Check(ProviderKind.OpenAI.ToString() == "OpenAI", "Stored provider identity stays OpenAI");
+        Check(TrayPresentation.Tooltip(full, allStale).Contains("\nOpenAI ", StringComparison.Ordinal),
+            "Shared tooltip defaults are not changed by Windows presentation");
+        var stop = TrayPresentation.ProviderNotification(ProviderKind.OpenAI, Recommendation.Stop, "Fixture");
+        var namedStop = TrayPresentation.ProviderNotification(ProviderKind.OpenAI, Recommendation.Stop, "Fixture", WindowsProviderNames.Provider);
+        Check(namedStop.Title == "ChatGPT 작업 권고 변경" && namedStop.Body == stop.Body, "ChatGPT warning title preserves the original notification body");
+        var recovery = TrayPresentation.ProviderNotification(ProviderKind.OpenAI, Recommendation.Go, "Fixture");
+        var namedRecovery = TrayPresentation.ProviderNotification(ProviderKind.OpenAI, Recommendation.Go, "Fixture", WindowsProviderNames.Provider);
+        Check(namedRecovery.Title == "ChatGPT 정상화" && namedRecovery.Body == recovery.Body, "ChatGPT recovery title preserves the original notification body");
 
         foreach (var state in Enum.GetValues<AgentState>())
         foreach (var attention in Enum.GetValues<TrayAttention>())
