@@ -2,7 +2,7 @@
 
 기록일: 2026-10-03 KST. Windows 기준 버전: 2.2.2.
 
-Apple Silicon / macOS 27용 **native AppKit 메뉴바 호스트**를 별도 프로젝트로 준비했다. 기존 Windows WinForms UI·배포본은 유지한다. 소스 구현·Windows 회귀 검사·Mac 참조 API 컴파일과 **실제 Mac의 공통 검사 244,338건**을 확인했다. 이어진 JSON IL2026을 보완했으며 **실제 Mac Release `.app` 완성과 실행은 아직 확인하지 않았다.** 최신 결과는 11절에 별도로 기록한다.
+Apple Silicon / macOS 27용 **native AppKit 메뉴바 호스트**를 별도 프로젝트로 준비했다. 기존 Windows WinForms UI·배포본은 유지한다. 소스 구현·Windows 회귀 검사·Mac 참조 API 컴파일에 이어 **실제 Mac의 공통 검사 244,347건과 Release `.app` 생성·로컬 서명 검사·ARM64 SQLite 포함을 확인**했다. 네이티브 앱 실행·알림·로그인 항목·실제 CLI 조회는 아직 확인 전이다. 최신 결과는 12절에 별도로 기록한다.
 
 Mac 개발 도구 준비와 실행 순서는 [Mac/README.md](Mac/README.md)를 따른다.
 
@@ -101,8 +101,8 @@ Mac 참조 패키지는 공식 `Microsoft.macOS.Ref.net10.0_27.0` 27.0.10722다.
 
 첫 읽기 전용 결과는 macOS 27.0.1 / arm64 / Xcode 27.0이며 `dotnet`은 PATH에서 발견되지 않았다. 이후 사용자가 SDK 10.0.401을 준비했고 `build.sh`의 macos workload 확인과 공통 검사 실행까지 통과했다. 도구 준비와 최종 앱 빌드 성공은 별개이며, 이 Windows 작업에서 도구를 원격으로 설치하거나 Mac 설정을 변경하지 않았다.
 
-1. .NET SDK 10.0.401 ARM64와 macos workload set 10.0.401.1 준비.
-2. `bash Mac/build.sh`: Mac OS 시간대 데이터로 공통 검사, native Release 빌드, ad-hoc 서명·SQLite dylib 포함 확인.
+1. 완료: .NET SDK 10.0.401 ARM64 / Xcode 27.0 준비와 build.sh의 macos workload preflight 통과. 정확한 설치 workload set의 별도 출력은 받지 않았다.
+2. 완료: `bash Mac/build.sh`에서 Mac OS 시간대 공통 검사 244,347건, native Release 빌드, ad-hoc 서명 검사·ARM64 SQLite dylib 포함 확인.
 3. 만들어진 실행 파일의 `--smoke-test`: 임시 DB 4종 이벤트·메모·통계·No data·한도 표시와 종료 코드 확인.
 4. 실제 UI의 메뉴바·상태 창·한도 스크롤·기록·통계·공식 페이지 클릭 확인.
 5. 별도 설치·로그인된 Mac CLI에서 실제 한도 수신과 실패 표시 확인. Windows 성공을 Mac 계정 조회 성공으로 간주하지 않음.
@@ -117,7 +117,7 @@ native smoke는 별도의 GUID 임시 DB만 쓰며 HTTP·계정 CLI·브라우�
 
 Mac은 self-contained `.app`를 목표로 한다. `TrimMode=copy`로 관리 코드 제거 없이 Apple SDK의 플랫폼 처리 경로를 사용한다. 로컬 ad-hoc 서명이며 Developer ID·notarization·설치 프로그램·자동 업데이트는 포함하지 않는다. 다른 Mac에 배포할 때 Gatekeeper/정식 서명을 따로 검토해야 한다.
 
-예상 결과 위치는 다음과 같지만 **이번 Windows 작업에서 해당 `.app`를 만들지는 않았다.**
+사용자 Mac에서 실제 생성한 bundle 위치는 다음과 같다. **이 Windows 환경에서 만든 결과가 아니라 사용자가 전달한 Mac 빌드 출력으로 확인했다.**
 
 ```text
 Mac/bin/Release/net10.0-macos27.0/osx-arm64/AI Burger Clock.app
@@ -150,7 +150,7 @@ Mac UI 크기·알림 노출·로그인 등록과 이동된 bundle의 동작은 
 
 로컬 검증은 Windows의 Git Bash 5.3.15에서 수행했다. `bash -n Mac/build.sh`와 실제 스크립트의 캐시 블록을 이용한 기본 경로·명시적 경로(공백 포함)·빈 override 3가지 검사, 자식 프로세스 전달을 통과했다. SDK 10.0.401의 `dotnet nuget locals http-cache --list`에서도 지정 경로를 인식했다. 종료 코드는 모두 0이며 로그는 Git에서 제외한 `artifacts/mac-cache/`에 있다. C# 변경이 없어 기존 전체 앱 검사를 반복하지 않았다.
 
-같은 Draft PR #12에 빌드 보완과 문서를 반영한다. 실제 Mac에서 이 수정으로 복원·빌드가 완료되는지는 사용자 재시도 결과로 확인한다.
+같은 Draft PR #12에 빌드 보완과 문서를 반영했다. 이후 실제 Mac 재시도에서 캐시 오류가 재발하지 않은 것을 확인했고, 최종 빌드 성공 결과는 12절에 남긴다.
 
 ## 11. 실제 Mac 공통 검사 통과와 JSON IL2026 보완
 
@@ -181,4 +181,31 @@ Mac UI 크기·알림 노출·로그인 등록과 이동된 bundle의 동작은 
 
 reflection 비활성화 진단 프로젝트는 Git에서 제외한 `artifacts/mac-json-check/`에 두었다. 계정 조회·사용자 DB·인증 파일·레지스트리·Windows 배포본은 변경하지 않았다. 이 검증은 macOS native registrar/linker/signing·ARM64 runtime을 실행한 결과가 아니다.
 
-다음은 Mac에서 `git pull --ff-only` 후 `bash Mac/build.sh`를 다시 실행해 실제 `.app` 완성과 서명·SQLite 포함 여부를 확인하는 것이다. 성공 후에만 7절의 native smoke와 실제 UI·알림·로그인 항목 검증을 이어간다. Draft PR #12는 유지하고 main 병합은 하지 않는다.
+이 수정본의 Mac 재빌드는 이후 성공했으며 결과를 12절에 기록한다. 다음은 7절의 native smoke와 실제 UI·알림·로그인 항목 검증이다. Draft PR #12는 유지하고 main 병합은 하지 않는다.
+
+## 12. 실제 Mac Release bundle 빌드 성공
+
+2026-10-03 KST 사용자가 `302aee8a9d2dda73c9dd79c0612123a25504bac2`를 받아 `bash Mac/build.sh`로 빌드한 출력으로 다음을 확인했다. 계정 테스트나 앱 실행 출력은 아직 받지 않았으며 빌드 성공과 구분한다.
+
+| 확인 항목 | 사용자 Mac의 결과 |
+|---|---|
+| SDK / Xcode | .NET 10.0.401 / Xcode 27.0, build 27A266a |
+| 공통 검사 | 244,347 assertions, PASS ALL SHARED |
+| native Release | `net10.0-macos27.0` / `osx-arm64`, 성공; `-warnaserror`, 경고·오류 출력 없음 |
+| bundle 생성 | `Mac/bin/Release/net10.0-macos27.0/osx-arm64/AI Burger Clock.app` |
+| 로컬 서명 검사 | build.sh의 `codesign --verify --deep --strict` 이후 Bundle 출력까지 도달해 통과 확인 |
+| bundle의 SQLite | `Contents/MonoBundle/libe_sqlite3.dylib`, Mach-O 64-bit / arm64 포함 |
+| 이전 실패 | NuGet 캐시 접근 거부와 JSON IL2026 두 건 모두 재발하지 않음 |
+
+서명 검사는 로컬 ad-hoc 서명에 한정되며 Developer ID·Apple notarization을 검증한 것이 아니다. SQLite dylib 포함도 최종 `.app`의 runtime 로딩 검증과 다르다. 공통 검사에서는 임시 SQLite DB 생성·저장·재오픈·이관·1만 건 통계와 가짜 Provider/CLI 응답을 검증했으며, 실제 계정 한도 조회가 성공했다는 뜻은 아니다.
+
+이번 후속 작업은 README·CODE_GUIDE·BACKLOG·Mac/README와 이 기록에 확인된 결과를 반영한 **문서 변경만**이다. 앱 코드·버전·패키지·사용자 DB·자동 실행·Windows 배포본은 바꾸지 않았고 추가 설치나 계정 접근도 하지 않았다. 문서만 변경했으므로 통과한 전체 빌드·검사를 Windows에서 반복하지 않았다. PR #12는 실행 검증이 남아 있어 Draft를 유지하며 병합하지 않는다.
+
+다음은 이미 만들어진 실행 파일로 임시 DB native smoke를 실행하는 것이다. 재빌드 없이 저장소 루트에서 다음을 실행하고 출력과 종료 코드를 확인한다.
+
+```sh
+"Mac/bin/Release/net10.0-macos27.0/osx-arm64/AI Burger Clock.app/Contents/MacOS/AI Burger Clock" --smoke-test
+echo "검사 종료 코드: $?"
+```
+
+성공 기준은 `PASS: native controls/window close-reopen...`와 종료 코드 0이다. native smoke의 실제 결과는 아직 대기 중이며, 성공한 뒤 일반 앱 실행·메뉴바·알림·로그인 항목·Mac CLI·절전/연결 복구를 순서대로 확인한다.

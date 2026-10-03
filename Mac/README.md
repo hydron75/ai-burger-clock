@@ -2,7 +2,7 @@
 
 Apple Silicon / macOS 27을 위한 C# AppKit 메뉴바 앱입니다. Windows 2.2.2 배포본과 별도 앱이지만, 시간표·공식 상태·권고·한도 조회·기록·통계 계산 코드는 같은 저장소의 원본 소스를 링크해서 사용합니다. Windows 코드를 복사해 따로 유지하지 않습니다.
 
-이 폴더는 **Mac에서 빌드·실행 검증을 마치기 전의 preview 소스**입니다. 실제 `.app`, 알림 노출, 로그인 자동 실행, 절전·네트워크 복구 및 Mac의 Codex/Claude 계정 조회 성공은 실제 Mac에서 따로 확인해야 합니다. C# 참조 API 컴파일만으로 네이티브 실행 성공을 보장하지 않습니다.
+이 폴더는 **네이티브 실행 검증을 진행 중인 preview 소스**입니다. 2026-10-03 KST 실제 Mac에서 공통 검사 244,347건, Release `.app` 생성, 로컬 서명 검사와 ARM64 SQLite 포함이 통과했습니다. 앱 실행·알림 노출·로그인 자동 실행·절전/네트워크 복구·Mac의 Codex/Claude 계정 조회는 아직 별도 확인이 필요합니다. 빌드 성공을 실행 성공으로 간주하지 않습니다. [실제 Mac 빌드 기록](../MACOS_PORT.md#12-실제-mac-release-bundle-빌드-성공)
 
 ## 들어 있는 기능
 
@@ -79,7 +79,7 @@ NUGET_HTTP_CACHE_PATH="$PWD/artifacts/mac-build/nuget-http-cache" bash Mac/build
 
 공통 검사 이후 `UsageStore.cs`의 JSON 저장·읽기에서 IL2026이 나오면 최신 `feature/macos-native` 소스를 받아 위와 같이 다시 빌드하세요. Apple SDK의 trimming 검사에서 런타임 reflection 기반 직렬화를 경고하는 문제였으며, `QuotaJsonContext`로 타입 정보를 미리 생성하도록 수정했습니다. JSON 형식·기존 캐시·DB schema 2는 유지하고, 경고 억제나 새 NuGet 패키지는 추가하지 않았습니다. [Microsoft source generation 안내](https://learn.microsoft.com/en-us/dotnet/standard/serialization/system-text-json/source-generation)
 
-수정 후 Windows의 Release/회귀·공통 검사, Mac 참조 코드의 trimming 분석과 reflection 비활성화 캐시 검사를 통과했습니다. **수정된 실제 Mac `.app`의 완성과 실행은 아직 확인 전**입니다. [정확한 검증 범위](../MACOS_PORT.md#11-실제-mac-공통-검사-통과와-json-il2026-보완).
+수정 후 Windows의 Release/회귀·공통 검사, Mac 참조 코드의 trimming 분석과 reflection 비활성화 캐시 검사를 통과했습니다. 이어서 소스 `302aee8`의 **실제 Mac `.app` 빌드와 서명 검사까지 통과**했으며 앱 실행은 아직 확인 전입니다. [정확한 검증 범위](../MACOS_PORT.md#12-실제-mac-release-bundle-빌드-성공).
 
 ### 빌드 결과
 
@@ -111,11 +111,16 @@ Mac에서 사용하는 Codex와 Claude는 **그 Mac에 별도로 설치·로그�
 
 빌드된 bundle의 실행 파일을 직접 실행합니다.
 
+이미 `bash Mac/build.sh`가 성공한 경우 재빌드 없이 아래 검사로 진행합니다. 저장소 루트에서 실행하세요.
+
 ```sh
 "Mac/bin/Release/net10.0-macos27.0/osx-arm64/AI Burger Clock.app/Contents/MacOS/AI Burger Clock" --smoke-test
+echo "검사 종료 코드: $?"
 ```
 
 메뉴바·창을 만들고 상태/통계 창의 닫기·재열기·Visible 상태를 확인합니다. 새 임시 DB에서 4종 실측/메모·표본수/No data·한도 카운트다운 표시를 검사한 뒤 종료합니다. 실제 계정 조회·HTTP·브라우저 열기·알림 권한 요청·자동 실행 변경을 하지 않습니다. 이 검사가 통과해도 실제 OS 알림, 로그인 항목 등록, 계정별 CLI 응답 및 장시간 절전 복귀는 별도 검증 대상입니다.
+
+성공 기준은 `PASS: native controls/window close-reopen...` 출력과 종료 코드 `0`입니다. 오류가 있으면 출력과 종료 코드를 보존하고 일반 실행·자동 시작 설정 전에 원인을 확인합니다.
 
 ## 네이티브 구현 기준
 
