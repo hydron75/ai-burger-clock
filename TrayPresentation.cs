@@ -40,7 +40,9 @@ internal static class TrayPresentation
         return new(schedule, attention);
     }
 
-    public static string Tooltip(ScheduleSnapshot schedule, IReadOnlyList<ProviderStatus> states)
+    // displayName lets a host show its own provider label; the default keeps the enum name.
+    public static string Tooltip(ScheduleSnapshot schedule, IReadOnlyList<ProviderStatus> states,
+        Func<ProviderKind, string>? displayName = null)
     {
         string state = StateName(schedule.State);
         string holiday = schedule.IsHolidayExtendedFullThrottle ? " · 공휴일" : "";
@@ -51,7 +53,7 @@ internal static class TrayPresentation
                 .Replace("BURGER TIME", "BURGER", StringComparison.Ordinal)
                 .Replace(" ", "", StringComparison.Ordinal);
             if (official == OfficialStatus.Stale) label += "/STALE";
-            return provider + " " + label;
+            return (displayName?.Invoke(provider) ?? provider.ToString()) + " " + label;
         }));
         // Fixed provider names and bounded labels fit NotifyIcon's 127-character limit.
         return $"AI Burger Clock · {state}{holiday}\n전환까지 {DisplayFormatting.FormatRemaining(schedule.Remaining)}\n{providers}";

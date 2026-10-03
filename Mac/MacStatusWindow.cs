@@ -53,7 +53,7 @@ internal sealed class MacStatusWindow : IDisposable
         foreach (ProviderKind provider in Enum.GetValues<ProviderKind>())
         {
             ProviderKind captured = provider;
-            NSButton heading = Button(root, provider + " · CHECK ↗", new CGRect(14, y, 324, 24), () => openPage(captured));
+            NSButton heading = Button(root, ProviderName(provider) + " · CHECK ↗", new CGRect(14, y, 324, 24), () => openPage(captured));
             heading.Bordered = false;
             heading.Alignment = NSTextAlignment.Left;
             heading.Font = Font(13, true);
@@ -111,26 +111,29 @@ internal sealed class MacStatusWindow : IDisposable
     internal void Update(ScheduleSnapshot snapshot, IReadOnlyList<ProviderStatus> states,
         IReadOnlyList<QuotaState> quotaStates, bool refreshing, DateTimeOffset? due, string storageError)
     {
-        schedule.StringValue = TrayPresentation.StateName(snapshot.State);
+        // Update() runs every second. Reassigning an unchanged tooltip closes it while it is shown,
+        // so text and tooltips are written only when their value changes.
+        SetText(schedule, TrayPresentation.StateName(snapshot.State));
         schedule.TextColor = Color(TrayPresentation.StateColor(snapshot.State));
-        countdown.StringValue = "전환까지  " + DisplayFormatting.FormatRemaining(snapshot.Remaining);
-        next.StringValue = $"다음: {snapshot.NextTransitionKst:ddd HH:mm} KST";
+        SetText(countdown, "전환까지  " + DisplayFormatting.FormatRemaining(snapshot.Remaining));
+        SetText(next, $"다음: {snapshot.NextTransitionKst:ddd HH:mm} KST");
         string mode = snapshot.EasternIsDst == snapshot.PacificIsDst
             ? snapshot.EasternIsDst ? "DST" : "Standard" : "Mixed DST";
-        usTime.StringValue = $"US: {mode} · ET {DisplayFormatting.Offset(snapshot.EasternUtcOffsetMinutes)} / PT {DisplayFormatting.Offset(snapshot.PacificUtcOffsetMinutes)}";
-        usTime.ToolTip = $"Eastern: {snapshot.EasternLocalTime:yyyy-MM-dd HH:mm zzz}\nPacific: {snapshot.PacificLocalTime:yyyy-MM-dd HH:mm zzz}\n{snapshot.SchedulePolicyVersion}";
-        extended.StringValue = snapshot.IsHolidayExtendedFullThrottle
+        SetText(usTime, $"US: {mode} · ET {DisplayFormatting.Offset(snapshot.EasternUtcOffsetMinutes)} / PT {DisplayFormatting.Offset(snapshot.PacificUtcOffsetMinutes)}");
+        SetTip(usTime, $"Eastern: {snapshot.EasternLocalTime:yyyy-MM-dd HH:mm zzz}\nPacific: {snapshot.PacificLocalTime:yyyy-MM-dd HH:mm zzz}\n{snapshot.SchedulePolicyVersion}");
+        SetText(extended, snapshot.IsHolidayExtendedFullThrottle
             ? "공휴일 연장: " + snapshot.HolidayNames
-            : snapshot.IsWeekendExtendedFullThrottle ? "Weekend / Extended Full Throttle" : "";
-        extended.ToolTip = extended.StringValue;
+            : snapshot.IsWeekendExtendedFullThrottle ? "Weekend / Extended Full Throttle" : "");
+        SetTip(extended, extended.StringValue);
         foreach (ProviderStatus state in states)
         {
             var row = providers[state.Provider];
             Recommendation recommendation = RecommendationPolicy.Calculate(snapshot.State, state.Status);
-            row.Heading.Title = state.Provider + "  " + RecommendationPolicy.Label(recommendation) + " ↗";
+            string heading = ProviderName(state.Provider) + "  " + RecommendationPolicy.Label(recommendation) + " ↗";
+            if (row.Heading.Title != heading) row.Heading.Title = heading;
             row.Heading.ContentTintColor = RecommendationColor(recommendation);
-            row.Detail.StringValue = "Official: " + RecommendationPolicy.OfficialLabel(state.Status) + "\n" + state.Reason;
-            row.Detail.ToolTip = state.Reason + "\n" + state.RelevantComponent + "\n" + state.IncidentTitle;
+            SetText(row.Detail, "Official: " + RecommendationPolicy.OfficialLabel(state.Status) + "\n" + state.Reason);
+            SetTip(row.Detail, state.Reason + "\n" + state.RelevantComponent + "\n" + state.IncidentTitle);
         }
         foreach (QuotaState state in quotaStates)
         {
@@ -179,9 +182,24 @@ internal sealed class MacStatusWindow : IDisposable
 
     internal void SetFeedback(string text)
     {
-        feedback.StringValue = text;
-        feedback.ToolTip = text;
+        SetText(feedback, text);
+        SetTip(feedback, text);
     }
+
+    private static void SetText(NSTextField field, string text)
+    {
+        if (field.StringValue != text) field.StringValue = text;
+    }
+
+    private static void SetTip(NSView view, string tip)
+    {
+        if (view.ToolTip != tip) view.ToolTip = tip;
+    }
+
+    // Display name only: the shared ProviderKind and stored values stay "OpenAI".
+    // The row names the product like Claude and Gemini do.
+    internal static string ProviderName(ProviderKind provider) =>
+        provider == ProviderKind.OpenAI ? "ChatGPT" : provider.ToString();
 
     internal void VerifyCompactLayout()
     {
@@ -189,6 +207,8 @@ internal sealed class MacStatusWindow : IDisposable
         if (root.Bounds.Width != WindowWidth || root.Bounds.Height != WindowHeight ||
             providers.Count != 3 || quotas.Count != 2)
             throw new InvalidOperationException("Compact status window dimensions/rows changed.");
+        if (!providers[ProviderKind.OpenAI].Heading.Title.StartsWith("ChatGPT ", StringComparison.Ordinal))
+            throw new InvalidOperationException("The OpenAI row does not show the ChatGPT product name.");
         NSView[] controls = root.Subviews;
         NSScrollView[] scrolls = controls.OfType<NSScrollView>().ToArray();
         if (scrolls.Length != 2 || scrolls.Any(scroll => scroll.DocumentView is not NSTextView))

@@ -82,12 +82,12 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
         foreach (ProviderKind provider in Enum.GetValues<ProviderKind>())
         {
             ProviderKind captured = provider;
-            var item = new NSMenuItem(provider + " 사용 경험 기록")
+            var item = new NSMenuItem(MacStatusWindow.ProviderName(provider) + " 사용 경험 기록")
             {
                 Submenu = MacStatusWindow.RecordMenu(provider, (p, type, note) => _ = RecordAsync(p, type, note))
             };
             menu.AddItem(item);
-            menu.AddItem(new NSMenuItem(provider + " 공식 상태 ↗", (_, _) => OpenStatusPage(captured)));
+            menu.AddItem(new NSMenuItem(MacStatusWindow.ProviderName(provider) + " 공식 상태 ↗", (_, _) => OpenStatusPage(captured)));
         }
         menu.AddItem(NSMenuItem.SeparatorItem);
         holidayItem = new NSMenuItem("미국 연방 공휴일 보정", (_, _) => _ = ChangeHolidayAsync(!holidayEnabled)) { Enabled = false };
@@ -212,7 +212,7 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
         {
             var recommendation = RecommendationPolicy.Calculate(snapshot.State, status.Status);
             if (recommendationNotifications.Observe(status.Provider, snapshot.State, recommendation, (notify || notifyProviders) && !changed))
-                notifications?.Show(status.Provider + (recommendation == Recommendation.Go ? " 정상화" : " 작업 권고 변경"),
+                notifications?.Show(MacStatusWindow.ProviderName(status.Provider) + (recommendation == Recommendation.Go ? " 정상화" : " 작업 권고 변경"),
                     recommendation == Recommendation.Go
                         ? "관련 서비스가 정상화되었습니다. 현재 FULL THROTTLE이므로 대규모 작업 재개 가능."
                         : $"현재 FULL THROTTLE이지만 공식 서비스 문제가 있습니다. {RecommendationPolicy.Label(recommendation)}: 새 대형 작업을 미루세요.\n{status.Reason}");
@@ -232,7 +232,8 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
                 previous?.Dispose();
                 lastAppearance = appearance;
             }
-            button.ToolTip = TrayPresentation.Tooltip(snapshot, providers);
+            string tooltip = TrayPresentation.Tooltip(snapshot, providers, MacStatusWindow.ProviderName);
+            if (button.ToolTip != tooltip) button.ToolTip = tooltip;
         }
         statusWindow?.Update(snapshot, providers, quotaMonitor?.Snapshot() ??
             Enum.GetValues<QuotaProvider>().Select(provider => new QuotaState(provider)).ToArray(),
@@ -389,7 +390,7 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
         try
         {
             await save;
-            if (!stopping) statusWindow?.SetFeedback($"{provider} · {type} 저장됨 ({schedule.NowKst:HH:mm} KST)");
+            if (!stopping) statusWindow?.SetFeedback($"{MacStatusWindow.ProviderName(provider)} · {type} 저장됨 ({schedule.NowKst:HH:mm} KST)");
         }
         finally { pendingWrites.Remove(save); }
     }
@@ -398,7 +399,7 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
     {
         using var alert = new NSAlert
         {
-            MessageText = provider + " 사용 경험 기록",
+            MessageText = MacStatusWindow.ProviderName(provider) + " 사용 경험 기록",
             InformativeText = "메모는 선택 사항입니다. Prompt·답변·계정 정보는 기록하지 마세요."
         };
         using var accessory = new NSView(new CGRect(0, 0, 330, 87));

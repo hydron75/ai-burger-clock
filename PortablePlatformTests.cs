@@ -65,6 +65,17 @@ internal static class PortablePlatformTests
             "no current directory or dot-segment lookup");
         Check(MacCliPaths.Candidates(QuotaProvider.Claude, [], "/Users/mac", "/")
             .All(path => path.EndsWith("/claude", StringComparison.Ordinal)), "separate Claude executable");
+        // Hosts may relabel providers in the tray tooltip; the default stays the enum name (Windows).
+        var tooltipAt = AgentSchedule.GetSnapshot(DateTimeOffset.Parse("2026-10-03T06:00:00Z"), true);
+        ProviderStatus[] healthy = Enum.GetValues<ProviderKind>().Select(provider =>
+            new ProviderStatus(provider, OfficialStatus.Operational, tooltipAt.NowUtc, tooltipAt.NowUtc, "정상")).ToArray();
+        string defaultTip = TrayPresentation.Tooltip(tooltipAt, healthy);
+        string renamedTip = TrayPresentation.Tooltip(tooltipAt, healthy,
+            provider => provider == ProviderKind.OpenAI ? "ChatGPT" : provider.ToString());
+        Check(defaultTip.Contains("\nOpenAI GO", StringComparison.Ordinal) && !defaultTip.Contains("ChatGPT", StringComparison.Ordinal),
+            "tray tooltip keeps enum provider names by default");
+        Check(renamedTip.Contains("\nChatGPT GO", StringComparison.Ordinal) && renamedTip.Contains("\nClaude GO", StringComparison.Ordinal) &&
+            !renamedTip.Contains("OpenAI", StringComparison.Ordinal), "tray tooltip uses a host display name");
         return count;
     }
 }

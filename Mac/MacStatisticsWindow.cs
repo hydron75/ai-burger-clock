@@ -118,7 +118,8 @@ internal sealed class MacStatisticsWindow : IDisposable
         foreach (StatisticsRow row in source)
         {
             EventCounts counts = row.Counts;
-            text.AppendLine($"{row.Provider} · {row.Group} · n={counts.Total:N0}" +
+            string provider = Enum.TryParse(row.Provider, out ProviderKind kind) ? MacStatusWindow.ProviderName(kind) : row.Provider;
+            text.AppendLine($"{provider} · {row.Group} · n={counts.Total:N0}" +
                 (counts.Total is > 0 and < 30 ? " (소표본)" : ""));
             text.AppendLine($"Success {counts.Cell(counts.Success)} · Slow {counts.Cell(counts.Slow)} · Error {counts.Cell(counts.Error)}");
             text.AppendLine($"Interrupted {counts.Cell(counts.Interrupted)} · 문제 체감 {counts.Cell(counts.Adverse)}");
