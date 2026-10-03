@@ -26,14 +26,12 @@ internal sealed class AccountQuotaClient(
             QuotaProvider.Claude => claudeExecutable ?? FindExecutable(provider),
             _ => throw new ArgumentOutOfRangeException(nameof(provider))
         };
-        // An absolute native executable and ArgumentList avoid shell interpretation and PATH/CWD lookup.
-        if (!Path.IsPathFullyQualified(executable) ||
-            !string.Equals(Path.GetExtension(executable), ".exe", StringComparison.OrdinalIgnoreCase) ||
-            !File.Exists(executable))
+        // Absolute paths and ArgumentList avoid shell interpretation and CWD lookup.
+        // Keep Windows' .exe requirement; Unix CLI executables normally have no extension.
+        if (!CanExecute(executable))
             throw new FileNotFoundException("공식 CLI 실행 파일을 찾을 수 없습니다. CLI 설치와 로그인을 확인하세요.");
 
-        string directory = workingDirectory ?? Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "AIBurgerClock", "quota-cli");
+        string directory = workingDirectory ?? Path.Combine(AppPaths.DataDirectory, "quota-cli");
         Directory.CreateDirectory(directory);
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         deadline.CancelAfter(commandTimeout);
@@ -142,7 +140,31 @@ internal sealed class AccountQuotaClient(
             // existing user environment instead of changing its persistent settings.
         }
         else throw new ArgumentOutOfRangeException(nameof(provider));
+        if (OperatingSystem.IsMacOS())
+        {
+            // npm-installed official commands may use /usr/bin/env node. Supply known
+            // absolute CLI directories without sourcing shell profiles or reading auth files.
+            var directories = MacCliPaths.Candidates(provider,
+                (Environment.GetEnvironmentVariable("PATH") ?? "").Split(Path.PathSeparator),
+                Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), Environment.CurrentDirectory)
+                .Select(path => Path.GetDirectoryName(path)!).Concat(["/usr/bin", "/bin", "/usr/sbin", "/sbin"]);
+            start.Environment["PATH"] = string.Join(Path.PathSeparator, directories.Distinct(StringComparer.Ordinal));
+        }
         return start;
+    }
+
+    private static bool CanExecute(string executable)
+    {
+        if (!Path.IsPathFullyQualified(executable) || !File.Exists(executable)) return false;
+        if (!OperatingSystem.IsMacOS())
+            return string.Equals(Path.GetExtension(executable), ".exe", StringComparison.OrdinalIgnoreCase);
+        try
+        {
+            return (File.GetUnixFileMode(executable) &
+                (UnixFileMode.UserExecute | UnixFileMode.GroupExecute | UnixFileMode.OtherExecute)) != 0;
+        }
+        catch (IOException) { return false; }
+        catch (UnauthorizedAccessException) { return false; }
     }
 
     internal static async Task<QuotaReading> ReadClaudeProtocolAsync(TextReader output, CancellationToken token)
@@ -287,6 +309,16 @@ internal sealed class AccountQuotaClient(
 
     internal static string FindExecutable(QuotaProvider provider)
     {
+        if (OperatingSystem.IsMacOS())
+        {
+            var paths = MacCliPaths.Candidates(provider,
+                (Environment.GetEnvironmentVariable("PATH") ?? "").Split(Path.PathSeparator),
+                Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), Environment.CurrentDirectory);
+            foreach (string path in paths)
+                if (CanExecute(path)) return path;
+            throw new FileNotFoundException((provider == QuotaProvider.Codex ? "Codex" : "Claude") +
+                " 공식 CLI가 필요합니다. 설치 및 본인 계정 로그인을 먼저 완료하세요.");
+        }
         string name = provider == QuotaProvider.Codex ? "codex.exe" : "claude.exe";
         string local = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
         var candidates = new List<string>();

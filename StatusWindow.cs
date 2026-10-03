@@ -289,10 +289,8 @@ internal sealed class StatusWindow : Form
         Activate();
     }
 
-    private static string Offset(int minutes) => $"UTC{(minutes >= 0 ? "+" : "-")}{Math.Abs(minutes) / 60}" +
-        (minutes % 60 == 0 ? "" : $":{Math.Abs(minutes) % 60:00}");
-    internal static string FormatRemaining(TimeSpan remaining) =>
-        $"{Math.Max(0, (int)remaining.TotalHours):00}:{Math.Max(0, remaining.Minutes):00}:{Math.Max(0, remaining.Seconds):00}";
+    private static string Offset(int minutes) => DisplayFormatting.Offset(minutes);
+    internal static string FormatRemaining(TimeSpan remaining) => DisplayFormatting.FormatRemaining(remaining);
 
     protected override void Dispose(bool disposing)
     {

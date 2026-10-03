@@ -13,9 +13,7 @@ internal sealed class UsageStore(string? databasePath = null)
     private const int MaximumQuotaCacheCharacters = 512 * 1024;
     private readonly SemaphoreSlim gate = new(1, 1);
     private Exception? schemaInitializationFailure;
-    public string DatabasePath { get; } = databasePath ?? Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-        "AIBurgerClock", "burgerclock.db");
+    public string DatabasePath { get; } = databasePath ?? Path.Combine(AppPaths.DataDirectory, "burgerclock.db");
 
     public Task InitializeAsync(CancellationToken cancellationToken = default) =>
         ExecuteAsync(_ => true, cancellationToken);

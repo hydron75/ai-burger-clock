@@ -1,3 +1,5 @@
+using System.Drawing;
+
 namespace AiBurgerClock;
 
 internal enum TrayAttention { Green, Orange, Red, Gray }
@@ -52,6 +54,6 @@ internal static class TrayPresentation
             return provider + " " + label;
         }));
         // Fixed provider names and bounded labels fit NotifyIcon's 127-character limit.
-        return $"AI Burger Clock · {state}{holiday}\n전환까지 {StatusWindow.FormatRemaining(schedule.Remaining)}\n{providers}";
+        return $"AI Burger Clock · {state}{holiday}\n전환까지 {DisplayFormatting.FormatRemaining(schedule.Remaining)}\n{providers}";
     }
 }

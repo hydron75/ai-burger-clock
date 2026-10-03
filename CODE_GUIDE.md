@@ -1,8 +1,8 @@
 # 소스코드, 쉬운 말로 읽기
 
-AI Burger Clock 2.2.2 기준입니다. 사용법부터 보고 싶다면 [README](README.md)로 돌아가세요.
+Windows 2.2.2와 macOS preview 0.1.0 소스 기준입니다. Windows 사용법부터 보고 싶다면 [README](README.md), Mac 준비와 아직 남은 검증은 [Mac 안내](Mac/README.md)로 이동하세요. 아래 기존 실행·UI 설명은 Windows 기준이며 Mac의 차이는 12절에 정리했습니다.
 
-코드를 한 줄씩 번역한 문서는 아닙니다. **각 파일이 무엇을 맡고, 서로 어떻게 연결되는지** 설명합니다. 직접 작성한 C# 파일 41개와 빌드 설정을 모두 다룹니다. 컴퓨터가 만든 `bin`·`obj` 안의 코드는 대상에서 뺍니다.
+코드를 한 줄씩 번역한 문서는 아닙니다. **각 파일이 무엇을 맡고, 서로 어떻게 연결되는지** 설명합니다. 루트·Properties의 C# 46개, Mac 호스트 5개, 공통 검사 입구 1개로 총 52개와 빌드 설정을 다룹니다. 컴퓨터가 만든 `bin`·`obj`와 로컬 검증용 `artifacts`는 대상에서 뺍니다.
 
 공식 조회 방식의 변경을 조사하는 외부 모니터링 현황은 [BACKLOG](BACKLOG.md)에 있습니다. 이 조사는 아래 앱 코드의 계정 한도 조회 루프와 별개이며, 새 SDK가 공개됐다고 앱의 CLI나 의존성을 자동으로 바꾸지는 않습니다.
 
@@ -235,7 +235,7 @@ Cache는 “마지막으로 읽은 메모”, History는 “중요한 변화 기
 
 ## 8. 통계는 AI가 판단하나요?
 
-아니요. [StatisticsWindow.cs](StatisticsWindow.cs)의 `StatisticsAnalysis`가 기록을 골라 세고 비율을 계산합니다.
+아니요. [StatisticsAnalysis.cs](StatisticsAnalysis.cs)의 `StatisticsAnalysis`가 기록을 골라 세고 비율을 계산합니다. 기존 계산식을 그대로 UI 밖으로 옮겨 Windows와 Mac이 함께 사용하며, [StatisticsWindow.cs](StatisticsWindow.cs)는 Windows의 통계 화면만 맡습니다.
 
 OpenAI 기록 열 개 중 Slow가 두 개면 그 열 개 안에서 Slow는 20%입니다. **관찰하지 않은 작업까지 포함한 OpenAI 전체의 속도 통계가 아닙니다.**
 
@@ -293,7 +293,7 @@ Windows 내부 승인 형식은 알려진 경우만 해석합니다. 낯선 값�
 
 이름을 눌러 소스를 열 수 있습니다. 역할을 알고 필요한 파일부터 읽으면 됩니다.
 
-### 실제 앱 기능: 21개
+### 실제 앱 기능: 25개
 
 | 파일 | 맡은 일 |
 |---|---|
@@ -301,7 +301,11 @@ Windows 내부 승인 형식은 알려진 경우만 해석합니다. 낯선 값�
 | [TrayApplicationContext.cs](TrayApplicationContext.cs) | 트레이·타이머·조회·저장·알림·절전 복귀·종료 연결 |
 | [StatusWindow.cs](StatusWindow.cs) | 작은 상태 창, 클릭과 설정 변경 전달, 저장 오류 안내 |
 | [MeasurementDialog.cs](MeasurementDialog.cs) | 기록 종류와 선택 메모 입력 |
-| [StatisticsWindow.cs](StatisticsWindow.cs) | 통계 계산과 통계 창 |
+| [StatisticsWindow.cs](StatisticsWindow.cs) | Windows 통계 창 |
+| [StatisticsAnalysis.cs](StatisticsAnalysis.cs) | 두 OS가 함께 쓰는 통계 계산, 표본수와 No data |
+| [DisplayFormatting.cs](DisplayFormatting.cs) | 두 UI가 함께 쓰는 카운트다운·UTC offset·리셋 남은 시간 문자열 |
+| [AppPaths.cs](AppPaths.cs) | Windows AppData / Mac Application Support의 앱 전용 경로 |
+| [MacCliPaths.cs](MacCliPaths.cs) | Mac GUI의 제한된 PATH와 표준 설치 폴더에서 절대 CLI 경로 후보 생성 |
 | [AgentSchedule.cs](AgentSchedule.cs) | 미국 업무시간과 다음 전환 계산 |
 | [UsFederalHolidays.cs](UsFederalHolidays.cs) | 정기 연방 공휴일의 관측 날짜 계산 |
 | [Phase2Models.cs](Phase2Models.cs) | 공통 상태·기록 카드·권고 규칙 |
@@ -319,7 +323,7 @@ Windows 내부 승인 형식은 알려진 경우만 해석합니다. 낯선 값�
 | [AccountQuotaMonitor.cs](AccountQuotaMonitor.cs) | 두 독립 조회 루프, 마지막 성공값·실패 횟수·다음 조회·재시작 캐시 |
 | [AccountQuotaView.cs](AccountQuotaView.cs) | 기존 창 안에서 바꿔 보는 잔여량·리셋 카운트다운·조회 시각 |
 
-### 검사와 진단: 19개
+### 검사와 진단: 20개
 
 미완성 임시 코드가 아닙니다. **특별한 검사 명령 때만 쓰는 정식 검사 코드**입니다.
 
@@ -344,12 +348,24 @@ Windows 내부 승인 형식은 알려진 경우만 해석합니다. 낯선 값�
 | [AccountQuotaMonitorTests.cs](AccountQuotaMonitorTests.cs) | 실패 격리·조회 합치기·종료·SQLite 캐시·재시작 |
 | [AccountQuotaUiChecks.cs](AccountQuotaUiChecks.cs) | 가짜 한도로 창 전환·퍼센트·실패·Refresh·기존 상태 복귀 |
 | [LiveQuotaProbe.cs](LiveQuotaProbe.cs) | 공식 CLI 실제 계정 조회 결과 중 한도 정보만 출력 |
+| [PortablePlatformTests.cs](PortablePlatformTests.cs) | 데이터 경로·IANA 시간대 경계·표시 형식·Mac CLI 경로 후보 검사 |
 
 검사의 고정 날짜와 가짜 장애는 정답을 비교하기 위한 문제지입니다. 실제 시간표나 공식 상태를 그 값으로 고정하지 않습니다.
 
 ### 프로그램 명찰: 1개
 
 [Properties/AssemblyInfo.cs](Properties/AssemblyInfo.cs)는 프로그램 식별 정보 일부를 담습니다. 버전은 여기 아닌 프로젝트 파일에서 관리하고, 나머지 정보는 SDK가 생성합니다.
+
+### Mac 호스트: 5개 / 공통 검사 입구: 1개
+
+| 파일 | 맡은 일 |
+|---|---|
+| [Mac/Program.cs](Mac/Program.cs) | Mac 실행 입구, 중복 실행 잠금, 임시 DB native smoke 분기 |
+| [Mac/MacApplication.cs](Mac/MacApplication.cs) | AppKit 메뉴바와 공통 조회·저장·알림·복귀·종료 연결 |
+| [Mac/MacStatusWindow.cs](Mac/MacStatusWindow.cs) | Mac 상태·잔여 한도 창과 사용 경험 메뉴 |
+| [Mac/MacStatisticsWindow.cs](Mac/MacStatisticsWindow.cs) | 공통 계산 결과를 보여주는 Mac 통계 창 |
+| [Mac/MacServices.cs](Mac/MacServices.cs) | macOS 알림 권한과 로그인 항목 등록 |
+| [Shared.Tests/Program.cs](Shared.Tests/Program.cs) | OS UI 없이 기존 검사들을 실행하는 공통 입구 |
 
 ## 12. 빌드 파일과 폴더 지도
 
@@ -361,6 +377,11 @@ Windows 내부 승인 형식은 알려진 경우만 해석합니다. 낯선 값�
 | [build.ps1](build.ps1) | 빌드와 자체 검사를 실행하는 순서 |
 | [Portable.pubxml](Properties/PublishProfiles/Portable.pubxml) | 배포용 단일 EXE 설정 |
 | [app.manifest](app.manifest) | Windows 권한·호환 설정. 관리자 권한으로 자동 상승하지 않음 |
+| [Shared/SharedSources.props](Shared/SharedSources.props) | 공통 C# 원본 18개를 Mac과 검사 프로젝트에 연결하는 목록 |
+| [Shared.Tests/AiBurgerClock.Shared.Tests.csproj](Shared.Tests/AiBurgerClock.Shared.Tests.csproj) | net10.0 공통 검사, 임시 DB와 가짜 HTTP·CLI 사용 |
+| [Mac/AiBurgerClock.Mac.csproj](Mac/AiBurgerClock.Mac.csproj) | native AppKit, net10.0-macos27.0, osx-arm64, preview 버전 지정 |
+| [Mac/Info.plist](Mac/Info.plist) | Mac 앱 식별자·메뉴바 앱 설정·최소 OS |
+| [Mac/build.sh](Mac/build.sh) | 도구 확인 → 공통 검사 → Mac Release 빌드 → bundle 서명·SQLite 포함 확인 |
 | bin | 일반 빌드 결과 |
 | obj | 중간 결과와 자동 생성 코드 |
 | dist | 사용자에게 전달할 배포 결과 |
@@ -369,6 +390,18 @@ Windows 내부 승인 형식은 알려진 경우만 해석합니다. 낯선 값�
 빌드는 경고도 실패로 취급합니다. `-Publish`는 배포 파일을 갱신하므로 실행 중인 앱을 먼저 종료해야 합니다.
 
 단일 EXE여도 모든 .NET 부품이 들어 있다는 뜻은 아닙니다. **.NET 10 Desktop Runtime x64는 별도로 필요**합니다. SQLite 네이티브 부품은 포함하고 실행 시 임시 위치에 풀릴 수 있습니다. WinForms 호환성을 위해 코드 잘라내기(trimming)나 NativeAOT는 사용하지 않습니다.
+
+### Windows와 Mac은 무엇을 같이 쓰나요?
+
+시간표·Provider 파서·권고·조회 주기·저장·통계 규칙의 원본은 루트에 하나만 둡니다. Mac과 공통 검사는 `SharedSources.props`로 그 파일들을 링크해 컴파일합니다. 같은 파일을 두 벌로 복사하거나 WinForms를 다른 프레임워크로 바꾸지 않습니다.
+
+Windows는 원래 `net10.0-windows` 프로젝트를 유지하고 Mac·공통 검사·진단 폴더의 C# 파일은 제외합니다. Mac은 `net10.0-macos27.0` AppKit 호스트입니다. 새 공통 DLL·MAUI·WebView·Electron·Node 사이드카는 추가하지 않았습니다.
+
+Mac의 시간대 ID는 `America/New_York`, `America/Los_Angeles`, `Asia/Seoul`입니다. Windows의 기존 ID는 유지합니다. 두 경우 모두 OS가 제공하는 `TimeZoneInfo` 규칙으로 각 미국 업무 경계를 UTC로 계산합니다. KST 시간표를 별도로 복사하지 않습니다.
+
+Mac은 `~/Library/Application Support/AIBurgerClock`에 별도 DB를 쓰고 `SMAppService.MainApp`으로 로그인 항목을 관리합니다. CLI는 절대 실행 경로와 실행 권한을 확인하고, shell 프로필·Keychain·인증 파일은 읽지 않습니다. 기능 규칙을 함께 써도 **두 컴퓨터의 DB와 로그인은 자동 동기화되지 않습니다.**
+
+Windows 버전은 2.2.2 그대로이고 Mac은 아직 0.1.0 preview입니다. 실제 Mac 빌드·실행 검증은 [작업 기록](MACOS_PORT.md)에 남긴 후에 안정판 여부를 판단합니다.
 
 ## 13. 검사는 어떻게 실행하나요?
 
@@ -399,13 +432,21 @@ $result.ExitCode
 
 검사 통과와 실제 재부팅 성공, 사용자 화면의 알림 노출은 다른 증거입니다. 최신 검증은 [2.2.2 기록](MAINTENANCE_2_2_2.md), 이전 배포 검증은 [2.2.1 기록](MAINTENANCE_2_2_1.md), 한도 기능 도입 당시 검증은 [2.2.0 기록](ACCOUNT_QUOTAS.md)을 참고하세요.
 
+공통 검사만 실행하려면 OS와 관계없이 다음 명령을 사용합니다. 가짜 응답과 임시 DB만 사용하며 계정·사용자 DB·자동 실행 설정은 건드리지 않습니다. Windows WinForms 검사를 대체하는 것은 아닙니다.
+
+~~~sh
+dotnet run --project Shared.Tests/AiBurgerClock.Shared.Tests.csproj -c Release --property:TreatWarningsAsErrors=true
+~~~
+
+Mac native smoke는 실제 Mac에서만 실행하며 Windows의 옵션을 그대로 지원하지 않습니다. [Mac 검사 안내](Mac/README.md#안전한-네이티브-검사)를 따르세요. Windows에서 Mac 참조 DLL을 사용한 C# 컴파일은 실제 `.app` 빌드·실행 검사와 구별합니다.
+
 ## 14. 어디부터 읽으면 좋을까요?
 
 - **앱 전체 흐름:** Program → TrayApplicationContext.
 - **왜 지금 FULL/BURGER인지:** AgentSchedule → UsFederalHolidays → ScheduleTests / HolidayScheduleTests.
 - **왜 OpenAI만 STOP인지:** ProviderStatusClient → Phase2Models → RecommendationNotifications.
 - **왜 트레이가 이 색인지:** TrayPresentation → TrayApplicationContext.
-- **기록이 어떻게 쌓이는지:** Phase2Models → UsageStore → StatisticsWindow.
+- **기록이 어떻게 쌓이는지:** Phase2Models → UsageStore → StatisticsAnalysis → OS별 통계 창.
 - **버튼이 하는 일:** StatusWindow → TrayApplicationContext.
 - **잔여량 조회와 다음 갱신:** AccountQuotaClient → AccountQuotaParsers → AccountQuotaMonitor / AccountQuotaPolicy → AccountQuotaView. 사용자 실측 통계와는 별개이며 캐시는 UsageStore의 AppMetadata 두 항목만 사용합니다.
 

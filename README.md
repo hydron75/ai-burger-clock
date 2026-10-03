@@ -10,6 +10,7 @@
 - 코드가 어떻게 돌아가는지 궁금하면 [쉬운 소스코드 해설](CODE_GUIDE.md)을 읽으세요.
 - 최신 변경과 검사 결과는 [2.2.2 한도 소진 조회 개선 기록](MAINTENANCE_2_2_2.md)에 있습니다. 계정 한도 기능의 기본 설명은 [2.2.0 한도 표시 기록](ACCOUNT_QUOTAS.md)을 참고하세요.
 - 다음 개선 후보와 공식 한도 조회 방식의 모니터링 현황은 [BACKLOG](BACKLOG.md)에 있습니다. 공개 자료를 조사하는 일정과 앱이 내 계정 한도를 조회하는 주기는 서로 다릅니다.
+- **Mac 개발판:** Apple Silicon / macOS 27용 [네이티브 메뉴바 preview 0.1.0](Mac/README.md)을 별도 프로젝트로 준비했습니다. 시간표·조회·저장·통계 계산은 Windows와 같은 소스를 사용합니다. 아직 실제 Mac 빌드·실행 검증 전이며, 아래 사용법은 Windows 2.2.2 기준입니다. [준비 및 검증 기록](MACOS_PORT.md)
 
 이 저장소에는 **소스코드와 빌드 파일만** 있습니다. 실행 파일과 개인 사용 기록 DB는 포함하지 않습니다. 처음 사용하신다면 아래 **10. 직접 코드를 빌드하고 싶다면** 절차로 실행 파일을 만드세요.
 
@@ -243,6 +244,8 @@ Visual Studio Community 2026의 .NET 데스크톱 개발 워크로드 또는 .NE
 ## 더 자세히 보기
 
 - [CODE_GUIDE.md](CODE_GUIDE.md): 쉬운 구조 설명, 전체 소스 파일 지도, 실행 흐름, 검사 방법.
+- [Mac/README.md](Mac/README.md): Mac preview의 개발 도구 준비·빌드·안전한 검사·알림과 로그인 항목 안내.
+- [MACOS_PORT.md](MACOS_PORT.md): 공통 코드 연결 구조, Windows 회귀 검사, Mac에서 아직 확인할 항목.
 - [MAINTENANCE_2_2_2.md](MAINTENANCE_2_2_2.md): 2.2.2 잔여 0%의 15분 조회, 주기 복귀와 검증 기록.
 - [MAINTENANCE_2_2_1.md](MAINTENANCE_2_2_1.md): 2.2.1 재시도·Refresh·연결 복구 개선과 검증·배포 기록.
 - [ACCOUNT_QUOTAS.md](ACCOUNT_QUOTAS.md): 2.2.0 공식 CLI 한도 조회, 자동 갱신 정책, 검증과 제한.

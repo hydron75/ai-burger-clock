@@ -66,15 +66,23 @@ internal static class AgentSchedule
     public const string EasternTimeZoneId = "Eastern Standard Time";
     public const string PacificTimeZoneId = "Pacific Standard Time";
     public const string KoreaTimeZoneId = "Korea Standard Time";
+    internal const string EasternIanaTimeZoneId = "America/New_York";
+    internal const string PacificIanaTimeZoneId = "America/Los_Angeles";
+    internal const string KoreaIanaTimeZoneId = "Asia/Seoul";
     private const long TimeZoneRefreshMilliseconds = 24L * 60 * 60 * 1000;
     private static readonly object Sync = new();
-    private static TimeZoneInfo korea = TimeZoneInfo.FindSystemTimeZoneById(KoreaTimeZoneId);
-    private static TimeZoneInfo eastern = TimeZoneInfo.FindSystemTimeZoneById(EasternTimeZoneId);
-    private static TimeZoneInfo pacific = TimeZoneInfo.FindSystemTimeZoneById(PacificTimeZoneId);
+    private static TimeZoneInfo korea = FindTimeZone(KoreaTimeZoneId, KoreaIanaTimeZoneId);
+    private static TimeZoneInfo eastern = FindTimeZone(EasternTimeZoneId, EasternIanaTimeZoneId);
+    private static TimeZoneInfo pacific = FindTimeZone(PacificTimeZoneId, PacificIanaTimeZoneId);
     private static long timeZonesLoadedAt = Environment.TickCount64;
     private static DateOnly? cachedEasternDate;
     private static bool cachedHolidayAdjustment;
     private static BusinessInterval[] cachedIntervals = [];
+
+    // Keep Windows' original registry IDs. macOS uses its native IANA zone data;
+    // the business policy, UTC comparisons and per-boundary DST conversion are identical.
+    private static TimeZoneInfo FindTimeZone(string windowsId, string ianaId) =>
+        TimeZoneInfo.FindSystemTimeZoneById(OperatingSystem.IsWindows() ? windowsId : ianaId);
 
     // The injected instant is the only clock used for schedule decisions. Neither the
     // PC's local time zone nor today's DST setting is applied to another business date.
@@ -180,12 +188,12 @@ internal static class AgentSchedule
         if (elapsed < TimeZoneRefreshMilliseconds)
             return;
 
-        // Observe installed Windows time-zone rule updates without an app update or a
+        // Observe installed OS time-zone rule updates without an app update or a
         // separate polling timer. Existing immutable snapshots keep their captured data.
         TimeZoneInfo.ClearCachedData();
-        korea = TimeZoneInfo.FindSystemTimeZoneById(KoreaTimeZoneId);
-        eastern = TimeZoneInfo.FindSystemTimeZoneById(EasternTimeZoneId);
-        pacific = TimeZoneInfo.FindSystemTimeZoneById(PacificTimeZoneId);
+        korea = FindTimeZone(KoreaTimeZoneId, KoreaIanaTimeZoneId);
+        eastern = FindTimeZone(EasternTimeZoneId, EasternIanaTimeZoneId);
+        pacific = FindTimeZone(PacificTimeZoneId, PacificIanaTimeZoneId);
         timeZonesLoadedAt = Environment.TickCount64;
         cachedEasternDate = null;
     }
