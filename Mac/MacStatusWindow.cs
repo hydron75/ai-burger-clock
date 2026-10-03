@@ -10,7 +10,7 @@ namespace AiBurgerClock;
 internal sealed class MacStatusWindow : IDisposable
 {
     private const int WindowWidth = 430;
-    private const int WindowHeight = 660;
+    private const int WindowHeight = 720;
     internal NSWindow Window { get; }
     private readonly NSTextField schedule;
     private readonly NSTextField countdown;
@@ -25,6 +25,7 @@ internal sealed class MacStatusWindow : IDisposable
     private readonly NSButton autoStart;
     private readonly Dictionary<ProviderKind, (NSButton Heading, NSTextField Detail)> providers = [];
     private readonly Dictionary<QuotaProvider, NSTextView> quotas = [];
+    private readonly Dictionary<QuotaProvider, NSTextField> quotaTitles = [];
 
     internal MacStatusWindow(Action requestRefresh, Action showStatistics, Action<bool> changeHoliday,
         Action<bool> changeAutoStart, Action<ProviderKind> openPage,
@@ -39,17 +40,20 @@ internal sealed class MacStatusWindow : IDisposable
         };
         var root = new NSView(new CGRect(0, 0, WindowWidth, WindowHeight));
         Window.ContentView = root;
-        Label(root, "AI AGENT TRAFFIC", 626, 20, 13, true);
-        schedule = Label(root, "FULL THROTTLE", 594, 30, 22, true);
-        countdown = Label(root, "전환까지 —", 569, 23, 14);
-        countdown.Frame = new CGRect(14, 569, 205, 23);
-        next = Label(root, "다음: — KST", 569, 23, 11);
-        next.Frame = new CGRect(232, 569, 184, 23);
-        usTime = Label(root, "US: —", 546, 20, 11);
-        extended = Label(root, "", 525, 19, 11);
+        Label(root, "AI AGENT TRAFFIC", 686, 20, 13, true);
+        schedule = Label(root, "FULL THROTTLE", 654, 30, 22, true);
+        countdown = Label(root, "전환까지 —", 629, 23, 14);
+        countdown.Frame = new CGRect(14, 629, 205, 23);
+        next = Label(root, "다음: — KST", 629, 23, 11);
+        next.Frame = new CGRect(232, 629, 184, 23);
+        usTime = Label(root, "US: —", 606, 20, 11);
+        extended = Label(root, "", 585, 19, 11);
         extended.UsesSingleLineMode = true;
         extended.LineBreakMode = NSLineBreakMode.TruncatingTail;
-        int y = 492;
+        // Three sections: schedule, official service status, personal account quotas.
+        Separator(root, 577);
+        Label(root, "서비스 상태", 548, 22, SectionTitleSize, true);
+        int y = 520;
         foreach (ProviderKind provider in Enum.GetValues<ProviderKind>())
         {
             ProviderKind captured = provider;
@@ -72,13 +76,15 @@ internal sealed class MacStatusWindow : IDisposable
             providers.Add(provider, (heading, detail));
             y -= 62;
         }
-        Label(root, "개인 계정 잔여 한도", 305, 20, 12, true);
-        Label(root, "ChatGPT", 281, 22, 13, true);
-        Label(root, "Work/Codex", 263, 17, 11);
-        quotas[QuotaProvider.Codex] = TextArea(root, new CGRect(14, 207, 402, 54), 11);
-        Label(root, "Claude", 183, 22, 13, true);
-        quotas[QuotaProvider.Claude] = TextArea(root, new CGRect(14, 107, 402, 74), 11);
+        Separator(root, 352);
+        Label(root, "개인 계정 잔여 한도", 322, 22, SectionTitleSize, true);
+        quotaTitles[QuotaProvider.Codex] = Label(root, "ChatGPT", 298, 22, 13, true);
+        Label(root, "Work/Codex", 280, 17, 11);
+        quotas[QuotaProvider.Codex] = TextArea(root, new CGRect(14, 224, 402, 54), 11);
+        quotaTitles[QuotaProvider.Claude] = Label(root, "Claude", 200, 22, 13, true);
+        quotas[QuotaProvider.Claude] = TextArea(root, new CGRect(14, 124, 402, 74), 11);
         foreach (NSTextView quota in quotas.Values) quota.TextContainerInset = new CGSize(2, 2);
+        Separator(root, 112);
         checkedAt = Label(root, "Checked: — KST", 86, 18, 10);
         checkedAt.Frame = new CGRect(14, 86, 190, 18);
         nextCheck = Label(root, "Next check: — KST", 86, 18, 10);
@@ -139,20 +145,27 @@ internal sealed class MacStatusWindow : IDisposable
         {
             NSTextView view = quotas[state.Provider];
             string text = QuotaText(state, snapshot.NowUtc);
-            // Rewrite only on change, keeping the user's scroll position in the extra-rows box.
+            // The reset countdown changes this text every second. Rewrite only on change and
+            // restore the scroll position only if the rewrite moved it.
             if (view.Value != text)
             {
                 NSClipView? clip = view.EnclosingScrollView?.ContentView;
                 CGPoint origin = clip?.Bounds.Location ?? CGPoint.Empty;
                 view.Value = text;
-                clip?.ScrollToPoint(origin);
-                if (view.EnclosingScrollView is { } scroll) scroll.ReflectScrolledClipView(clip!);
+                if (clip is not null && clip.Bounds.Location != origin)
+                {
+                    clip.ScrollToPoint(origin);
+                    view.EnclosingScrollView!.ReflectScrolledClipView(clip);
+                }
             }
             string tooltip = "공식 CLI 응답 수신 시각이며 서버 데이터 생성 시각을 보장하지 않습니다.\n" +
                 "기본 6시간 · 잔여 0% 초과~10% 미만은 1시간 · 잔여 0%는 15분 · 리셋 전후 15분은 5분.\n" +
                 "리셋 시각 경과만으로 한도 회복을 가정하지 않습니다. 크레딧·리셋 알림은 제외합니다.\n" +
                 state.Error + "\n" + state.CacheError;
-            if (view.ToolTip != tooltip) view.ToolTip = tooltip;
+            // A tooltip on the text view itself closes on every per-second rewrite, so it lives on
+            // the enclosing box and the section title, which do not change.
+            if (view.EnclosingScrollView is { } box) SetTip(box, tooltip);
+            SetTip(quotaTitles[state.Provider], tooltip);
         }
         DateTimeOffset latest = states.Max(state => state.CheckedAtUtc);
         checkedAt.StringValue = "Checked: " + (latest == DateTimeOffset.MinValue ? "—" : AgentSchedule.ToKst(latest).ToString("HH:mm:ss")) + " KST";
@@ -269,6 +282,11 @@ internal sealed class MacStatusWindow : IDisposable
         menu.AddItem(new NSMenuItem("메모와 함께 기록…", (_, _) => record(provider, UsageEventType.Success, true)));
         return menu;
     }
+
+    private const int SectionTitleSize = 15;
+
+    private static void Separator(NSView view, int y) =>
+        view.AddSubview(new NSBox(new CGRect(14, y, view.Frame.Width - 28, 1)) { BoxType = NSBoxType.NSBoxSeparator });
 
     internal static NSTextField Label(NSView view, string text, int y, int height, int size = 12, bool bold = false)
     {
