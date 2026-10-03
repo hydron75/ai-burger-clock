@@ -2,7 +2,7 @@
 
 기록일: 2026-10-03 KST. Windows 기준 버전: 2.2.2.
 
-Apple Silicon / macOS 27용 **native AppKit 메뉴바 호스트**를 별도 프로젝트로 준비했다. 기존 Windows WinForms UI·배포본은 유지한다. **전체 상태 창 스크롤을 없앤 앞선 0.1.1의 실제 공통 검사 244,347건·Release `.app`·서명·ARM64 SQLite와 native smoke 종료 코드 0, 한 화면 배치・두 계정 한도 수신은 확인**했다. 이후 작은 검은 F와 비활성 모니터의 아이콘 누락 보고를 받아 0.1.2에서 20-point 컬러 bitmap으로 수정했다. **0.1.2의 실제 Mac 재빌드・native smoke・다중 모니터 표시 검증은 대기 중**이다. OS 알림·재로그인·절전 복귀와 장기 사용도 남아 있다. 앞선 실제 검증은 17~19절, 새 아이콘 수정은 20절에 구분한다.
+Apple Silicon / macOS 27용 **native AppKit 메뉴바 호스트**를 별도 프로젝트로 준비했다. 기존 Windows WinForms UI·배포본은 유지한다. 앞선 0.1.1의 native smoke 종료 코드 0·한 화면 배치·두 계정 한도 수신을 확인한 뒤, 작은 검은 F와 비활성 모니터의 아이콘 누락 보고를 받아 0.1.2에서 20-point 컬러 bitmap으로 수정했다. **0.1.2도 실제 Mac 공통 검사 244,347건·Release `.app`·서명·ARM64 SQLite 포함을 통과**했다. 새 아이콘 native smoke·외관·다중 모니터 표시 검증은 다음 단계다. OS 알림·재로그인·절전 복귀와 장기 사용도 남아 있다. 앞선 검증은 17~19절, 아이콘 수정은 20절, 새 실제 빌드는 21절에 구분한다.
 
 Mac 개발 도구 준비와 실행 순서는 [Mac/README.md](Mac/README.md)를 따른다.
 
@@ -445,11 +445,33 @@ SDK 10.0.401, Windows 환경:
 
 ### 남은 실제 Mac 확인
 
-**이번 0.1.2의 `.app` 빌드・native pixel smoke는 아직 Mac에서 실행하지 않았다.** 앞선 0.1.1 성공을 새 수정본 성공으로 바꾸지 않는다. 실제 다중 모니터 누락의 원인이나 해결 여부도 확정하지 않는다.
+이 수정의 최초 준비 당시에는 실제 Mac 빌드와 native pixel smoke를 실행하지 않았다. **이후 21절에서 0.1.2의 실제 `.app` 빌드는 확인했고 새 native pixel smoke는 아직 결과 대기 중이다.** 앞선 0.1.1 성공을 새 아이콘 실행 검증으로 바꾸지 않는다. 실제 다중 모니터 누락의 원인이나 해결 여부도 확정하지 않는다.
 
-1. 기존 앱을 종료하고 0.1.2 소스를 받아 같은 경로에서 `Mac/build.sh`로 다시 빌드한다. 사용자 확인된 전체 Xcode 경로는 실행별 `DEVELOPER_DIR`로 지정한다.
+1. 완료: 소스 `dd3f596`에서 기존과 같은 bundle 경로로 0.1.2를 빌드했다. 전체 Xcode 경로는 실행별 `DEVELOPER_DIR`로 지정했다. 문서-only 후속 갱신 때문에 다시 빌드하지 않는다.
 2. 새 bundle의 `--smoke-test`가 위 새 문구와 종료 코드 0을 보이는지 확인한다. 계정・HTTP・설정 변경 없는 임시 데이터 검사다.
 3. 일반 앱에서 20-point 크기・흰색 글자・상태색과 메뉴 클릭을 확인한다. 각 모니터를 번갈아 활성화했을 때 비활성 쪽에도 아이콘이 남아 있는지 실제로 확인한다. 실패하면 양쪽 메뉴막대 화면과 활성 모니터를 근거로 후속 진단한다.
 4. 다중 모니터에서 해결 여부를 확인할 때까지 Draft PR #12를 유지한다. 별도 남은 OS 알림・재로그인・절전/연결 복구・장기 사용도 유지한다.
 
 공식 API 근거: [Retina 이미지 표현](https://developer.apple.com/library/archive/documentation/GraphicsAnimation/Conceptual/HighResolutionOSX/Optimizing/Optimizing.html), [NSImageRep logical size](https://developer.apple.com/documentation/appkit/nsimagerep/size), [representation retain](https://developer.apple.com/documentation/appkit/nsimage/addrepresentation(_:)), [사용 SDK 바인딩](https://github.com/dotnet/macios/blob/d813e2baef17cd3a2bb5adc1e37610258d01cda3/src/appkit.cs). 이 계약은 실제 메뉴막대 복제 버그 해결을 보증하지 않는다.
+
+## 21. 0.1.2 실제 Mac Release 빌드 성공
+
+2026-10-03 KST 사용자가 `git pull --ff-only`로 소스 **`dd3f596bf58f40016b2095867de428bf0b9b80a9`**를 받은 뒤 `Mac/build.sh`의 전체 결과를 전달했다. 새 `MacStatusIcon.cs`와 0.1.2 버전이 들어 있는 실제 Mac 빌드이며, 앞선 0.1.1의 성공이나 Windows 참조 컴파일과 구별한다.
+
+| 확인 항목 | 실제 출력에서 확인한 결과 |
+|---|---|
+| 개발 도구 | 실행별 `/Applications/Xcode.app/Contents/Developer`, Xcode 27.0 / build 27A266a |
+| .NET | 안정판 SDK 10.0.401, macos workload 사전 확인 통과 |
+| NuGet 캐시 | 기존 빌드 전용 `artifacts/mac-build/nuget-http-cache` 사용 |
+| 공통 검사 | `PASS ALL SHARED: 244,347 assertions` |
+| native Release | `net10.0-macos27.0` / `osx-arm64`, warnings-as-errors 성공, 경고·오류 출력 없음, 전체 빌드 16.4초 |
+| bundle/서명 | 최종 `.app` 경로 출력. `set -e` 스크립트가 `codesign --verify --deep --strict` 이후 단계까지 정상 도달 |
+| SQLite | bundle의 `libe_sqlite3.dylib`, Mach-O 64-bit dynamically linked shared library / arm64 |
+
+이 결과로 `.app` 생성·서명·ARM64 SQLite 포함은 확인했다. **새 20-point 아이콘의 픽셀 검사·실제 메뉴막대 크기/색상·비활성 모니터 표시를 확인한 결과는 아직 아니다.** 빌드 스크립트의 공통 검사는 가짜 HTTP/CLI와 임시 SQLite를 사용하며 실제 계정 조회 성공이나 사용자 DB 동작 확인으로 확대하지 않는다.
+
+현재 bundle은 `/Users/hydron/ai-burger-clock/Mac/bin/Release/net10.0-macos27.0/osx-arm64/AI Burger Clock.app`이다. 앱이 실행 중이면 종료하고 이 bundle의 `--smoke-test`를 실행한다. `20pt color menu icon/1x-2x pixels`가 들어 있는 PASS와 종료 코드 0을 받은 뒤 일반 실행의 외관·양쪽 모니터 표시를 확인한다. 이 단계에서 코드·계정·로그인 설정을 자동 변경하지 않는다.
+
+최초 검사 시도는 실행 명령 뒤에 `echo` 명령이 같은 줄로 붙어 지원 옵션 안내만 출력했다. native smoke가 시작된 결과가 아니므로 성공/실패 검증으로 집계하지 않는다. 실행 명령만 별도 한 줄로 다시 요청했다.
+
+이번 후속 커밋은 README·CODE_GUIDE·BACKLOG·Mac 안내·이 기록만 갱신한다. Windows 2.2.2 / Mac 0.1.2 버전, C#·DB·배포본은 그대로이며 방금 만든 bundle을 다시 빌드할 필요가 없다. 실제 native pixel smoke·다중 모니터와 별도 OS 동작 확인이 남아 있어 Draft PR #12를 유지한다.
