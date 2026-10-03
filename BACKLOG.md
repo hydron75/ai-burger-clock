@@ -1,11 +1,12 @@
 # 다음 개선 항목
 
-## macOS native preview 0.1.4
+## macOS native preview 0.1.5
 
 - 기록일: 2026-10-03 KST.
 - 이후 작업 분담: Mac 구현·빌드·실제 실행 검증은 사용자 Mac의 Claude 로컬 환경에서 진행하고 GitHub 업데이트는 계속한다. Windows 검토·회귀 검증은 요청 시 이 환경에서 수행한다. 상대 OS 전용 파일은 각 담당에게 맡기고 공통 원본은 분리 복사하지 않으며 양쪽 모두 PR로 수정한다. 작업 후 버전·README·CODE_GUIDE·BACKLOG·검증 기록을 맞춘다. 현재 Mac 작업은 기존 `feature/macos-native` / Draft PR #12를 이어간다. 역할 분담 지침은 [PR #13](https://github.com/hydron75/ai-burger-clock/pull/13)으로 main에 병합됐다. [분담 규칙](AGENTS.md#작업-분담-windows와-mac).
 - 상태: `feature/macos-native`의 Apple Silicon / macOS 27용 AppKit 소스를 [Draft PR #12](https://github.com/hydron75/ai-burger-clock/pull/12)에서 검증 중이다. **0.1.2의 실제 Mac 공통 검사 244,347건·Release `.app`·서명·ARM64 SQLite·아이콘 native smoke와 일반 실행의 크기/색상·양쪽 메뉴막대 표시를 확인**했다. 앞선 0.1.1의 한 화면 배치·두 계정 한도 수신도 확인했다. 절전 복귀·연결 복구·재로그인은 이후 실제로 확인했고([26](MACOS_PORT.md#26-연결-복구절전-복귀-실제-확인)·[27절](MACOS_PORT.md#27-로그아웃-정상-종료와-재로그인-자동-실행-실제-확인)), 실제 알림 검증은 남아 있다. 안정판 배포나 main 병합은 하지 않았다. [최신 화면 기록](MACOS_PORT.md#23-012-실제-컬러-아이콘과-양쪽-메뉴막대-확인), [Mac 빌드 안내](Mac/README.md).
 - 0.1.2 실제 Mac 빌드: 소스 `dd3f596bf58f40016b2095867de428bf0b9b80a9`, SDK 10.0.401 / Xcode 27.0 / build 27A266a, 공통 검사 244,347건, native Release 성공(16.4초), `.app`·ad-hoc 서명·ARM64 SQLite 확인. 이어서 새 아이콘 1x/2x 픽셀·크기, 창·임시 SQLite·4종 이벤트/메모·통계·주입 카운트다운의 native smoke PASS를 받았다. shell 종료 코드는 별도 출력되지 않았다. 이후 **사용자 스크린샷에서 커진 초록색 원과 흰색 F, 사용자 직접 확인으로 양쪽 메뉴막대 표시까지 확인**했다. 이번 후속 갱신은 문서만 변경하므로 재빌드·검사 반복은 필요 없다.
+- 0.1.5 / build 6: PR #15(연결이 없을 때 연결 복구 조회 건너뛰기)를 병합했다. 연결 판정은 macOS utun 때문에 `GetIsNetworkAvailable()` 대신 "링크 로컬이 아닌 주소가 있는 Up 인터페이스"로 한다. Mac 실제 확인에서는 끊긴 동안 Unknown이 없었고 재연결 5초 뒤 회복했다. Windows 자체 검사 +8·smoke 종료 코드 0. 소스 `53ae21fea7d9ebc7a3796ed7aa1d197a21aa53d4`. [기록](MACOS_PORT.md#34-015-정리).
 - 0.1.4 / build 5: PR #14(공통 HTTP 설정·알림 문구, 연결 복구 5초 대기·1분 연기)를 Windows 검증(자체 검사 +8, smoke 종료 코드 0) 뒤 병합했다. Mac 알림 제목도 ChatGPT로 유지된다. 소스 `63d9ec769550f6140fac2af448bdceec74d12588`, 공통 검사 244,361건, smoke 종료 코드 0. 공통 개선 후보였던 "연결 복구 직후 지연 조회"는 이것으로 반영했다. [기록](MACOS_PORT.md#32-pr-14-병합과-014-정리).
 - 0.1.3 / build 4: 0.1.2 이후 리뷰 반영·Tooltip·ChatGPT 표시 이름·구간 구분·한도 ⓘ 팝오버·앱 아이콘을 묶어 버전을 올렸다. 소스 `8e8d9b8edb0af8c7c88914dfb207c1581072f8cc`, bundle 0.1.3 / 4, 공통 검사 244,349건, smoke 종료 코드 0. [기록](MACOS_PORT.md#31-013-버전-정리).
 - UI 확인·표시 이름·앱 아이콘: 공식 상태 링크, Statistics 재열기, 기록 저장은 정상이었다. 상태 창 Tooltip이 금방 사라지던 문제(매초 다시 지정)를 고쳤다. Mac 화면의 "OpenAI"를 제품 이름 "ChatGPT"로 바꿨다(저장 값은 그대로). 앱 아이콘(초록 시계·F)을 추가했다. **Windows 후보:** Windows 화면의 "OpenAI" 표시도 "ChatGPT"로 맞출지는 Windows 담당이 판단한다. 공통 `TrayPresentation.Tooltip`의 `displayName` 인자로 맞출 수 있다. [기록](MACOS_PORT.md#30-ui-조작-확인과-tooltip표시-이름앱-아이콘-수정).
