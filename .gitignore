@@ -24,3 +24,6 @@ auth.json
 .credentials.json
 /.claude/
 /.codex/
+
+# macOS Finder metadata.
+.DS_Store
