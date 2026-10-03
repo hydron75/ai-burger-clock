@@ -54,6 +54,8 @@ internal static class AccountQuotaUiChecks
             !labels.Any(l => l.Text.Contains("Gemini")), "Only requested account quota providers appear; no Gemini quota substitute");
         Check(labels.Any(l => l.Text.Contains("100%")) && labels.Any(l => l.Text.Contains("55%")) && labels.Any(l => l.Text.Contains("99%")),
             "UI converts consumed percentages into remaining percentages and retains model-scoped windows");
+        Check(labels.Any(l => l.AccessibleDescription?.Contains("잔여 0%는 15분") == true),
+            "Quota tooltip explains exhausted 15m polling separately from the 5m reset band");
         Check(labels.All(l => l.Height >= TextRenderer.MeasureText(l.Text, l.Font).Height), "Quota rows accommodate DPI-scaled text height");
         Check(context.StatusWindow.ClientSize == size && context.CurrentAppearance == appearance, "Quota values never change tray health or original window dimensions");
         SmokeTest.RenderAndCheckLayout(context.StatusWindow, "account-quotas.png", reportDirectory);
@@ -82,6 +84,16 @@ internal static class AccountQuotaUiChecks
         context.StatusWindow.UpdateQuotas([expired], clock());
         Check(context.StatusWindow.QuotaView.Controls.OfType<Label>().Any(l => l.Text.Contains("3% (이전)") && l.Text.Contains("갱신 대기")),
             "Elapsed reset countdown preserves observed balance until a new result arrives");
+        var exhausted = new QuotaState(QuotaProvider.Claude, new(QuotaProvider.Claude,
+            [new("weekly", "주간", 100, clock().AddDays(1), 10080)]),
+            LastSuccessfulCheckUtc: clock(), NextCheckUtc: clock().AddMinutes(15));
+        context.StatusWindow.UpdateQuotas([exhausted], clock());
+        Check(context.StatusWindow.QuotaView.Controls.OfType<Label>().Any(l => l.Text.Contains("주간  0% 남음")),
+            "Exhausted quota remains zero instead of inventing credit-based recovery");
+        string nextExhaustedCheck = AgentSchedule.ToKst(exhausted.NextCheckUtc!.Value).ToString("MM-dd HH:mm");
+        Check(context.StatusWindow.QuotaView.Controls.OfType<Label>().Any(l => l.Text.Contains("다음 " + nextExhaustedCheck)),
+            "Quota metadata displays the exhausted provider's next 15m check");
+        SmokeTest.RenderAndCheckLayout(context.StatusWindow, "account-quotas-exhausted.png", reportDirectory);
         context.RefreshStatus(false);
         context.StatusWindow.QuotaButton.PerformClick();
         Check(!context.StatusWindow.QuotaView.Visible && context.StatusWindow.Controls.OfType<Panel>().Count(p => p.Visible) == 3,
