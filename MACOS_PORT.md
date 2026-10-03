@@ -2,7 +2,7 @@
 
 기록일: 2026-10-03 KST. Windows 기준 버전: 2.2.2.
 
-Apple Silicon / macOS 27용 **native AppKit 메뉴바 호스트**를 별도 프로젝트로 준비했다. 기존 Windows WinForms UI·배포본은 유지한다. 0.1.0의 실제 Mac 공통 검사 244,347건·Release `.app`·native smoke와 CLI 설치 후 ChatGPT/Claude 한도 수신을 확인했다. **0.1.1은 전체 상태 창 스크롤을 없앤 배치 수정본이며 새 Mac 빌드·화면 검증은 아직 필요**하다. 알림 노출·실제 재로그인·절전 복귀와 장기 사용도 남아 있다. 최신 결과와 수정 범위는 15절에 기록한다.
+Apple Silicon / macOS 27용 **native AppKit 메뉴바 호스트**를 별도 프로젝트로 준비했다. 기존 Windows WinForms UI·배포본은 유지한다. **전체 상태 창 스크롤을 없앤 0.1.1의 실제 공통 검사 244,347건·Release `.app`·서명·ARM64 SQLite와 새 native smoke 종료 코드 0을 확인**했다. 일반 상태 창에서 주요 정보의 한 화면 표시·메뉴바·ChatGPT/Claude 한도 수신도 확인했다. 실제 알림·재로그인·절전 복귀와 장기 사용은 남아 있다. 배치 수정은 15절, 최신 빌드·native 검사·일반 화면은 17~19절에 기록한다.
 
 Mac 개발 도구 준비와 실행 순서는 [Mac/README.md](Mac/README.md)를 따른다.
 
@@ -102,9 +102,9 @@ Mac 참조 패키지는 공식 `Microsoft.macOS.Ref.net10.0_27.0` 27.0.10722다.
 첫 읽기 전용 결과는 macOS 27.0.1 / arm64 / Xcode 27.0이며 `dotnet`은 PATH에서 발견되지 않았다. 이후 사용자가 SDK 10.0.401을 준비했고 `build.sh`의 macos workload 확인과 공통 검사 실행까지 통과했다. 도구 준비와 최종 앱 빌드 성공은 별개이며, 이 Windows 작업에서 도구를 원격으로 설치하거나 Mac 설정을 변경하지 않았다.
 
 1. 완료: .NET SDK 10.0.401 ARM64 / Xcode 27.0 준비와 build.sh의 macos workload preflight 통과. 정확한 설치 workload set의 별도 출력은 받지 않았다.
-2. 완료: `bash Mac/build.sh`에서 Mac OS 시간대 공통 검사 244,347건, native Release 빌드, ad-hoc 서명 검사·ARM64 SQLite dylib 포함 확인.
-3. 완료: 만들어진 실행 파일의 `--smoke-test`에서 임시 DB 4종 이벤트·메모·통계·No data·한도 표시, 창 닫기/재열기와 종료 코드 0 확인.
-4. 0.1.0 메뉴바·상태 창·Schedule·공식 상태 표시는 확인. 0.1.1 새 한 화면 배치, 실제 기록/통계·공식 페이지 클릭은 추가 확인.
+2. 완료: 0.1.0과 0.1.1의 실제 Mac 공통 검사 244,347건, native Release 빌드, ad-hoc 서명 검사·ARM64 SQLite dylib 포함 확인. 새 빌드는 17절 참조.
+3. 완료: 0.1.0과 새 compact layout 검사가 포함된 0.1.1의 `--smoke-test` 종료 코드 0을 확인했다. 새 검사의 임시 DB·4종 이벤트/메모·통계·창 재열기·주입 시각 카운트다운 결과는 18절에 기록한다.
+4. 완료: 0.1.1 일반 화면의 한 화면 배치·메뉴바·Schedule·공식 상태·두 계정 한도 표시 확인. 실제 기록/통계 UI 조작·Tooltip·공식 페이지 클릭은 추가 확인.
 5. 완료: CLI 설치 후 Mac에서 실제 ChatGPT/Claude 한도 수신 확인. CLI 미발견 실패 표시도 앞선 화면에서 확인했으며 설치 CLI 버전 출력은 받지 않음.
 6. 로그인 옵션 ON과 등록 성공 안내는 확인. 실제 재로그인 실행·등록 해제, 알림 권한/배너는 별도 확인.
 7. 절전·연결 복구·정상 종료·장시간 실행 확인.
@@ -293,7 +293,7 @@ PASS: native controls/window close-reopen, temporary SQLite, four events/notes, 
 | Mac 참조 C# API + trim analyzer | 경고 0 / 오류 0, exit 0; `.app` 생성이나 native 실행은 아님 |
 | 기존 Windows dist | SHA-256 `56250BAF25C192314B513C02977A2A40A1E1D72836C43B0CF20803C2F98E2A10`, 변경 없음 |
 
-native smoke에 `VerifyCompactLayout`을 연결했다. 전체 화면 scroll 부재, 모든 root 컨트롤의 창 경계/겹침, 표준 한도 행을 실제 `NSLayoutManager`로 계산한 높이와 viewport를 비교한다. 기존 임시 DB·통계·창 닫기/재열기 검사는 유지하고, 테스트 시각 1분 경과에서 한도 문자열이 00:15:00→00:14:00으로 줄어드는 검사도 추가했다. **이 새 native 검사를 Windows에서 실행한 것은 아니며 실제 Mac 결과를 기다린다.**
+native smoke에 `VerifyCompactLayout`을 연결했다. 전체 화면 scroll 부재, 모든 root 컨트롤의 창 경계/겹침, 표준 한도 행을 실제 `NSLayoutManager`로 계산한 높이와 viewport를 비교한다. 기존 임시 DB·통계·창 닫기/재열기 검사는 유지하고, 테스트 시각 1분 경과에서 한도 문자열이 00:15:00→00:14:00으로 줄어드는 검사도 추가했다. 이 새 검사를 Windows에서 실행한 것은 아니며 **이후 실제 Mac에서 통과한 결과는 18절**에 별도로 기록한다.
 
 수정 파일: `Mac/MacStatusWindow.cs`, `Mac/MacApplication.cs`, `Mac/AiBurgerClock.Mac.csproj`, `Mac/Info.plist`, `README.md`, `CODE_GUIDE.md`, `BACKLOG.md`, `Mac/README.md`, `MACOS_PORT.md`. 새 패키지/소스 파일은 없고 Git 기준점은 작업 전 `bee047f0a67249df67231efa72c69651deba1345`다. 로그·빌드 출력·사용자 DB는 커밋하지 않는다.
 
@@ -313,7 +313,7 @@ bash Mac/build.sh
 echo "검사 종료 코드: $?"
 ```
 
-`compact one-screen layout/standard quota rows`가 포함된 PASS와 종료 코드 0을 확인한 뒤 `open`으로 실행해 모든 주요 정보가 함께 보이는지 확인한다. 새 빌드·실행과 한 화면 가독성, 실제 알림/재로그인·절전 복귀는 아직 미완료다. 같은 feature 브랜치와 Draft PR #12에서 진행하며 병합하지 않는다.
+`compact one-screen layout/standard quota rows`가 포함된 PASS와 종료 코드 0을 확인한 뒤 `open`으로 실행해 모든 주요 정보가 함께 보이는지 확인한다. 이 배치 수정본의 재빌드와 새 native smoke는 이후 성공했으며 결과는 17·18절, 일반 상태 창의 한 화면 표시는 19절에 기록한다. 실제 알림/재로그인·절전 복귀는 아직 미완료다. 같은 feature 브랜치와 Draft PR #12에서 진행하며 병합하지 않는다.
 
 ## 16. Xcode 선택 경로와 조용한 빌드 중단 보완
 
@@ -341,7 +341,7 @@ Xcode 설치·전역 `xcode-select` 변경·라이선스 승인은 하지 않는
 - 실패 경우는 종료 코드 2이고 공통 검사에 도달하지 않는다. 정상 경우는 가짜 `dotnet run` 경계까지 도달한 뒤 의도적 종료 코드 88로 멈춰 실제 검사·컴파일·네트워크·계정 접근을 막았다. 이 88은 fixture에서만 쓰는 값이며 제품 스크립트 성공 코드가 아니다.
 - `build.sh`의 UTF-8 no BOM/LF와 `git diff --check` 확인. C# 변경이 없으므로 이전 15절의 전체 앱 검사를 불필요하게 반복하지 않는다.
 
-이 결과는 실제 macOS 빌드가 아니다. 다음 사용자 재빌드와 0.1.1 native smoke·한 화면 가독성 확인은 아직 필요하다. 먼저 실행 중인 앱을 종료한 뒤 저장소 루트에서 각 줄을 따로 실행한다.
+이 단계의 로컬 결과는 실제 macOS 빌드가 아니다. 이후 사용자 재빌드가 성공했으며 17절에 구분해 기록한다. 아래는 당시 안내한 재빌드 절차이고, 이미 성공한 설치에서 반복할 필요는 없다.
 
 ```sh
 git pull --ff-only
@@ -349,3 +349,68 @@ git pull --ff-only
 ```
 
 빌드 성공 이후에만 15절의 새 bundle native smoke와 일반 실행으로 이어진다. Command Line Tools를 다시 설치하거나 전역 설정을 바꾸는 단계는 이 대안에 필요하지 않다. [Apple 실행별 개발 도구 선택 안내](https://developer.apple.com/documentation/xcode/configuring-command-line-tools-settings).
+
+## 17. 0.1.1 실제 Mac Release 재빌드 성공
+
+2026-10-03 KST 사용자가 `git pull --ff-only`로 `91c32c6`에서 **`9f805f8fe32d69f088170744cd1cbc7e6ac3ab4d`**를 받은 뒤 실행별 `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer`를 지정한 `Mac/build.sh` 전체 출력을 전달했다. 새 compact layout 코드가 포함된 0.1.1의 실제 Mac 빌드 결과이며, 앞선 0.1.0 성공 기록과 구별한다.
+
+| 항목 | 사용자 출력에서 확인한 결과 |
+|---|---|
+| 도구 | Xcode 27.0 / build 27A266a, .NET SDK 10.0.401, macos workload 사전 확인 통과 |
+| 해당 실행의 개발 경로 | `/Applications/Xcode.app/Contents/Developer`; 기본 전역 선택 변경 확인은 아님 |
+| NuGet HTTP cache | 저장소의 `artifacts/mac-build/nuget-http-cache` 사용 |
+| 실제 Mac 공통 검사 | `PASS ALL SHARED: 244,347 assertions` |
+| native Release | `net10.0-macos27.0` / `osx-arm64`, `-warnaserror` 성공, 경고·오류 출력 없음; 전체 빌드 18.2초 |
+| 로컬 서명 | `codesign --verify --deep --strict` 다음의 SQLite·Bundle 안내까지 도달하여 통과 확인 |
+| SQLite | bundle의 `libe_sqlite3.dylib`, Mach-O 64-bit / arm64 포함 |
+| 기존 빌드 오류 | 조용한 Xcode 중단·NU1900 캐시 접근 거부·JSON IL2026 재발 없음 |
+
+공통 검사는 Schedule/DST·미국 공휴일·가짜 HTTP 공식 상태·권고/알림 정책·SQLite/실측/통계 1만 건·캐시·한도 파서/조회 주기·가짜 CLI 모니터/재시작/취소·Mac 경로/IANA를 포함한다. 실제 Provider 장애 조회나 계정 조회를 이번 빌드에서 검증한 것은 아니다.
+
+생성된 최종 bundle:
+
+```text
+/Users/hydron/ai-burger-clock/Mac/bin/Release/net10.0-macos27.0/osx-arm64/AI Burger Clock.app
+```
+
+빌드는 정상 완료됐다. 이 빌드 결과를 받은 시점에는 native smoke가 아직 다음 단계였으며, 이후 새 native smoke가 통과한 결과는 18절에 기록한다. 당시 안내한 아래 검사는 이미 생성된 bundle을 사용하므로 문서 업데이트나 재빌드가 필요하지 않았다.
+
+```sh
+"/Users/hydron/ai-burger-clock/Mac/bin/Release/net10.0-macos27.0/osx-arm64/AI Burger Clock.app/Contents/MacOS/AI Burger Clock" --smoke-test
+echo "검사 종료 코드: $?"
+```
+
+`compact one-screen layout/standard quota rows`를 포함한 PASS / 종료 코드 0을 확인하면 일반 실행으로 주요 정보의 동시 표시와 가독성을 확인한다. 이후 일반 화면까지 확인한 결과는 19절에 기록한다. 실제 알림·재로그인·절전 복귀·장기 사용은 계속 별도 항목이다. 이번 기록 갱신은 Markdown 문서만 변경하며 Windows 2.2.2 / Mac 0.1.1 버전, C#·DB·설정·배포본은 바꾸지 않는다. OS 동작 검증은 아직 남아 있어 Draft PR #12를 유지하며 main 병합은 하지 않는다.
+
+## 18. 0.1.1 새 native smoke 통과
+
+2026-10-03 KST 사용자가 17절에서 만든 bundle에 `--smoke-test`를 붙여 실행한 결과를 전달했다. 검사 대상 소스는 **`9f805f8fe32d69f088170744cd1cbc7e6ac3ab4d`**, Mac preview 0.1.1이다. 문서 갱신 때문에 다시 빌드한 결과가 아니며 이전 0.1.0 검사 성공을 대신 기록한 것도 아니다.
+
+```text
+PASS: native controls/window close-reopen, compact one-screen layout/standard quota rows, temporary SQLite, four events/notes, statistics, injected quota countdown; no account/network/settings changes.
+검사 종료 코드: 0
+```
+
+실제 AppKit 메뉴바·상태/통계 창의 생성과 닫기/재열기, 전체 상태 창 스크롤 부재·컨트롤 경계/겹침, 일반 Codex 3줄/Claude 4줄의 실제 글꼴 높이를 확인했다. GUID 임시 SQLite의 4종 이벤트/메모·표본수/No data, 가짜 0% 한도와 주입 시각 1분 경과 카운트다운도 통과했다.
+
+계정 CLI·HTTP·인증 파일·브라우저·알림 권한 요청·로그인 항목 설정 변경을 하지 않는 검사다. 따라서 실제 계정 조회, 실제 한도 리셋·시간 경과, OS 알림 노출·재로그인 자동 실행·절전 복귀를 새로 검증한 것으로 해석하지 않는다.
+
+다음으로 이미 만든 bundle을 일반 실행하도록 안내했다. 이 실행은 Mac 전용 사용자 DB와 기존 설정에 따른 공식 상태/설치 CLI 조회를 사용한다. 이후 새 일반 화면을 받아 주요 정보가 함께 보이는 것을 확인한 결과는 19절에 기록한다.
+
+```sh
+open "/Users/hydron/ai-burger-clock/Mac/bin/Release/net10.0-macos27.0/osx-arm64/AI Burger Clock.app"
+```
+
+새 코드·패키지·버전·DB schema·Windows dist 변경 없이 README·CODE_GUIDE·BACKLOG·Mac 안내와 이 기록만 갱신한다. Draft PR #12는 남은 OS 동작 검증 대기 상태로 유지한다.
+
+## 19. 0.1.1 일반 상태 창과 메뉴바 확인
+
+2026-10-03 KST 사용자가 0.1.1의 새 native smoke 통과 후 일반 앱의 전체 상태 창과 메뉴바 스크린샷을 전달했다. 검사/빌드 대상과 같은 `9f805f8` bundle이며 이미지는 관찰 근거로만 읽고 GitHub에는 올리지 않는다.
+
+전체 창에서 Schedule·전환 카운트다운/다음 전환·US DST/ET/PT offset·Weekend 표시, OpenAI/Claude/Gemini 세 Provider의 GO/Official 정상·이유·기록 버튼, ChatGPT 제목/Work-Codex 한도와 Claude 세션/주간 전체/모델별 한도, 마지막/다음 조회·Refresh/Statistics·공휴일/자동 실행 checkbox를 **상하 스크롤 없이 함께 확인**했다. 기존 0.1.0처럼 상단과 하단을 나눠 확인해야 하는 문제는 이 일반 화면에서 재현되지 않았다.
+
+메뉴바의 F 아이콘, 현재 Schedule·카운트다운, 상태 창/Refresh/Statistics, Provider 기록/공식 상태 링크, 공휴일·로그인 자동 실행·로그인 항목 설정·종료 메뉴도 표시됐다. 공휴일·로그인 자동 실행은 상태 창과 메뉴바 모두 체크 상태였다. 자동 실행 체크가 보인다는 사실만으로 실제 재로그인 실행까지 검증한 것으로 보지 않는다.
+
+새 일반 화면에서 두 계정 한도와 성공 조회 시각도 표시되었다. 이번 화면의 계정 사용률 수치는 추가로 공개 기록하지 않으며 스크린샷·계정 데이터 파일도 업로드하지 않는다. 정상/GO 표시 역시 해당 시점의 앱 화면 관찰이며 별도의 장애 시나리오 재검증은 아니다.
+
+이번 배치 수정의 **실제 Mac Release·공통 검사·새 native smoke·일반 한 화면 표시 확인을 완료**했다. 실제 링크/기록 메뉴/Tooltip 조작, 일반 사용자 DB 재시작·OS 알림·재로그인·절전/연결 복구·장기 사용은 별도 항목이다. 추가 코드 변경이나 재빌드는 하지 않고 확인 결과만 동일 feature 브랜치/Draft PR #12와 안내 문서에 반영한다.

@@ -2,7 +2,7 @@
 
 Apple Silicon / macOS 27을 위한 C# AppKit 메뉴바 앱입니다. Windows 2.2.2 배포본과 별도 앱이지만, 시간표·공식 상태·권고·한도 조회·기록·통계 계산 코드는 같은 저장소의 원본 소스를 링크해서 사용합니다. Windows 코드를 복사해 따로 유지하지 않습니다.
 
-이 폴더는 **일반 사용 검증을 진행 중인 preview 소스**입니다. 2026-10-03 KST 실제 Mac에서 기존 0.1.0의 공통 검사 244,347건, Release `.app` 생성, 로컬 서명 검사와 ARM64 SQLite 포함, native smoke 종료 코드 0을 확인했습니다. 이후 CLI 설치로 ChatGPT/Claude 한도가 정상 수신되고 세 Provider 상태·Schedule·메뉴바도 표시됐습니다. **0.1.1은 한 화면에 정보를 모은 배치 수정이며 새 Mac 빌드와 화면 확인은 아직 필요합니다.** 실제 알림·재로그인·절전/연결 복구와 장기 사용은 별도 검증 항목입니다. [최신 화면과 수정 기록](../MACOS_PORT.md#15-cli-조회-성공과-011-한-화면-배치-수정)
+이 폴더는 **일반 사용 검증을 진행 중인 preview 소스**입니다. 2026-10-03 KST **한 화면에 정보를 모은 0.1.1의 실제 Mac 공통 검사 244,347건·Release `.app`·서명·ARM64 SQLite와 새 native smoke 종료 코드 0을 확인했습니다.** 일반 상태 창에서 Schedule·세 Provider·ChatGPT/Claude 한도·하단 버튼/옵션이 스크롤 없이 함께 보이고 메뉴바와 계정 한도가 정상 표시되는 것도 확인했습니다. 실제 알림·재로그인·절전/연결 복구·장기 사용은 남아 있습니다. [최신 빌드](../MACOS_PORT.md#17-011-실제-mac-release-재빌드-성공), [새 native 검사](../MACOS_PORT.md#18-011-새-native-smoke-통과), [일반 화면](../MACOS_PORT.md#19-011-일반-상태-창과-메뉴바-확인)
 
 ## 들어 있는 기능
 
@@ -31,7 +31,7 @@ git pull --ff-only
 bash Mac/build.sh
 ```
 
-빌드가 성공하면 아래 안전한 네이티브 검사를 실행한 뒤 일반 실행으로 한 화면에 모두 보이는지 확인합니다.
+빌드가 성공하면 아래 안전한 네이티브 검사를 실행한 뒤 일반 실행으로 한 화면에 모두 보이는지 확인합니다. 소스 `9f805f8`의 빌드 성공 출력을 확인한 사용자 설치는 **재빌드하지 않고 이미 만든 bundle로 검사**하면 됩니다. 이후 문서만 갱신한 커밋 때문에 앱을 다시 빌드할 필요는 없습니다.
 
 ## Mac에서 빌드
 
@@ -99,6 +99,8 @@ git pull --ff-only
 
 `DEVELOPER_DIR`는 이 빌드와 자식 프로세스에만 적용합니다. 전역 `xcode-select` 설정·라이선스·설치 상태를 바꾸지 않습니다. 스크립트가 Xcode를 자동 선택하거나 설치하지도 않습니다. [Apple의 개발 도구 선택 안내](https://developer.apple.com/documentation/xcode/configuring-command-line-tools-settings), [원인과 검증 기록](../MACOS_PORT.md#16-xcode-선택-경로와-조용한-빌드-중단-보완).
 
+이 실행별 지정으로 소스 `9f805f8`의 실제 Mac 0.1.1 Release·공통 검사·서명·ARM64 SQLite 확인까지 성공했고 해당 bundle의 native smoke도 종료 코드 0으로 통과했습니다. 기본 선택 경로를 전역으로 바꾼 결과로 해석하지 않습니다.
+
 ### NU1900 / HTTP 캐시 접근 거부
 
 첫 Mac 빌드에서 사용자 홈의 NuGet HTTP 캐시에 접근하지 못해 취약성 데이터 조회가 실패한 사례가 있습니다. 관리자 권한으로 개발 도구를 설치하면서 캐시 소유권이 달라졌을 가능성이 있지만, 소유권을 확인하기 전에는 확정할 수 없습니다.
@@ -122,7 +124,7 @@ NUGET_HTTP_CACHE_PATH="$PWD/artifacts/mac-build/nuget-http-cache" bash Mac/build
 
 공통 검사 이후 `UsageStore.cs`의 JSON 저장·읽기에서 IL2026이 나오면 최신 `feature/macos-native` 소스를 받아 위와 같이 다시 빌드하세요. Apple SDK의 trimming 검사에서 런타임 reflection 기반 직렬화를 경고하는 문제였으며, `QuotaJsonContext`로 타입 정보를 미리 생성하도록 수정했습니다. JSON 형식·기존 캐시·DB schema 2는 유지하고, 경고 억제나 새 NuGet 패키지는 추가하지 않았습니다. [Microsoft source generation 안내](https://learn.microsoft.com/en-us/dotnet/standard/serialization/system-text-json/source-generation)
 
-수정 후 Windows의 Release/회귀·공통 검사, Mac 참조 코드의 trimming 분석과 reflection 비활성화 캐시 검사를 통과했습니다. 이어서 소스 `302aee8`의 **실제 Mac `.app` 빌드·서명 검사와 native smoke까지 통과**했고 CLI 설치 후 실제 한도 수신도 확인했습니다. 0.1.1은 별도 UI 수정본이며 새 빌드/실행 검증이 필요합니다. [이전 빌드의 정확한 검증 범위](../MACOS_PORT.md#13-실제-mac-native-smoke-통과).
+수정 후 Windows의 Release/회귀·공통 검사, Mac 참조 코드의 trimming 분석과 reflection 비활성화 캐시 검사를 통과했습니다. 이어서 소스 `302aee8`의 **실제 Mac `.app` 빌드·서명 검사와 native smoke까지 통과**했고 CLI 설치 후 실제 한도 수신도 확인했습니다. 별도 UI 수정본 0.1.1의 소스 `9f805f8`도 새 Mac 빌드·서명·ARM64 SQLite와 새 native smoke를 통과했으며 일반 실행 한 화면 표시도 확인했습니다. [이전 native 검사 범위](../MACOS_PORT.md#13-실제-mac-native-smoke-통과), [새 빌드 결과](../MACOS_PORT.md#17-011-실제-mac-release-재빌드-성공), [새 native 검사](../MACOS_PORT.md#18-011-새-native-smoke-통과).
 
 ### 빌드 결과
 
@@ -165,7 +167,7 @@ echo "검사 종료 코드: $?"
 
 성공 기준은 `PASS: native controls/window close-reopen...` 출력과 종료 코드 `0`입니다. 오류가 있으면 출력과 종료 코드를 보존하고 일반 실행·자동 시작 설정 전에 원인을 확인합니다.
 
-2026-10-03 KST 사용자 Mac에서 이전 0.1.0 검사의 종료 코드 0을 확인했습니다. 새 배치 검사를 추가한 0.1.1은 재빌드한 bundle로 다시 확인해야 하며, 성공 출력에는 `compact one-screen layout/standard quota rows`가 포함됩니다.
+2026-10-03 KST 사용자 Mac에서 이전 0.1.0뿐 아니라 새 0.1.1의 종료 코드 0도 확인했습니다. 0.1.1 성공 출력에는 `compact one-screen layout/standard quota rows`와 `injected quota countdown`이 포함됐습니다. 가짜 한도 데이터로 실행한 검사이므로 실제 CLI 계정 조회 성공이나 OS 알림 노출을 뜻하지 않습니다. [검사 기록](../MACOS_PORT.md#18-011-새-native-smoke-통과)
 
 ## 일반 실행 확인
 
@@ -177,7 +179,7 @@ open "Mac/bin/Release/net10.0-macos27.0/osx-arm64/AI Burger Clock.app"
 
 일반 실행은 Mac 전용 사용자 DB를 생성/열고 공식 상태 페이지와 설치된 CLI의 한도를 조회합니다. 알림 권한 창이 나오면 사용자가 허용 여부를 선택합니다. 로그인 자동 실행은 현재 옵션을 유지합니다. 앱 위치를 나중에 변경하면 시스템 설정 → 일반 → 로그인 항목에서 등록 경로/승인 상태를 다시 확인하세요.
 
-메뉴바 → 상태 창 열기에서 Schedule·Provider 공식 상태·ChatGPT/Claude 한도·버튼이 전체 화면 스크롤 없이 보이는지 확인합니다. 한도 카운트다운과 긴 이유의 Tooltip도 확인하세요. CLI 설치 후 실제 한도 수신은 이전 스크린샷에서 확인했으며, 새 배치의 가독성은 아직 확인 전입니다. 다른 Mac에서 CLI가 설치·로그인되지 않았다면 한도 조회 불가가 표시됩니다. Windows의 로그인은 자동 복사하지 않습니다.
+메뉴바 → 상태 창 열기에서 Schedule·Provider 공식 상태·ChatGPT/Claude 한도·버튼이 전체 화면 스크롤 없이 보이는지 확인합니다. 한도 카운트다운과 긴 이유의 Tooltip도 확인하세요. 사용자 0.1.1 전체 창/메뉴바 스크린샷에서 한 화면 표시와 두 계정 한도 수신을 확인했습니다. 실제 Tooltip·기록 메뉴·공식 링크 클릭, 추가 한도 내부 스크롤과 OS 동작까지 스크린샷으로 검증한 것은 아닙니다. 다른 Mac에서 CLI가 설치·로그인되지 않았다면 한도 조회 불가가 표시됩니다. Windows의 로그인은 자동 복사하지 않습니다. [일반 화면 기록](../MACOS_PORT.md#19-011-일반-상태-창과-메뉴바-확인)
 
 ## CLI를 찾지 못하는 경우
 

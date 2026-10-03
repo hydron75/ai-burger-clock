@@ -402,7 +402,7 @@ Mac의 시간대 ID는 `America/New_York`, `America/Los_Angeles`, `Asia/Seoul`�
 
 Mac은 `~/Library/Application Support/AIBurgerClock`에 별도 DB를 쓰고 `SMAppService.MainApp`으로 로그인 항목을 관리합니다. CLI는 절대 실행 경로와 실행 권한을 확인하고, shell 프로필·Keychain·인증 파일은 읽지 않습니다. 기능 규칙을 함께 써도 **두 컴퓨터의 DB와 로그인은 자동 동기화되지 않습니다.**
 
-Windows 버전은 2.2.2 그대로이고 Mac 소스는 0.1.1 preview입니다. 실제 Mac의 기존 0.1.0 빌드/native smoke와 CLI 설치 후 ChatGPT/Claude 한도 수신을 확인했습니다. `MacCliPaths`는 GUI 앱의 PATH와 `~/.local/bin`, `/opt/homebrew/bin`, `/usr/local/bin`에서 실행 가능한 공식 명령을 찾으며 인증 파일은 읽지 않습니다. 0.1.1의 새 Mac 빌드·화면 확인과 실제 알림·재로그인·절전 복귀 검증은 남아 있습니다. [작업 기록](MACOS_PORT.md#15-cli-조회-성공과-011-한-화면-배치-수정)에 이전 실행 확인과 새 수정본 검증을 구분합니다.
+Windows 버전은 2.2.2 그대로이고 Mac 소스는 0.1.1 preview입니다. `MacCliPaths`는 GUI 앱의 PATH와 `~/.local/bin`, `/opt/homebrew/bin`, `/usr/local/bin`에서 실행 가능한 공식 명령을 찾으며 인증 파일은 읽지 않습니다. 0.1.1의 실제 Mac 공통 검사 244,347건·Release `.app`·서명·ARM64 SQLite와 새 native smoke 종료 코드 0을 통과했고, 일반 화면에서 두 CLI 한도와 한 화면 배치도 확인했습니다. 실제 알림·재로그인·절전 복귀 검증은 남아 있습니다. [새 빌드 기록](MACOS_PORT.md#17-011-실제-mac-release-재빌드-성공), [새 native 검사](MACOS_PORT.md#18-011-새-native-smoke-통과), [일반 화면 확인](MACOS_PORT.md#19-011-일반-상태-창과-메뉴바-확인)에 이전 실행 확인과 새 수정본 검증을 구분합니다.
 
 `MacStatusWindow`는 전체 document 스크롤을 없애고 430×660 point의 고정 AppKit 창에 Schedule·세 Provider·ChatGPT/Claude 한도·버튼을 놓습니다. Provider 설명은 두 줄로 제한하고 전체 내용을 Tooltip에 보존합니다. 일반 Codex 2개 창+조회 정보와 Claude 3개 창+조회 정보를 위한 한도 상자는 54/74 point이며 더 많은 모델별 한도는 상자 내부에서 스크롤합니다. `VerifyCompactLayout`은 native smoke에서만 호출하여 전체 화면 스크롤 부재, 컨트롤 경계/겹침, 실제 글꼴 기준 일반 한도 행의 높이를 검사합니다. 상시 조회 로직이나 통계 창의 공통 TextArea 설정은 바꾸지 않습니다.
 
