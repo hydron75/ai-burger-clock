@@ -1,6 +1,6 @@
 # macOS 팝오버 UI와 공통 표시 로직 — 분석·계획
 
-작성: 2026-10-08 KST. 상태: 구현 중. PR 1~5(#21·#22·#23·#24·#26), 공통 검사 단일 실행(#25), build.sh 실행 중 앱 보호(#27)는 병합됐고, PR 6(Mac 0.2.0)을 진행 중입니다. 진행 중 조정은 [4-1](#4-1-진행-중-조정-2026-10-08)을 봅니다.
+작성: 2026-10-08 KST. 상태: PR 1~6(#21·#22·#23·#24·#26·#28, Mac 0.2.0), 공통 검사 단일 실행(#25), build.sh 실행 중 앱 보호(#27)는 병합됐습니다. 남은 순서는 [4-2](#4-2-남은-작업-순서와-담당-2026-10-08-결정)를 봅니다. 진행 중 조정은 [4-1](#4-1-진행-중-조정-2026-10-08)을 봅니다.
 
 ## Context
 - 목표: macOS 메뉴바 UI를 Windows 트레이 패널과 같은 구성의 팝오버로 바꾸고, Windows 변경을 macOS에 쉽게 반영하는 구조를 만든다.
@@ -96,7 +96,7 @@ PR #14에서 HTTP 설정, 알림 문구, 네트워크 재조회 제한은 이미
 
 **분리 순서**
 1. **B층 일부 + C층**: `ProviderNames`(표시명), `StatusPanelModel`·`QuotaPanelModel`(표시 데이터 + 톤 + 본문 문구, 현재 Windows 문구 기준 골든 검사), `UsageMeasurementFactory`(메모 창 **전에** 캡처하는 Windows 방식)와 메모 1,000자 제한.
-2. **B층 나머지**: 새 공통 원본 `AppCoordinator`(가칭)로 옮깁니다.
+2. **B층 나머지**: 새 공통 원본 `AppCoordinator`(가칭)로 옮깁니다. (2026-10-08: 매초 갱신·알림 판정(7a)만 먼저 진행하고 나머지는 보류. 4-2)
    - 대상: 시작·갱신·공휴일 토글·기록 저장·종료 순서.
    - 호스트와는 이벤트/콜백으로 연결합니다. UI 호스트는 "표시해", "알림 띄워", "메모 물어봐"만 구현합니다.
    - Windows `TrayApplicationContext`를 크게 바꿔야 하므로 1단계 뒤에 별도로 진행합니다.
@@ -104,7 +104,7 @@ PR #14에서 HTTP 설정, 알림 문구, 네트워크 재조회 제한은 이미
 4. **검사 정리**
    - `TrayPresentationTests`를 공통 부분과 Windows 아이콘 부분으로 나눕니다.
    - `AccountQuotaClientTests`는 OS별 예시로 나눕니다.
-   - 새 공통 검사는 `Shared.Tests`와 Windows `SelfTest` 양쪽에 등록합니다. 그러면 Windows self-test의 공통 부분은 Mac에서도 같은 검사로 돌아갑니다.
+   - 새 공통 검사는 `Shared.Tests`와 Windows `SelfTest` 양쪽에 등록합니다. 그러면 Windows self-test의 공통 부분은 Mac에서도 같은 검사로 돌아갑니다. (#25 이후에는 `SharedTestSuite` 한 곳에만 등록합니다.)
 5. (선택) `AiBurgerClock.Core` 라이브러리 전환.
 
 **각 OS에 남는 것(분리 후)**
@@ -199,14 +199,18 @@ PR #14에서 HTTP 설정, 알림 문구, 네트워크 재조회 제한은 이미
 | 4 | Mac: 상태 아이콘 왼쪽 클릭→팝오버, 오른쪽 클릭→짧은 메뉴(Refresh/로그인 항목 설정 열기…/종료 ⌘Q), "상태 창 열기"와 상태 NSWindow 제거. 팝오버 안은 PR1 모델로 Windows 순서 배치. **(앞당김)** 카드 오른쪽/control-클릭 기록 메뉴(PR3 공통 코드)와 메모 흐름, 한도 ⓘ→줄별 Tooltip, 불투명 배경과 대비 4.5:1 이상의 톤 색 | Mac 로컬 챗 | build.sh, smoke(새 레이아웃 검사), 실제 클릭·바깥 클릭·듀얼 모니터 |
 | 5 | Mac: 카드 **전체** 왼쪽 클릭(공식 페이지)과 카드에만 hover·손가락 커서. 정렬 개선: 한도를 Provider별 박스(카드와 같은 모양, 클릭 없음)에 넣고, 제목은 바깥 기준선·박스 안 글자는 같은 x(결정 9). 작은 화면에서는 한도 영역만 줄여 스크롤. 기록 메뉴·메모 흐름은 PR 4로 옮겼습니다 | Mac 로컬 챗 | smoke(글자 시작 x·hover 대비·화면 높이), 실제 조작(카드 클릭·기록·메모 흐름) |
 | 6 | Mac 0.2.0: 메뉴바 아이콘의 흰(다크 모드는 어두운) 원 바탕+색 글자 F/B와 다크 모드 연동, MACOS_PORT 기록, 버전 0.2.0(`Version`·`AssemblyVersion`·`FileVersion`·`ApplicationVersion` 함께). "한도 보기" 전환은 넣지 않습니다(3-3, 결정 10). ⓘ→Tooltip과 팝오버의 불투명 배경·톤 색은 PR 4로 옮겼습니다 | Mac 로컬 챗 | 라이트/다크·두 화면 스크린샷, 다크 모드 메뉴바의 아이콘 표시(바탕·글자 대비, 비활성 화면 포함), 아이콘 픽셀 검사 갱신 |
-| 7 | 공통(B층 나머지): `AppCoordinator`(가칭)로 시작·갱신·공휴일 토글·기록 저장·종료 흐름 이동. 호스트는 아직 사용 안 함 | 먼저 착수하는 쪽 | Shared.Tests, Windows 컴파일 |
-| 7w | Windows: `TrayApplicationContext`를 `AppCoordinator`로 전환 | ChatGPT | Windows self-test·smoke |
-| 7m | Mac: `MacApplication`을 `AppCoordinator`로 전환 | Mac 로컬 챗 | build.sh, smoke |
-| 8 | 공통 검사 정리: `TrayPresentationTests`의 공통 부분과 `AccountQuotaClientTests`의 OS별 예시를 새 공통 검사로 추가 | 먼저 착수하는 쪽 | Shared.Tests |
-| 8w | Windows: 기존 `TrayPresentationTests`·`AccountQuotaClientTests`에서 옮긴 부분 정리, `SelfTest` 등록 | ChatGPT | Windows self-test |
+| 8 | 공통 검사 정리(**한 PR**): `TrayPresentationTests`의 OS와 무관한 부분(아이콘 색 우선순위·Tooltip·알림 제목)과 `AccountQuotaClientTests`의 CLI 프로토콜·파싱·재시도 부분을 새 공통 검사로 옮기고 `SharedTestSuite`에 등록. 원래 파일에서는 옮긴 부분을 지우고 Windows 전용(트레이 아이콘 픽셀, Windows 경로 예시)만 남김 | ChatGPT | Windows self-test(건수 이동 확인). Mac은 PR HEAD에서 Shared.Tests·build.sh로 macOS 통과 확인(역슬래시 경로 등) 후 PR 코멘트 |
+| S | 공통: 통계 요약·No data·설명 문구를 공통으로(`StatisticsAnalysis` 쪽) + 골든 검사(현재 Windows 문구 기준). Mac 통계 창이 이 문구를 사용하고, 빈 상태 안내(현재 "메뉴바의 사용 경험 기록을 이용하세요")를 카드 오른쪽 클릭 기록에 맞게 수정 | Mac 로컬 챗 | Shared.Tests, Windows 컴파일, build.sh·smoke. "공통 원본 변경"과 Windows 확인 요청 |
+| Sw | Windows: `StatisticsWindow`가 S의 공통 문구 사용 | ChatGPT | Windows self-test·smoke, 렌더 PNG 비교 |
+| 7a | 공통: 매초 갱신·알림 판정 엔진(전환 감지, Provider 알림, 공휴일 알림 양보 판정, 아이콘 상태). 입출력 없음, 호스트는 아직 사용 안 함. **코드 전에 API 초안(4-3)을 Windows가 리뷰** | Mac 로컬 챗 | Shared.Tests(골든), Windows 컴파일, build.sh |
+| 7a-w | Windows: `TrayApplicationContext.RefreshStatus`·`UpdateProviderDisplay`가 7a 사용. 동작 변화 없음 | ChatGPT | Windows self-test·smoke |
+| 7a-m | Mac: `MacApplication.RefreshDisplay`가 7a 사용 | Mac 로컬 챗 | build.sh, smoke |
+| 7b | 공통: 기록·공휴일 토글 흐름(저장 대기, 실패 처리, 메모 콜백, 피드백) — **보류(7a 이후 재판단)** | — | — |
+| 7c | 공통: 시작·종료·재조회 수명 주기(`AppCoordinator`) — **보류(7a 이후 재판단)** | — | — |
 
 - PR1이 들어가면 PR2(Windows)와 PR4~6(Mac)은 서로 기다리지 않고 함께 진행할 수 있습니다.
-- PR7 앱 흐름 공통화는 범위가 커서 팝오버 작업 뒤로 둡니다(가정: 5-1 "권장안"에 포함된 것으로 해석).
+- PR7 앱 흐름 공통화는 범위가 커서 팝오버 작업 뒤로 둡니다(가정: 5-1 "권장안"에 포함된 것으로 해석). 2026-10-08에 7a만 진행하고 7b·7c는 보류하기로 했습니다(4-2, 결정 11).
+- 8w(옮긴 검사 정리)는 PR 8 한 PR에 합쳤습니다. #25 이후 공통 검사는 `SharedTestSuite` 한 곳에만 등록하므로 Windows `SelfTest` 등록 단계는 필요 없습니다.
 - 각 담당은 상대 OS 전용 파일을 고치지 않습니다(AGENTS.md). 그래서 공통 PR과 Windows·Mac 전환 PR을 나눴습니다.
 - 공통 영역은 링크 방식을 유지합니다(5-1). `AiBurgerClock.Core` 라이브러리 전환은 이번 계획에서 뺍니다.
 
@@ -234,6 +238,91 @@ PR #14에서 HTTP 설정, 알림 문구, 네트워크 재조회 제한은 이미
     - 팝오버 높이와 화면: 648pt에서 673pt로 늘었습니다(+25pt). 1280×800 화면에는 그대로 들어갑니다. 1024×640(13인치 "큰 텍스트")처럼 낮은 화면에서는 한도 영역만 줄여 스크롤하고, 나머지는 잘리지 않습니다(smoke 검사).
   - PR 6: 메뉴바 아이콘의 흰(다크 모드는 어두운) 원 바탕+색 글자 F/B와 픽셀 검사 갱신, 다크 모드·두 화면 확인, 0.2.0, MACOS_PORT 기록. "한도 보기" 전환은 빼기로 했습니다(결정 10).
 
+### 4-2. 남은 작업 순서와 담당 (2026-10-08 결정)
+
+| 순서 | PR | 담당 | 범위 |
+|---|---|---|---|
+| 1 | 문서(이 변경) | Mac 로컬 챗 | 문서만 |
+| 2 | PR 8 공통 검사 정리 | ChatGPT(한 PR), Mac은 PR HEAD에서 macOS 통과 확인 | 공통 검사 + Windows 검사 |
+| 3 | S 통계 문구 공통화 + Mac 통계 창 | Mac 로컬 챗 | 공통 코드 + Mac. Windows 전환(Sw)은 ChatGPT가 S 병합 뒤 진행 |
+| 4 | 7a 공통 판정 엔진 | Mac 로컬 챗(API 초안 4-3을 Windows가 먼저 리뷰) | 공통 코드 |
+| 5 | 7a-w Windows 전환 | ChatGPT | Windows |
+| 6 | 7a-m Mac 전환 | Mac 로컬 챗 | Mac |
+
+- 7b·7c는 **보류(7a 이후 재판단)**입니다. 7a의 Windows·Mac 전환이 끝난 뒤 필요성을 다시 판단합니다.
+- **동작 차이 기준(결정 12)**
+  - 기본은 Windows 동작에 맞춥니다. 7a에 해당하는 차이는 Windows 기준으로 맞춥니다.
+  - 다음 두 가지는 Mac 방식이 나을 수 있어, 7b·7c 재판단 때 근거와 함께 다시 제안합니다.
+    - 시작 순서: Mac은 DB 초기화와 공휴일 설정 읽기를 끝낸 뒤 모니터를 만듭니다. Windows는 먼저 만듭니다.
+    - 공휴일 토글: Mac은 같은 값이면 무시합니다.
+- 7a 범위에서 확인한 양쪽 차이
+  - 매초 갱신·알림 판정은 양쪽이 사실상 같습니다. 전환 감지, Provider 알림 허용 조건 `(notify || notifyProviders) && !changed`, 아이콘 상태 변경 감지가 그렇습니다.
+  - Mac Tooltip의 분 단위 표시(35-1절)와 Windows의 초 단위 표시는 호스트 옵션으로 남깁니다(`TrayPresentation.Tooltip`의 `minutePrecision`).
+  - Mac의 공휴일 알림 양보 판정(`providerNotificationSerial`)은 #24에서 Windows와 같게 맞췄습니다.
+
+### 4-3. 7a 판정 엔진 API 초안 (Windows 리뷰용, 코드 전)
+
+목표: Windows `RefreshStatus` + `UpdateProviderDisplay`와 Mac `RefreshDisplay`에서 **표시·알림을 띄우기 전의 판정**만 공통으로 옮깁니다. 화면·알림·타이머·스레드 전환은 호스트에 남습니다. 이름은 가칭이며, `AppCoordinator`라는 이름은 7c 재판단 때 쓰도록 남겨 둡니다.
+
+```csharp
+// 공통 원본(가칭 StatusTicker.cs). UI 스레드에서만 호출하며 스레드 안전하지 않습니다.
+internal enum TickReason
+{
+    Initial,         // 시작·정책 첫 로드: 알림 없음            = Windows RefreshStatus(false)
+    Timer,           // 매초 타이머·창 열기: 전환·Provider 알림  = RefreshStatus(true)
+    ProviderChanged, // 모니터 Changed를 UI 스레드로 넘긴 뒤     = RefreshStatus(true)
+    PolicyChanged    // 공휴일 토글 저장 뒤: Provider 알림만     = RefreshStatus(false, notifyProviders: true)
+}
+
+internal sealed record ProviderAlert(ProviderKind Provider, Recommendation Recommendation,
+    bool Recovered, string Title, string Body);
+
+internal sealed record TickResult(
+    ScheduleSnapshot Schedule,
+    IReadOnlyList<ProviderStatus> Providers,
+    bool ScheduleChanged,
+    (string Title, string Body)? Transition,     // 전환 알림을 낼 때만 값
+    IReadOnlyList<ProviderAlert> ProviderAlerts,  // 이번 판정에서 낼 Provider 알림
+    TrayAppearance Appearance,
+    bool AppearanceChanged);
+
+internal sealed class StatusTicker
+{
+    public StatusTicker(Func<ProviderKind, string>? displayName = null); // 기본 ProviderNames.Provider
+    public TickResult Tick(ScheduleSnapshot schedule, IReadOnlyList<ProviderStatus> providers, TickReason reason);
+}
+```
+
+**판정 규칙(지금 Windows 코드 그대로)**
+- `ScheduleChanged` = 이전 판정이 있고 Schedule 상태가 바뀜. 판정마다 이전 상태를 갱신합니다. `PolicyChanged`에서도 갱신하므로, 그때의 전환은 알림 없이 소비됩니다(현재 Windows와 같음).
+- `Transition`은 `Timer`·`ProviderChanged`이고 `ScheduleChanged`일 때만 `TrayPresentation.TransitionNotification` 결과를 냅니다.
+- Provider 알림 허용 = `reason != Initial && !ScheduleChanged`.
+  - 판정마다 **모든** Provider를 기존 `RecommendationNotifications.Observe`에 넣습니다. 확인된 상태 추적이 끊기지 않게 하려는 것입니다(현재 Windows 반복문과 같음).
+  - 알림 문구는 `TrayPresentation.ProviderNotification`, `Recovered`는 `Recommendation.Go`입니다.
+- `Appearance`는 `TrayPresentation.Calculate` 결과입니다. `AppearanceChanged`는 이전 결과와 비교합니다(첫 판정은 true).
+- 공휴일 알림 양보: 호스트는 `PolicyChanged` 판정 결과의 `ProviderAlerts`가 비었을 때만 공휴일 알림을 띄웁니다. 지금의 `providerNotificationSerial` 비교를 대신합니다.
+
+**호스트에 남는 것**
+- 알림 표시: Windows 풍선(Info/Warning 아이콘), Mac UNNotification.
+- 아이콘 교체, Tooltip 문자열(Windows 초 단위, Mac 분 단위), 메뉴 줄, 패널 갱신.
+- 1초 타이머, 모니터 이벤트를 UI 스레드로 넘기기, 종료 중 무시.
+- Windows 검사용 이벤트(`TransitionNotificationRequested`, `ProviderNotificationRequested`): 결과로부터 호스트가 계속 냅니다.
+
+**검사(골든, Shared.Tests)**
+- 첫 판정에는 알림이 없습니다.
+- 매초 판정 중 FULL↔BURGER 전환 때 전환 알림 1회가 나고, 같은 판정에서는 Provider 알림이 없습니다.
+- GO→HOLD→STOP→GO 알림이 나옵니다. Unknown/STALE 공백을 지나도 확인 상태가 유지되고, BURGER에서는 알림이 없습니다.
+- `PolicyChanged`는 전환을 알리지 않고 Provider 알림만 냅니다.
+- Provider 순서가 결과에 영향을 주지 않습니다.
+- `displayName`이 알림 제목에 반영됩니다.
+- 아이콘 상태 변경 감지.
+
+**Windows 리뷰에서 확인받을 것**
+1. 입력으로 `ScheduleSnapshot`을 받는 방식(시각·공휴일 설정은 7c까지 호스트가 가짐)이 Windows 검사 주입(`utcNow`)과 맞는지.
+2. `TickReason` 네 가지가 현재 `RefreshStatus` 호출 지점(생성자, 타이머, `ShowWindow`, `OnProviderChanged`, 공휴일 토글)을 빠짐없이 덮는지.
+3. 결과 기반 이벤트 발생으로 `UIRegressionChecks`·`HolidayUiChecks`·`SmokeTest`의 기존 기대(`context.RefreshStatus` 32곳 등)가 바뀌지 않는지. `RefreshStatus`는 내부에서 `Tick`을 부르는 형태로 남길 수 있습니다.
+4. 이름(`StatusTicker`, `TickResult`, `ProviderAlert`)과 파일 위치.
+
 ---
 
 ## 5) 결정 사항 (사용자 회신)
@@ -253,6 +342,8 @@ PR #14에서 HTTP 설정, 알림 문구, 네트워크 재조회 제한은 이미
    - 클릭할 수 있는 박스(상태 카드)만 hover 효과를 줍니다. 클릭 동작이 없는 박스(한도)는 같은 모양이되 hover가 없습니다.
    - Windows에서 한도를 패널에 표시하게 되면 같은 규칙을 따릅니다. 지금 Windows는 "한도 보기"로 카드 자리를 바꿔 두 계정 한도를 흰 패널 하나에 표시하므로, Provider별 박스로 나누는 것이 이 규칙에 해당합니다.
 10. 한도 표시(2026-10-08): Mac 팝오버는 한도를 항상 표시하고 "한도 보기" 전환을 넣지 않습니다. Windows는 전환 방식을 유지합니다. 차이와 이유는 3-3절에 적었습니다.
+11. 남은 작업(2026-10-08): 순서는 문서 → PR 8(Windows 한 PR, Mac 확인) → S 통계 문구(Mac, Windows 전환 Sw는 ChatGPT) → 7a 공통 → 7a-w → 7a-m입니다. 7b·7c는 보류(7a 이후 재판단)입니다. 7a 공통 코드는 Mac이 작성하되, 코드 전에 API 초안(4-3)을 Windows가 리뷰합니다.
+12. 호스트 동작 차이(2026-10-08): 공통으로 옮길 때 기본은 Windows 기준입니다. 단 시작 순서와 "공휴일 토글 같은 값이면 무시"는 7b·7c 재판단 때 Mac 방식을 근거와 함께 다시 제안합니다.
 
 ## 6) 진행 방법 (Mac 새 로컬 챗)
 - Mac에서 저장소 폴더를 열고 `git switch main && git pull`로 최신 main을 받습니다. 기존 Mac 로컬 챗은 없으므로 새 Claude Code 챗을 엽니다.
