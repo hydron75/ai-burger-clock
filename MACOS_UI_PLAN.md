@@ -244,7 +244,7 @@ PR #14에서 HTTP 설정, 알림 문구, 네트워크 재조회 제한은 이미
 |---|---|---|---|
 | 1 | 문서(#29) | Mac 로컬 챗 | 문서만. **병합** |
 | 2 | PR 8 공통 검사 정리(#31) | ChatGPT(한 PR), Mac은 PR HEAD에서 macOS 통과 확인 | 공통 검사 + Windows 검사. **병합** |
-| 3 | S 통계 문구 공통화 + Mac 통계 창 | Mac 로컬 챗 | 공통 코드 + Mac |
+| 3 | S 통계 문구 공통화 + Mac 통계 창(#32) | Mac 로컬 챗 | 공통 코드 + Mac. **병합** |
 | 4 | **S 병합 뒤 동시 진행:** Sw Windows 통계 창 전환 ∥ 7a 공통 판정 엔진 | Sw: ChatGPT / 7a: Mac 로컬 챗(API 초안 4-3은 #31에서 Windows 리뷰 완료) | Sw: Windows / 7a: 공통 코드 |
 | 5 | 7a-w Windows 전환 | ChatGPT | Windows. 7a 병합 뒤 |
 | 6 | 7a-m Mac 전환 | Mac 로컬 챗 | Mac. 7a 병합 뒤(7a-w와 순서 무관) |
@@ -262,7 +262,7 @@ PR #14에서 HTTP 설정, 알림 문구, 네트워크 재조회 제한은 이미
   - Mac Tooltip의 분 단위 표시(35-1절)와 Windows의 초 단위 표시는 호스트 옵션으로 남깁니다(`TrayPresentation.Tooltip`의 `minutePrecision`).
   - Mac의 공휴일 알림 양보 판정(`providerNotificationSerial`)은 #24에서 Windows와 같게 맞췄습니다.
 
-### 4-3. 7a 판정 엔진 API 초안 (Windows 리뷰용, 코드 전)
+### 4-3. 7a 판정 엔진 API (초안 → #31 Windows 리뷰 → 7a 구현)
 
 목표: Windows `RefreshStatus` + `UpdateProviderDisplay`와 Mac `RefreshDisplay`에서 **표시·알림을 띄우기 전의 판정**만 공통으로 옮깁니다. 화면·알림·타이머·스레드 전환은 호스트에 남습니다. 이름은 가칭이며, `AppCoordinator`라는 이름은 7c 재판단 때 쓰도록 남겨 둡니다.
 
@@ -290,7 +290,9 @@ internal sealed record TickResult(
 
 internal sealed class StatusTicker
 {
-    public StatusTicker(Func<ProviderKind, string>? displayName = null); // 기본 ProviderNames.Provider
+    // displayName 기본 ProviderNames.Provider. strictInput: 검사용(중복 Provider면 예외).
+    // warn: 실행 중 중복 Provider 경고를 받을 호스트 콜백(로그 출력은 호스트가 정함).
+    public StatusTicker(Func<ProviderKind, string>? displayName = null, bool strictInput = false, Action<string>? warn = null);
     public TickResult Tick(ScheduleSnapshot schedule, IReadOnlyList<ProviderStatus> providers, TickReason reason);
 }
 ```
@@ -299,6 +301,7 @@ internal sealed class StatusTicker
 - `ScheduleChanged` = 이전 판정이 있고 Schedule 상태가 바뀜. 판정마다 이전 상태를 갱신합니다. `PolicyChanged`에서도 갱신하므로, 그때의 전환은 알림 없이 소비됩니다(현재 Windows와 같음).
 - `Transition`은 `Timer`·`ProviderChanged`이고 `ScheduleChanged`일 때만 `TrayPresentation.TransitionNotification` 결과를 냅니다.
 - Provider 알림 허용 = `reason != Initial && !ScheduleChanged`.
+  - `RecommendationNotifications`는 Schedule 경계에서 확인 상태를 지우므로, `!ScheduleChanged`가 실제로 결과를 바꾸는 경우는 드뭅니다. Provider 목록이 빈 판정 때문에 `Observe`가 경계를 보지 못한 경우가 그렇습니다. 7a는 Windows 조건을 그대로 두고, 이 경우를 골든 검사로 고정합니다.
   - 판정마다 **모든** Provider를 기존 `RecommendationNotifications.Observe`에 넣습니다. 확인된 상태 추적이 끊기지 않게 하려는 것입니다(현재 Windows 반복문과 같음).
   - 알림 문구는 `TrayPresentation.ProviderNotification`, `Recovered`는 `Recommendation.Go`입니다.
 - `Appearance`는 `TrayPresentation.Calculate` 결과입니다. `AppearanceChanged`는 이전 결과와 비교합니다(첫 판정은 true).
@@ -319,7 +322,11 @@ internal sealed class StatusTicker
 - 1초 타이머, 모니터 이벤트를 UI 스레드로 넘기기, 종료 중 무시.
 - Windows 검사용 이벤트(`TransitionNotificationRequested`, `ProviderNotificationRequested`): 결과로부터 호스트가 계속 냅니다.
 
-**검사(골든, Shared.Tests)**
+**검사(골든, Shared.Tests — 7a 구현: `StatusTickerTests` 63건)**
+- 7a 전 Windows `RefreshStatus` + `UpdateProviderDisplay` 로직을 검사 안에 그대로 옮긴 사본과 비교합니다. 무작위 판정 10,000회(입력 순서는 섞음)에서 전환·Provider 알림·아이콘 결과가 모두 같아야 합니다.
+- #31 리뷰 추가 항목: Initial 재호출의 전환 소비, PolicyChanged 두 경우(같은 FULL + Provider 변화 / 정책으로 인한 전환), 동시 변화의 ProviderKind 순서, 입력을 바꿔도 이전 결과 유지, 첫 회색 아이콘과 같은 Appearance 재사용.
+- 중복 Provider: 엄격 모드 예외와 상태 불변. 기본 모드는 첫 값 사용, 중복 집합이 새로 나타날 때만 경고, 깨끗한 입력 뒤 재발 시 다시 경고.
+- 검사가 실제로 잡는지 확인: 규칙 두 가지를 일부러 바꾼 사본에서 각각 실패했습니다. 바꾼 규칙은 "전환 판정에서도 Provider 알림 허용"과 "PolicyChanged에서도 전환 알림".
 - 첫 판정에는 알림이 없습니다.
 - 매초 판정 중 FULL↔BURGER 전환 때 전환 알림 1회가 나고, 같은 판정에서는 Provider 알림이 없습니다.
 - GO→HOLD→STOP→GO 알림이 나옵니다. Unknown/STALE 공백을 지나도 확인 상태가 유지되고, BURGER에서는 알림이 없습니다.
