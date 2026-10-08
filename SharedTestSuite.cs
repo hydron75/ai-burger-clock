@@ -20,6 +20,7 @@ internal static class SharedTestSuite
             Report("official sources (in-memory HTTP)", ProviderStatusTests.Run());
             Report("service monitor/notification policy", await MonitorTests.RunAsync());
             Report("tray colors/recommendations/tooltips (portable)", SharedTrayPresentationTests.Run());
+            Report("status ticker: transitions/provider alerts/icon (Windows rules)", StatusTickerTests.Run());
             // StorageTests includes HolidayStorageTests; do not execute it a second time here.
             Report("SQLite/measurements/statistics/10,000 rows", await StorageTests.RunAsync(directory));
             Report("holiday metadata/cache", await HolidayMonitorTests.RunAsync(directory));
