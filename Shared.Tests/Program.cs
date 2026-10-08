@@ -24,6 +24,7 @@ try
     Report("quota schemas/polling policy", quota);
     Report("quota monitor/restart/cancellation (fake CLI)", await AccountQuotaMonitorTests.RunAsync());
     Report("paths/IANA/formatting/CLI candidates", PortablePlatformTests.Run());
+    Report("panel text/tones (Windows golden)", PanelModelTests.Run());
     Console.WriteLine($"PASS ALL SHARED: {total:N0} assertions");
     return 0;
 }
