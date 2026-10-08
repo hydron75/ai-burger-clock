@@ -9,7 +9,7 @@ AI Burger Clock 저장소에서 코드를 고치는 사람과 에이전트를 �
 - SDK는 `global.json` 기준 10.0.100 이상, 같은 10.0의 최신 기능 밴드를 허용합니다. 미리보기 SDK는 쓰지 않습니다.
 - 직접 NuGet 의존성은 `Microsoft.Data.Sqlite 10.0.12` 하나입니다. 새 의존성은 추가하지 않는 것을 기본으로 합니다.
 - 배포본은 framework-dependent 단일 EXE입니다. .NET 10 Desktop Runtime x64가 별도로 필요하며 trimming과 NativeAOT는 쓰지 않습니다.
-- Linux·macOS에서는 `--self-test`·`--smoke-test`를 실행할 수 없습니다. 컴파일 확인은 `dotnet build -c Release -warnaserror -p:EnableWindowsTargeting=true`로 할 수 있습니다(Linux에서 확인).
+- Windows EXE의 `--self-test`·`--smoke-test`는 Linux·macOS에서 실행할 수 없습니다. Mac 앱의 `--smoke-test`는 macOS에서 실행합니다([Mac/README](Mac/README.md)). 컴파일 확인은 `dotnet build -c Release -warnaserror -p:EnableWindowsTargeting=true`로 할 수 있습니다(Linux에서 확인).
 
 ## 빌드
 
@@ -28,7 +28,7 @@ AI Burger Clock 저장소에서 코드를 고치는 사람과 에이전트를 �
 
 ## 검사
 
-별도 테스트 프로젝트는 없습니다. 앱 EXE에 옵션을 붙여 실행합니다. 분기는 [Program.cs](Program.cs)에 있습니다.
+Windows 앱 검사는 앱 EXE에 옵션을 붙여 실행합니다. 분기는 [Program.cs](Program.cs)에 있습니다. 공통 원본의 검사는 OS와 무관한 `net10.0` 프로젝트 [Shared.Tests](Shared.Tests/Program.cs)로도 실행합니다(`dotnet run --project Shared.Tests/AiBurgerClock.Shared.Tests.csproj -c Release --property:TreatWarningsAsErrors=true`). Mac 앱 검사는 [Mac/README](Mac/README.md)의 `--smoke-test`를 따릅니다.
 
 | 옵션 | 하는 일 | 실제 환경에 미치는 영향 |
 |---|---|---|
@@ -58,6 +58,9 @@ AI Burger Clock 저장소에서 코드를 고치는 사람과 에이전트를 �
 - 공통 원본을 고친 PR 본문에는 "공통 원본 변경" 절을 두어 바뀐 파일, 동작 변화, 상대 버전에서 확인할 항목을 적습니다.
 - Mac 쪽에서 공통 원본을 고치면 `dotnet build -c Release -warnaserror -p:EnableWindowsTargeting=true`로 Windows 컴파일까지 확인합니다. 실제 Windows 검사는 위 "Windows 검증" 방식으로 ChatGPT가 진행합니다.
 - Windows 쪽에서 공통 원본을 고치면 Mac 공통 검사·native smoke 확인을 PR에 요청 항목으로 적습니다. Mac 담당이 그 PR HEAD로 `Mac/build.sh`와 `--smoke-test`를 실행하고 결과를 PR 코멘트로 남깁니다.
+- **분리 원칙(2026-10-08):** 필수 로직은 공통 원본에 두고, UI는 각 OS 네이티브(Windows WinForms, Mac AppKit)로 만듭니다. 패널 본문 문구와 표시 판정(톤)도 공통에 둡니다. 색·글꼴·레이아웃·클릭 동작·자동 실행 문구·메뉴 구성은 각 OS가 정합니다. 상세: [MACOS_UI_PLAN](MACOS_UI_PLAN.md).
+- **개선 전달:** Windows·Mac 구분 없이 먼저 개선안을 낸 쪽이 그 개선을 공통 원본 PR로 올립니다. 상대 담당은 자기 UI에 맞춰 반영하고, 반영할 수 없는 부분은 이유와 대안을 PR 코멘트로 회신합니다(재검토 회신).
+- Mac 버전은 `Mac/AiBurgerClock.Mac.csproj`에서만 바꿉니다. `Version`·`AssemblyVersion`·`FileVersion`·`ApplicationVersion`을 함께 바꿉니다. `AssemblyVersion`은 공식 상태 조회 User-Agent와 CLI 클라이언트 버전에 쓰입니다. `Info.plist`에는 적지 않습니다([Mac/README](Mac/README.md)).
 
 ## 작업 흐름: PR과 Windows 검증
 
@@ -66,6 +69,18 @@ Windows 빌드와 검사는 ChatGPT에서 진행합니다. 코드를 고치는 �
 - **PR을 올리는 쪽:** 브랜치에 커밋·푸시하고 PR을 만듭니다. PR 본문에는 자기 환경에서 실제로 확인한 것만 적고, Windows에서 확인할 항목(새 검사, UI 변경 등)을 따로 적습니다.
 - **Windows 검증:** ChatGPT에서 PR HEAD로 `build.ps1`, `--self-test`, `--smoke-test` 등을 실행하고 결과를 PR 코멘트로 남깁니다. 후속 수정은 이 결과를 기준으로 판단합니다.
 - 아래 버전 기록은 Windows 검증 결과(SDK 버전, assertion 수, 최종 EXE 해시 등)가 필요하므로 PR을 올리는 단계에서는 하지 않습니다.
+
+### PR 확인 범위
+
+| 변경 범위 | 병합 전 확인 |
+|---|---|
+| 공통 코드 변경 | Windows(`build.ps1`)와 Mac(`Mac/build.sh`) 양쪽에서 빌드·검사 |
+| Mac UI만 변경 | Mac에서 빌드·검사 |
+| Windows UI만 변경 | Windows에서 빌드·검사 |
+| 문서만 변경 | 내용 검토 |
+
+- PR 본문에 위 범위 중 어디에 해당하는지와 실제로 실행한 확인 항목을 적습니다.
+- 클라우드처럼 빌드할 수 없는 환경에서 만든 PR은 "빌드·검사 미실행"이라고 명시합니다.
 
 ## 작업을 마칠 때: 버전 기록
 
