@@ -385,6 +385,12 @@ internal static class UIRegressionChecks
         int savedNoteCount = 13;
         foreach (var noteCase in savedNoteCases)
         {
+            bool combinedQuotaCase = noteCase.Label == "over 1,000 units";
+            if (combinedQuotaCase)
+            {
+                context.ShowWindow();
+                context.StatusWindow.Controls.OfType<Button>().Single(b => b.Text == QuotaPanelModel.ShowQuotas).PerformClick();
+            }
             Exception? noteError = null;
             bool noteFilled = false;
             using (var noteTimer = new Timer { Interval = 100 })
@@ -410,7 +416,10 @@ internal static class UIRegressionChecks
                     }
                 };
                 noteTimer.Start();
-                rowMenus[0].Items.OfType<ToolStripMenuItem>().Single(i => i.Text == "메모와 함께 기록…").PerformClick();
+                var noteMenu = combinedQuotaCase
+                    ? trayRoot.DropDownItems.OfType<ToolStripMenuItem>().Single(i => i.Text == "ChatGPT").DropDownItems
+                    : rowMenus[0].Items;
+                noteMenu.OfType<ToolStripMenuItem>().Single(i => i.Text == "메모와 함께 기록…").PerformClick();
             }
             if (noteError is not null) throw new InvalidOperationException("Note limit dialog action failed: " + noteCase.Label, noteError);
             string expectedFeedback = noteCase.Truncated
@@ -424,8 +433,21 @@ internal static class UIRegressionChecks
                 "Actual note save persists the expected complete note: " + noteCase.Label);
             Check(feedback.Text == expectedFeedback && feedback.ForeColor == Color.DimGray,
                 "Actual note save uses the expected non-error feedback: " + noteCase.Label);
-            if (noteCase.Label == "over 1,000 units")
+            if (combinedQuotaCase)
+            {
+                context.ShowWindow();
+                var quotaView = context.StatusWindow.Controls.OfType<AccountQuotaView>().Single();
+                Check(quotaView.Visible && quotaView.Controls.OfType<Panel>().Select(p => p.Name)
+                    .SequenceEqual(new[] { "CodexQuotaBox", "ClaudeQuotaBox" }) && panels.Take(3).All(p => !p.Visible),
+                    "Combined quota/note save keeps both Provider boxes visible and status cards hidden");
+                Check(feedback.Text == expectedFeedback && feedback.ForeColor == Color.DimGray,
+                    "Combined quota/note save shows the truncation feedback in quota mode");
+                SaveFormImage(context.StatusWindow, "account-quotas-note-truncated.png", reportDirectory);
+                context.StatusWindow.Controls.OfType<Button>().Single(b => b.Text == QuotaPanelModel.ShowStatus).PerformClick();
+                Check(!quotaView.Visible && panels.Take(3).All(p => p.Visible) && feedback.Text == expectedFeedback,
+                    "Combined quota/note save returns to status mode without clearing truncation feedback");
                 SaveFormImage(context.StatusWindow, "note-truncated.png", reportDirectory);
+            }
         }
         Check((await store.ReadLatestStatusesAsync()).Count == 3, "Official cache saved independently of user observations");
     }
