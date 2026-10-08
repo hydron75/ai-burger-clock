@@ -62,6 +62,9 @@ internal static class UIRegressionChecks
         await monitor.RefreshOnceAsync();
         context.RefreshStatus(true);
         Check(context.CurrentAppearance?.Attention == TrayAttention.Green, "Healthy FULL shows green F");
+        Check(context.StatusWindow.Controls.OfType<Label>().Single(l => l.Text == "●  FULL THROTTLE").ForeColor == Color.FromArgb(25, 145, 78) &&
+            panels.Take(3).All(p => p.Controls.OfType<Label>().Single(l => l.Font.Bold).ForeColor == Color.FromArgb(25, 145, 78)),
+            "Shared Good tones retain the Windows schedule and Provider green palette");
         Icon? unchangedIcon = context.TrayIcon.Icon;
         context.RefreshStatus(true);
         Check(ReferenceEquals(unchangedIcon, context.TrayIcon.Icon), "Countdown ticks do not recreate unchanged tray icon");
@@ -71,6 +74,8 @@ internal static class UIRegressionChecks
         await monitor.RefreshOnceAsync();
         context.RefreshStatus(true);
         Check(notices.SequenceEqual(new[] { (ProviderKind.OpenAI, Recommendation.Hold) }), "GO -> HOLD notification reaches tray handler");
+        Check(panels[0].Controls.OfType<Label>().Any(l => l.Text == "ChatGPT   HOLD" && l.ForeColor == Color.FromArgb(160, 99, 20)),
+            "Shared Caution tone retains the Windows Provider HOLD color");
         Check(context.CurrentAppearance == new TrayAppearance(AgentState.FullThrottle, TrayAttention.Orange) &&
             context.TrayIcon.Text.Contains("ChatGPT HOLD") && context.TrayIcon.Text.Contains("Claude GO") &&
             context.TrayIcon.Text.Contains("Gemini GO"), "Degraded provider makes orange F and independent tooltip recommendations");
@@ -86,6 +91,8 @@ internal static class UIRegressionChecks
         context.RefreshStatus(true);
         Check(notices.Last() == (ProviderKind.OpenAI, Recommendation.Stop), "HOLD -> STOP notification");
         Check(context.CurrentAppearance?.Attention == TrayAttention.Red, "Partial outage makes red F");
+        Check(panels[0].Controls.OfType<Label>().Any(l => l.Text == "ChatGPT   STOP" && l.ForeColor == Color.FromArgb(195, 50, 45)),
+            "Shared Danger tone retains the Windows Provider STOP color");
         context.ShowWindow();
         SmokeTest.RenderAndCheckLayout(context.StatusWindow, "provider-outage.png", reportDirectory);
         Check(Descendants(context.StatusWindow).OfType<Label>().Any(l => l.Text == "Claude   GO") &&
@@ -114,6 +121,8 @@ internal static class UIRegressionChecks
         context.RefreshStatus(true);
         Check(notices.Count == 6, "Unknown gap itself does not send an outage alert");
         Check(context.CurrentAppearance?.Attention == TrayAttention.Gray, "Unknown provider makes gray F without outage alert");
+        Check(panels[0].Controls.OfType<Label>().Any(l => l.Text == "ChatGPT   CHECK" && l.ForeColor == Color.DimGray),
+            "Shared Muted tone retains the Windows Provider CHECK color");
         handler.FailOpenAi = false;
         handler.OpenAiStatus = OfficialStatus.Degraded;
         await monitor.RefreshOnceAsync();
