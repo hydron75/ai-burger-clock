@@ -7,7 +7,8 @@ namespace AiBurgerClock;
 internal static class UIRegressionChecks
 {
     public static async Task RunAsync(TrayApplicationContext context, UsageStore store,
-        TestStatusHttpHandler handler, string? reportDirectory, List<Uri> openedPages)
+        TestStatusHttpHandler handler, string? reportDirectory, List<Uri> openedPages,
+        DateTimeOffset initialNow, Action<DateTimeOffset> setNow)
     {
         void Check(bool value, string message)
         {
@@ -161,16 +162,30 @@ internal static class UIRegressionChecks
 
         var rowMenus = context.StatusWindow.Controls.OfType<Panel>().Select(p => p.ContextMenuStrip!).ToArray();
         var trayRoot = context.TrayIcon.ContextMenuStrip!.Items.OfType<ToolStripMenuItem>().Single(i => i.Text == "사용 경험 기록");
+        void CheckRecordingMenu(ToolStripItemCollection items, string surface)
+        {
+            Check(items.Count == 6, surface + " has four events, a separator and the note item");
+            string[] eventNames = ["Success", "Slow", "Error", "Interrupted"];
+            for (int index = 0; index < eventNames.Length; index++)
+                Check(items[index] is ToolStripMenuItem item && item.Text == eventNames[index],
+                    surface + " event order: " + eventNames[index]);
+            Check(items[4] is ToolStripSeparator && items[5] is ToolStripMenuItem noteItem &&
+                noteItem.Text == "메모와 함께 기록…", surface + " ends with the separator and note item");
+        }
         int total = 0;
         foreach (var provider in Enum.GetValues<ProviderKind>())
         {
             var trayProvider = trayRoot.DropDownItems.OfType<ToolStripMenuItem>().Single(i => i.Text == WindowsProviderNames.Provider(provider));
+            CheckRecordingMenu(rowMenus[(int)provider].Items, provider + " row menu");
+            CheckRecordingMenu(trayProvider.DropDownItems, provider + " tray menu");
             foreach (var type in Enum.GetValues<UsageEventType>())
             {
                 var menu = provider == ProviderKind.OpenAI ? rowMenus[(int)provider].Items : trayProvider.DropDownItems;
                 menu.OfType<ToolStripMenuItem>().Single(i => i.Text == type.ToString()).PerformClick();
                 total++;
-                await WaitUntilAsync(async () => (await store.ReadUsageAsync(null)).Count == total);
+                string expectedFeedback = $"{WindowsProviderNames.Provider(provider)} · {type} 저장됨 (12:00 KST)";
+                await WaitUntilAsync(async () => (await store.ReadUsageAsync(null)).Count == total && feedback.Text == expectedFeedback);
+                Check(feedback.ForeColor == Color.DimGray, provider + " " + type + " save uses the exact success feedback");
             }
         }
         Check(total == 12, "Provider row/tray menu handlers store all 3 providers x 4 event types");
@@ -183,33 +198,132 @@ internal static class UIRegressionChecks
             e.EffectiveRecommendation == Recommendation.Go), "UI-recorded events capture schedule/DST/official/recommendation metadata");
 
         using (var slowDialog = new MeasurementDialog(ProviderKind.Claude, UsageEventType.Slow))
-            Check(slowDialog.EventType == UsageEventType.Slow, "Note dialog preselects the requested event type");
-
-        bool dialogFilled = false;
-        using (var dialogTimer = new Timer { Interval = 100 })
         {
-            dialogTimer.Tick += (_, _) =>
+            Check(slowDialog.EventType == UsageEventType.Slow, "Note dialog preselects the requested event type");
+            var noteBox = Descendants(slowDialog).OfType<TextBox>().Single();
+            _ = noteBox.Handle;
+            Check(noteBox.IsHandleCreated && noteBox.MaxLength == 0, "Native note box preserves input for the shared save-time limit");
+            var captured = UsageMeasurementFactory.Capture(ProviderKind.Claude, UsageEventType.Slow,
+                AgentSchedule.GetSnapshot(initialNow, context.HolidayAdjustmentEnabled),
+                monitor.Snapshot().Single(s => s.Provider == ProviderKind.Claude), "2.2.3");
+            (string Input, string Expected, string Label)[] noteCases =
+            [
+                (new string('a', 1005), new string('a', 1000), "over-limit note"),
+                ("  " + new string('b', 1000) + "  ", new string('b', 1000), "whitespace trimmed before the limit"),
+                (new string('c', 999) + "🍔", new string('c', 999), "emoji remains whole at the limit"),
+                (new string('d', 999) + "e\u0301", new string('d', 999), "combining sequence remains whole at the limit"),
+                (string.Concat(Enumerable.Repeat("🇰🇷", 251)), string.Concat(Enumerable.Repeat("🇰🇷", 250)), "flag sequences remain whole at the limit"),
+                (new string('e', 999) + " f", new string('e', 999) + " ", "normalization is applied only once")
+            ];
+            foreach (var noteCase in noteCases)
+            {
+                noteBox.SelectAll();
+                noteBox.SelectedText = noteCase.Input;
+                Check(noteBox.Text == noteCase.Input, "Native note input preserves " + noteCase.Label);
+                var noted = UsageMeasurementFactory.WithNote(captured, slowDialog.EventType, slowDialog.UserNote);
+                Check(noted.UserNote == noteCase.Expected && noted.UserNote.Length <= 1000,
+                    "Dialog input and shared save apply " + noteCase.Label);
+            }
+        }
+
+        string feedbackBeforeCancel = feedback.Text;
+        Color feedbackColorBeforeCancel = feedback.ForeColor;
+        bool dialogCanceled = false;
+        Exception? cancelError = null;
+        using (var cancelTimer = new Timer { Interval = 100 })
+        {
+            cancelTimer.Tick += (_, _) =>
             {
                 var dialog = Application.OpenForms.OfType<MeasurementDialog>().SingleOrDefault();
                 if (dialog is null) return;
-                dialogTimer.Stop();
-                Descendants(dialog).OfType<ComboBox>().Single().SelectedItem = UsageEventType.Interrupted;
-                Descendants(dialog).OfType<TextBox>().Single().Text = "검증 메모 · synthetic only";
-                Check(dialog.Text == "ChatGPT · 사용 경험", "Windows note dialog title displays ChatGPT");
-                SaveFormImage(dialog, "measurement-dialog.png", reportDirectory);
-                dialogFilled = true;
-                Descendants(dialog).OfType<Button>().Single(b => b.Text == "저장").PerformClick();
+                cancelTimer.Stop();
+                try
+                {
+                    Descendants(dialog).OfType<ComboBox>().Single().SelectedItem = UsageEventType.Error;
+                    Descendants(dialog).OfType<TextBox>().Single().SelectedText = "취소할 메모 · synthetic only";
+                    Descendants(dialog).OfType<Button>().Single(b => b.Text == "취소").PerformClick();
+                    dialogCanceled = true;
+                }
+                catch (Exception error)
+                {
+                    cancelError = error;
+                    dialog.DialogResult = DialogResult.Cancel;
+                }
             };
-            dialogTimer.Start();
+            cancelTimer.Start();
             rowMenus[0].Items.OfType<ToolStripMenuItem>().Single(i => i.Text == "메모와 함께 기록…").PerformClick();
         }
-        await WaitUntilAsync(async () => (await store.ReadUsageAsync(null)).Count == 13);
-        events = await store.ReadUsageAsync(null);
-        Check(dialogFilled && events.Any(e => e.UserNote == "검증 메모 · synthetic only" && e.EventType == UsageEventType.Interrupted),
-            "Note dialog save handler stores selected event and Unicode note");
-        Check(events.Count(e => e.Provider == ProviderKind.OpenAI) == 5 &&
-            context.StatusWindow.FeedbackLabel.Text.StartsWith("ChatGPT · Interrupted 저장됨", StringComparison.Ordinal),
-            "ChatGPT recording feedback preserves stored OpenAI identities");
+        if (cancelError is not null) throw new InvalidOperationException("Cancel dialog action failed", cancelError);
+        Check(dialogCanceled && (await store.ReadUsageAsync(null)).Count == 12,
+            "Canceling a note dialog creates no usage record");
+        Check(feedback.Text == feedbackBeforeCancel && feedback.ForeColor == feedbackColorBeforeCancel,
+            "Canceling a note dialog preserves existing feedback");
+
+        bool dialogFilled = false;
+        Exception? dialogError = null;
+        OfficialStatus originalStatus = handler.OpenAiStatus;
+        try
+        {
+            using (var dialogTimer = new Timer { Interval = 100 })
+            {
+                dialogTimer.Tick += async (_, _) =>
+                {
+                    var dialog = Application.OpenForms.OfType<MeasurementDialog>().SingleOrDefault();
+                    if (dialog is null) return;
+                    dialogTimer.Stop();
+                    try
+                    {
+                        Check(dialog.EventType == UsageEventType.Success, "Note menu starts the dialog with Success");
+                        Descendants(dialog).OfType<ComboBox>().Single().SelectedItem = UsageEventType.Interrupted;
+                        Descendants(dialog).OfType<TextBox>().Single().Text = "검증 메모 · synthetic only";
+                        Check(dialog.Text == "ChatGPT · 사용 경험", "Windows note dialog title displays ChatGPT");
+                        SaveFormImage(dialog, "measurement-dialog.png", reportDirectory);
+                        // Keep the image and stored fixture at 12:00 FULL. An earlier same-day
+                        // BURGER instant tests capture timing without advancing quota schedules.
+                        setNow(new DateTimeOffset(2026, 9, 19, 9, 59, 59, TimeSpan.FromHours(9)));
+                        handler.OpenAiStatus = OfficialStatus.PartialOutage;
+                        await monitor.RefreshOnceAsync();
+                        context.RefreshStatus(false);
+                        Check(context.CurrentAppearance?.Schedule == AgentState.BurgerTime &&
+                            monitor.Snapshot().Single(s => s.Provider == ProviderKind.OpenAI).Status == OfficialStatus.PartialOutage,
+                            "Clock and official status change while the note dialog is open");
+                        dialogFilled = true;
+                        Descendants(dialog).OfType<Button>().Single(b => b.Text == "저장").PerformClick();
+                    }
+                    catch (Exception error)
+                    {
+                        dialogError = error;
+                        if (!dialog.IsDisposed) dialog.DialogResult = DialogResult.Cancel;
+                    }
+                };
+                dialogTimer.Start();
+                rowMenus[0].Items.OfType<ToolStripMenuItem>().Single(i => i.Text == "메모와 함께 기록…").PerformClick();
+            }
+            if (dialogError is not null) throw new InvalidOperationException("Note dialog action failed", dialogError);
+            await WaitUntilAsync(async () => (await store.ReadUsageAsync(null)).Count == 13 &&
+                feedback.Text == "ChatGPT · Interrupted 저장됨 (12:00 KST)");
+            events = await store.ReadUsageAsync(null);
+            var noted = events.Single(e => e.UserNote == "검증 메모 · synthetic only");
+            Check(dialogFilled && noted.EventType == UsageEventType.Interrupted,
+                "Note dialog save handler stores selected event and Unicode note");
+            Check(noted.TimestampUtc == initialNow.ToUniversalTime() && noted.TimestampUtc.Offset == TimeSpan.Zero &&
+                noted.ScheduleState == AgentState.FullThrottle && noted.WeekendExtendedFullThrottle &&
+                noted.OfficialStatus == OfficialStatus.Operational && noted.EffectiveRecommendation == Recommendation.Go,
+                "Note save retains the timestamp, schedule, official status and recommendation captured before the prompt");
+            Check(events.Count(e => e.Provider == ProviderKind.OpenAI) == 5 &&
+                feedback.Text == "ChatGPT · Interrupted 저장됨 (12:00 KST)" && feedback.ForeColor == Color.DimGray,
+                "ChatGPT recording feedback uses the captured time and preserves stored OpenAI identities");
+        }
+        finally
+        {
+            setNow(initialNow);
+            handler.OpenAiStatus = originalStatus;
+            await monitor.RefreshOnceAsync();
+            context.RefreshStatus(false);
+        }
+        Check(context.CurrentAppearance == new TrayAppearance(AgentState.FullThrottle, TrayAttention.Green) &&
+            monitor.Snapshot().All(s => s.Status == OfficialStatus.Operational && s.CheckedAtUtc == initialNow.ToUniversalTime()),
+            "Note capture test restores the original FULL/healthy clock and status fixture");
         Check((await new UsageStore(store.DatabasePath).ReadUsageAsync(null)).Count == 13, "UI input persists across database reopen");
 
         context.ShowStatistics();
@@ -239,6 +353,40 @@ internal static class UIRegressionChecks
         SaveFormImage(statistics, "statistics.png", reportDirectory);
         statistics.Close();
         Check(statistics.IsDisposed, "Statistics window closes cleanly");
+
+        // Render the original 13-record statistics fixture first. Then exercise the
+        // actual save handler's limit boundary without changing the PNG fixture.
+        Exception? boundaryError = null;
+        bool boundaryFilled = false;
+        using (var boundaryTimer = new Timer { Interval = 100 })
+        {
+            boundaryTimer.Tick += (_, _) =>
+            {
+                var dialog = Application.OpenForms.OfType<MeasurementDialog>().SingleOrDefault();
+                if (dialog is null) return;
+                boundaryTimer.Stop();
+                try
+                {
+                    Descendants(dialog).OfType<ComboBox>().Single().SelectedItem = UsageEventType.Interrupted;
+                    Descendants(dialog).OfType<TextBox>().Single().SelectedText = new string('e', 999) + " f";
+                    boundaryFilled = true;
+                    Descendants(dialog).OfType<Button>().Single(b => b.Text == "저장").PerformClick();
+                }
+                catch (Exception error)
+                {
+                    boundaryError = error;
+                    if (!dialog.IsDisposed) dialog.DialogResult = DialogResult.Cancel;
+                }
+            };
+            boundaryTimer.Start();
+            rowMenus[0].Items.OfType<ToolStripMenuItem>().Single(i => i.Text == "메모와 함께 기록…").PerformClick();
+        }
+        if (boundaryError is not null) throw new InvalidOperationException("Note boundary dialog action failed", boundaryError);
+        await WaitUntilAsync(async () => (await store.ReadUsageAsync(null)).Count == 14 &&
+            feedback.Text == "ChatGPT · Interrupted 저장됨 (12:00 KST)");
+        Check(boundaryFilled && (await new UsageStore(store.DatabasePath).ReadUsageAsync(null)).Any(e =>
+            e.EventType == UsageEventType.Interrupted && e.UserNote == new string('e', 999) + " " && e.UserNote.Length == 1000),
+            "Actual note save applies trim then limit once and persists the complete 1,000-unit boundary");
         Check((await store.ReadLatestStatusesAsync()).Count == 3, "Official cache saved independently of user observations");
     }
 

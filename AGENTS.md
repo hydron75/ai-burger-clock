@@ -40,7 +40,9 @@ Windows 앱 검사는 앱 EXE에 옵션을 붙여 실행합니다. 분기는 [Pr
 | `--check-quotas` | 로그인된 Codex·Claude CLI에서 계정 한도만 조회해 출력 | 실제 계정 조회. 모델 요청·리셋권 사용·사용자 DB 저장 없음. 한 Provider라도 실패하면 종료 코드 1 |
 
 - 검사는 가짜 현재 시각을 주입합니다. 시스템 시계를 바꾸지 않습니다.
-- 새 검사는 [SelfTest.cs](SelfTest.cs) 또는 [SmokeTest.cs](SmokeTest.cs)에서 호출되는 경로에 연결해야 실행됩니다. 예: `HolidayStorageTests`는 `StorageTests`를 거쳐 호출됩니다.
+- 공통 검사 실행 목록은 [SharedTestSuite.cs](SharedTestSuite.cs) 한 곳에서 관리합니다. [Shared.Tests](Shared.Tests/Program.cs)와 Windows [SelfTest.cs](SelfTest.cs)는 `SharedTestSuite.RunAllAsync()`를 각각 한 번만 호출하며, 공통 검사를 개별 호출하지 않습니다.
+- 새 공통 검사는 루트의 `*Tests.cs` 파일로 만들고 `SharedTestSuite` 목록에만 등록합니다. 두 호스트 모두 이 파일들을 자동으로 컴파일합니다. 이미 다른 검사에서 호출하는 하위 검사는 다시 등록하지 않습니다. 예: `HolidayStorageTests`는 `StorageTests`를 거쳐 호출됩니다.
+- Windows 전용 검사는 `SelfTest`에서 별도로 실행하고 `Shared.Tests/AiBurgerClock.Shared.Tests.csproj`의 공통 검사 컴파일 목록에서는 제외합니다. `SharedTestSuite`는 검사 전용 원본이므로 앱의 공통 원본 목록(`Shared/SharedSources.props`)에는 넣지 않습니다. 네이티브 UI 검사는 [SmokeTest.cs](SmokeTest.cs)에서 호출되는 경로에 연결합니다.
 - 실행 명령 예시는 [CODE_GUIDE 13절](CODE_GUIDE.md#13-검사는-어떻게-실행하나요)에 있습니다.
 
 ## 작업 분담: Windows와 Mac

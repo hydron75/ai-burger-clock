@@ -4,7 +4,9 @@ internal sealed class MeasurementDialog : Form
 {
     private readonly ComboBox eventType = new() { DropDownStyle = ComboBoxStyle.DropDownList, Dock = DockStyle.Fill };
     private readonly Font formFont = new("Segoe UI", 9F); // Not disposed by the form itself.
-    private readonly TextBox note = new() { Multiline = true, MaxLength = 1000, Dock = DockStyle.Fill, ScrollBars = ScrollBars.Vertical };
+    // Keep the full input until WithNote applies the shared limit once on save.
+    // Native truncation could discard text before trimming or split a text element.
+    private readonly TextBox note = new() { Multiline = true, MaxLength = 0, Dock = DockStyle.Fill, ScrollBars = ScrollBars.Vertical };
     public UsageEventType EventType => (UsageEventType)(eventType.SelectedItem ?? UsageEventType.Success);
     public string UserNote => note.Text.Trim();
 

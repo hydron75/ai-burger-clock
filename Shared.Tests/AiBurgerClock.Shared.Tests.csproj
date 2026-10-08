@@ -10,17 +10,9 @@
   <Import Project="../Shared/SharedSources.props" />
   <ItemGroup>
     <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.12" />
-    <Compile Include="../ScheduleTests.cs" Link="Tests/ScheduleTests.cs" />
-    <Compile Include="../HolidayScheduleTests.cs" Link="Tests/HolidayScheduleTests.cs" />
-    <Compile Include="../ProviderStatusTests.cs" Link="Tests/ProviderStatusTests.cs" />
-    <Compile Include="../MonitorTests.cs" Link="Tests/MonitorTests.cs" />
-    <Compile Include="../StorageTests.cs" Link="Tests/StorageTests.cs" />
-    <Compile Include="../HolidayStorageTests.cs" Link="Tests/HolidayStorageTests.cs" />
-    <Compile Include="../HolidayMonitorTests.cs" Link="Tests/HolidayMonitorTests.cs" />
-    <Compile Include="../AccountQuotaTests.cs" Link="Tests/AccountQuotaTests.cs" />
-    <Compile Include="../AccountQuotaMonitorTests.cs" Link="Tests/AccountQuotaMonitorTests.cs" />
-    <Compile Include="../PortablePlatformTests.cs" Link="Tests/PortablePlatformTests.cs" />
-    <Compile Include="../PanelModelTests.cs" Link="Tests/PanelModelTests.cs" />
-    <Compile Include="../RecordingTests.cs" Link="Tests/RecordingTests.cs" />
+    <Compile Include="../*Tests.cs"
+             Exclude="../AutoStartTests.cs;../TrayPresentationTests.cs;../AccountQuotaClientTests.cs"
+             Link="Tests/%(Filename)%(Extension)" />
+    <Compile Include="../SharedTestSuite.cs" Link="Tests/SharedTestSuite.cs" />
   </ItemGroup>
 </Project>

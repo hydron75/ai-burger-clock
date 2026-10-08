@@ -71,7 +71,7 @@ internal static class SmokeTest
                         timer.Stop();
                         now = new DateTimeOffset(2026, 9, 19, 12, 0, 0, TimeSpan.FromHours(9));
                         context.RefreshStatus(false);
-                        await UIRegressionChecks.RunAsync(context, testStore, statusHandler, reportDirectory, openedPages);
+                        await UIRegressionChecks.RunAsync(context, testStore, statusHandler, reportDirectory, openedPages, now, value => now = value);
                         await HolidayUiChecks.RunAsync(context, testStore, statusHandler, value => now = value, reportDirectory);
                         await AccountQuotaUiChecks.RunAsync(context, quotaClient, () => now, reportDirectory);
                         if (verifyAutoStart)
