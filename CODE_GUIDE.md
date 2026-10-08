@@ -1,8 +1,8 @@
 # 소스코드, 쉬운 말로 읽기
 
-Windows 2.2.3과 macOS preview 0.1.5 소스 기준입니다. Windows 사용법부터 보고 싶다면 [README](README.md), Mac 준비와 아직 남은 검증은 [Mac 안내](Mac/README.md)로 이동하세요. 아래 기존 실행·UI 설명은 Windows 기준이며 Mac의 차이는 12절에 정리했습니다.
+Windows 2.2.4 후보와 main `26ae908`의 소스 기준입니다. **현재 로컬 배포본은 2.2.3이며 새 버전의 병합·교체는 승인 대기**입니다. Windows 사용법은 [README](README.md), 최신 Mac 버전·검증은 [Mac 안내](Mac/README.md)로 이동하세요. 아래 실행·UI 설명은 Windows 기준이며 Mac의 차이는 12절에 정리했습니다.
 
-코드를 한 줄씩 번역한 문서는 아닙니다. **각 파일이 무엇을 맡고, 서로 어떻게 연결되는지** 설명합니다. 루트·Properties의 C# 49개, Mac 호스트 6개, 공통 검사 입구 1개로 총 56개와 빌드 설정을 다룹니다. 컴퓨터가 만든 `bin`·`obj`와 로컬 검증용 `artifacts`는 대상에서 뺍니다.
+코드를 한 줄씩 번역한 문서는 아닙니다. **각 파일이 무엇을 맡고, 서로 어떻게 연결되는지** 설명합니다. 루트·Properties의 C# 65개, Mac 호스트 7개, 공통 검사 입구 1개로 총 73개와 빌드 설정을 다룹니다. 컴퓨터가 만든 `bin`·`obj`와 로컬 검증용 `artifacts`는 대상에서 뺍니다.
 
 공식 조회 방식의 변경을 조사하는 외부 모니터링 현황은 [BACKLOG](BACKLOG.md)에 있습니다. 이 조사는 아래 앱 코드의 계정 한도 조회 루프와 별개이며, 새 SDK가 공개됐다고 앱의 CLI나 의존성을 자동으로 바꾸지는 않습니다.
 
@@ -179,6 +179,10 @@ UNKNOWN/STALE인 BURGER는 BURGER + CHECK입니다. **공식 상태로 시간표
 
 실제 Windows 알림을 요청하는 곳은 `TrayApplicationContext`입니다. 시간 경계 알림과 공휴일 설정 변경 알림도 구분합니다.
 
+2.2.4 후보의 [StatusTicker.cs](StatusTicker.cs)는 매초 시간표 전환·Provider 알림·아이콘 변경의 **판정만** 공통으로 맡습니다. 입력 이유는 초기화·타이머·Provider 변경·정책 변경입니다. `TrayApplicationContext.RefreshStatus(bool, bool)`는 기존 호출 지점을 받는 감싸는 함수로 남고, UI·알림 적용 순서와 색상은 Windows가 유지합니다.
+
+중복 Provider 입력은 첫 값을 사용하고 [WindowsWarningLog.cs](WindowsWarningLog.cs)에 경고를 보냅니다. 앱 데이터의 `logs/status-ticker.log`와 이전 로그 1개는 각각 최대 64 KiB이며, 정상 입력에는 파일을 만들지 않습니다. 관리자 권한·이벤트 로그 원본 등록은 필요 없고 로그 실패가 판정·화면을 중단시키지 않습니다.
+
 이는 알림을 **요청하는 로직**입니다. Windows 설정에 따라 실제 풍선이 보이지 않을 수도 있습니다. STOP 역시 안내일 뿐 다른 프로그램을 중단시키지 않습니다.
 
 ## 7. 내 기록은 어떻게 저장되나요?
@@ -187,16 +191,16 @@ ChatGPT 행을 우클릭하고 Slow를 고른 경우입니다. 화면 이름은 
 
 1. [StatusWindow.cs](StatusWindow.cs)가 클릭을 알아챕니다.
 2. `TrayApplicationContext`에 “OpenAI, Slow를 기록해 주세요”라고 알립니다.
-3. 당시 시각·시간표·공식 상태를 `UsageMeasurement` 카드로 묶습니다.
+3. [UsageMeasurementFactory.cs](UsageMeasurementFactory.cs)가 당시 시각·시간표·공식 상태를 `UsageMeasurement` 카드로 묶습니다.
 4. 메모를 선택했다면 [MeasurementDialog.cs](MeasurementDialog.cs)를 엽니다.
 5. [UsageStore.cs](UsageStore.cs)가 SQLite에 저장합니다.
-6. 성공하면 화면에 “저장됨”이라고 표시합니다.
+6. 성공하면 [FeedbackText.cs](FeedbackText.cs)의 “저장됨” 또는 메모 잘림 안내를 Windows 피드백 영역에 표시합니다.
 
 메모를 쓰더라도 기준 시각과 상태는 **메모 창을 열기 전**에 잡습니다. 저장 버튼을 누른 순간으로 바뀌지는 않습니다.
 
 메모창은 요청받은 결과 종류를 미리 선택합니다. 초기화가 실패했거나 메모창이 열린 동안 종료가 시작되면 새로운 저장을 진행하지 않도록 처리합니다.
 
-메모는 최대 1,000자입니다. 앱이 대화를 수집하지는 않지만, 직접 입력한 메모는 저장됩니다. 프롬프트·계정·비밀번호 같은 민감정보를 적지 않아야 합니다.
+메모는 앞뒤 공백 정리 후 1,000 UTF-16 단위를 넘지 않는 완전한 문자 요소 경계에서 제한합니다. 입력창은 전체 입력을 받고 `UsageMeasurementFactory.WithNote`가 저장 시 한 번만 정리하므로 이모지·결합 문자를 반으로 자르지 않습니다. 경계 때문에 999자 등으로 저장될 수 있고, 실제 잘렸으면 `FeedbackText.NoteTruncated(N)`의 “앞부분 N자만 저장” 안내를 표시합니다. 1,000자 이하나 공백 정리만 한 경우는 기존 피드백입니다. 앱이 대화를 수집하지는 않지만, 직접 입력한 메모는 저장됩니다. 민감정보는 적지 않아야 합니다.
 
 ### 기록장 안에는 네 칸이 있습니다
 
@@ -213,7 +217,7 @@ Cache는 “마지막으로 읽은 메모”, History는 “중요한 변화 기
 
 ### 기록장 구조가 바뀌면요?
 
-현재 DB 구조 버전은 2입니다. 앱 버전 2.2.3과는 다른 번호이며, 2.1.0 이후 바뀌지 않았습니다.
+현재 DB 구조 버전은 2입니다. 앱 후보 버전 2.2.4와는 다른 번호이며, 2.1.0 이후 바뀌지 않았습니다. 이번 후보도 기존 기록을 다시 쓰거나 DB를 migration하지 않습니다.
 
 기존 구조 1을 열면 먼저 SQLite 백업 기능으로 복사본을 만듭니다. 본체 옆의 WAL에 이미 저장된 내용도 포함합니다. WAL은 기록을 안전하게 반영하기 위한 보조 파일입니다.
 
@@ -236,6 +240,8 @@ Cache는 “마지막으로 읽은 메모”, History는 “중요한 변화 기
 ## 8. 통계는 AI가 판단하나요?
 
 아니요. [StatisticsAnalysis.cs](StatisticsAnalysis.cs)의 `StatisticsAnalysis`가 기록을 골라 세고 비율을 계산합니다. 기존 계산식을 그대로 UI 밖으로 옮겨 Windows와 Mac이 함께 사용하며, [StatisticsWindow.cs](StatisticsWindow.cs)는 Windows의 통계 화면만 맡습니다.
+
+본문·기간·탭·표 제목·No data·소표본 안내는 [StatisticsText.cs](StatisticsText.cs)를 씁니다. Windows의 기존 “어디서 기록하는지” 문장은 호스트에서 그대로 전달하며 화면 배치와 계산식은 바꾸지 않습니다.
 
 ChatGPT 기록 열 개 중 Slow가 두 개면 그 열 개 안에서 Slow는 20%입니다. **관찰하지 않은 작업까지 포함한 ChatGPT 전체의 속도 통계가 아닙니다.** 기존 `OpenAI`로 저장한 기록도 통계 화면에서만 ChatGPT로 표시하며 원래 값은 수정하지 않습니다.
 
@@ -293,7 +299,7 @@ Windows 내부 승인 형식은 알려진 경우만 해석합니다. 낯선 값�
 
 이름을 눌러 소스를 열 수 있습니다. 역할을 알고 필요한 파일부터 읽으면 됩니다.
 
-### 실제 앱 기능: 28개
+### 실제 앱 기능: 36개
 
 | 파일 | 맡은 일 |
 |---|---|
@@ -315,6 +321,14 @@ Windows 내부 승인 형식은 알려진 경우만 해석합니다. 낯선 값�
 | [RecommendationNotifications.cs](RecommendationNotifications.cs) | 마지막 확정 권고 기억, 중복 알림 방지 |
 | [TrayPresentation.cs](TrayPresentation.cs) | 트레이 문자·색상·짧은 도움말 결정. 두 OS가 함께 쓰는 전환·Provider 알림 문구 |
 | [WindowsProviderNames.cs](WindowsProviderNames.cs) | Windows 화면·메뉴·기록·통계·Tooltip·알림에서 OpenAI를 ChatGPT로 표시. 저장 식별자와 공식 URL은 유지 |
+| [ProviderNames.cs](ProviderNames.cs) | 두 OS의 공통 제품 표시 이름. 식별자·DB 값과 구분 |
+| [StatusPanelModel.cs](StatusPanelModel.cs) | 시간표·Provider 상태 카드의 공통 본문·톤·상세 Tooltip. 빈 선택 항목 숨김 |
+| [QuotaPanelModel.cs](QuotaPanelModel.cs) | 공통 한도 제목·범위·행·조회 시각·톤·Tooltip. UI 박스와 전환은 호스트가 결정 |
+| [UsageMeasurementFactory.cs](UsageMeasurementFactory.cs) | 기록 메뉴 목록·상태 캡처·메모의 공백/문자 요소 경계 제한 |
+| [FeedbackText.cs](FeedbackText.cs) | 기록·공휴일 피드백과 메모 잘림 안내 문구 |
+| [StatisticsText.cs](StatisticsText.cs) | 통계 본문·기간·탭·표·주의사항의 공통 문구 |
+| [StatusTicker.cs](StatusTicker.cs) | 매초 전환·Provider 알림·아이콘 변경 판정. UI 적용은 OS별 |
+| [WindowsWarningLog.cs](WindowsWarningLog.cs) | 중복 Provider 경고의 Windows 파일 기록. 각 64 KiB, 이전 파일 1개, 실패 격리 |
 | [NetworkRefreshScheduler.cs](NetworkRefreshScheduler.cs) | 네트워크 변화 뒤 5초 대기 후 재조회, 1분에 한 번 제한, 연속 변화는 마지막 변화 기준 한 번으로 합침. 대기 끝에 쓸 수 있는 연결(링크 로컬이 아닌 주소)이 없으면 건너뜀 |
 | [UsageStore.cs](UsageStore.cs) | SQLite 생성·업그레이드·백업·설정·저장·일부 해석 불가 행 구분 |
 | [QuotaJsonContext.cs](QuotaJsonContext.cs) | 한도 캐시를 JSON으로 읽고 쓰는 타입 정보를 빌드 때 생성. Mac trimming 검사와 기존 캐시 호환성 유지 |
@@ -324,18 +338,25 @@ Windows 내부 승인 형식은 알려진 경우만 해석합니다. 낯선 값�
 | [AccountQuotaClient.cs](AccountQuotaClient.cs) | PATH 등 표준 설치 경로의 native CLI 실행, 제한시간·출력 크기·취소·모델 호출 없는 결과 확인 |
 | [AccountQuotaPolicy.cs](AccountQuotaPolicy.cs) | 6시간·1시간·잔여 0%의 15분·리셋 전후 5분 규칙, 리셋 15분 전 진입, 실패 재시도 상한 계산 |
 | [AccountQuotaMonitor.cs](AccountQuotaMonitor.cs) | 두 독립 조회 루프, 마지막 성공값·실패 횟수·다음 조회·재시작 캐시 |
-| [AccountQuotaView.cs](AccountQuotaView.cs) | 기존 창 안에서 바꿔 보는 잔여량·리셋 카운트다운·조회 시각. ChatGPT 제목 아래 별도 Work/Codex 행 |
+| [AccountQuotaView.cs](AccountQuotaView.cs) | 기존 창 안에서 바꿔 보는 Provider별 한도 박스. hover 없음, ChatGPT 아래 Work/Codex, 추가 한도 내부 스크롤 |
 
-### 검사와 진단: 20개
+### 검사와 진단: 28개
 
 미완성 임시 코드가 아닙니다. **특별한 검사 명령 때만 쓰는 정식 검사 코드**입니다.
 
 | 파일 | 확인하는 것 |
 |---|---|
-| [SelfTest.cs](SelfTest.cs) | 자체 검사들을 묶어서 실행하고 결과 반환 |
+| [SelfTest.cs](SelfTest.cs) | SharedTestSuite를 한 번 실행한 뒤 Windows 전용 검사를 더해 결과 반환 |
+| [SharedTestSuite.cs](SharedTestSuite.cs) | 공통 검사 실행 목록 한 곳. Windows와 Shared.Tests가 RunAllAsync를 각각 한 번 호출 |
 | [ScheduleTests.cs](ScheduleTests.cs) | 공휴일 OFF 시간표, DST, 정확한 경계 |
 | [HolidayScheduleTests.cs](HolidayScheduleTests.cs) | 공휴일, 대체휴일, 연도 경계, 연장 구간 |
-| [TrayPresentationTests.cs](TrayPresentationTests.cs) | 색상 조합, F/B, 도움말 길이, 아이콘 그리기 |
+| [TrayPresentationTests.cs](TrayPresentationTests.cs) | Windows 표시 이름 어댑터와 네이티브 아이콘 픽셀 |
+| [SharedTrayPresentationTests.cs](SharedTrayPresentationTests.cs) | OS 무관 색상·F/B·권고·알림 문구·짧은 도움말 조합 |
+| [StatusTickerTests.cs](StatusTickerTests.cs) | 입력 이유·전환·알림 우선 순서·아이콘 변경·중복 Provider 판정 |
+| [WindowsWarningLogChecks.cs](WindowsWarningLogChecks.cs) | 임시 파일로 경고 크기·회전·Unicode·쓰기 실패 격리 검사 |
+| [PanelModelTests.cs](PanelModelTests.cs) | 공통 상태·한도 본문과 톤, 상세 Tooltip 골든 검사 |
+| [RecordingTests.cs](RecordingTests.cs) | 공통 기록 캡처·메뉴·메모 제한·피드백 골든 검사 |
+| [StatisticsTextTests.cs](StatisticsTextTests.cs) | 공통 통계 본문·표 제목·기간·주의 문구 골든 검사 |
 | [ProviderStatusTests.cs](ProviderStatusTests.cs) | 정상·장애·잘못된 JSON·통신 실패의 해석 |
 | [MonitorTests.cs](MonitorTests.cs) | 권고, 갱신, STALE, 취소, 알림 기억. 가짜 HTTP 응답 담당도 포함 |
 | [StorageTests.cs](StorageTests.cs) | 임시 DB 저장·재열기·빈 기록·1만 건·통계 |
@@ -343,11 +364,12 @@ Windows 내부 승인 형식은 알려진 경우만 해석합니다. 낯선 값�
 | [HolidayMonitorTests.cs](HolidayMonitorTests.cs) | 백그라운드 저장도 같은 공휴일 정책을 쓰는지 |
 | [AutoStartTests.cs](AutoStartTests.cs) | 가짜 경로·승인값으로 자동 시작 판정만 검사 |
 | [SmokeTest.cs](SmokeTest.cs) | 실제 WinForms 실행 흐름의 검사 입구 |
-| [UIRegressionChecks.cs](UIRegressionChecks.cs) | 클릭·새로고침·기록·메모·통계 연결 |
+| [UIRegressionChecks.cs](UIRegressionChecks.cs) | 클릭·새로고침·기록·메모·통계 연결. 한도 모드에서 실제 잘림 메모 저장·박스·피드백·상태 복귀 통합 검사 |
 | [HolidayUiChecks.cs](HolidayUiChecks.cs) | 공휴일 옵션·색상·카운트다운·기록·알림 연결 |
 | [LiveStatusProbe.cs](LiveStatusProbe.cs) | 공식 상태를 실제 인터넷으로 조회해 출력 |
 | [AccountQuotaTests.cs](AccountQuotaTests.cs) | 한도 파서·잘못된 값·리셋 경계·조회 주기 |
-| [AccountQuotaClientTests.cs](AccountQuotaClientTests.cs) | 가짜 CLI 입출력으로 명령·크기 제한·취소·0턴 검증 |
+| [AccountQuotaClientTests.cs](AccountQuotaClientTests.cs) | Windows 전용 CLI 경로 예시 |
+| [SharedQuotaProtocolTests.cs](SharedQuotaProtocolTests.cs) | POSIX 경로·가짜 CLI 입출력·명령·크기 제한·취소·0턴 검증 |
 | [AccountQuotaMonitorTests.cs](AccountQuotaMonitorTests.cs) | 실패 격리·조회 합치기·종료·SQLite 캐시·재시작 |
 | [AccountQuotaUiChecks.cs](AccountQuotaUiChecks.cs) | 가짜 한도로 창 전환·퍼센트·실패·Refresh·기존 상태 복귀 |
 | [LiveQuotaProbe.cs](LiveQuotaProbe.cs) | 공식 CLI 실제 계정 조회 결과 중 한도 정보만 출력 |
@@ -359,17 +381,18 @@ Windows 내부 승인 형식은 알려진 경우만 해석합니다. 낯선 값�
 
 [Properties/AssemblyInfo.cs](Properties/AssemblyInfo.cs)는 프로그램 식별 정보 일부를 담습니다. 버전은 여기 아닌 프로젝트 파일에서 관리하고, 나머지 정보는 SDK가 생성합니다.
 
-### Mac 호스트: 6개 / 공통 검사 입구: 1개
+### Mac 호스트: 7개 / 공통 검사 입구: 1개
 
 | 파일 | 맡은 일 |
 |---|---|
 | [Mac/Program.cs](Mac/Program.cs) | Mac 실행 입구, 중복 실행 잠금, 임시 DB native smoke 분기 |
 | [Mac/MacApplication.cs](Mac/MacApplication.cs) | AppKit 메뉴바와 공통 조회·저장·알림·복귀·종료 연결 |
 | [Mac/MacStatusIcon.cs](Mac/MacStatusIcon.cs) | 20-point 상태색 원과 흰색 F/B의 1x·2x 이미지 생성. native smoke에서 실제 색·투명도·글자 픽셀 확인 |
-| [Mac/MacStatusWindow.cs](Mac/MacStatusWindow.cs) | 한 화면에 배치한 Mac 상태·일반 한도 창과 사용 경험 메뉴. 추가 한도만 내부 스크롤 |
+| [Mac/MacStatusPanel.cs](Mac/MacStatusPanel.cs) | 공통 본문을 표시하는 AppKit 상태·한도 팝오버와 카드 기록 메뉴 |
+| [Mac/MacControls.cs](Mac/MacControls.cs) | Mac 네이티브 컨트롤·글꼴·톤 색·카드 표현 도우미 |
 | [Mac/MacStatisticsWindow.cs](Mac/MacStatisticsWindow.cs) | 공통 계산 결과를 보여주는 Mac 통계 창 |
 | [Mac/MacServices.cs](Mac/MacServices.cs) | macOS 알림 권한과 로그인 항목 등록 |
-| [Shared.Tests/Program.cs](Shared.Tests/Program.cs) | OS UI 없이 기존 검사들을 실행하는 공통 입구 |
+| [Shared.Tests/Program.cs](Shared.Tests/Program.cs) | OS UI 없이 SharedTestSuite.RunAllAsync를 한 번 실행하는 입구 |
 
 ## 12. 빌드 파일과 폴더 지도
 
@@ -381,7 +404,7 @@ Windows 내부 승인 형식은 알려진 경우만 해석합니다. 낯선 값�
 | [build.ps1](build.ps1) | 빌드와 자체 검사를 실행하는 순서 |
 | [Portable.pubxml](Properties/PublishProfiles/Portable.pubxml) | 배포용 단일 EXE 설정 |
 | [app.manifest](app.manifest) | Windows 권한·호환 설정. 관리자 권한으로 자동 상승하지 않음 |
-| [Shared/SharedSources.props](Shared/SharedSources.props) | 공통 C# 원본 20개를 Mac과 검사 프로젝트에 연결하는 목록 |
+| [Shared/SharedSources.props](Shared/SharedSources.props) | 공통 C# 원본 27개를 Mac과 검사 프로젝트에 연결하는 목록. 검사 실행 목록은 SharedTestSuite에 별도 관리 |
 | [Shared.Tests/AiBurgerClock.Shared.Tests.csproj](Shared.Tests/AiBurgerClock.Shared.Tests.csproj) | net10.0 공통 검사, 임시 DB와 가짜 HTTP·CLI 사용 |
 | [Mac/AiBurgerClock.Mac.csproj](Mac/AiBurgerClock.Mac.csproj) | native AppKit, net10.0-macos27.0, osx-arm64, preview 버전과 bundle 버전(`ApplicationDisplayVersion`/`ApplicationVersion`) 지정 |
 | [Mac/tools/make-app-icon.swift](Mac/tools/make-app-icon.swift) | Mac 앱 아이콘 10개 크기를 코드로 생성해 `Mac/Assets.xcassets/AppIcon.appiconset`에 저장. 아이콘을 바꿀 때만 실행 |
@@ -398,7 +421,7 @@ Windows 내부 승인 형식은 알려진 경우만 해석합니다. 낯선 값�
 
 ### Windows와 Mac은 무엇을 같이 쓰나요?
 
-시간표·Provider 파서·권고·조회 주기·저장·통계 규칙의 원본은 루트에 하나만 둡니다. Mac과 공통 검사는 `SharedSources.props`로 그 파일들을 링크해 컴파일합니다. 같은 파일을 두 벌로 복사하거나 WinForms를 다른 프레임워크로 바꾸지 않습니다.
+시간표·Provider 파서·권고·조회 주기·저장·통계·패널 본문/톤·기록 생성·매초 판정의 원본은 루트에 하나만 둡니다. Mac과 공통 검사는 `SharedSources.props`로 그 파일들을 링크해 컴파일합니다. 같은 파일을 두 벌로 복사하거나 WinForms를 다른 프레임워크로 바꾸지 않습니다. 기록·공휴일·시작·종료 흐름은 호스트에 남으며 7b·7c 공통화는 [결정 13](MACOS_UI_PLAN.md#4-4-7b7c-재판단-2026-10-09-7a-완료-뒤)에 따라 보류합니다.
 
 개발도 역할을 나눕니다. Mac 구현·네이티브 빌드/실행 검증은 사용자 Mac의 Claude 로컬 환경에서, Windows 검토·빌드/회귀 검증은 사용자가 요청할 때 이 환경에서 진행합니다. 상대 OS 전용 파일은 각 담당에게 맡기며 **공통 원본은 양쪽 모두 PR로 수정**할 수 있습니다. PR에는 바뀐 공통 파일·동작·상대 OS 확인 항목을 적고 Mac 검사와 Windows 회귀 결과를 구분합니다. OS UI 변경은 다른 UI에 자동 복제되지 않으며 DB·로그인도 동기화되지 않습니다. GitHub로 코드와 검증 기록을 연결하는 흐름이지 자동 감시나 다른 Claude 세션으로의 직접 명령 전달을 설정한 것은 아닙니다. [자세한 분담 및 검증 규칙](AGENTS.md#작업-분담-windows와-mac).
 
@@ -408,9 +431,9 @@ Mac의 시간대 ID는 `America/New_York`, `America/Los_Angeles`, `Asia/Seoul`�
 
 Mac은 `~/Library/Application Support/AIBurgerClock`에 별도 DB를 쓰고 `SMAppService.MainApp`으로 로그인 항목을 관리합니다. CLI는 절대 실행 경로와 실행 권한을 확인하고, shell 프로필·Keychain·인증 파일은 읽지 않습니다. 기능 규칙을 함께 써도 **두 컴퓨터의 DB와 로그인은 자동 동기화되지 않습니다.**
 
-Windows 버전은 2.2.3이고 Mac 소스는 0.1.5 preview입니다. `MacCliPaths`는 GUI 앱의 PATH와 `~/.local/bin`, `/opt/homebrew/bin`, `/usr/local/bin`에서 실행 가능한 공식 명령을 찾으며 인증 파일은 읽지 않습니다. 앞선 0.1.1의 두 CLI 한도와 한 화면 배치는 확인했습니다. 새 0.1.2는 시스템 심볼/tint 대신 20-point 상태색 bitmap과 흰색 F/B를 표준 status item에 넣습니다. 1x·2x 모두 같은 논리 크기입니다. **실제 Mac 공통 검사 244,347건·Release `.app`·서명·ARM64 SQLite와 native smoke PASS에 이어, 일반 화면의 커진 컬러 F와 양쪽 메뉴막대 표시도 확인했습니다.** native smoke의 8개 문자/색 조합 검사와 사용자 일반 실행 관찰은 별도 근거로 기록합니다. 종전 비활성 모니터 누락은 사용자 Mac에서 해소됐지만 정확한 원인을 이미지 수명 하나로 확정하지는 않습니다. bundle 버전은 csproj에서만 지정하며 native smoke가 bundle의 `CFBundleShortVersionString`과 앱 버전을 비교합니다. OS 알림·재로그인·절전 복귀는 남아 있습니다. [버전 수정](MACOS_PORT.md#24-012-bundle-버전-미반영-수정과-첫-로컬-mac-검증), [아이콘 수정](MACOS_PORT.md#20-012-메뉴바-아이콘-크기색상-수정과-다중-모니터-재검증), [native 검사](MACOS_PORT.md#22-012-아이콘-native-smoke-pass), [일반 메뉴막대 확인](MACOS_PORT.md#23-012-실제-컬러-아이콘과-양쪽-메뉴막대-확인)에 구분해서 기록합니다.
+Windows 소스는 2.2.4 후보이며 배포 EXE는 2.2.3입니다. Mac 버전은 Mac csproj에서만 관리하고 이번 Windows 준비에서 변경하지 않습니다. `MacCliPaths`는 GUI 앱의 PATH와 `~/.local/bin`, `/opt/homebrew/bin`, `/usr/local/bin`에서 실행 가능한 공식 명령을 찾으며 인증 파일은 읽지 않습니다. 현재 Mac 빌드·아이콘·실기 검증은 [Mac 안내](Mac/README.md)·[Mac 기록](MACOS_PORT.md)에서 관리합니다. 이번 준비에서 Mac build/native smoke는 실행하지 않았습니다.
 
-`MacStatusWindow`는 전체 document 스크롤을 없애고 430×660 point의 고정 AppKit 창에 Schedule·세 Provider·ChatGPT/Claude 한도·버튼을 놓습니다. Provider 설명은 두 줄로 제한하고 전체 내용을 Tooltip에 보존합니다. 일반 Codex 2개 창+조회 정보와 Claude 3개 창+조회 정보를 위한 한도 상자는 54/74 point이며 더 많은 모델별 한도는 상자 내부에서 스크롤합니다. `VerifyCompactLayout`은 native smoke에서만 호출하여 전체 화면 스크롤 부재, 컨트롤 경계/겹침, 실제 글꼴 기준 일반 한도 행의 높이를 검사합니다. 상시 조회 로직이나 통계 창의 공통 TextArea 설정은 바꾸지 않습니다.
+Mac의 상태 UI는 `MacStatusPanel`과 `MacControls`를 쓰는 팝오버입니다. Windows는 `StatusWindow` 안에서 ‘한도 보기 ↔ 상태 보기’로 카드 영역을 전환합니다. 한도 박스·제목 기준선·클릭되는 카드만 hover라는 규칙은 [결정 9](MACOS_UI_PLAN.md)에 따르며, Mac 한도 항상 표시와 Windows 전환 방식의 차이는 결정 10에 남깁니다. 두 호스트의 실제 창 배치·픽셀 검사는 각각의 native smoke가 맡습니다.
 
 Mac 빌드 스크립트는 일반 사용자로 실행하고, 기본 NuGet HTTP 캐시는 Git에서 제외한 `artifacts/mac-build/nuget-http-cache`에 둡니다. 이 설정은 빌드와 그 자식 프로세스에만 적용됩니다. 기존 사용자 캐시의 권한·전역 설정·취약성 검사는 바꾸지 않습니다. 앱 자체의 DB 경로나 실행 기능과도 별개입니다.
 
@@ -445,7 +468,7 @@ $result.ExitCode
 
 검사는 가짜 현재 시각을 전달하므로 Windows 시스템 시계를 바꾸지 않습니다. UI 검사에서 공식 페이지 열기는 실제 브라우저 대신 주소를 받는 함수로 확인합니다.
 
-검사 통과와 실제 재부팅 성공, 사용자 화면의 알림 노출은 다른 증거입니다. 최신 검증은 [2.2.3 기록](MAINTENANCE_2_2_3.md), 이전 배포 검증은 [2.2.2 기록](MAINTENANCE_2_2_2.md)·[2.2.1 기록](MAINTENANCE_2_2_1.md), 한도 기능 도입 당시 검증은 [2.2.0 기록](ACCOUNT_QUOTAS.md)을 참고하세요.
+검사 통과와 실제 재부팅 성공, 사용자 화면의 알림 노출은 다른 증거입니다. 최신 후보 검증·승인 대기 계획은 [2.2.4 준비 기록](MAINTENANCE_2_2_4.md), 현재 배포 검증은 [2.2.3 기록](MAINTENANCE_2_2_3.md), 이전 배포 검증은 [2.2.2 기록](MAINTENANCE_2_2_2.md)·[2.2.1 기록](MAINTENANCE_2_2_1.md)을 참고하세요.
 
 공통 검사만 실행하려면 OS와 관계없이 다음 명령을 사용합니다. 가짜 응답과 임시 DB만 사용하며 계정·사용자 DB·자동 실행 설정은 건드리지 않습니다. Windows WinForms 검사를 대체하는 것은 아닙니다.
 
