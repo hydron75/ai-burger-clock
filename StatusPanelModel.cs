@@ -67,7 +67,30 @@ internal static class StatusPanelModel
             Tone(recommendation),
             "Official: " + RecommendationPolicy.OfficialLabel(status.Status),
             status.Reason,
-            $"클릭: 공식 상태 페이지 열기 · 우클릭: 사용 경험 기록\n{status.Reason}\n최근 조회 시도: {attempted}\n마지막 상태 확인 성공: {success}\n관련: {status.RelevantComponent}\n사건: {status.IncidentTitle}\n사건 ID: {status.IncidentId}\n마지막 알려진 상태: {status.LastKnownStatus}\n{status.Source}");
+            Detail(status, attempted, success));
+    }
+
+    // Optional fields appear only when the official source supplied them, so the tooltip never shows
+    // bare labels such as "사건:". The two check times always appear ("없음" before the first check).
+    private static string Detail(ProviderStatus status, string attempted, string success)
+    {
+        var lines = new List<string>
+        {
+            "클릭: 공식 상태 페이지 열기 · 우클릭: 사용 경험 기록",
+            status.Reason,
+            "최근 조회 시도: " + attempted,
+            "마지막 상태 확인 성공: " + success
+        };
+        void Optional(string label, string? value)
+        {
+            if (!string.IsNullOrWhiteSpace(value)) lines.Add(label + value);
+        }
+        Optional("관련: ", status.RelevantComponent);
+        Optional("사건: ", status.IncidentTitle);
+        Optional("사건 ID: ", status.IncidentId);
+        Optional("마지막 알려진 상태: ", status.LastKnownStatus?.ToString());
+        Optional("", status.Source);
+        return string.Join("\n", lines);
     }
 
     // Two lines under the cards: latest attempt, then the refresh in progress or the next scheduled check.
