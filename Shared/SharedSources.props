@@ -20,6 +20,9 @@
     <Compile Include="$(MSBuildThisFileDirectory)../TrayPresentation.cs" Link="Shared/TrayPresentation.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)../StatisticsAnalysis.cs" Link="Shared/StatisticsAnalysis.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)../DisplayFormatting.cs" Link="Shared/DisplayFormatting.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)../ProviderNames.cs" Link="Shared/ProviderNames.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)../StatusPanelModel.cs" Link="Shared/StatusPanelModel.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)../QuotaPanelModel.cs" Link="Shared/QuotaPanelModel.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)../AppPaths.cs" Link="Shared/AppPaths.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)../MacCliPaths.cs" Link="Shared/MacCliPaths.cs" />
   </ItemGroup>

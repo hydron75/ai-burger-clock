@@ -20,5 +20,6 @@
     <Compile Include="../AccountQuotaTests.cs" Link="Tests/AccountQuotaTests.cs" />
     <Compile Include="../AccountQuotaMonitorTests.cs" Link="Tests/AccountQuotaMonitorTests.cs" />
     <Compile Include="../PortablePlatformTests.cs" Link="Tests/PortablePlatformTests.cs" />
+    <Compile Include="../PanelModelTests.cs" Link="Tests/PanelModelTests.cs" />
   </ItemGroup>
 </Project>

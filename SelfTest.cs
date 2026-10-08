@@ -37,7 +37,9 @@ internal static class SelfTest
             Console.WriteLine($"PASS quota polling/isolation/SQLite cache/restart/cancellation: {quotaMonitor:N0} assertions");
             int portable = PortablePlatformTests.Run();
             Console.WriteLine($"PASS shared paths/IANA zones/formatting/macOS CLI candidates: {portable:N0} assertions");
-            Console.WriteLine($"PASS ALL: {autoStart + schedule + holidays + tray + sources + monitor + storage + holidayMonitor + quota + quotaClient + quotaMonitor + portable:N0} assertions");
+            int panel = PanelModelTests.Run();
+            Console.WriteLine($"PASS panel text/tones (Windows golden): {panel:N0} assertions");
+            Console.WriteLine($"PASS ALL: {autoStart + schedule + holidays + tray + sources + monitor + storage + holidayMonitor + quota + quotaClient + quotaMonitor + portable + panel:N0} assertions");
             return 0;
         }
         catch (Exception error)
