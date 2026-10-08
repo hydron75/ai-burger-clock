@@ -24,7 +24,6 @@ namespace AiBurgerClock
         private readonly ToolStripMenuItem holidayMenuItem;
         private Icon? currentIcon;
         private TrayAppearance? currentAppearance;
-        private AgentState? lastState;
         private bool disposed;
         private bool exiting;
         private readonly UsageStore store;
@@ -33,8 +32,7 @@ namespace AiBurgerClock
         private readonly AccountQuotaMonitor? quotaMonitor;
         private StatisticsWindow? statisticsWindow;
         private readonly HashSet<Task> pendingWrites = new();
-        private readonly RecommendationNotifications providerNotifications = new();
-        private int providerNotificationSerial;
+        private readonly StatusTicker statusTicker;
         private int providerRefreshQueued;
         private readonly NetworkRefreshScheduler? networkRefresh;
         private readonly Action<Uri> openStatusPage;
@@ -52,6 +50,7 @@ namespace AiBurgerClock
             this.utcNow = utcNow ?? (() => DateTimeOffset.UtcNow);
             this.openStatusPage = openStatusPage ?? ProviderStatusPages.Open;
             store = usageStore ?? new UsageStore();
+            statusTicker = new StatusTicker(WindowsProviderNames.Provider, warn: new WindowsWarningLog().Write);
             statusWindow = new StatusWindow();
             statusWindow.AutoStartChanged += OnWindowAutoStartChanged;
             statusWindow.RefreshRequested += (_, _) => RefreshAll();
@@ -172,13 +171,12 @@ namespace AiBurgerClock
                 await save;
                 if (exiting || disposed) return;
                 holidayAdjustmentEnabled = enabled;
-                int alertsBeforeRefresh = providerNotificationSerial;
                 // A policy-only change must not consume a concurrently queued
                 // provider incident when the schedule itself remains FULL.
-                RefreshStatus(false, notifyProviders: true);
+                TickResult result = RefreshStatus(TickReason.PolicyChanged);
                 var snapshot = GetSchedule(utcNow());
                 statusWindow.SetFeedback(FeedbackText.HolidaySaved(enabled));
-                if (alertsBeforeRefresh == providerNotificationSerial)
+                if (result.ProviderAlerts.Count == 0)
                 {
                     // Do not immediately replace an important concurrent service alert.
                     (trayIcon.BalloonTipTitle, trayIcon.BalloonTipText) = FeedbackText.HolidayNotification(enabled, snapshot);
@@ -207,26 +205,29 @@ namespace AiBurgerClock
         }
 
         internal void RefreshStatus(bool notifyOnChange, bool notifyProviders = false)
+            => RefreshStatus(notifyOnChange ? TickReason.Timer :
+                notifyProviders ? TickReason.PolicyChanged : TickReason.Initial);
+
+        private TickResult RefreshStatus(TickReason reason)
         {
-            ScheduleSnapshot snapshot = GetSchedule(utcNow());
-            bool changed = lastState.HasValue && lastState.Value != snapshot.State;
+            TickResult result = statusTicker.Tick(GetSchedule(utcNow()), CurrentProviders(), reason);
+            ScheduleSnapshot snapshot = result.Schedule;
             statusWindow.UpdateStatus(snapshot);
             stateMenuItem.Text = "●  " + TrayPresentation.StateName(snapshot.State);
             stateMenuItem.ForeColor = TrayPresentation.StateColor(snapshot.State);
             countdownMenuItem.Text = "전환까지 " + StatusWindow.FormatRemaining(snapshot.Remaining);
-            lastState = snapshot.State;
-
-            if (notifyOnChange && changed)
-                ShowTransitionNotification(snapshot);
-            // A timer tick can run before the posted network callback. It must not
-            // silently consume an official-status change and suppress its notification.
-            UpdateProviderDisplay((notifyOnChange || notifyProviders) && !changed, snapshot);
+            if (result.Transition is { } transition)
+                ShowTransitionNotification(snapshot, transition);
+            // Apply the decision in the existing order: schedule UI, transition,
+            // icon/tooltip, provider alerts, then provider/quota UI.
+            UpdateProviderDisplay(result);
+            return result;
         }
 
-        private void ShowTransitionNotification(ScheduleSnapshot snapshot)
+        private void ShowTransitionNotification(ScheduleSnapshot snapshot, (string Title, string Body) transition)
         {
             bool full = snapshot.State == AgentState.FullThrottle;
-            (trayIcon.BalloonTipTitle, trayIcon.BalloonTipText) = TrayPresentation.TransitionNotification(snapshot);
+            (trayIcon.BalloonTipTitle, trayIcon.BalloonTipText) = transition;
             trayIcon.BalloonTipIcon = full ? ToolTipIcon.Info : ToolTipIcon.Warning;
             trayIcon.ShowBalloonTip(6000);
             TransitionNotificationRequested?.Invoke(snapshot.State);
@@ -250,7 +251,7 @@ namespace AiBurgerClock
                 statusWindow.BeginInvoke(() =>
                 {
                     Volatile.Write(ref providerRefreshQueued, 0); // Before reading the snapshot.
-                    if (!exiting && !disposed) RefreshStatus(true);
+                    if (!exiting && !disposed) RefreshStatus(TickReason.ProviderChanged);
                 });
             }
             catch (InvalidOperationException)
@@ -285,31 +286,22 @@ namespace AiBurgerClock
         private IReadOnlyList<ProviderStatus> CurrentProviders() => monitor?.Snapshot() ??
             Enum.GetValues<ProviderKind>().Select(p => ProviderStatus.Unknown(p)).ToArray();
 
-        private void UpdateProviderDisplay(bool notify, ScheduleSnapshot schedule)
+        private void UpdateProviderDisplay(TickResult result)
         {
-            var providers = CurrentProviders();
-            TrayAppearance appearance = TrayPresentation.Calculate(schedule.State, providers);
-            if (currentAppearance != appearance)
+            if (result.AppearanceChanged)
             {
-                ReplaceTrayIcon(appearance);
-                currentAppearance = appearance;
+                ReplaceTrayIcon(result.Appearance);
+                currentAppearance = result.Appearance;
             }
-            trayIcon.Text = TrayPresentation.Tooltip(schedule, providers, WindowsProviderNames.Provider);
-            foreach (var status in providers)
+            trayIcon.Text = TrayPresentation.Tooltip(result.Schedule, result.Providers, WindowsProviderNames.Provider);
+            foreach (ProviderAlert alert in result.ProviderAlerts)
             {
-                var current = RecommendationPolicy.Calculate(schedule.State, status.Status);
-                if (providerNotifications.Observe(status.Provider, schedule.State, current, notify))
-                {
-                    bool recovered = current == Recommendation.Go;
-                    (trayIcon.BalloonTipTitle, trayIcon.BalloonTipText) =
-                        TrayPresentation.ProviderNotification(status.Provider, current, status.Reason, WindowsProviderNames.Provider);
-                    trayIcon.BalloonTipIcon = recovered ? ToolTipIcon.Info : ToolTipIcon.Warning;
-                    trayIcon.ShowBalloonTip(6000);
-                    providerNotificationSerial++;
-                    ProviderNotificationRequested?.Invoke(status.Provider, current);
-                }
+                (trayIcon.BalloonTipTitle, trayIcon.BalloonTipText) = (alert.Title, alert.Body);
+                trayIcon.BalloonTipIcon = alert.Recovered ? ToolTipIcon.Info : ToolTipIcon.Warning;
+                trayIcon.ShowBalloonTip(6000);
+                ProviderNotificationRequested?.Invoke(alert.Provider, alert.Recommendation);
             }
-            statusWindow.UpdateProviders(providers, schedule, monitor?.IsRefreshing ?? false,
+            statusWindow.UpdateProviders(result.Providers, result.Schedule, monitor?.IsRefreshing ?? false,
                 monitor?.NextRefreshUtc, monitor?.StorageError ?? "");
             // Quotas never change official service health, schedule recommendations or tray colors.
             statusWindow.UpdateQuotas(quotaMonitor?.Snapshot() ??

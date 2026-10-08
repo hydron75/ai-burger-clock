@@ -15,7 +15,9 @@ internal static class SelfTest
             Console.WriteLine($"PASS Windows provider adapter/native tray icon pixels: {tray:N0} assertions");
             int quotaClient = await AccountQuotaClientTests.RunAsync();
             Console.WriteLine($"PASS Windows quota CLI paths: {quotaClient:N0} assertions (no account calls)");
-            Console.WriteLine($"PASS ALL: {autoStart + shared + tray + quotaClient:N0} assertions");
+            int warningLog = WindowsWarningLogChecks.Run();
+            Console.WriteLine($"PASS Windows ticker warning log/rotation/failure isolation: {warningLog:N0} assertions (temporary files only)");
+            Console.WriteLine($"PASS ALL: {autoStart + shared + tray + quotaClient + warningLog:N0} assertions");
             return 0;
         }
         catch (Exception error)
