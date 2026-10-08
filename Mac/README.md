@@ -238,6 +238,17 @@ open "Mac/bin/Release/net10.0-macos27.0/osx-arm64/AI Burger Clock.app"
 
 메뉴바 아이콘을 왼쪽 클릭해 팝오버에서 Schedule·Provider 공식 상태·ChatGPT/Claude 한도·버튼이 보이는지 확인합니다. 오른쪽 클릭(또는 control-클릭)은 Refresh·로그인 항목 설정 열기…·종료만 있는 짧은 메뉴입니다. Provider 카드 아무 곳이나 클릭하면 공식 상태 페이지가 열리고, 사용 경험 기록은 카드의 오른쪽 클릭(또는 control-클릭) 메뉴에서 남깁니다(이전 상태 창과 메뉴바의 기록 하위 메뉴는 없앴습니다). 한도는 Provider별 박스에 표시하며 클릭 동작은 없습니다. 한도 카운트다운과 긴 이유의 Tooltip도 확인하세요. 사용자 0.1.1 전체 창/메뉴바 스크린샷에서 한 화면 표시와 두 계정 한도 수신을 확인했습니다. 실제 Tooltip·기록 메뉴·공식 링크 클릭, 추가 한도 내부 스크롤과 OS 동작까지 스크린샷으로 검증한 것은 아닙니다. 다른 Mac에서 CLI가 설치·로그인되지 않았다면 한도 조회 불가가 표시됩니다. Windows의 로그인은 자동 복사하지 않습니다. [일반 화면 기록](../MACOS_PORT.md#19-011-일반-상태-창과-메뉴바-확인)
 
+## 앱 로그 (통합 로그)
+
+앱은 macOS 통합 로그에 진단 메시지를 남깁니다. subsystem은 `com.hydron75.aiburgerclock`입니다. 지금은 매초 판정 입력에 같은 Provider가 두 번 들어온 경우만 기록합니다(category `display`). 이때 앱은 멈추지 않고 첫 값을 씁니다.
+
+```sh
+log show --last 1d --style compact --predicate 'subsystem == "com.hydron75.aiburgerclock"'
+log stream --predicate 'subsystem == "com.hydron75.aiburgerclock"'
+```
+
+콘솔 앱에서는 왼쪽에서 이 Mac을 고르고 검색창에 `subsystem:com.hydron75.aiburgerclock`를 입력한 뒤 "스트리밍 시작"을 누릅니다. `--smoke-test`도 중복 처리 검사 중에 같은 메시지를 한 번 남깁니다(프로세스는 smoke 실행).
+
 ## CLI를 찾지 못하는 경우
 
 첫 일반 실행 스크린샷에서는 두 계정 한도에 `공식 CLI를 찾지 못했습니다`가 표시됐고, 이후 사용자가 CLI를 설치해 정상 수신했습니다. 이 메시지는 인증 응답이 아니라 실행 파일 탐색 실패입니다. 다른 설치에서 같은 문제가 생기면 미설치·GUI에 보이지 않는 설치 경로·실행 권한을 구분합니다.
