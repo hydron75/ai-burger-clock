@@ -2,6 +2,7 @@ namespace AiBurgerClock;
 
 internal sealed class StatusWindow : Form
 {
+    private readonly Label titleLabel;
     private readonly Label stateLabel;
     private readonly Label countdownLabel;
     private readonly Label nextLabel;
@@ -47,7 +48,7 @@ internal sealed class StatusWindow : Form
         BackColor = Color.FromArgb(248, 249, 250);
         Font = OwnedFont(9F);
 
-        AddLabel(StatusPanelModel.Title, 16, 10, 342, 18, 9F, FontStyle.Bold);
+        titleLabel = AddLabel(StatusPanelModel.Title, 16, 10, 342, 18, 9F, FontStyle.Bold);
         stateLabel = AddLabel("", 14, 31, 345, 36, 18F, FontStyle.Bold);
         countdownLabel = AddLabel("", 16, 73, 342, 24, 12F);
         nextLabel = AddLabel("", 17, 101, 342, 19, 9F);
@@ -87,6 +88,7 @@ internal sealed class StatusWindow : Form
         {
             quotaView.Visible = !quotaView.Visible;
             foreach (var panel in statusPanels) panel.Visible = !quotaView.Visible;
+            titleLabel.Text = quotaView.Visible ? QuotaPanelModel.AccessibleName : StatusPanelModel.Title;
             quotaButton.Text = quotaView.Visible ? QuotaPanelModel.ShowStatus : QuotaPanelModel.ShowQuotas;
             SetQuotaCaption();
         };
