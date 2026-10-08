@@ -150,7 +150,7 @@ namespace AiBurgerClock
             catch (Exception error)
             {
                 // Never silently apply an unconfirmed policy if persisted settings cannot be read.
-                statusWindow.SetFeedback("공휴일 설정 확인 실패 · 보정 OFF: " + error.Message, true);
+                statusWindow.SetFeedback(FeedbackText.HolidayReadFailed(error.Message), true);
             }
             if (exiting || disposed) return;
             holidaySettingsReady = true;
@@ -177,19 +177,18 @@ namespace AiBurgerClock
                 // provider incident when the schedule itself remains FULL.
                 RefreshStatus(false, notifyProviders: true);
                 var snapshot = GetSchedule(utcNow());
-                statusWindow.SetFeedback("공휴일 보정 " + (enabled ? "ON" : "OFF") + " · 시간표에 반영됨");
+                statusWindow.SetFeedback(FeedbackText.HolidaySaved(enabled));
                 if (alertsBeforeRefresh == providerNotificationSerial)
                 {
                     // Do not immediately replace an important concurrent service alert.
-                    trayIcon.BalloonTipTitle = "공휴일 보정 " + (enabled ? "켜짐" : "꺼짐");
-                    trayIcon.BalloonTipText = $"시간표 정책이 변경되었습니다. 다음 전환: {snapshot.NextTransitionKst:MM-dd HH:mm} KST.\nProvider 공식 상태는 별도로 확인하세요.";
+                    (trayIcon.BalloonTipTitle, trayIcon.BalloonTipText) = FeedbackText.HolidayNotification(enabled, snapshot);
                     trayIcon.BalloonTipIcon = ToolTipIcon.Info;
                     trayIcon.ShowBalloonTip(4000);
                 }
             }
             catch (Exception error)
             {
-                if (!disposed) statusWindow.SetFeedback("공휴일 설정 저장 실패 · 기존 정책 유지: " + error.Message, true);
+                if (!disposed) statusWindow.SetFeedback(FeedbackText.HolidaySaveFailed(error.Message), true);
             }
             finally
             {
@@ -334,30 +333,24 @@ namespace AiBurgerClock
             try { await initialization; }
             catch (Exception error)
             {
-                if (!disposed) statusWindow.SetFeedback("초기화 실패로 기록하지 못했습니다: " + error.Message, true);
+                if (!disposed) statusWindow.SetFeedback(FeedbackText.RecordStartupFailed(error.Message), true);
                 return;
             }
             if (exiting || disposed) return;
             var at = utcNow().ToUniversalTime();
             var schedule = GetSchedule(at);
             var status = CurrentProviders().Single(s => s.Provider == provider);
-            string note = "";
+            var item = UsageMeasurementFactory.Capture(provider, type, schedule, status, Application.ProductVersion.Split('+')[0]);
             if (withNote)
             {
                 using var dialog = new MeasurementDialog(provider, type);
                 if (dialog.ShowDialog() != DialogResult.OK) return;
                 type = dialog.EventType;
-                note = dialog.UserNote;
+                item = UsageMeasurementFactory.WithNote(item, type, dialog.UserNote);
             }
             // Exit may start while the modal note dialog is open; ExitApplication has then
             // already collected pendingWrites, so a save started now would outlive it.
             if (exiting || disposed) return;
-            var item = new UsageMeasurement(Guid.NewGuid().ToString("N"), provider, type, at,
-                schedule.State, schedule.IsWeekendExtendedFullThrottle, schedule.EasternUtcOffsetMinutes,
-                schedule.PacificUtcOffsetMinutes, schedule.EasternIsDst, schedule.PacificIsDst,
-                schedule.SchedulePolicyVersion, status.Status, RecommendationPolicy.Calculate(schedule.State, status.Status),
-                status.RelevantComponent, status.IncidentId, note, Application.ProductVersion.Split('+')[0],
-                schedule.HolidayAdjustmentEnabled, schedule.IsHolidayExtendedFullThrottle, schedule.HolidayNames);
             Task save = store.AddUsageAsync(item);
             pendingWrites.Add(save);
             try
@@ -365,7 +358,7 @@ namespace AiBurgerClock
                 await save;
                 if (!disposed)
                 {
-                    statusWindow.SetFeedback($"{WindowsProviderNames.Provider(provider)} · {type} 저장됨 ({schedule.NowKst:HH:mm} KST)");
+                    statusWindow.SetFeedback(FeedbackText.RecordSaved(provider, type, schedule));
                     if (!exiting) statusWindow.ShowNearTray();
                 }
             }
@@ -373,7 +366,7 @@ namespace AiBurgerClock
             {
                 if (!disposed)
                 {
-                    statusWindow.SetFeedback("기록 저장 실패: " + error.Message, true);
+                    statusWindow.SetFeedback(FeedbackText.RecordFailed(error.Message), true);
                     if (!exiting) statusWindow.ShowNearTray();
                 }
             }
