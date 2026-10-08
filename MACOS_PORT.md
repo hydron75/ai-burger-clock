@@ -999,3 +999,49 @@ Draft를 해제하자 Codex 자동 리뷰가 `6681109`에 P2 지적 2건을 남�
 | SHA-256 앱 DLL | `6bbdc3abcd2c7f7f032eb96056a7a1b62aa3ae826671d93f6a374da14f05097c` |
 
 34절의 SHA-256(`53ae21f`)은 35-1절 Codex 리뷰 반영 전 bundle이다. 위 값이 main 병합 시점의 최종 bundle이다.
+
+## 36. 0.2.0: 메뉴바 팝오버와 새 아이콘
+
+2026-10-08 KST. [MACOS_UI_PLAN](MACOS_UI_PLAN.md) 4절의 PR 1~6으로 Mac 메뉴바 UI를 상태 창에서 팝오버로 바꾸고 **0.2.0 / build 7**로 정리했다. Windows 2.2.3·DB schema·NuGet 의존성은 그대로다.
+
+| PR | 내용 |
+|---|---|
+| [#21](https://github.com/hydron75/ai-burger-clock/pull/21)·[#23](https://github.com/hydron75/ai-burger-clock/pull/23) | 공통 `ProviderNames`·`StatusPanelModel`·`QuotaPanelModel`·`UsageMeasurementFactory`·`FeedbackText`와 Windows 문구 골든 검사 |
+| [#24](https://github.com/hydron75/ai-burger-clock/pull/24) | 왼쪽 클릭 팝오버, 오른쪽 클릭 짧은 메뉴, 상태 창 제거. 카드 오른쪽 클릭 기록 메뉴와 메모 흐름, 한도 줄 Tooltip, 불투명 배경과 라이트/다크 톤 색, 열자마자 활성·키 윈도우, 한도 영역 높이 맞춤 |
+| [#26](https://github.com/hydron75/ai-burger-clock/pull/26) | 카드 전체 클릭·hover, 한도 Provider별 박스와 글자 시작 x 정렬(결정 9), 화면 높이 맞춤 |
+| [#27](https://github.com/hydron75/ai-burger-clock/pull/27) | `build.sh`가 실행 중인 같은 bundle을 덮어쓰지 않음 |
+| PR 6(이 절) | 메뉴바 아이콘: 흰 원(다크 메뉴바는 어두운 원)에 주의도 색 글자 F/B와 같은 색 1.5pt 테두리(결정 5-4). 0.2.0 / 7 |
+
+- **아이콘 구현**
+  - 그리기 핸들러 이미지가 메뉴바의 외형에서 매번 그립니다. 밝은 메뉴바는 흰 원, 어두운 메뉴바는 어두운 원(#2C2C2E)입니다. 화면마다 메뉴바 밝기가 달라도 각자 맞게 그려집니다.
+  - 글자·테두리 색은 팝오버 톤 색(`Tone*.colorset`)의 라이트/다크 값입니다.
+  - 미리 구운 비트맵을 쓰지 않습니다.
+- **한도 표시**: Windows의 "한도 보기" 전환은 넣지 않고 항상 표시한다(결정 10, MACOS_UI_PLAN 3-3).
+
+### 이 Mac에서 수행한 검증
+
+| 항목 | 결과 |
+|---|---|
+| 앱 소스 | `8d63c5a`(main `fa83f49` 기준). 빌드한 작업 트리의 Mac 코드와 같다 |
+| Shared.Tests | `PASS ALL SHARED: 244,658 assertions` |
+| `Mac/build.sh --quit-running` | 실행 중이던 0.1.5 계열 앱(PID 70975, 사용자 허락)을 종료 요청으로 닫은 뒤 빌드. 종료 코드 0, 공통 검사 244,658건, native Release 경고 0 / 오류 0 |
+| bundle | 0.2.0 / 7, 124M, `codesign --verify --deep --strict` 통과 |
+| `--smoke-test` | PASS / 종료 코드 0 |
+| SHA-256 실행 파일 | `b31bbd13d38dd7f60b3b34cae4f3b3de29df1b6aa9e2ff77804450d6f1c91c0f` |
+| SHA-256 앱 DLL | `9c1c2304b429dee9ce730790004a4cbd2ba04b520724bc4facd5ce1a9b40cbee` |
+
+smoke 출력:
+
+```text
+PASS: bundle version, menu-tracking countdown timer, 20pt menu icon white/dark disc + color glyph light/dark 1x-2x pixels (glyph contrast min 4.9:1), left/right/control-click routing, right-click menu, popover open/close/reopen, shared panel text/record menu/quota lines, popover activation not checked (macOS did not grant activation without a user click), tone contrast >= 4.5:1 light+dark (min 4.7:1), card text x = quota box text x (20pt; titles 12pt), whole-card click/quota boxes read-only, popover 380x673pt (this screen usable 936pt; 1280x800 fits; 1024x640 591pt with quota area 96pt scrolling), 1,000-char note limit, temporary SQLite, four events/notes via shared factory, statistics, injected quota countdown; no account/network/settings changes.
+```
+
+- 아이콘 픽셀 검사
+  - 아이콘 이미지 **하나**를 라이트·다크 외형에서 1x·2x로 그려 봅니다. 확인 항목은 모서리 투명, 원 색, 글자 색, 글자 대비 4.5:1 이상(최소 4.9:1)입니다.
+  - 같은 이미지로 그리므로, 라이트에서 캐시된 그림이 다크 메뉴바에 남으면 실패합니다.
+- 빌드 후 같은 경로의 0.2.0 bundle로 앱을 다시 실행했다.
+
+### 수행하지 않은 검증(사용자 확인 대상)
+- 실제 메뉴바의 아이콘 표시: 밝은 메뉴바(밝은 배경화면), 다크 모드, 비활성 화면 메뉴바, 두 화면 동시 표시. 이 Mac의 화면 기록 권한이 없어 스크린샷을 찍지 못했다.
+- 외형 전환(라이트↔다크) 때 아이콘이 다시 그려지는지.
+- 팝오버의 실제 활성화(사용자 클릭 시), OS 알림 배너, 장기 사용, 재부팅 후 자동 실행.
