@@ -10,18 +10,24 @@ namespace AiBurgerClock;
 internal sealed class MacStatusPanel : IDisposable
 {
     internal const int PanelWidth = 380;
-    internal const int MaximumHeight = 760;
     private const int Inset = 14;
     private const int ContentWidth = PanelWidth - Inset * 2;
     private const int CardPadding = 8;
-    // Quota box grows with its rows up to this height; only extra model-scoped rows scroll.
-    private const int MaximumQuotaHeight = 200;
-    internal const string DefaultFeedback = "Provider 이름 클릭: 공식 페이지 · 우클릭: 기록";
+    // Quota area grows with its boxes up to this height; only extra model-scoped rows scroll.
+    private const int MaximumQuotaHeight = 240;
+    // On a short screen the quota area gives up height first, down to about one box.
+    private const int MinimumQuotaHeight = 90;
+    // Room kept for the popover arrow and the gap below the menu bar.
+    private const int ScreenMargin = 24;
+    internal const string DefaultFeedback = "Provider 카드 클릭: 공식 페이지 · 우클릭: 기록";
 
     private readonly NSPopover popover;
     private readonly NSView content;
     private readonly NSStackView root;
     private readonly NSLayoutConstraint quotaHeight;
+    private readonly NSTextField title;
+    private readonly NSTextField quotaTitle;
+    private nfloat availableHeight = 760;
     private readonly NSTextField state;
     private readonly NSTextField countdown;
     private readonly NSTextField next;
@@ -38,8 +44,8 @@ internal sealed class MacStatusPanel : IDisposable
     private string quotaLayoutKey = "";
     private string shownStorageError = "";
 
-    private sealed record Card(NSView View, NSButton Heading, NSTextField Official, NSTextField Reason, NSMenu Menu);
-    private sealed record QuotaViews(NSTextField Heading, NSTextField? Scope, Dictionary<string, NSTextField> Rows, NSTextField Metadata);
+    private sealed record Card(CardView View, NSTextField Heading, NSTextField Official, NSTextField Reason, NSMenu Menu);
+    private sealed record QuotaViews(CardView Box, NSTextField Heading, NSTextField? Scope, Dictionary<string, NSTextField> Rows, NSTextField Metadata);
 
     internal MacStatusPanel(Action requestRefresh, Action showStatistics, Action<bool> changeHoliday,
         Action<bool> changeAutoStart, Action<ProviderKind> openPage,
@@ -49,7 +55,9 @@ internal sealed class MacStatusPanel : IDisposable
         root.EdgeInsets = new NSEdgeInsets(12, Inset, 12, Inset);
         root.WidthAnchor.ConstraintEqualTo(PanelWidth).Active = true;
 
-        var title = Add(Line(StatusPanelModel.Title, 11, bold: true));
+        // Alignment rule: section titles sit on the outer edge; items sit in boxes whose text starts
+        // CardPadding further in. Provider cards and quota boxes share the same box and padding.
+        title = Add(Line(StatusPanelModel.Title, 11, bold: true));
         title.TextColor = NSColor.SecondaryLabel;
         state = Add(Line("", 22, bold: true));
         countdown = Add(Line("", 15));
@@ -67,8 +75,9 @@ internal sealed class MacStatusPanel : IDisposable
         }
         root.SetCustomSpacing(10, cards[ProviderKind.Gemini].View);
 
-        Add(Line("개인 계정 잔여 한도", 13, bold: true));
-        quotaStack = Stack(vertical: true, spacing: 1);
+        quotaTitle = Add(Line("개인 계정 잔여 한도", 13, bold: true));
+        root.SetCustomSpacing(6, quotaTitle);
+        quotaStack = Stack(vertical: true, spacing: 6);
         var document = new FlippedView { TranslatesAutoresizingMaskIntoConstraints = false };
         document.AddSubview(quotaStack);
         Pin(quotaStack, document, 0, 0);
@@ -129,6 +138,9 @@ internal sealed class MacStatusPanel : IDisposable
 #pragma warning disable CA1422 // Cooperative Activate() alone left the app inactive on macOS 27.
         NSApplication.SharedApplication.ActivateIgnoringOtherApps(true);
 #pragma warning restore CA1422
+        // Fit the screen under the clicked menu bar, not a fixed maximum.
+        NSScreen? screen = anchor.Window?.Screen ?? NSScreen.MainScreen;
+        if (screen is not null) availableHeight = screen.VisibleFrame.Height - ScreenMargin;
         FitContent();
         popover.Show(anchor.Bounds, anchor, NSRectEdge.MinYEdge);
         popover.ContentViewController.View.Window?.MakeKeyWindow();
@@ -136,10 +148,29 @@ internal sealed class MacStatusPanel : IDisposable
 
     internal NSWindow? Window => popover.Shown ? popover.ContentViewController.View.Window : null;
 
+    // The quota area fits its boxes (no gap, no scroll) unless the screen is too short; then it alone
+    // shrinks and scrolls so the rest of the popover is never cut off.
     private void FitContent()
     {
+        nfloat quota = (nfloat)Math.Min(MaximumQuotaHeight, Math.Ceiling(quotaStack.FittingSize.Height));
+        quotaHeight.Constant = quota;
         content.LayoutSubtreeIfNeeded();
-        popover.ContentSize = new CGSize(PanelWidth, Math.Min(MaximumHeight, Math.Ceiling(content.FittingSize.Height)));
+        nfloat height = (nfloat)Math.Ceiling(content.FittingSize.Height);
+        if (height > availableHeight)
+        {
+            quotaHeight.Constant = (nfloat)Math.Max(MinimumQuotaHeight, quota - (height - availableHeight));
+            content.LayoutSubtreeIfNeeded();
+            height = (nfloat)Math.Ceiling(content.FittingSize.Height);
+        }
+        popover.ContentSize = new CGSize(PanelWidth, height);
+    }
+
+    // Smoke: lay the popover out for a given usable screen height and return its content size.
+    internal CGSize FitFor(nfloat usableHeight)
+    {
+        availableHeight = usableHeight;
+        FitContent();
+        return popover.ContentSize;
     }
 
     internal void Close()
@@ -164,8 +195,9 @@ internal sealed class MacStatusPanel : IDisposable
         foreach (ProviderCardText text in StatusPanelModel.Cards(states, snapshot.State))
         {
             Card card = cards[text.Provider];
-            if (card.Heading.Title != text.Heading) card.Heading.Title = text.Heading;
-            card.Heading.ContentTintColor = MacControls.Color(text.HeadingTone);
+            SetText(card.Heading, text.Heading);
+            SetColor(card.Heading, MacControls.Color(text.HeadingTone));
+            if (card.View.AccessibilityLabel != text.Heading) card.View.AccessibilityLabel = text.Heading;
             SetText(card.Official, text.Official);
             SetText(card.Reason, text.Reason);
             foreach (NSView view in new NSView[] { card.View, card.Heading, card.Official, card.Reason }) SetTip(view, text.Detail);
@@ -200,13 +232,17 @@ internal sealed class MacStatusPanel : IDisposable
             quotas.Clear();
             foreach (QuotaSectionText section in sections)
             {
-                var heading = QuotaLine(12, bold: true);
-                var scope = section.Scope is null ? null : QuotaLine(11);
-                var rows = section.Rows.ToDictionary(row => row.WindowId, _ => QuotaLine(11));
-                var metadata = QuotaLine(10);
-                quotaStack.SetCustomSpacing(8, metadata);
-                quotas[section.Provider] = new(heading, scope, rows, metadata);
+                // Same box as a provider card, without click, hover or menu: quotas are read-only.
+                var (box, lines) = Box(press: null);
+                var heading = QuotaLine(lines, 12, bold: true);
+                var scope = section.Scope is null ? null : QuotaLine(lines, 11);
+                var rows = section.Rows.ToDictionary(row => row.WindowId, _ => QuotaLine(lines, 11));
+                var metadata = QuotaLine(lines, 10);
+                quotaStack.AddArrangedSubview(box);
+                quotas[section.Provider] = new(box, heading, scope, rows, metadata);
             }
+            // Box count or rows changed: refit so no gap is left above the check times.
+            FitContent();
         }
         foreach (QuotaSectionText section in sections)
         {
@@ -216,19 +252,12 @@ internal sealed class MacStatusPanel : IDisposable
             foreach (QuotaLine row in section.Rows) Apply(views.Rows[row.WindowId], row);
             Apply(views.Metadata, section.Metadata);
         }
-        // Fit the box to its rows so no gap is left above the check times; resize an open popover.
-        nfloat height = (nfloat)Math.Min(MaximumQuotaHeight, Math.Ceiling(quotaStack.FittingSize.Height));
-        if (quotaHeight.Constant != height)
-        {
-            quotaHeight.Constant = height;
-            if (popover.Shown) FitContent();
-        }
     }
 
-    private NSTextField QuotaLine(int size, bool bold = false)
+    private static NSTextField QuotaLine(NSStackView box, int size, bool bold = false)
     {
-        var line = Line("", size, bold, width: ContentWidth - 16);
-        quotaStack.AddArrangedSubview(line);
+        var line = Line("", size, bold, width: ContentWidth - CardPadding * 2);
+        box.AddArrangedSubview(line);
         return line;
     }
 
@@ -276,18 +305,9 @@ internal sealed class MacStatusPanel : IDisposable
 
     private Card CreateCard(ProviderKind provider, Action<ProviderKind> openPage, Action<ProviderKind, UsageEventType, bool> record)
     {
-        var view = new CardView { TranslatesAutoresizingMaskIntoConstraints = false };
-        view.WidthAnchor.ConstraintEqualTo(ContentWidth).Active = true;
-        var stack = Stack(vertical: true, spacing: 1);
-        view.AddSubview(stack);
-        Pin(stack, view, CardPadding, 6);
-        var heading = new NSButton
-        {
-            Title = ProviderNames.Provider(provider), Bordered = false, Alignment = NSTextAlignment.Left,
-            Font = MacControls.Font(13, bold: true), TranslatesAutoresizingMaskIntoConstraints = false
-        };
-        heading.WidthAnchor.ConstraintEqualTo(ContentWidth - CardPadding * 2).Active = true;
-        heading.Activated += (_, _) => openPage(provider);
+        // The whole card opens the official page; a label heading keeps one click target.
+        var (view, stack) = Box(press: () => openPage(provider));
+        var heading = Line(ProviderNames.Provider(provider), 13, bold: true, width: ContentWidth - CardPadding * 2);
         var official = Line("", 11, width: ContentWidth - CardPadding * 2);
         var reason = Line("", 11, width: ContentWidth - CardPadding * 2);
         reason.TextColor = NSColor.SecondaryLabel;
@@ -297,6 +317,17 @@ internal sealed class MacStatusPanel : IDisposable
         NSMenu menu = RecordMenu(provider, record);
         foreach (NSView child in new NSView[] { view, heading, official, reason }) child.Menu = menu;
         return new(view, heading, official, reason, menu);
+    }
+
+    // A rounded box with the shared inner padding; provider cards and quota boxes both use it.
+    private static (CardView Box, NSStackView Lines) Box(Action? press)
+    {
+        var view = new CardView(press);
+        view.WidthAnchor.ConstraintEqualTo(ContentWidth).Active = true;
+        var stack = Stack(vertical: true, spacing: 1);
+        view.AddSubview(stack);
+        Pin(stack, view, CardPadding, 6);
+        return (view, stack);
     }
 
     private T Add<T>(T view) where T : NSView
@@ -373,14 +404,67 @@ internal sealed class MacStatusPanel : IDisposable
         if (view.ToolTip != tip) view.ToolTip = tip;
     }
 
-    // Rounded card background; drawn per appearance so it follows light/dark mode.
+    // Rounded box drawn per appearance. With a press action it is a provider card: the whole card is a
+    // click target with a hover tint and pointing-hand cursor; without one it is a read-only quota box.
     private sealed class CardView : NSView
     {
+        private readonly Action? press;
+        private NSTrackingArea? tracking;
+        private bool hovered;
+
+        internal CardView(Action? press)
+        {
+            this.press = press;
+            TranslatesAutoresizingMaskIntoConstraints = false;
+            if (press is null) return;
+            // Primary button only; right-click and control-click open the record menu instead.
+            AddGestureRecognizer(new NSClickGestureRecognizer(() =>
+            {
+                if (!MacApplication.IsContextClick(NSApplication.SharedApplication.CurrentEvent)) press();
+            }) { ButtonMask = 1 });
+            AccessibilityRole = NSAccessibilityRoles.ButtonRole;
+        }
+
+        internal bool IsInteractive => press is not null;
+
+        public override bool AccessibilityPerformPress()
+        {
+            if (press is null) return false;
+            press();
+            return true;
+        }
+
+        public override void UpdateTrackingAreas()
+        {
+            base.UpdateTrackingAreas();
+            if (press is null) return;
+            if (tracking is not null) RemoveTrackingArea(tracking);
+            tracking = new NSTrackingArea(Bounds, NSTrackingAreaOptions.MouseEnteredAndExited |
+                NSTrackingAreaOptions.ActiveAlways | NSTrackingAreaOptions.InVisibleRect, this, null);
+            AddTrackingArea(tracking);
+        }
+
+        public override void MouseEntered(NSEvent theEvent) => SetHovered(true);
+
+        public override void MouseExited(NSEvent theEvent) => SetHovered(false);
+
+        private void SetHovered(bool value)
+        {
+            if (hovered == value) return;
+            hovered = value;
+            NeedsDisplay = true;
+        }
+
+        public override void ResetCursorRects()
+        {
+            if (press is not null) AddCursorRect(Bounds, NSCursor.PointingHandCursor);
+        }
+
         public override void DrawRect(CGRect dirtyRect)
         {
-            // Same opaque background as the panel; a separator outline marks the card.
+            // Opaque panel background (or the hover tint); a separator outline marks the box.
             NSBezierPath path = NSBezierPath.FromRoundedRect(Bounds.Inset(0.5f, 0.5f), 8, 8);
-            MacControls.PanelBackground.SetFill();
+            (hovered ? MacControls.CardHoverBackground() : MacControls.PanelBackground).SetFill();
             path.Fill();
             NSColor.Separator.SetStroke();
             path.LineWidth = 1;
@@ -406,7 +490,9 @@ internal sealed class MacStatusPanel : IDisposable
 
     // ---- Native smoke checks (no user data, network or settings) ----
 
-    internal CGSize Verify(ScheduleSnapshot snapshot, IReadOnlyList<ProviderStatus> states, IReadOnlyList<QuotaState> quotaStates)
+    internal sealed record Layout(CGSize Size, nfloat TitleX, nfloat BoxTextX, nfloat UsableHeight);
+
+    internal Layout Verify(ScheduleSnapshot snapshot, IReadOnlyList<ProviderStatus> states, IReadOnlyList<QuotaState> quotaStates)
     {
         content.LayoutSubtreeIfNeeded();
         var schedule = StatusPanelModel.Schedule(snapshot);
@@ -418,15 +504,20 @@ internal sealed class MacStatusPanel : IDisposable
         foreach (ProviderCardText text in StatusPanelModel.Cards(states, snapshot.State))
         {
             Card card = cards[text.Provider];
-            if (card.Heading.Title != text.Heading || card.Official.StringValue != text.Official ||
-                card.Reason.StringValue != text.Reason || card.View.ToolTip != text.Detail)
+            if (card.Heading.StringValue != text.Heading || card.Official.StringValue != text.Official ||
+                card.Reason.StringValue != text.Reason || card.View.ToolTip != text.Detail ||
+                card.View.AccessibilityLabel != text.Heading)
                 throw new InvalidOperationException($"{text.Provider} card differs from the shared panel model.");
             string[] titles = card.Menu.Items.Select(item => item.IsSeparatorItem ? "-" : item.Title).ToArray();
             string[] expected = UsageMeasurementFactory.MenuItems.Select(item => item?.Text ?? "-").ToArray();
             if (!titles.SequenceEqual(expected) || card.Heading.Menu != card.Menu || card.Reason.Menu != card.Menu)
                 throw new InvalidOperationException($"{text.Provider} record menu differs from the shared item list.");
+            // The whole card is the click target: one primary-button recognizer, exposed as a button.
+            if (!card.View.IsInteractive || card.View.GestureRecognizers is not [NSClickGestureRecognizer { ButtonMask: 1 }] ||
+                card.View.AccessibilityRole != NSAccessibilityRoles.ButtonRole.ToString())
+                throw new InvalidOperationException($"{text.Provider} card is not a whole-card click target.");
         }
-        if (cards[ProviderKind.OpenAI].Heading.Title.Split(' ')[0] != "ChatGPT")
+        if (cards[ProviderKind.OpenAI].Heading.StringValue.Split(' ')[0] != "ChatGPT")
             throw new InvalidOperationException("The OpenAI card does not show the ChatGPT product name.");
         var sections = QuotaPanelModel.Sections(quotaStates, snapshot.NowUtc);
         if (quotas.Count != sections.Count)
@@ -439,28 +530,54 @@ internal sealed class MacStatusPanel : IDisposable
                 section.Rows.Any(row => views.Rows[row.WindowId].StringValue != row.Text ||
                     views.Rows[row.WindowId].ToolTip != row.Detail))
                 throw new InvalidOperationException($"{section.Provider} quota lines differ from the shared panel model.");
+            // Read-only: no click, hover, cursor or record menu on a quota box.
+            if (views.Box.IsInteractive || views.Box.GestureRecognizers.Length != 0 || views.Box.Menu is not null)
+                throw new InvalidOperationException($"{section.Provider} quota box must not be clickable.");
         }
-        // The quota box fits its standard rows exactly: no scrolling and no gap below them.
-        if (Math.Abs(quotaScroll.Frame.Height - Math.Ceiling(quotaStack.FittingSize.Height)) > 0.5 ||
-            quotaStack.FittingSize.Height > MaximumQuotaHeight)
-            throw new InvalidOperationException(
-                $"Quota box {quotaScroll.Frame.Height}pt does not fit its {quotaStack.FittingSize.Height}pt of rows.");
-        CGSize size = content.FittingSize;
-        if (size.Width != PanelWidth || size.Height > MaximumHeight)
-            throw new InvalidOperationException($"Popover size {size.Width}x{size.Height} exceeds {PanelWidth}x{MaximumHeight}.");
-        NSView[] views2 = root.ArrangedSubviews;
-        for (int i = 0; i < views2.Length; i++)
+
+        // Alignment rule: titles on the outer edge, every boxed line one CardPadding further in.
+        nfloat X(NSView view) => view.ConvertPointToView(CGPoint.Empty, content).X;
+        nfloat titleX = X(title);
+        if (Math.Abs(X(quotaTitle) - titleX) > 0.5)
+            throw new InvalidOperationException($"Quota title x {X(quotaTitle)} differs from the panel title x {titleX}.");
+        NSView[] boxed = cards.Values.SelectMany(card => new NSView[] { card.Heading, card.Official, card.Reason })
+            .Concat(quotas.Values.SelectMany(q => new NSView?[] { q.Heading, q.Scope, q.Metadata }.OfType<NSView>().Concat(q.Rows.Values)))
+            .ToArray();
+        nfloat boxX = X(cards[ProviderKind.OpenAI].Heading);
+        if (boxed.Any(view => Math.Abs(X(view) - boxX) > 0.5) || Math.Abs(boxX - titleX - CardPadding) > 0.5)
+            throw new InvalidOperationException("Card and quota box text do not start at the same x: " +
+                string.Join(", ", boxed.Select(X).Distinct().Select(x => x.ToString("0.#"))));
+        if (Math.Abs(X(cards[ProviderKind.OpenAI].View) - X(quotas.Values.First().Box)) > 0.5)
+            throw new InvalidOperationException("Provider cards and quota boxes are not aligned.");
+
+        // With room, the quota area fits its boxes exactly: no scrolling and no gap below them.
+        CGSize size = popover.ContentSize;
+        nfloat rowsHeight = (nfloat)Math.Ceiling(quotaStack.FittingSize.Height);
+        if (rowsHeight <= MaximumQuotaHeight && size.Height < availableHeight &&
+            Math.Abs(quotaScroll.Frame.Height - rowsHeight) > 0.5)
+            throw new InvalidOperationException($"Quota area {quotaScroll.Frame.Height}pt does not fit its {rowsHeight}pt of boxes.");
+        if (size.Width != PanelWidth || size.Height > availableHeight)
+            throw new InvalidOperationException($"Popover {size.Width}x{size.Height} does not fit {PanelWidth}x{availableHeight}.");
+        NSView[] rows = root.ArrangedSubviews;
+        for (int i = 0; i < rows.Length; i++)
         {
-            CGRect frame = views2[i].Frame;
+            CGRect frame = rows[i].Frame;
             if (frame.Width <= 0 || frame.Height <= 0 || frame.X < 0 || frame.Y < 0 ||
                 frame.Right > root.Bounds.Width + 0.5 || frame.Bottom > root.Bounds.Height + 0.5)
                 throw new InvalidOperationException("A popover row is outside the visible content.");
-            for (int j = i + 1; j < views2.Length; j++)
-                if (frame.IntersectsWith(views2[j].Frame))
+            for (int j = i + 1; j < rows.Length; j++)
+                if (frame.IntersectsWith(rows[j].Frame))
                     throw new InvalidOperationException("Popover rows overlap.");
         }
-        return size;
+        return new(size, titleX, boxX, availableHeight);
     }
+
+    // Smoke: the visible quota area height (shrinks and scrolls on a short screen).
+    internal nfloat QuotaAreaHeight => quotaScroll.Frame.Height;
+    internal nfloat QuotaRowsHeight => (nfloat)Math.Ceiling(quotaStack.FittingSize.Height);
+
+    // Smoke: press a card as VoiceOver or a click would.
+    internal bool PressCard(ProviderKind provider) => cards[provider].View.AccessibilityPerformPress();
 
     internal string QuotaRowText(QuotaProvider provider, string windowId) => quotas[provider].Rows[windowId].StringValue;
 

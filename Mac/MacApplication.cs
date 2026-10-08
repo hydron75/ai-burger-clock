@@ -39,6 +39,8 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
     private int uiRefreshQueued;
     private NetworkRefreshScheduler? networkRefresh;
     private int timerTicks;
+    // Smoke: official-page requests that reached the host (the browser is not opened in a smoke run).
+    private int statusPageRequests;
     internal int ExitCode { get; private set; }
 
     public override void DidFinishLaunching(NSNotification notification)
@@ -318,6 +320,7 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
 
     private void OpenStatusPage(ProviderKind provider)
     {
+        statusPageRequests++;
         if (stopping || smoke) return;
         using var url = new NSUrl(ProviderStatusPages.For(provider).AbsoluteUri);
         if (!NSWorkspace.SharedWorkspace.OpenUrl(url))
@@ -531,10 +534,15 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
                     throw new InvalidOperationException("Appearance detection is wrong for " + name);
                 foreach (PanelTone tone in Enum.GetValues<PanelTone>())
                 {
-                    double contrast = MacControls.Contrast(MacControls.Color(tone), MacControls.PanelBackground, appearance);
-                    weakest = Math.Min(weakest, contrast);
-                    if (contrast < 4.5)
-                        throw new InvalidOperationException($"{tone} text contrast {contrast:0.00}:1 is below 4.5:1 in {name}.");
+                    // On the panel/quota-box background and on a hovered provider card.
+                    foreach (var (surface, background) in new (string, Func<NSColor>)[]
+                        { ("background", () => MacControls.PanelBackground), ("hovered card", MacControls.CardHoverBackground) })
+                    {
+                        double contrast = MacControls.Contrast(MacControls.Color(tone), background, appearance);
+                        weakest = Math.Min(weakest, contrast);
+                        if (contrast < 4.5)
+                            throw new InvalidOperationException($"{tone} text contrast {contrast:0.00}:1 on the {surface} is below 4.5:1 in {name}.");
+                    }
                 }
             }
             panel.Close();
@@ -571,7 +579,22 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
             ProviderStatus[] healthy = Enum.GetValues<ProviderKind>().Select(provider =>
                 new ProviderStatus(provider, OfficialStatus.Operational, now, now, "관련 서비스 정상")).ToArray();
             panel.Update(Schedule(now), healthy, [quota, claudeQuota], false, now.AddMinutes(5), "");
-            CGSize popoverSize = panel.Verify(Schedule(now), healthy, [quota, claudeQuota]);
+            MacStatusPanel.Layout layout = panel.Verify(Schedule(now), healthy, [quota, claudeQuota]);
+            // The whole card opens the official page (VoiceOver press and click share the action).
+            int requests = statusPageRequests;
+            if (!panel.PressCard(ProviderKind.Claude) || statusPageRequests != requests + 1)
+                throw new InvalidOperationException("Pressing a provider card did not request its official page.");
+            // Screen fit: a 1280x800 screen shows everything; a 1024x640 screen (13-inch "larger text")
+            // keeps the whole popover visible by shrinking and scrolling only the quota area.
+            const int MenuBarAndMargin = 25 + 24;
+            CGSize standard = panel.FitFor(800 - MenuBarAndMargin);
+            if (standard.Height > 800 - MenuBarAndMargin || panel.QuotaAreaHeight != panel.QuotaRowsHeight)
+                throw new InvalidOperationException($"Popover {standard.Height}pt does not fit a 1280x800 screen without scrolling.");
+            CGSize small = panel.FitFor(640 - MenuBarAndMargin);
+            nfloat smallQuota = panel.QuotaAreaHeight;
+            if (small.Height > 640 - MenuBarAndMargin || smallQuota >= panel.QuotaRowsHeight)
+                throw new InvalidOperationException($"Popover {small.Height}pt is cut off on a 1024x640 screen.");
+            panel.FitFor(layout.UsableHeight);
             if (!panel.QuotaRowText(QuotaProvider.Codex, "session").Contains("0% 남음 · 00:15:00", StringComparison.Ordinal))
                 throw new InvalidOperationException("Exhausted quota/countdown display failed.");
             panel.Update(Schedule(now.AddMinutes(1)), healthy, [quota, claudeQuota], false, now.AddMinutes(5), "");
@@ -589,7 +612,7 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
             await statisticsWindow.RefreshAsync();
             if (!statisticsWindow.Window.IsVisible)
                 throw new InvalidOperationException("Statistics window did not reopen from the menu-bar action.");
-            Console.WriteLine($"PASS: bundle version, menu-tracking countdown timer, 20pt color menu icon/1x-2x pixels, left/right/control-click routing, right-click menu, popover open/close/reopen, shared panel text/record menu/quota lines, {activationResult}, tone contrast >= 4.5:1 light+dark (min {weakest:0.0}:1), popover size/rows/quota box fit ({popoverSize.Width:0}x{popoverSize.Height:0}pt), 1,000-char note limit, temporary SQLite, four events/notes via shared factory, statistics, injected quota countdown; no account/network/settings changes.");
+            Console.WriteLine($"PASS: bundle version, menu-tracking countdown timer, 20pt color menu icon/1x-2x pixels, left/right/control-click routing, right-click menu, popover open/close/reopen, shared panel text/record menu/quota lines, {activationResult}, tone contrast >= 4.5:1 light+dark (min {weakest:0.0}:1), card text x = quota box text x ({layout.BoxTextX:0}pt; titles {layout.TitleX:0}pt), whole-card click/quota boxes read-only, popover {layout.Size.Width:0}x{layout.Size.Height:0}pt (this screen usable {layout.UsableHeight:0}pt; 1280x800 fits; 1024x640 {small.Height:0}pt with quota area {smallQuota:0}pt scrolling), 1,000-char note limit, temporary SQLite, four events/notes via shared factory, statistics, injected quota countdown; no account/network/settings changes.");
             ExitCode = 0;
         }
         catch (Exception error)
