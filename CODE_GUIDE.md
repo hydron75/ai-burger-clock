@@ -1,6 +1,6 @@
 # 소스코드, 쉬운 말로 읽기
 
-Windows 2.2.4 후보와 main `26ae908`의 소스 기준입니다. **현재 로컬 배포본은 2.2.3이며 새 버전의 병합·교체는 승인 대기**입니다. Windows 사용법은 [README](README.md), 최신 Mac 버전·검증은 [Mac 안내](Mac/README.md)로 이동하세요. 아래 실행·UI 설명은 Windows 기준이며 Mac의 차이는 12절에 정리했습니다.
+Windows 2.2.4와 배포 소스 main `670f45a` 기준입니다. **2026-10-09 KST 로컬 배포본도 2.2.4로 교체·검증했습니다.** Windows 사용법은 [README](README.md), 최신 Mac 버전·검증은 [Mac 안내](Mac/README.md)로 이동하세요. 아래 실행·UI 설명은 Windows 기준이며 Mac의 차이는 12절에 정리했습니다.
 
 코드를 한 줄씩 번역한 문서는 아닙니다. **각 파일이 무엇을 맡고, 서로 어떻게 연결되는지** 설명합니다. 루트·Properties의 C# 65개, Mac 호스트 7개, 공통 검사 입구 1개로 총 73개와 빌드 설정을 다룹니다. 컴퓨터가 만든 `bin`·`obj`와 로컬 검증용 `artifacts`는 대상에서 뺍니다.
 
@@ -179,7 +179,7 @@ UNKNOWN/STALE인 BURGER는 BURGER + CHECK입니다. **공식 상태로 시간표
 
 실제 Windows 알림을 요청하는 곳은 `TrayApplicationContext`입니다. 시간 경계 알림과 공휴일 설정 변경 알림도 구분합니다.
 
-2.2.4 후보의 [StatusTicker.cs](StatusTicker.cs)는 매초 시간표 전환·Provider 알림·아이콘 변경의 **판정만** 공통으로 맡습니다. 입력 이유는 초기화·타이머·Provider 변경·정책 변경입니다. `TrayApplicationContext.RefreshStatus(bool, bool)`는 기존 호출 지점을 받는 감싸는 함수로 남고, UI·알림 적용 순서와 색상은 Windows가 유지합니다.
+2.2.4의 [StatusTicker.cs](StatusTicker.cs)는 매초 시간표 전환·Provider 알림·아이콘 변경의 **판정만** 공통으로 맡습니다. 입력 이유는 초기화·타이머·Provider 변경·정책 변경입니다. `TrayApplicationContext.RefreshStatus(bool, bool)`는 기존 호출 지점을 받는 감싸는 함수로 남고, UI·알림 적용 순서와 색상은 Windows가 유지합니다.
 
 중복 Provider 입력은 첫 값을 사용하고 [WindowsWarningLog.cs](WindowsWarningLog.cs)에 경고를 보냅니다. 앱 데이터의 `logs/status-ticker.log`와 이전 로그 1개는 각각 최대 64 KiB이며, 정상 입력에는 파일을 만들지 않습니다. 관리자 권한·이벤트 로그 원본 등록은 필요 없고 로그 실패가 판정·화면을 중단시키지 않습니다.
 
@@ -217,7 +217,7 @@ Cache는 “마지막으로 읽은 메모”, History는 “중요한 변화 기
 
 ### 기록장 구조가 바뀌면요?
 
-현재 DB 구조 버전은 2입니다. 앱 후보 버전 2.2.4와는 다른 번호이며, 2.1.0 이후 바뀌지 않았습니다. 이번 후보도 기존 기록을 다시 쓰거나 DB를 migration하지 않습니다.
+현재 DB 구조 버전은 2입니다. 앱 버전 2.2.4와는 다른 번호이며, 2.1.0 이후 바뀌지 않았습니다. 2.2.4도 기존 기록을 다시 쓰거나 DB를 migration하지 않습니다.
 
 기존 구조 1을 열면 먼저 SQLite 백업 기능으로 복사본을 만듭니다. 본체 옆의 WAL에 이미 저장된 내용도 포함합니다. WAL은 기록을 안전하게 반영하기 위한 보조 파일입니다.
 
@@ -431,7 +431,7 @@ Mac의 시간대 ID는 `America/New_York`, `America/Los_Angeles`, `Asia/Seoul`�
 
 Mac은 `~/Library/Application Support/AIBurgerClock`에 별도 DB를 쓰고 `SMAppService.MainApp`으로 로그인 항목을 관리합니다. CLI는 절대 실행 경로와 실행 권한을 확인하고, shell 프로필·Keychain·인증 파일은 읽지 않습니다. 기능 규칙을 함께 써도 **두 컴퓨터의 DB와 로그인은 자동 동기화되지 않습니다.**
 
-Windows 소스는 2.2.4 후보이며 배포 EXE는 2.2.3입니다. Mac 버전은 Mac csproj에서만 관리하고 이번 Windows 준비에서 변경하지 않습니다. `MacCliPaths`는 GUI 앱의 PATH와 `~/.local/bin`, `/opt/homebrew/bin`, `/usr/local/bin`에서 실행 가능한 공식 명령을 찾으며 인증 파일은 읽지 않습니다. 현재 Mac 빌드·아이콘·실기 검증은 [Mac 안내](Mac/README.md)·[Mac 기록](MACOS_PORT.md)에서 관리합니다. 이번 준비에서 Mac build/native smoke는 실행하지 않았습니다.
+Windows 소스와 배포 EXE는 2.2.4입니다. Mac 버전은 Mac csproj에서만 관리하고 이번 Windows 배포에서 변경하지 않습니다. `MacCliPaths`는 GUI 앱의 PATH와 `~/.local/bin`, `/opt/homebrew/bin`, `/usr/local/bin`에서 실행 가능한 공식 명령을 찾으며 인증 파일은 읽지 않습니다. 현재 Mac 빌드·아이콘·실기 검증은 [Mac 안내](Mac/README.md)·[Mac 기록](MACOS_PORT.md)에서 관리합니다. 이번 Windows 배포에서 Mac build/native smoke는 실행하지 않았습니다.
 
 Mac의 상태 UI는 `MacStatusPanel`과 `MacControls`를 쓰는 팝오버입니다. Windows는 `StatusWindow` 안에서 ‘한도 보기 ↔ 상태 보기’로 카드 영역을 전환합니다. 한도 박스·제목 기준선·클릭되는 카드만 hover라는 규칙은 [결정 9](MACOS_UI_PLAN.md)에 따르며, Mac 한도 항상 표시와 Windows 전환 방식의 차이는 결정 10에 남깁니다. 두 호스트의 실제 창 배치·픽셀 검사는 각각의 native smoke가 맡습니다.
 
@@ -468,7 +468,7 @@ $result.ExitCode
 
 검사는 가짜 현재 시각을 전달하므로 Windows 시스템 시계를 바꾸지 않습니다. UI 검사에서 공식 페이지 열기는 실제 브라우저 대신 주소를 받는 함수로 확인합니다.
 
-검사 통과와 실제 재부팅 성공, 사용자 화면의 알림 노출은 다른 증거입니다. 최신 후보 검증·승인 대기 계획은 [2.2.4 준비 기록](MAINTENANCE_2_2_4.md), 현재 배포 검증은 [2.2.3 기록](MAINTENANCE_2_2_3.md), 이전 배포 검증은 [2.2.2 기록](MAINTENANCE_2_2_2.md)·[2.2.1 기록](MAINTENANCE_2_2_1.md)을 참고하세요.
+검사 통과와 실제 재부팅 성공, 사용자 화면의 알림 노출은 다른 증거입니다. 최신 최종 EXE·배포 검증·사용자 확인은 [2.2.4 기록](MAINTENANCE_2_2_4.md), 이전 배포 검증은 [2.2.3 기록](MAINTENANCE_2_2_3.md)·[2.2.2 기록](MAINTENANCE_2_2_2.md)·[2.2.1 기록](MAINTENANCE_2_2_1.md)을 참고하세요.
 
 공통 검사만 실행하려면 OS와 관계없이 다음 명령을 사용합니다. 가짜 응답과 임시 DB만 사용하며 계정·사용자 DB·자동 실행 설정은 건드리지 않습니다. Windows WinForms 검사를 대체하는 것은 아닙니다.
 
