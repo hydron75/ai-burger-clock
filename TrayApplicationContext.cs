@@ -333,12 +333,16 @@ namespace AiBurgerClock
             var schedule = GetSchedule(at);
             var status = CurrentProviders().Single(s => s.Provider == provider);
             var item = UsageMeasurementFactory.Capture(provider, type, schedule, status, Application.ProductVersion.Split('+')[0]);
+            string? truncatedNoteFeedback = null;
             if (withNote)
             {
                 using var dialog = new MeasurementDialog(provider, type);
                 if (dialog.ShowDialog() != DialogResult.OK) return;
                 type = dialog.EventType;
-                item = UsageMeasurementFactory.WithNote(item, type, dialog.UserNote);
+                string note = dialog.UserNote;
+                item = UsageMeasurementFactory.WithNote(item, type, note);
+                if (item.UserNote.Length < note.Length)
+                    truncatedNoteFeedback = FeedbackText.NoteTruncated(item.UserNote.Length);
             }
             // Exit may start while the modal note dialog is open; ExitApplication has then
             // already collected pendingWrites, so a save started now would outlive it.
@@ -350,7 +354,7 @@ namespace AiBurgerClock
                 await save;
                 if (!disposed)
                 {
-                    statusWindow.SetFeedback(FeedbackText.RecordSaved(provider, type, schedule));
+                    statusWindow.SetFeedback(truncatedNoteFeedback ?? FeedbackText.RecordSaved(provider, type, schedule));
                     if (!exiting) statusWindow.ShowNearTray();
                 }
             }
