@@ -18,10 +18,16 @@ internal static class SmokeTest
         using var context = new TrayApplicationContext(true, () => now, usageStore: testStore, statusHttpClient: statusHttp, openStatusPage: openedPages.Add, accountQuotaClient: quotaClient);
         using var timer = new Timer { Interval = 1500 };
         var notifications = new List<AgentState>();
+        var transitionApplyOrder = new List<bool>();
         int balloonEvents = 0;
         int step = 0;
         int exitCode = 0;
         context.TransitionNotificationRequested += notifications.Add;
+        context.TransitionNotificationRequested += state => transitionApplyOrder.Add(
+            context.StatusWindow.Controls.OfType<Label>().Any(label => label.Text == "●  " + TrayPresentation.StateName(state)) &&
+            context.CurrentAppearance?.Schedule != state &&
+            context.TrayIcon.BalloonTipTitle == (state == AgentState.FullThrottle ? "FULL THROTTLE 시작" : "BURGER TIME 시작") &&
+            context.TrayIcon.BalloonTipIcon == (state == AgentState.FullThrottle ? ToolTipIcon.Info : ToolTipIcon.Warning));
         context.TrayIcon.BalloonTipShown += (_, _) => balloonEvents++;
 
         void Check(bool condition, string label)
@@ -49,6 +55,7 @@ internal static class SmokeTest
                         Check(context.TrayIcon.Icon != oldIcon && context.TrayIcon.Text.Contains("FULL THROTTLE"), "Icon and tooltip change at Saturday 10:00");
                         Check(context.TrayIcon.Text.Contains("60:00:00"), "Weekend countdown is 60 hours");
                         Check(notifications.SequenceEqual(new[] { AgentState.FullThrottle }), "Open-at-transition requests exactly one FULL notification");
+                        Check(transitionApplyOrder[0], "FULL event follows schedule UI and native notification, before icon update");
                         Check(context.TrayIcon.BalloonTipTitle == "FULL THROTTLE 시작", "Native FULL notification title");
                         RenderAndCheckLayout(context.StatusWindow, "full-throttle.png", reportDirectory);
                         context.RefreshStatus(true);
@@ -61,6 +68,7 @@ internal static class SmokeTest
                         now = new DateTimeOffset(2026, 9, 21, 22, 0, 0, TimeSpan.FromHours(9));
                         context.RefreshStatus(true); // Equivalent to a timer tick after sleep/resume.
                         Check(notifications.SequenceEqual(new[] { AgentState.FullThrottle, AgentState.BurgerTime }), "Resume across boundary requests one BURGER notification");
+                        Check(transitionApplyOrder[1], "BURGER event follows schedule UI and native notification, before icon update");
                         Check(context.TrayIcon.Text.Contains("BURGER TIME") && context.TrayIcon.Text.Contains("12:00:00"), "Monday 22:00 switches to BURGER with 12-hour countdown");
                         Check(context.TrayIcon.BalloonTipTitle == "BURGER TIME 시작", "Native BURGER notification title");
                         context.ShowWindow();

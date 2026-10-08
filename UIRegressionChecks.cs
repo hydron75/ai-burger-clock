@@ -70,11 +70,25 @@ internal static class UIRegressionChecks
         context.RefreshStatus(true);
         Check(ReferenceEquals(unchangedIcon, context.TrayIcon.Icon), "Countdown ticks do not recreate unchanged tray icon");
         var notices = new List<(ProviderKind, Recommendation)>();
+        var providerApplyOrder = new List<bool>();
         context.ProviderNotificationRequested += (provider, recommendation) => notices.Add((provider, recommendation));
+        context.ProviderNotificationRequested += (provider, recommendation) =>
+        {
+            var status = monitor.Snapshot().Single(item => item.Provider == provider);
+            var expected = TrayPresentation.ProviderNotification(provider, recommendation, status.Reason, WindowsProviderNames.Provider);
+            string displayed = WindowsProviderNames.Provider(provider);
+            string name = recommendation.ToString().ToUpperInvariant();
+            providerApplyOrder.Add(context.CurrentAppearance == TrayPresentation.Calculate(AgentState.FullThrottle, monitor.Snapshot()) &&
+                context.TrayIcon.Text.Contains(displayed + " " + name, StringComparison.Ordinal) &&
+                context.TrayIcon.BalloonTipTitle == expected.Title && context.TrayIcon.BalloonTipText == expected.Body &&
+                context.TrayIcon.BalloonTipIcon == (recommendation == Recommendation.Go ? ToolTipIcon.Info : ToolTipIcon.Warning) &&
+                panels[(int)provider].Controls.OfType<Label>().Single(label => label.Font.Bold).Text != displayed + "   " + name);
+        };
         handler.OpenAiStatus = OfficialStatus.Degraded;
         await monitor.RefreshOnceAsync();
         context.RefreshStatus(true);
         Check(notices.SequenceEqual(new[] { (ProviderKind.OpenAI, Recommendation.Hold) }), "GO -> HOLD notification reaches tray handler");
+        Check(providerApplyOrder[0], "Provider warning event follows icon/tooltip and balloon, before provider UI");
         Check(panels[0].Controls.OfType<Label>().Any(l => l.Text == "ChatGPT   HOLD" && l.ForeColor == Color.FromArgb(160, 99, 20)),
             "Shared Caution tone retains the Windows Provider HOLD color");
         Check(context.CurrentAppearance == new TrayAppearance(AgentState.FullThrottle, TrayAttention.Orange) &&
@@ -140,6 +154,8 @@ internal static class UIRegressionChecks
         await monitor.RefreshOnceAsync();
         context.RefreshStatus(true);
         Check(notices.Count == 8 && notices.Last() == (ProviderKind.OpenAI, Recommendation.Go), "Recovery after uncertainty notifies once");
+        Check(providerApplyOrder.Count == 8 && providerApplyOrder.All(value => value),
+            "All Provider warning/recovery events preserve native application order");
         Check(context.TrayIcon.BalloonTipTitle == "ChatGPT 정상화", "Native Provider recovery title displays ChatGPT");
         Check(context.StatusWindow.Controls.OfType<Label>().Any(l => l.Text.StartsWith("최근 조회 시도:")), "UI labels attempted time explicitly");
 
