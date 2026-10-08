@@ -100,6 +100,15 @@ internal static class MacControls
         return 0.2126 * Linear(srgb.RedComponent) + 0.7152 * Linear(srgb.GreenComponent) + 0.0722 * Linear(srgb.BlueComponent);
     }
 
+    // A dynamic color fixed to its light or dark value (for drawing that picks the appearance itself).
+    internal static NSColor Resolved(NSColor color, bool dark)
+    {
+        NSColor? resolved = null;
+        NSAppearance.GetAppearance(dark ? NSAppearance.NameDarkAqua : NSAppearance.NameAqua)!
+            .PerformAsCurrentDrawingAppearance(() => resolved = color.UsingColorSpace(NSColorSpace.SRGBColorSpace));
+        return resolved ?? throw new InvalidOperationException("Color has no sRGB representation.");
+    }
+
     internal static bool IsDark(NSAppearance appearance) =>
         appearance.FindBestMatch([NSAppearance.NameAqua, NSAppearance.NameDarkAqua]) == NSAppearance.NameDarkAqua.ToString();
 }
