@@ -41,10 +41,10 @@ internal sealed class MacStatisticsWindow : IDisposable
         group.AddItems(["Provider 비교", "KST 시간대", "Schedule / DST", "공식 상태 × 체감", "공식 정상 시간대"]);
         group.SelectItem(0);
         root.AddSubview(group);
-        refresh = MacStatusWindow.Button(root, "새로 고침", new CGRect(422, 478, 116, 28), () => _ = RefreshAsync());
-        summary = MacStatusWindow.Label(root, "불러오는 중…", 428, 43, 11);
-        rows = MacStatusWindow.TextArea(root, new CGRect(14, 86, 762, 331), 12);
-        MacStatusWindow.Label(root,
+        refresh = MacControls.Button(root, "새로 고침", new CGRect(422, 478, 116, 28), () => _ = RefreshAsync());
+        summary = MacControls.Label(root, "불러오는 중…", 428, 43, 11);
+        rows = MacControls.TextArea(root, new CGRect(14, 86, 762, 331), 12);
+        MacControls.Label(root,
             "각 행의 n이 비율의 분모이며 n < 30은 소표본입니다. 문제 체감 = Slow + Error + Interrupted.\n" +
             "직접 남긴 체감 기록이지 전체 사용의 장애율·인과관계가 아닙니다. 공식 상태와 체감은 별개입니다.\n" +
             "Schedule 집단은 중복될 수 있습니다. 정책·공휴일 ON/OFF를 구분하며 이전 기록은 재분류하지 않습니다.",
@@ -118,7 +118,7 @@ internal sealed class MacStatisticsWindow : IDisposable
         foreach (StatisticsRow row in source)
         {
             EventCounts counts = row.Counts;
-            string provider = Enum.TryParse(row.Provider, out ProviderKind kind) ? MacStatusWindow.ProviderName(kind) : row.Provider;
+            string provider = Enum.TryParse(row.Provider, out ProviderKind kind) ? ProviderNames.Provider(kind) : row.Provider;
             text.AppendLine($"{provider} · {row.Group} · n={counts.Total:N0}" +
                 (counts.Total is > 0 and < 30 ? " (소표본)" : ""));
             text.AppendLine($"Success {counts.Cell(counts.Success)} · Slow {counts.Cell(counts.Slow)} · Error {counts.Cell(counts.Error)}");

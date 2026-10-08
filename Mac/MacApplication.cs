@@ -1,4 +1,3 @@
-using System.Globalization;
 using System.Net.NetworkInformation;
 using System.Reflection;
 using AppKit;
@@ -18,16 +17,13 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
     private HttpClient? http;
     private StatusMonitor? statusMonitor;
     private AccountQuotaMonitor? quotaMonitor;
-    private MacStatusWindow? statusWindow;
+    private MacStatusPanel? panel;
     private MacStatisticsWindow? statisticsWindow;
     private MacNotifications? notifications;
     private NSStatusItem? statusItem;
     private NSImage? statusImage;
-    private NSMenu? menu;
-    private NSMenuItem? scheduleItem;
-    private NSMenuItem? countdownItem;
-    private NSMenuItem? holidayItem;
-    private NSMenuItem? autoStartItem;
+    // Right-click menu only; left-click opens the status popover.
+    private NSMenu? contextMenu;
     private NSTimer? timer;
     private NSObject? wakeObserver;
     private AgentState? lastSchedule;
@@ -36,6 +32,8 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
     private bool holidayEnabled;
     private bool holidayReady;
     private bool savingHoliday;
+    // Lets a holiday-policy notification yield to a provider alert raised by the same refresh.
+    private int providerNotificationSerial;
     private bool stopping;
     private bool stopped;
     private int uiRefreshQueued;
@@ -46,15 +44,17 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
     public override void DidFinishLaunching(NSNotification notification)
     {
         NSApplication.SharedApplication.ActivationPolicy = NSApplicationActivationPolicy.Accessory;
-        statusWindow = new(RefreshAll, ShowStatistics, enabled => _ = ChangeHolidayAsync(enabled), ChangeAutoStart,
+        panel = new(RefreshAll, ShowStatistics, enabled => _ = ChangeHolidayAsync(enabled), ChangeAutoStart,
             OpenStatusPage, (provider, type, note) => _ = RecordAsync(provider, type, note), smoke);
-        CreateMenu();
+        CreateContextMenu();
         statusItem = NSStatusBar.SystemStatusBar.CreateStatusItem(NSStatusItemLength.Square);
-        statusItem.Menu = menu;
         if (statusItem.Button is { } button)
         {
             button.ImagePosition = NSCellImagePosition.ImageOnly;
             button.ImageScaling = NSImageScale.None;
+            // No statusItem.Menu: it would open on every click. Route left and right clicks here instead.
+            button.SendActionOn((NSEventType)(ulong)(NSEventMask.LeftMouseUp | NSEventMask.RightMouseUp));
+            button.Activated += (_, _) => StatusItemClicked();
         }
         RefreshDisplay(false);
         // One existing-style countdown timer; Schedule itself caches its date/policy calculations.
@@ -68,38 +68,30 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
         initialization = InitializeAsync();
     }
 
-    private void CreateMenu()
+    private void CreateContextMenu()
     {
-        menu = new NSMenu { AutoEnablesItems = false };
-        scheduleItem = new NSMenuItem("AI Burger Clock") { Enabled = false };
-        countdownItem = new NSMenuItem("전환까지 —") { Enabled = false };
-        menu.AddItem(scheduleItem);
-        menu.AddItem(countdownItem);
-        menu.AddItem(new NSMenuItem("상태 창 열기", (_, _) => ShowWindow()));
-        menu.AddItem(new NSMenuItem("Refresh", (_, _) => RefreshAll()));
-        menu.AddItem(new NSMenuItem("Statistics", (_, _) => ShowStatistics()));
-        menu.AddItem(NSMenuItem.SeparatorItem);
-        foreach (ProviderKind provider in Enum.GetValues<ProviderKind>())
+        contextMenu = new NSMenu { AutoEnablesItems = false };
+        contextMenu.AddItem(new NSMenuItem("Refresh", (_, _) => RefreshAll()));
+        contextMenu.AddItem(new NSMenuItem("로그인 항목 설정 열기…", (_, _) => MacAutoStart.OpenSettings()) { Enabled = !smoke });
+        contextMenu.AddItem(NSMenuItem.SeparatorItem);
+        contextMenu.AddItem(new NSMenuItem("종료", "q", (_, _) => NSApplication.SharedApplication.Terminate(null)));
+    }
+
+    // Right-click and control-click open the short menu; a left click toggles the popover.
+    internal static bool IsContextClick(NSEvent? click) => click is not null &&
+        (click.Type is NSEventType.RightMouseUp or NSEventType.RightMouseDown ||
+         click.ModifierFlags.HasFlag(NSEventModifierMask.ControlKeyMask));
+
+    private void StatusItemClicked()
+    {
+        if (stopping || statusItem?.Button is not { } button || contextMenu is null) return;
+        if (IsContextClick(NSApplication.SharedApplication.CurrentEvent))
         {
-            ProviderKind captured = provider;
-            var item = new NSMenuItem(MacStatusWindow.ProviderName(provider) + " 사용 경험 기록")
-            {
-                Submenu = MacStatusWindow.RecordMenu(provider, (p, type, note) => _ = RecordAsync(p, type, note))
-            };
-            menu.AddItem(item);
-            menu.AddItem(new NSMenuItem(MacStatusWindow.ProviderName(provider) + " 공식 상태 ↗", (_, _) => OpenStatusPage(captured)));
+            panel?.Close();
+            contextMenu.PopUpMenu(null, new CGPoint(0, button.IsFlipped ? button.Bounds.Height + 4 : -4), button);
         }
-        menu.AddItem(NSMenuItem.SeparatorItem);
-        holidayItem = new NSMenuItem("미국 연방 공휴일 보정", (_, _) => _ = ChangeHolidayAsync(!holidayEnabled)) { Enabled = false };
-        menu.AddItem(holidayItem);
-        autoStartItem = new NSMenuItem("로그인 시 자동 실행", (_, _) => ToggleAutoStart())
-        {
-            Enabled = !smoke
-        };
-        menu.AddItem(autoStartItem);
-        menu.AddItem(new NSMenuItem("로그인 항목 설정 열기…", (_, _) => MacAutoStart.OpenSettings()) { Enabled = !smoke });
-        menu.AddItem(NSMenuItem.SeparatorItem);
-        menu.AddItem(new NSMenuItem("종료", "q", (_, _) => NSApplication.SharedApplication.Terminate(null)));
+        else if (panel?.IsShown == true) panel.Close();
+        else ShowPanel();
     }
 
     private async Task InitializeAsync()
@@ -114,7 +106,7 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
         {
             // Never silently apply an unconfirmed policy; keep official-status and quota polling running.
             holidayEnabled = false;
-            statusWindow?.SetFeedback("공휴일 설정 확인 실패 · 보정 OFF: " + error.Message);
+            panel?.SetFeedback(FeedbackText.HolidayReadFailed(error.Message), error: true);
             if (smoke)
             {
                 ExitCode = 1;
@@ -143,10 +135,10 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
             // System notification permission is optional and must not stop status/quota polling.
             try
             {
-                notifications = new(text => statusWindow?.SetFeedback(text));
+                notifications = new(text => panel?.SetFeedback(text));
                 notifications.RequestPermission();
             }
-            catch (Exception) { statusWindow?.SetFeedback("알림 초기화 실패 · macOS 알림 설정을 확인하세요."); }
+            catch (Exception) { panel?.SetFeedback("알림 초기화 실패 · macOS 알림 설정을 확인하세요.", error: true); }
             RefreshAutoStart();
             wakeObserver = NSWorkspace.SharedWorkspace.NotificationCenter.AddObserver(NSWorkspace.DidWakeNotification,
                 _ => RefreshAll(queueWhileRefreshing: true));
@@ -158,7 +150,7 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
         catch (OperationCanceledException) when (lifetime.IsCancellationRequested) { }
         catch (Exception error)
         {
-            statusWindow?.SetFeedback("초기화 실패: " + error.Message);
+            panel?.SetFeedback("초기화 실패: " + error.Message, error: true);
             if (smoke)
             {
                 ExitCode = 1;
@@ -205,12 +197,11 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
             if (recommendationNotifications.Observe(status.Provider, snapshot.State, recommendation, (notify || notifyProviders) && !changed))
             {
                 var (title, body) = TrayPresentation.ProviderNotification(status.Provider, recommendation, status.Reason,
-                    MacStatusWindow.ProviderName);
+                    ProviderNames.Provider);
+                providerNotificationSerial++;
                 notifications?.Show(title, body);
             }
         }
-        if (scheduleItem is not null) scheduleItem.Title = TrayPresentation.StateName(snapshot.State);
-        if (countdownItem is not null) countdownItem.Title = "전환까지 " + DisplayFormatting.FormatRemaining(snapshot.Remaining);
         TrayAppearance appearance = TrayPresentation.Calculate(snapshot.State, providers);
         if (statusItem?.Button is { } button)
         {
@@ -225,20 +216,27 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
                 lastAppearance = appearance;
             }
             // Minute precision: a per-second change would close the tooltip while it is being read.
-            string tooltip = TrayPresentation.Tooltip(snapshot, providers, MacStatusWindow.ProviderName, minutePrecision: true);
+            string tooltip = TrayPresentation.Tooltip(snapshot, providers, ProviderNames.Provider, minutePrecision: true);
             if (button.ToolTip != tooltip) button.ToolTip = tooltip;
         }
-        statusWindow?.Update(snapshot, providers, quotaMonitor?.Snapshot() ??
-            Enum.GetValues<QuotaProvider>().Select(provider => new QuotaState(provider)).ToArray(),
-            statusMonitor?.IsRefreshing ?? false, statusMonitor?.NextRefreshUtc, statusMonitor?.StorageError ?? "");
+        // The popover is redrawn only while it is open; ShowPanel fills it before showing.
+        if (panel?.IsShown == true) UpdatePanel(snapshot, providers);
     }
 
-    private void ShowWindow()
+    private void UpdatePanel(ScheduleSnapshot snapshot, IReadOnlyList<ProviderStatus> providers) =>
+        panel?.Update(snapshot, providers, QuotaStates(), statusMonitor?.IsRefreshing ?? false,
+            statusMonitor?.NextRefreshUtc, statusMonitor?.StorageError ?? "");
+
+    private IReadOnlyList<QuotaState> QuotaStates() => quotaMonitor?.Snapshot() ??
+        Enum.GetValues<QuotaProvider>().Select(provider => new QuotaState(provider)).ToArray();
+
+    private void ShowPanel()
     {
-        if (stopping) return;
+        if (stopping || panel is null || statusItem?.Button is not { } button) return;
         if (!smoke) RefreshAutoStart();
         RefreshDisplay(true);
-        statusWindow?.Show();
+        UpdatePanel(Schedule(DateTimeOffset.UtcNow), ProviderStates());
+        panel.Show(button);
     }
 
     private void ShowStatistics()
@@ -276,12 +274,19 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
             await save;
             if (stopping) return;
             holidayEnabled = enabled;
+            int alertsBeforeRefresh = providerNotificationSerial;
             // A policy change isn't a clock transition, but provider changes arriving now still notify.
             RefreshDisplay(false, notifyProviders: true);
-            statusWindow?.SetFeedback("미국 연방 공휴일 보정 " + (enabled ? "켜짐" : "꺼짐"));
+            panel?.SetFeedback(FeedbackText.HolidaySaved(enabled));
+            // Do not immediately replace an important concurrent service alert (the Windows rule).
+            if (alertsBeforeRefresh == providerNotificationSerial)
+            {
+                var (title, body) = FeedbackText.HolidayNotification(enabled, Schedule(DateTimeOffset.UtcNow));
+                notifications?.Show(title, body);
+            }
         }
         catch (OperationCanceledException) when (lifetime.IsCancellationRequested) { }
-        catch (Exception error) { if (!stopping) statusWindow?.SetFeedback("공휴일 설정 저장 실패: " + error.Message); }
+        catch (Exception error) { if (!stopping) panel?.SetFeedback(FeedbackText.HolidaySaveFailed(error.Message), error: true); }
         finally
         {
             pendingWrites.Remove(save);
@@ -290,30 +295,15 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
         }
     }
 
-    private void RefreshHolidayControls()
-    {
-        bool ready = holidayReady && !savingHoliday && !stopping;
-        if (holidayItem is not null)
-        {
-            holidayItem.State = holidayEnabled ? NSCellStateValue.On : NSCellStateValue.Off;
-            holidayItem.Enabled = ready;
-        }
-        statusWindow?.SetHoliday(holidayEnabled, ready);
-    }
+    private void RefreshHolidayControls() =>
+        panel?.SetHoliday(holidayEnabled, holidayReady && !savingHoliday && !stopping);
 
     private void ChangeAutoStart(bool enabled)
     {
         if (stopping || smoke) return;
-        try { statusWindow?.SetFeedback(MacAutoStart.Set(enabled)); }
-        catch (Exception error) { statusWindow?.SetFeedback("자동 실행 변경 실패: " + error.Message); }
+        try { panel?.SetFeedback(MacAutoStart.Set(enabled)); }
+        catch (Exception error) { panel?.SetFeedback("자동 실행 변경 실패: " + error.Message, error: true); }
         RefreshAutoStart();
-    }
-
-    private void ToggleAutoStart()
-    {
-        if (stopping || smoke) return;
-        try { ChangeAutoStart(!MacAutoStart.Read().Enabled); }
-        catch (Exception error) { statusWindow?.SetFeedback("자동 실행 확인 실패: " + error.Message); }
     }
 
     private void RefreshAutoStart()
@@ -321,14 +311,9 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
         try
         {
             var status = MacAutoStart.Read();
-            statusWindow?.SetAutoStart(status.Enabled, status.Detail);
-            if (autoStartItem is not null)
-            {
-                autoStartItem.State = status.Enabled ? NSCellStateValue.On : NSCellStateValue.Off;
-                autoStartItem.Title = status.Detail;
-            }
+            panel?.SetAutoStart(status.Enabled, status.Detail);
         }
-        catch (Exception error) { statusWindow?.SetFeedback("자동 실행 확인 실패: " + error.Message); }
+        catch (Exception error) { panel?.SetFeedback("자동 실행 확인 실패: " + error.Message, error: true); }
     }
 
     private void OpenStatusPage(ProviderKind provider)
@@ -336,51 +321,60 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
         if (stopping || smoke) return;
         using var url = new NSUrl(ProviderStatusPages.For(provider).AbsoluteUri);
         if (!NSWorkspace.SharedWorkspace.OpenUrl(url))
-            statusWindow?.SetFeedback("공식 상태 페이지를 열지 못했습니다. 기본 브라우저를 확인하세요.");
+            panel?.SetFeedback("공식 상태 페이지를 열지 못했습니다. 기본 브라우저를 확인하세요.", error: true);
     }
 
     private async Task RecordAsync(ProviderKind provider, UsageEventType type, bool withNote)
     {
+        try { await initialization; }
+        catch (Exception error)
+        {
+            if (!stopping) panel?.SetFeedback(FeedbackText.RecordStartupFailed(error.Message), error: true);
+            return;
+        }
+        if (stopping) return;
+        // Capture when the item is picked, before the note prompt (the Windows order).
+        ScheduleSnapshot schedule = Schedule(DateTimeOffset.UtcNow);
+        UsageMeasurement measurement = UsageMeasurementFactory.Capture(provider, type, schedule,
+            ProviderStates().Single(item => item.Provider == provider), AppVersion);
+        string? truncated = null;
+        bool reopen = false;
+        if (withNote)
+        {
+            // A transient popover closes behind a modal alert: close it first, reopen after the save.
+            reopen = panel?.IsShown == true;
+            panel?.Close();
+            var answer = AskNote(provider, type);
+            // Quit may start while the modal alert is open; shutdown has then collected pendingWrites.
+            if (stopping) return;
+            if (answer is null)
+            {
+                if (reopen) ShowPanel();
+                return;
+            }
+            measurement = UsageMeasurementFactory.WithNote(measurement, answer.Value.Type, answer.Value.Note);
+            // NSTextField has no length limit, unlike the Windows note box; say when a note was cut.
+            if (measurement.UserNote.Length < answer.Value.Note.Trim().Length)
+                truncated = FeedbackText.NoteTruncated(measurement.UserNote.Length);
+        }
         try
         {
-            await initialization;
-            if (stopping) return;
-            string note = "";
-            if (withNote)
-            {
-                var value = AskNote(provider, type);
-                if (value is null || stopping) return;
-                (type, note) = value.Value;
-            }
-            string limited = LimitNote(note);
-            await SaveMeasurementAsync(provider, type, limited);
-            if (limited.Length < note.Length && !stopping)
-                statusWindow?.SetFeedback($"메모가 {MaximumNoteLength:N0}자를 넘어 앞부분 {limited.Length:N0}자만 저장했습니다.");
+            await SaveMeasurementAsync(measurement);
+            if (!stopping) panel?.SetFeedback(truncated ?? FeedbackText.RecordSaved(provider, measurement.EventType, schedule));
         }
         catch (Exception error)
         {
-            if (!stopping) statusWindow?.SetFeedback("사용 경험 저장 실패: " + error.Message);
+            if (!stopping) panel?.SetFeedback(FeedbackText.RecordFailed(error.Message), error: true);
         }
+        if (reopen && !stopping) ShowPanel();
     }
 
-    private async Task SaveMeasurementAsync(ProviderKind provider, UsageEventType type, string note)
+    private async Task SaveMeasurementAsync(UsageMeasurement measurement)
     {
         if (stopping) return;
-        ScheduleSnapshot schedule = Schedule(DateTimeOffset.UtcNow);
-        ProviderStatus status = ProviderStates().Single(item => item.Provider == provider);
-        var measurement = new UsageMeasurement(Guid.NewGuid().ToString("N"), provider, type, schedule.NowUtc,
-            schedule.State, schedule.IsWeekendExtendedFullThrottle, schedule.EasternUtcOffsetMinutes,
-            schedule.PacificUtcOffsetMinutes, schedule.EasternIsDst, schedule.PacificIsDst,
-            schedule.SchedulePolicyVersion, status.Status, RecommendationPolicy.Calculate(schedule.State, status.Status),
-            status.RelevantComponent, status.IncidentId, note, AppVersion,
-            schedule.HolidayAdjustmentEnabled, schedule.IsHolidayExtendedFullThrottle, schedule.HolidayNames);
         Task save = store.AddUsageAsync(measurement);
         pendingWrites.Add(save);
-        try
-        {
-            await save;
-            if (!stopping) statusWindow?.SetFeedback($"{MacStatusWindow.ProviderName(provider)} · {type} 저장됨 ({schedule.NowKst:HH:mm} KST)");
-        }
+        try { await save; }
         finally { pendingWrites.Remove(save); }
     }
 
@@ -388,14 +382,14 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
     {
         using var alert = new NSAlert
         {
-            MessageText = MacStatusWindow.ProviderName(provider) + " 사용 경험 기록",
+            MessageText = ProviderNames.Provider(provider) + " 사용 경험 기록",
             InformativeText = "메모는 선택 사항입니다. Prompt·답변·계정 정보는 기록하지 마세요."
         };
         using var accessory = new NSView(new CGRect(0, 0, 330, 87));
         using var choice = new NSPopUpButton(new CGRect(0, 54, 164, 27), false);
         choice.AddItems(Enum.GetNames<UsageEventType>());
         choice.SelectItem((int)type);
-        using var note = new NSTextField(new CGRect(0, 8, 330, 34)) { PlaceholderString = $"선택적 메모 (최대 {MaximumNoteLength:N0}자)" };
+        using var note = new NSTextField(new CGRect(0, 8, 330, 34)) { PlaceholderString = $"선택적 메모 (최대 {UsageMeasurementFactory.MaximumNoteLength:N0}자)" };
         accessory.AddSubview(choice);
         accessory.AddSubview(note);
         alert.AccessoryView = accessory;
@@ -404,19 +398,6 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
         NSApplication.SharedApplication.Activate();
         if (alert.RunModal() != 1000) return null;
         return ((UsageEventType)(int)choice.IndexOfSelectedItem, note.StringValue.Trim());
-    }
-
-    // Same limit as the Windows note box (UTF-16 units); never split a character or emoji.
-    internal const int MaximumNoteLength = 1000;
-
-    internal static string LimitNote(string text)
-    {
-        if (text.Length <= MaximumNoteLength) return text;
-        var elements = StringInfo.GetTextElementEnumerator(text);
-        int end = 0;
-        while (elements.MoveNext() && elements.ElementIndex + elements.GetTextElement().Length <= MaximumNoteLength)
-            end = elements.ElementIndex + elements.GetTextElement().Length;
-        return text[..end];
     }
 
     public override NSApplicationTerminateReply ApplicationShouldTerminate(NSApplication sender)
@@ -462,11 +443,11 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
             notifications?.Stop();
             notifications?.Dispose();
             statisticsWindow?.Dispose();
-            statusWindow?.Dispose();
+            panel?.Dispose();
             if (statusItem is not null) NSStatusBar.SystemStatusBar.RemoveStatusItem(statusItem);
             statusItem?.Dispose();
             statusImage?.Dispose();
-            menu?.Dispose();
+            contextMenu?.Dispose();
             timer?.Dispose();
             lifetime.Dispose();
             stopped = true;
@@ -494,8 +475,8 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
         // Opt-in native check: temporary DB, no HTTP/CLI, permission prompt, browser or login-item writes.
         try
         {
-            if (statusItem?.Button is null || menu is null || statusWindow is null)
-                throw new InvalidOperationException("Native menu-bar/window controls were not created.");
+            if (statusItem?.Button is not { } button || contextMenu is null || panel is null)
+                throw new InvalidOperationException("Native menu-bar/popover controls were not created.");
             string bundleVersion = NSBundle.MainBundle.ObjectForInfoDictionary("CFBundleShortVersionString")?.ToString() ?? "";
             if (bundleVersion != AppVersion)
                 throw new InvalidOperationException($"Bundle version {bundleVersion} does not match app version {AppVersion}.");
@@ -506,41 +487,82 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
                 NSRunLoop.Main.RunUntil(NSRunLoopMode.EventTracking, NSDate.FromTimeIntervalSinceNow(0.25));
             if (timerTicks == ticks)
                 throw new InvalidOperationException("The countdown timer stopped while a menu was tracking events.");
-            string longNote = new string('a', MaximumNoteLength - 1) + "🍔";
-            if (LimitNote(longNote) != longNote[..(MaximumNoteLength - 1)] || LimitNote("짧은 메모") != "짧은 메모" ||
-                LimitNote(new string('b', MaximumNoteLength)).Length != MaximumNoteLength)
-                throw new InvalidOperationException("Note length limit split a character or changed a short note.");
             MacStatusIcon.VerifyImages();
-            if (statusItem.Button.Image is not { } icon || icon.Template ||
+            if (button.Image is not { } icon || icon.Template ||
                 icon.Size.Width != MacStatusIcon.Size || icon.Size.Height != MacStatusIcon.Size)
                 throw new InvalidOperationException("The menu-bar button did not retain its 20-point color icon.");
-            statusWindow.Show();
-            if (!statusWindow.Window.IsVisible || statusWindow.Window.DangerousReleasedWhenClosed)
-                throw new InvalidOperationException("Status window is not visible/retained.");
-            statusWindow.Window.Close();
-            if (statusWindow.Window.IsVisible)
-                throw new InvalidOperationException("Status window did not close.");
-            ShowWindow();
-            if (!statusWindow.Window.IsVisible)
-                throw new InvalidOperationException("Status window did not reopen from the menu-bar action.");
+
+            // Click routing: no attached menu (it would open on a left click), left toggles the popover,
+            // right/control-click opens the short menu.
+            if (statusItem.Menu is not null)
+                throw new InvalidOperationException("The status item must not own a menu that opens on left click.");
+            static NSEvent Click(NSEventType type, NSEventModifierMask flags = 0) =>
+                NSEvent.MouseEvent(type, CGPoint.Empty, flags, 0, 0, null, 0, 1, 1f)!;
+            if (IsContextClick(Click(NSEventType.LeftMouseUp)) || !IsContextClick(Click(NSEventType.RightMouseUp)) ||
+                !IsContextClick(Click(NSEventType.LeftMouseUp, NSEventModifierMask.ControlKeyMask)))
+                throw new InvalidOperationException("Left/right/control-click routing is wrong.");
+            string[] menuTitles = contextMenu.Items.Select(item => item.IsSeparatorItem ? "-" : item.Title).ToArray();
+            if (!menuTitles.SequenceEqual(["Refresh", "로그인 항목 설정 열기…", "-", "종료"]) ||
+                contextMenu.Items[^1].KeyEquivalent != "q")
+                throw new InvalidOperationException("Right-click menu must be Refresh / 로그인 항목 설정 열기… / 종료 ⌘Q.");
+
+            ShowPanel();
+            if (!panel.IsShown) throw new InvalidOperationException("Status popover did not open.");
+            // Tooltips and active control accents need an active app and a key popover window right away.
+            // macOS grants activation on real user input (a status-item click). A smoke run has none, so
+            // activation is checked only when the system happens to grant it; the user check covers real clicks.
+            DateTime activation = DateTime.UtcNow.AddSeconds(2);
+            while (!(NSApplication.SharedApplication.Active && panel.Window?.IsKeyWindow == true) && DateTime.UtcNow < activation)
+                NSRunLoop.Main.RunUntil(NSRunLoopMode.Default, NSDate.FromTimeIntervalSinceNow(0.05));
+            if (panel.Window?.CanBecomeKeyWindow != true)
+                throw new InvalidOperationException("The popover window cannot become key.");
+            if (NSApplication.SharedApplication.Active && panel.Window.IsKeyWindow != true)
+                throw new InvalidOperationException("The app is active but the opened popover is not the key window.");
+            string activationResult = NSApplication.SharedApplication.Active
+                ? "popover active/key on open"
+                : "popover activation not checked (macOS did not grant activation without a user click)";
+            // Readable tone text on the opaque background whatever the desktop behind it, in both appearances.
+            double weakest = double.MaxValue;
+            foreach (NSString name in new[] { NSAppearance.NameAqua, NSAppearance.NameDarkAqua })
+            {
+                NSAppearance appearance = NSAppearance.GetAppearance(name)
+                    ?? throw new InvalidOperationException("Missing appearance " + name);
+                if (MacControls.IsDark(appearance) != (name == NSAppearance.NameDarkAqua))
+                    throw new InvalidOperationException("Appearance detection is wrong for " + name);
+                foreach (PanelTone tone in Enum.GetValues<PanelTone>())
+                {
+                    double contrast = MacControls.Contrast(MacControls.Color(tone), MacControls.PanelBackground, appearance);
+                    weakest = Math.Min(weakest, contrast);
+                    if (contrast < 4.5)
+                        throw new InvalidOperationException($"{tone} text contrast {contrast:0.00}:1 is below 4.5:1 in {name}.");
+                }
+            }
+            panel.Close();
+            if (panel.IsShown) throw new InvalidOperationException("Status popover did not close.");
+            StatusItemClicked(); // No current mouse event: treated as a left click.
+            if (!panel.IsShown) throw new InvalidOperationException("Status popover did not reopen from the status item.");
+
+            string longNote = new string('a', UsageMeasurementFactory.MaximumNoteLength - 1) + "🍔";
+            if (UsageMeasurementFactory.Note(longNote) != longNote[..(UsageMeasurementFactory.MaximumNoteLength - 1)])
+                throw new InvalidOperationException("Note length limit split a character.");
+            var now = DateTimeOffset.UtcNow;
+            ProviderStatus claudeStatus = ProviderStates().Single(item => item.Provider == ProviderKind.Claude);
             foreach (UsageEventType type in Enum.GetValues<UsageEventType>())
-                await SaveMeasurementAsync(ProviderKind.Claude, type, "native smoke note");
+                await SaveMeasurementAsync(UsageMeasurementFactory.WithNote(UsageMeasurementFactory.Capture(
+                    ProviderKind.Claude, UsageEventType.Success, Schedule(now), claudeStatus, AppVersion), type, "native smoke note"));
             var (items, skipped) = await store.ReadUsageWithSkippedAsync(null, lifetime.Token);
-            if (items.Count != 4 || skipped != 0 || items.Any(item => item.UserNote != "native smoke note"))
+            if (items.Count != 4 || skipped != 0 || items.Any(item => item.UserNote != "native smoke note") ||
+                !items.Select(item => item.EventType).Order().SequenceEqual(Enum.GetValues<UsageEventType>()) ||
+                items.Any(item => item.AppVersion != AppVersion))
                 throw new InvalidOperationException("Four event types and notes did not persist.");
             var report = StatisticsAnalysis.Build(items);
             if (!MacStatisticsWindow.FormatRows(report.Providers).Contains("n=4", StringComparison.Ordinal) ||
                 !MacStatisticsWindow.FormatRows(report.Hours).Contains("No data", StringComparison.Ordinal))
                 throw new InvalidOperationException("Statistics sample sizes/No data were not rendered.");
-            var now = DateTimeOffset.UtcNow;
             QuotaState quota = new(QuotaProvider.Codex, new(QuotaProvider.Codex,
                 [new("session", "5시간", 100, now.AddMinutes(15), 300),
                  new("weekly", "주간", 9, now.AddDays(6), 10080)]),
                 LastSuccessfulCheckUtc: now, NextCheckUtc: now.AddMinutes(5));
-            if (!MacStatusWindow.QuotaText(quota, now).Contains("0%", StringComparison.Ordinal) ||
-                !MacStatusWindow.QuotaText(quota, now).Contains("00:15:00", StringComparison.Ordinal) ||
-                !MacStatusWindow.QuotaText(quota, now.AddMinutes(1)).Contains("00:14:00", StringComparison.Ordinal))
-                throw new InvalidOperationException("Exhausted quota/countdown display failed.");
             QuotaState claudeQuota = new(QuotaProvider.Claude, new(QuotaProvider.Claude,
                 [new("session", "세션 (5시간)", 9, now.AddMinutes(98), 300),
                  new("weekly_all", "주간 전체", 37, now.AddDays(3), 10080),
@@ -548,8 +570,14 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
                 LastSuccessfulCheckUtc: now, NextCheckUtc: now.AddMinutes(83));
             ProviderStatus[] healthy = Enum.GetValues<ProviderKind>().Select(provider =>
                 new ProviderStatus(provider, OfficialStatus.Operational, now, now, "관련 서비스 정상")).ToArray();
-            statusWindow.Update(Schedule(now), healthy, [quota, claudeQuota], false, now.AddMinutes(5), "");
-            statusWindow.VerifyCompactLayout();
+            panel.Update(Schedule(now), healthy, [quota, claudeQuota], false, now.AddMinutes(5), "");
+            CGSize popoverSize = panel.Verify(Schedule(now), healthy, [quota, claudeQuota]);
+            if (!panel.QuotaRowText(QuotaProvider.Codex, "session").Contains("0% 남음 · 00:15:00", StringComparison.Ordinal))
+                throw new InvalidOperationException("Exhausted quota/countdown display failed.");
+            panel.Update(Schedule(now.AddMinutes(1)), healthy, [quota, claudeQuota], false, now.AddMinutes(5), "");
+            if (!panel.QuotaRowText(QuotaProvider.Codex, "session").Contains("00:14:00", StringComparison.Ordinal))
+                throw new InvalidOperationException("Injected quota countdown did not advance.");
+            panel.Close();
             ShowStatistics();
             await statisticsWindow!.RefreshAsync();
             if (!statisticsWindow.Window.IsVisible || statisticsWindow.Window.DangerousReleasedWhenClosed)
@@ -561,7 +589,7 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
             await statisticsWindow.RefreshAsync();
             if (!statisticsWindow.Window.IsVisible)
                 throw new InvalidOperationException("Statistics window did not reopen from the menu-bar action.");
-            Console.WriteLine("PASS: bundle version, menu-tracking countdown timer, 1,000-char note limit, native controls/window close-reopen, 20pt color menu icon/1x-2x pixels, compact one-screen layout/standard quota rows/quota info popover, temporary SQLite, four events/notes, statistics, injected quota countdown; no account/network/settings changes.");
+            Console.WriteLine($"PASS: bundle version, menu-tracking countdown timer, 20pt color menu icon/1x-2x pixels, left/right/control-click routing, right-click menu, popover open/close/reopen, shared panel text/record menu/quota lines, {activationResult}, tone contrast >= 4.5:1 light+dark (min {weakest:0.0}:1), popover size/rows/quota box fit ({popoverSize.Width:0}x{popoverSize.Height:0}pt), 1,000-char note limit, temporary SQLite, four events/notes via shared factory, statistics, injected quota countdown; no account/network/settings changes.");
             ExitCode = 0;
         }
         catch (Exception error)

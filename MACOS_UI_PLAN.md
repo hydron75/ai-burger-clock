@@ -1,6 +1,6 @@
 # macOS 팝오버 UI와 공통 표시 로직 — 분석·계획
 
-작성: 2026-10-08 KST. 상태: 계획 확정, 구현 전.
+작성: 2026-10-08 KST. 상태: 구현 중. PR 1·2·3(#21·#22·#23)과 공통 검사 단일 실행(#25)은 병합됐고, PR 4는 #24로 진행 중입니다. 진행 중 조정은 [4-1](#4-1-진행-중-조정-2026-10-08)을 봅니다.
 
 ## Context
 - 목표: macOS 메뉴바 UI를 Windows 트레이 패널과 같은 구성의 팝오버로 바꾸고, Windows 변경을 macOS에 쉽게 반영하는 구조를 만든다.
@@ -188,9 +188,9 @@ PR #14에서 HTTP 설정, 알림 문구, 네트워크 재조회 제한은 이미
 | 1 | 공통: `ProviderNames`, `StatusPanelModel`, `QuotaPanelModel`(데이터·톤·본문 문구) + 골든 검사(현재 Windows 문구). 아직 어느 호스트도 사용 안 함 | Mac 로컬 챗 | Shared.Tests, `-p:EnableWindowsTargeting=true` Windows 컴파일. PR 본문에 "공통 원본 변경"과 Windows 확인 요청 |
 | 2 | Windows: `StatusWindow`·`AccountQuotaView`가 PR1 모델 사용. 화면 변화 없음 | ChatGPT | Windows self-test·smoke, 렌더 PNG 비교, 재검토 회신 |
 | 3 | 공통(B층 일부): `UsageMeasurementFactory`, 메모 제한, 공휴일 피드백 문구, 기록 메뉴 항목 목록 | Mac 로컬 챗 | PR1과 같음 |
-| 4 | Mac: 상태 아이콘 왼쪽 클릭→팝오버, 오른쪽 클릭→짧은 메뉴(Refresh/로그인 항목 설정 열기…/종료 ⌘Q), "상태 창 열기"와 상태 NSWindow 제거. 팝오버 안은 PR1 모델로 Windows 순서 배치 | Mac 로컬 챗 | build.sh, smoke(새 레이아웃 검사), 실제 클릭·바깥 클릭·듀얼 모니터 |
-| 5 | Mac: 카드 왼쪽 클릭(공식 페이지), 오른쪽/control-클릭(기록 메뉴), 메모 흐름(팝오버 닫기→NSAlert→재오픈) | Mac 로컬 챗 | 실제 조작 |
-| 6 | Mac 0.2.0: "한도 보기" 전환, ⓘ→Tooltip, 흰 바탕+색 글자(패널·메뉴바 아이콘), 다크 모드 연동, MACOS_PORT 기록, 버전 0.2.0(`Version`·`AssemblyVersion`·`FileVersion`·`ApplicationVersion` 함께) | Mac 로컬 챗 | 라이트/다크·두 화면 스크린샷, 다크 모드 메뉴바의 아이콘 표시(바탕·글자 대비, 비활성 화면 포함), 아이콘 픽셀 검사 갱신 |
+| 4 | Mac: 상태 아이콘 왼쪽 클릭→팝오버, 오른쪽 클릭→짧은 메뉴(Refresh/로그인 항목 설정 열기…/종료 ⌘Q), "상태 창 열기"와 상태 NSWindow 제거. 팝오버 안은 PR1 모델로 Windows 순서 배치. **(앞당김)** 카드 오른쪽/control-클릭 기록 메뉴(PR3 공통 코드)와 메모 흐름, 한도 ⓘ→줄별 Tooltip, 불투명 배경과 대비 4.5:1 이상의 톤 색 | Mac 로컬 챗 | build.sh, smoke(새 레이아웃 검사), 실제 클릭·바깥 클릭·듀얼 모니터 |
+| 5 | Mac: 카드 **전체** 왼쪽 클릭(공식 페이지). PR 4는 Provider 이름 버튼만 공식 페이지를 엽니다. 기록 메뉴·메모 흐름은 PR 4로 옮겼습니다 | Mac 로컬 챗 | 실제 조작(카드 클릭·기록·메모 흐름) |
+| 6 | Mac 0.2.0: "한도 보기" 전환, 메뉴바 아이콘의 흰 바탕+색 글자와 다크 모드 연동, MACOS_PORT 기록, 버전 0.2.0(`Version`·`AssemblyVersion`·`FileVersion`·`ApplicationVersion` 함께). ⓘ→Tooltip과 팝오버의 불투명 배경·톤 색은 PR 4로 옮겼습니다 | Mac 로컬 챗 | 라이트/다크·두 화면 스크린샷, 다크 모드 메뉴바의 아이콘 표시(바탕·글자 대비, 비활성 화면 포함), 아이콘 픽셀 검사 갱신 |
 | 7 | 공통(B층 나머지): `AppCoordinator`(가칭)로 시작·갱신·공휴일 토글·기록 저장·종료 흐름 이동. 호스트는 아직 사용 안 함 | 먼저 착수하는 쪽 | Shared.Tests, Windows 컴파일 |
 | 7w | Windows: `TrayApplicationContext`를 `AppCoordinator`로 전환 | ChatGPT | Windows self-test·smoke |
 | 7m | Mac: `MacApplication`을 `AppCoordinator`로 전환 | Mac 로컬 챗 | build.sh, smoke |
@@ -201,6 +201,23 @@ PR #14에서 HTTP 설정, 알림 문구, 네트워크 재조회 제한은 이미
 - PR7 앱 흐름 공통화는 범위가 커서 팝오버 작업 뒤로 둡니다(가정: 5-1 "권장안"에 포함된 것으로 해석).
 - 각 담당은 상대 OS 전용 파일을 고치지 않습니다(AGENTS.md). 그래서 공통 PR과 Windows·Mac 전환 PR을 나눴습니다.
 - 공통 영역은 링크 방식을 유지합니다(5-1). `AiBurgerClock.Core` 라이브러리 전환은 이번 계획에서 뺍니다.
+
+### 4-1. 진행 중 조정 (2026-10-08)
+
+계획과 달라진 점입니다. 위 표에는 이미 반영했습니다.
+
+- **기록 메뉴를 PR 5에서 PR 4로 앞당김.**
+  - 이유: PR 4에서 메뉴바의 기록 하위 메뉴와 상태 창 "기록" 버튼이 없어집니다. 카드 메뉴가 없으면 기록할 방법이 남지 않습니다.
+  - PR 4 범위: 카드의 오른쪽/control-클릭 기록 메뉴(`UsageMeasurementFactory.MenuItems`), 메모 창 전 캡처(`Capture`/`WithNote`), 메모 흐름(팝오버 닫기 → NSAlert → 저장·취소 후 재오픈), `FeedbackText` 문구.
+- **한도 ⓘ → Tooltip(결정 5-5)을 PR 6에서 PR 4로 앞당김.**
+  - 이유: PR 4에서 한도 줄을 `QuotaPanelModel`로 다시 만들면서, 모델이 주는 줄별 상세를 바로 Tooltip으로 붙였습니다.
+  - 매초 카운트다운이 갱신돼도 Tooltip이 닫히지 않는 것을 사용자가 확인했습니다.
+- **팝오버 배경과 톤 색(결정 5-4의 팝오버 부분)도 PR 4에서 처리.**
+  - 이유: 기본 팝오버 배경이 반투명이라, 뒤가 밝으면 시스템 녹색 글자가 거의 읽히지 않았습니다(흰 바탕에서 약 2:1).
+  - 처리: 팝오버를 불투명 `ControlBackground`(라이트 흰색, 다크 시스템 어두운 색)로 칠합니다. 톤 색은 `Assets.xcassets`의 라이트/다크 이름 색으로 바꿔 양쪽 모드에서 4.5:1 이상을 맞췄습니다. smoke가 이 대비를 검사합니다.
+- **남은 범위**
+  - PR 5: 카드 전체 왼쪽 클릭으로 공식 페이지 열기(PR 4는 Provider 이름 버튼만 엶). 카드 클릭·기록·메모 흐름의 실제 조작 확인. Tooltip 첫 줄 "클릭: 공식 상태 페이지 열기"는 이때 실제 동작과 맞춰집니다.
+  - PR 6: "한도 보기" 전환, 메뉴바 아이콘의 흰(다크 모드는 어두운) 원 바탕+색 글자 F/B와 픽셀 검사 갱신, 다크 모드·두 화면 확인, 0.2.0, MACOS_PORT 기록.
 
 ---
 
@@ -213,6 +230,7 @@ PR #14에서 HTTP 설정, 알림 문구, 네트워크 재조회 제한은 이미
 5. 한도 ⓘ 설명은 Tooltip으로 옮깁니다.
 6. Mac 버전은 0.2.0으로 올립니다.
 7. Mac에 기존 로컬 챗은 없습니다. 구현은 **Mac에서 새 로컬 Claude Code 챗**으로 진행합니다.
+8. 기록 메뉴 항목(2026-10-08, #23 리뷰 P1 2번): 메뉴 항목의 종류·순서·문구는 공통(`UsageMeasurementFactory.MenuItems` 등)에 둡니다. 메뉴를 만들고 띄우는 코드·단축키·위치·열리는 방식은 각 OS가 맡습니다. AGENTS.md "분리 원칙"의 예외로 적었습니다.
 
 ## 6) 진행 방법 (Mac 새 로컬 챗)
 - Mac에서 저장소 폴더를 열고 `git switch main && git pull`로 최신 main을 받습니다. 기존 Mac 로컬 챗은 없으므로 새 Claude Code 챗을 엽니다.

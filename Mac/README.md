@@ -193,11 +193,11 @@ Mac에서 사용하는 Codex와 Claude는 **그 Mac에 별도로 설치·로그�
 echo "검사 종료 코드: $?"
 ```
 
-메뉴바·창을 만들고 상태/통계 창의 닫기·재열기·Visible 상태를 확인합니다. 20-point 아이콘의 실제 1x/2x 색·투명도·흰 글자, 전체 상태 창 스크롤 부재·컨트롤 경계/겹침·일반 한도 3줄/4줄의 글꼴 높이, 새 임시 DB의 4종 실측/메모·표본수/No data와 주입 시각의 한도 카운트다운 감소를 검사한 뒤 종료합니다. 실제 계정 조회·HTTP·브라우저 열기·알림 권한 요청·자동 실행 변경을 하지 않습니다. 다중 모니터 메뉴막대·OS 알림·재로그인 및 장시간 절전 복귀는 별도 검증 대상입니다.
+메뉴바 아이콘과 상태 팝오버를 만들고 왼쪽/오른쪽/control-클릭 구분, 오른쪽 클릭 메뉴(Refresh·로그인 항목 설정 열기…·종료 ⌘Q), 팝오버 열기·닫기·재열기, 통계 창의 닫기·재열기를 확인합니다. 20-point 아이콘의 실제 1x/2x 색·투명도·흰 글자, 팝오버 문구·카드 기록 메뉴·한도 행이 공통 패널 모델과 같은지, 톤 글자색과 불투명 배경의 대비가 라이트·다크 모두 4.5:1 이상인지, 팝오버 크기·행 겹침·한도 영역이 행 높이에 맞는지, 새 임시 DB의 4종 실측/메모·표본수/No data와 주입 시각의 한도 카운트다운 감소를 검사한 뒤 종료합니다. 열린 팝오버의 앱 활성화·키 윈도우는 macOS가 실제 사용자 클릭에만 활성화를 허용하므로, 활성화된 경우에만 검사하고 출력에 결과를 표시합니다. 실제 계정 조회·HTTP·브라우저 열기·알림 권한 요청·자동 실행 변경을 하지 않습니다. 다중 모니터 메뉴막대·OS 알림·재로그인 및 장시간 절전 복귀는 별도 검증 대상입니다.
 
 앱 아이콘은 `Mac/Assets.xcassets/AppIcon.appiconset`에 있습니다. 바꿀 때는 `swift Mac/tools/make-app-icon.swift`로 다시 생성합니다.
 
-성공 기준은 `PASS: bundle version, menu-tracking countdown timer, 1,000-char note limit, native controls/window close-reopen...` 출력과 종료 코드 `0`입니다. 소스 `66fb868`부터 bundle의 `CFBundleShortVersionString`이 앱 버전과 다르면 `FAIL: Bundle version ...`으로 실패합니다. Mac 버전은 `Mac/AiBurgerClock.Mac.csproj`의 `Version`·`ApplicationVersion`에서만 바꾸고 `Info.plist`에는 적지 않습니다. SDK가 `Info.plist`만 바뀐 증분 빌드에서 bundle manifest를 다시 만들지 않기 때문입니다. 오류가 있으면 출력과 종료 코드를 보존하고 일반 실행·자동 시작 설정 전에 원인을 확인합니다.
+성공 기준은 `PASS: bundle version, menu-tracking countdown timer, 20pt color menu icon/1x-2x pixels, left/right/control-click routing, ...` 출력과 종료 코드 `0`입니다. 소스 `66fb868`부터 bundle의 `CFBundleShortVersionString`이 앱 버전과 다르면 `FAIL: Bundle version ...`으로 실패합니다. Mac 버전은 `Mac/AiBurgerClock.Mac.csproj`의 `Version`·`ApplicationVersion`에서만 바꾸고 `Info.plist`에는 적지 않습니다. SDK가 `Info.plist`만 바뀐 증분 빌드에서 bundle manifest를 다시 만들지 않기 때문입니다. 오류가 있으면 출력과 종료 코드를 보존하고 일반 실행·자동 시작 설정 전에 원인을 확인합니다.
 
 2026-10-03 KST 사용자 Mac에서 이전 0.1.0뿐 아니라 새 0.1.1의 종료 코드 0도 확인했습니다. 0.1.1 성공 출력에는 `compact one-screen layout/standard quota rows`와 `injected quota countdown`이 포함됐습니다. 가짜 한도 데이터로 실행한 검사이므로 실제 CLI 계정 조회 성공이나 OS 알림 노출을 뜻하지 않습니다. [검사 기록](../MACOS_PORT.md#18-011-새-native-smoke-통과)
 
@@ -211,7 +211,7 @@ open "Mac/bin/Release/net10.0-macos27.0/osx-arm64/AI Burger Clock.app"
 
 일반 실행은 Mac 전용 사용자 DB를 생성/열고 공식 상태 페이지와 설치된 CLI의 한도를 조회합니다. 알림 권한 창이 나오면 사용자가 허용 여부를 선택합니다. 로그인 자동 실행은 현재 옵션을 유지합니다. 앱 위치를 나중에 변경하면 시스템 설정 → 일반 → 로그인 항목에서 등록 경로/승인 상태를 다시 확인하세요.
 
-메뉴바 → 상태 창 열기에서 Schedule·Provider 공식 상태·ChatGPT/Claude 한도·버튼이 전체 화면 스크롤 없이 보이는지 확인합니다. 한도 카운트다운과 긴 이유의 Tooltip도 확인하세요. 사용자 0.1.1 전체 창/메뉴바 스크린샷에서 한 화면 표시와 두 계정 한도 수신을 확인했습니다. 실제 Tooltip·기록 메뉴·공식 링크 클릭, 추가 한도 내부 스크롤과 OS 동작까지 스크린샷으로 검증한 것은 아닙니다. 다른 Mac에서 CLI가 설치·로그인되지 않았다면 한도 조회 불가가 표시됩니다. Windows의 로그인은 자동 복사하지 않습니다. [일반 화면 기록](../MACOS_PORT.md#19-011-일반-상태-창과-메뉴바-확인)
+메뉴바 아이콘을 왼쪽 클릭해 팝오버에서 Schedule·Provider 공식 상태·ChatGPT/Claude 한도·버튼이 보이는지 확인합니다. 오른쪽 클릭(또는 control-클릭)은 Refresh·로그인 항목 설정 열기…·종료만 있는 짧은 메뉴입니다. 사용 경험 기록은 Provider 카드의 오른쪽 클릭 메뉴에서 남깁니다(이전 상태 창과 메뉴바의 기록 하위 메뉴는 없앴습니다). 한도 카운트다운과 긴 이유의 Tooltip도 확인하세요. 사용자 0.1.1 전체 창/메뉴바 스크린샷에서 한 화면 표시와 두 계정 한도 수신을 확인했습니다. 실제 Tooltip·기록 메뉴·공식 링크 클릭, 추가 한도 내부 스크롤과 OS 동작까지 스크린샷으로 검증한 것은 아닙니다. 다른 Mac에서 CLI가 설치·로그인되지 않았다면 한도 조회 불가가 표시됩니다. Windows의 로그인은 자동 복사하지 않습니다. [일반 화면 기록](../MACOS_PORT.md#19-011-일반-상태-창과-메뉴바-확인)
 
 ## CLI를 찾지 못하는 경우
 
