@@ -52,6 +52,11 @@ internal static class MacControls
     // A translucent popover lets a bright desktop wash out colored text behind it.
     internal static NSColor PanelBackground => NSColor.ControlBackground;
 
+    // Hover tint for clickable provider cards; resolved while drawing, so it follows the appearance
+    // and accent color. Light enough that tone text keeps at least 4.5:1 (smoke-checked).
+    internal static NSColor CardHoverBackground() =>
+        PanelBackground.BlendedColor(0.08f, NSColor.ControlAccent) ?? PanelBackground;
+
     // Tone colors are named light/dark pairs in Assets.xcassets (Tone*.colorset), chosen for at least
     // 4.5:1 contrast on PanelBackground in both appearances; the bright system green/orange are only
     // about 2:1 on white. The shared model only names the tone.
@@ -75,13 +80,14 @@ internal static class MacControls
     }
 
     // WCAG contrast ratio of two colors as drawn under the given appearance (native smoke check).
-    internal static double Contrast(NSColor foreground, NSColor background, NSAppearance appearance)
+    // The background is a factory so a blended color is also resolved under that appearance.
+    internal static double Contrast(NSColor foreground, Func<NSColor> background, NSAppearance appearance)
     {
         double a = 0, b = 0;
         appearance.PerformAsCurrentDrawingAppearance(() =>
         {
             a = Luminance(foreground);
-            b = Luminance(background);
+            b = Luminance(background());
         });
         return (Math.Max(a, b) + 0.05) / (Math.Min(a, b) + 0.05);
     }
