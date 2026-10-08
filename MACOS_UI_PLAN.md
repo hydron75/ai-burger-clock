@@ -200,8 +200,8 @@ PR #14에서 HTTP 설정, 알림 문구, 네트워크 재조회 제한은 이미
 | 5 | Mac: 카드 **전체** 왼쪽 클릭(공식 페이지)과 카드에만 hover·손가락 커서. 정렬 개선: 한도를 Provider별 박스(카드와 같은 모양, 클릭 없음)에 넣고, 제목은 바깥 기준선·박스 안 글자는 같은 x(결정 9). 작은 화면에서는 한도 영역만 줄여 스크롤. 기록 메뉴·메모 흐름은 PR 4로 옮겼습니다 | Mac 로컬 챗 | smoke(글자 시작 x·hover 대비·화면 높이), 실제 조작(카드 클릭·기록·메모 흐름) |
 | 6 | Mac 0.2.0: 메뉴바 아이콘의 흰(다크 모드는 어두운) 원 바탕+색 글자 F/B와 다크 모드 연동, MACOS_PORT 기록, 버전 0.2.0(`Version`·`AssemblyVersion`·`FileVersion`·`ApplicationVersion` 함께). "한도 보기" 전환은 넣지 않습니다(3-3, 결정 10). ⓘ→Tooltip과 팝오버의 불투명 배경·톤 색은 PR 4로 옮겼습니다 | Mac 로컬 챗 | 라이트/다크·두 화면 스크린샷, 다크 모드 메뉴바의 아이콘 표시(바탕·글자 대비, 비활성 화면 포함), 아이콘 픽셀 검사 갱신 |
 | 8 | 공통 검사 정리(**한 PR**): `TrayPresentationTests`의 OS와 무관한 부분(아이콘 색 우선순위·Tooltip·알림 제목)과 `AccountQuotaClientTests`의 CLI 프로토콜·파싱·재시도 부분을 새 공통 검사로 옮기고 `SharedTestSuite`에 등록. 원래 파일에서는 옮긴 부분을 지우고 Windows 전용(트레이 아이콘 픽셀, Windows 경로 예시)만 남김 | ChatGPT | Windows self-test(건수 이동 확인). Mac은 PR HEAD에서 Shared.Tests·build.sh로 macOS 통과 확인(역슬래시 경로 등) 후 PR 코멘트 |
-| S | 공통: 통계 요약·No data·설명 문구를 공통으로(`StatisticsAnalysis` 쪽) + 골든 검사(현재 Windows 문구 기준). Mac 통계 창이 이 문구를 사용하고, 빈 상태 안내(현재 "메뉴바의 사용 경험 기록을 이용하세요")를 카드 오른쪽 클릭 기록에 맞게 수정 | Mac 로컬 챗 | Shared.Tests, Windows 컴파일, build.sh·smoke. "공통 원본 변경"과 Windows 확인 요청 |
-| Sw | Windows: `StatisticsWindow`가 S의 공통 문구 사용 | ChatGPT | Windows self-test·smoke, 렌더 PNG 비교 |
+| S | 공통: 통계 요약·No data·설명·읽기 실패·소표본 문구와 기간·구간 선택 항목을 공통 `StatisticsText`로 + 골든 검사(현재 Windows 문구 기준). "어디서 기록하는지" 문장은 클릭 동작이라 각 OS가 넘깁니다(`StatisticsText.Empty(howToRecord)`). Mac 통계 창이 이 문구를 사용하고, 빈 상태 안내(현재 "메뉴바의 사용 경험 기록을 이용하세요")를 카드 오른쪽 클릭 기록에 맞게 수정 | Mac 로컬 챗 | Shared.Tests, Windows 컴파일, build.sh·smoke. "공통 원본 변경"과 Windows 확인 요청 |
+| Sw | Windows: `StatisticsWindow`가 S의 공통 문구 사용. 빈 상태 안내는 `StatisticsText.Empty("Provider 행이나 트레이 메뉴에서 사용 경험을 기록하세요.")`로 지금 문구 유지. "각 탭에서 … 비교할 수 있습니다." 줄은 Windows 탭 안내라 Windows에 남음. S 병합 뒤 7a와 동시 진행 | ChatGPT | Windows self-test·smoke, 렌더 PNG 비교 |
 | 7a | 공통: 매초 갱신·알림 판정 엔진(전환 감지, Provider 알림, 공휴일 알림 양보 판정, 아이콘 상태). 입출력 없음, 호스트는 아직 사용 안 함. **코드 전에 API 초안(4-3)을 Windows가 리뷰** | Mac 로컬 챗 | Shared.Tests(골든), Windows 컴파일, build.sh |
 | 7a-w | Windows: `TrayApplicationContext.RefreshStatus`·`UpdateProviderDisplay`가 7a 사용. 동작 변화 없음 | ChatGPT | Windows self-test·smoke |
 | 7a-m | Mac: `MacApplication.RefreshDisplay`가 7a 사용 | Mac 로컬 챗 | build.sh, smoke |
@@ -242,12 +242,14 @@ PR #14에서 HTTP 설정, 알림 문구, 네트워크 재조회 제한은 이미
 
 | 순서 | PR | 담당 | 범위 |
 |---|---|---|---|
-| 1 | 문서(이 변경) | Mac 로컬 챗 | 문서만 |
-| 2 | PR 8 공통 검사 정리 | ChatGPT(한 PR), Mac은 PR HEAD에서 macOS 통과 확인 | 공통 검사 + Windows 검사 |
-| 3 | S 통계 문구 공통화 + Mac 통계 창 | Mac 로컬 챗 | 공통 코드 + Mac. Windows 전환(Sw)은 ChatGPT가 S 병합 뒤 진행 |
-| 4 | 7a 공통 판정 엔진 | Mac 로컬 챗(API 초안 4-3을 Windows가 먼저 리뷰) | 공통 코드 |
-| 5 | 7a-w Windows 전환 | ChatGPT | Windows |
-| 6 | 7a-m Mac 전환 | Mac 로컬 챗 | Mac |
+| 1 | 문서(#29) | Mac 로컬 챗 | 문서만. **병합** |
+| 2 | PR 8 공통 검사 정리(#31) | ChatGPT(한 PR), Mac은 PR HEAD에서 macOS 통과 확인 | 공통 검사 + Windows 검사. **병합** |
+| 3 | S 통계 문구 공통화 + Mac 통계 창 | Mac 로컬 챗 | 공통 코드 + Mac |
+| 4 | **S 병합 뒤 동시 진행:** Sw Windows 통계 창 전환 ∥ 7a 공통 판정 엔진 | Sw: ChatGPT / 7a: Mac 로컬 챗(API 초안 4-3은 #31에서 Windows 리뷰 완료) | Sw: Windows / 7a: 공통 코드 |
+| 5 | 7a-w Windows 전환 | ChatGPT | Windows. 7a 병합 뒤 |
+| 6 | 7a-m Mac 전환 | Mac 로컬 챗 | Mac. 7a 병합 뒤(7a-w와 순서 무관) |
+
+- Sw와 7a는 서로 다른 파일을 바꿉니다(Sw는 `StatisticsWindow.cs`, 7a는 새 공통 원본과 검사). 그래서 S 병합 뒤 함께 진행합니다. 7a는 공통 코드 변경이므로 병합 전 Windows 검증이 필요하며, Sw 검증과 같은 시기에 진행될 수 있습니다.
 
 - 7b·7c는 **보류(7a 이후 재판단)**입니다. 7a의 Windows·Mac 전환이 끝난 뒤 필요성을 다시 판단합니다.
 - **동작 차이 기준(결정 12)**
@@ -302,6 +304,15 @@ internal sealed class StatusTicker
 - `Appearance`는 `TrayPresentation.Calculate` 결과입니다. `AppearanceChanged`는 이전 결과와 비교합니다(첫 판정은 true).
 - 공휴일 알림 양보: 호스트는 `PolicyChanged` 판정 결과의 `ProviderAlerts`가 비었을 때만 공휴일 알림을 띄웁니다. 지금의 `providerNotificationSerial` 비교를 대신합니다.
 
+**입력 계약과 중복 Provider (2026-10-08 사용자 결정)**
+- 입력 `providers`는 Provider당 한 번입니다. 빠진 Provider는 허용하며, 지금처럼 아이콘을 회색으로 판정합니다(`TrayPresentation.Calculate`).
+- 같은 Provider가 두 번 이상 들어오면:
+  - **검사에서는 오류로 실패**시킵니다. 엔진을 엄격 모드(`strictInput: true`)로 만들면 `ArgumentException`을 던지고, 공통 골든 검사는 이 모드로 실행합니다.
+  - **실제 실행 중에는 첫 번째 값만 쓰고 나머지는 무시**하며 로그를 남깁니다(기본 모드). 매초 갱신 경로에서 예외로 앱이 멈추지 않게 하려는 것입니다.
+  - 로그는 호스트가 넘기는 경고 콜백(`Action<string>? warn`)으로 남깁니다. 앱에는 아직 로그 기능이 없어서, 실제 출력 위치(Mac은 통합 로그, Windows는 `Trace` 등)는 7a-m·7a-w에서 정합니다.
+  - 매초 같은 경고가 쌓이지 않도록, 중복 Provider 집합이 처음 나타나거나 바뀔 때만 경고합니다.
+- 결과 `Providers`·`ProviderAlerts`는 `ProviderKind` 순서로 고정하고, 입력과 분리된 복사본으로 돌려줍니다(#31 리뷰).
+
 **호스트에 남는 것**
 - 알림 표시: Windows 풍선(Info/Warning 아이콘), Mac UNNotification.
 - 아이콘 교체, Tooltip 문자열(Windows 초 단위, Mac 분 단위), 메뉴 줄, 패널 갱신.
@@ -317,7 +328,7 @@ internal sealed class StatusTicker
 - `displayName`이 알림 제목에 반영됩니다.
 - 아이콘 상태 변경 감지.
 
-**Windows 리뷰에서 확인받을 것**
+**Windows 리뷰에서 확인받을 것** (→ [#31](https://github.com/hydron75/ai-burger-clock/pull/31) 본문 "4-3 API 리뷰"에서 4가지 모두 적합으로 회신. 권고 사항은 위 입력 계약과 7a 골든 검사에 반영)
 1. 입력으로 `ScheduleSnapshot`을 받는 방식(시각·공휴일 설정은 7c까지 호스트가 가짐)이 Windows 검사 주입(`utcNow`)과 맞는지.
 2. `TickReason` 네 가지가 현재 `RefreshStatus` 호출 지점(생성자, 타이머, `ShowWindow`, `OnProviderChanged`, 공휴일 토글)을 빠짐없이 덮는지.
 3. 결과 기반 이벤트 발생으로 `UIRegressionChecks`·`HolidayUiChecks`·`SmokeTest`의 기존 기대(`context.RefreshStatus` 32곳 등)가 바뀌지 않는지. `RefreshStatus`는 내부에서 `Tick`을 부르는 형태로 남길 수 있습니다.
