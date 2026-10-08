@@ -148,16 +148,17 @@ internal sealed class StatusWindow : Form
     internal static ContextMenuStrip CreateRecordingMenu(ProviderKind provider, Action<ProviderKind, UsageEventType, bool> record)
     {
         var menu = new ContextMenuStrip();
-        foreach (var type in Enum.GetValues<UsageEventType>())
+        foreach (var descriptor in UsageMeasurementFactory.MenuItems)
         {
-            var item = new ToolStripMenuItem(type.ToString());
-            item.Click += (_, _) => record(provider, type, false);
+            if (descriptor is null)
+            {
+                menu.Items.Add(new ToolStripSeparator());
+                continue;
+            }
+            var item = new ToolStripMenuItem(descriptor.Text);
+            item.Click += (_, _) => record(provider, descriptor.Type, descriptor.WithNote);
             menu.Items.Add(item);
         }
-        menu.Items.Add(new ToolStripSeparator());
-        var withNote = new ToolStripMenuItem("메모와 함께 기록…");
-        withNote.Click += (_, _) => record(provider, UsageEventType.Success, true);
-        menu.Items.Add(withNote);
         return menu;
     }
 

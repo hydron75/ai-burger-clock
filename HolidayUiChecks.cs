@@ -70,6 +70,11 @@ internal static class HolidayUiChecks
         Check(transitions.Count == noticeCount && handler.RequestCount == requests,
             "Policy toggle is not a fake time transition and does not add status polling");
         Check(context.TrayIcon.BalloonTipTitle == "공휴일 보정 꺼짐", "Policy toggle uses its own notification");
+        Check(context.StatusWindow.FeedbackLabel.Text == "공휴일 보정 OFF · 시간표에 반영됨" &&
+            context.StatusWindow.FeedbackLabel.ForeColor == Color.DimGray,
+            "Holiday OFF success feedback preserves the Windows wording and color");
+        Check(context.TrayIcon.BalloonTipText == "시간표 정책이 변경되었습니다. 다음 전환: 11-27 11:00 KST.\nProvider 공식 상태는 별도로 확인하세요.",
+            "Holiday OFF native notification preserves the Windows body");
         before = (await store.ReadUsageAsync(null)).Count;
         recording.PerformClick();
         await WaitUntilAsync(async () => (await store.ReadUsageAsync(null)).Count == before + 1);
@@ -82,6 +87,12 @@ internal static class HolidayUiChecks
         await WaitUntilAsync(() => Task.FromResult(context.HolidayMenuItem.Enabled && context.HolidayAdjustmentEnabled));
         Check(context.StatusWindow.HolidayCheckBox.Checked && await new UsageStore(store.DatabasePath).GetHolidayAdjustmentAsync(),
             "Tray toggle re-enables policy and survives store restart");
+        Check(context.StatusWindow.FeedbackLabel.Text == "공휴일 보정 ON · 시간표에 반영됨" &&
+            context.StatusWindow.FeedbackLabel.ForeColor == Color.DimGray,
+            "Holiday ON success feedback preserves the Windows wording and color");
+        Check(context.TrayIcon.BalloonTipTitle == "공휴일 보정 켜짐" &&
+            context.TrayIcon.BalloonTipText == "시간표 정책이 변경되었습니다. 다음 전환: 11-27 23:00 KST.\nProvider 공식 상태는 별도로 확인하세요.",
+            "Holiday ON native notification preserves the Windows title and body");
         handler.OpenAiStatus = OfficialStatus.PartialOutage;
         await monitor.RefreshOnceAsync();
         context.RefreshStatus(true);
