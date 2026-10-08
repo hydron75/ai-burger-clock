@@ -28,7 +28,7 @@ AI Burger Clock 저장소에서 코드를 고치는 사람과 에이전트를 �
 
 ## 검사
 
-별도 테스트 프로젝트는 없습니다. 앱 EXE에 옵션을 붙여 실행합니다. 분기는 [Program.cs](Program.cs)에 있습니다.
+Windows 앱 검사는 앱 EXE에 옵션을 붙여 실행합니다. 분기는 [Program.cs](Program.cs)에 있습니다. 공통 원본의 검사는 OS와 무관한 `net10.0` 프로젝트 [Shared.Tests](Shared.Tests/Program.cs)로도 실행합니다(`dotnet run --project Shared.Tests/AiBurgerClock.Shared.Tests.csproj -c Release --property:TreatWarningsAsErrors=true`). Mac 앱 검사는 [Mac/README](Mac/README.md)의 `--smoke-test`를 따릅니다.
 
 | 옵션 | 하는 일 | 실제 환경에 미치는 영향 |
 |---|---|---|
@@ -58,6 +58,9 @@ AI Burger Clock 저장소에서 코드를 고치는 사람과 에이전트를 �
 - 공통 원본을 고친 PR 본문에는 "공통 원본 변경" 절을 두어 바뀐 파일, 동작 변화, 상대 버전에서 확인할 항목을 적습니다.
 - Mac 쪽에서 공통 원본을 고치면 `dotnet build -c Release -warnaserror -p:EnableWindowsTargeting=true`로 Windows 컴파일까지 확인합니다. 실제 Windows 검사는 위 "Windows 검증" 방식으로 ChatGPT가 진행합니다.
 - Windows 쪽에서 공통 원본을 고치면 Mac 공통 검사·native smoke 확인을 PR에 요청 항목으로 적습니다. Mac 담당이 그 PR HEAD로 `Mac/build.sh`와 `--smoke-test`를 실행하고 결과를 PR 코멘트로 남깁니다.
+- **분리 원칙(2026-10-08):** 필수 로직은 공통 원본에 두고, UI는 각 OS 네이티브(Windows WinForms, Mac AppKit)로 만듭니다. 패널 본문 문구와 표시 판정(톤)도 공통에 둡니다. 색·글꼴·레이아웃·클릭 동작·자동 실행 문구·메뉴 구성은 각 OS가 정합니다. 상세: [MACOS_UI_PLAN](MACOS_UI_PLAN.md).
+- **개선 전달:** Windows·Mac 구분 없이 먼저 개선안을 낸 쪽이 그 개선을 공통 원본 PR로 올립니다. 상대 담당은 자기 UI에 맞춰 반영하고, 반영할 수 없는 부분은 이유와 대안을 PR 코멘트로 회신합니다(재검토 회신).
+- Mac 버전은 `Mac/AiBurgerClock.Mac.csproj`의 `Version`·`ApplicationVersion`에서만 바꿉니다. `Info.plist`에는 적지 않습니다([Mac/README](Mac/README.md)).
 
 ## 작업 흐름: PR과 Windows 검증
 
