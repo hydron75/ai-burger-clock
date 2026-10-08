@@ -14,11 +14,14 @@ internal sealed class MacStatusPanel : IDisposable
     private const int Inset = 14;
     private const int ContentWidth = PanelWidth - Inset * 2;
     private const int CardPadding = 8;
-    private const int QuotaHeight = 172;
+    // Quota box grows with its rows up to this height; only extra model-scoped rows scroll.
+    private const int MaximumQuotaHeight = 200;
     internal const string DefaultFeedback = "Provider 이름 클릭: 공식 페이지 · 우클릭: 기록";
 
     private readonly NSPopover popover;
+    private readonly NSView content;
     private readonly NSStackView root;
+    private readonly NSLayoutConstraint quotaHeight;
     private readonly NSTextField state;
     private readonly NSTextField countdown;
     private readonly NSTextField next;
@@ -79,7 +82,8 @@ internal sealed class MacStatusPanel : IDisposable
         document.TrailingAnchor.ConstraintEqualTo(clip.TrailingAnchor).Active = true;
         document.TopAnchor.ConstraintEqualTo(clip.TopAnchor).Active = true;
         quotaScroll.WidthAnchor.ConstraintEqualTo(ContentWidth).Active = true;
-        quotaScroll.HeightAnchor.ConstraintEqualTo(QuotaHeight).Active = true;
+        quotaHeight = quotaScroll.HeightAnchor.ConstraintEqualTo(0);
+        quotaHeight.Active = true;
         root.AddArrangedSubview(quotaScroll);
         root.SetCustomSpacing(8, quotaScroll);
 
@@ -102,12 +106,16 @@ internal sealed class MacStatusPanel : IDisposable
         autoStart = Add(Checkbox("로그인 시 자동 실행", () => changeAutoStart(autoStart!.State == NSCellStateValue.On)));
         autoStart.Enabled = !smoke;
 
+        // Opaque background under the stack: the default popover material is translucent.
+        content = new BackgroundView();
+        content.AddSubview(root);
+        Pin(root, content, 0, 0);
         popover = new NSPopover
         {
             Behavior = NSPopoverBehavior.Transient,
             // A smoke run checks Shown right after Show/Close; animation would delay the state change.
             Animates = !smoke,
-            ContentViewController = new NSViewController { View = root }
+            ContentViewController = new NSViewController { View = content }
         };
     }
 
@@ -115,10 +123,23 @@ internal sealed class MacStatusPanel : IDisposable
 
     internal void Show(NSView anchor)
     {
-        NSApplication.SharedApplication.Activate();
-        root.LayoutSubtreeIfNeeded();
-        popover.ContentSize = new CGSize(PanelWidth, Math.Min(MaximumHeight, Math.Ceiling(root.FittingSize.Height)));
+        // A status-item click does not activate an accessory app, and a popover in an inactive app is
+        // not key: tooltips stay hidden and checkboxes draw gray until the first click inside it.
+        // Activate the app explicitly and make the popover window key as soon as it is shown.
+#pragma warning disable CA1422 // Cooperative Activate() alone left the app inactive on macOS 27.
+        NSApplication.SharedApplication.ActivateIgnoringOtherApps(true);
+#pragma warning restore CA1422
+        FitContent();
         popover.Show(anchor.Bounds, anchor, NSRectEdge.MinYEdge);
+        popover.ContentViewController.View.Window?.MakeKeyWindow();
+    }
+
+    internal NSWindow? Window => popover.Shown ? popover.ContentViewController.View.Window : null;
+
+    private void FitContent()
+    {
+        content.LayoutSubtreeIfNeeded();
+        popover.ContentSize = new CGSize(PanelWidth, Math.Min(MaximumHeight, Math.Ceiling(content.FittingSize.Height)));
     }
 
     internal void Close()
@@ -194,6 +215,13 @@ internal sealed class MacStatusPanel : IDisposable
             if (views.Scope is not null && section.Scope is not null) Apply(views.Scope, section.Scope);
             foreach (QuotaLine row in section.Rows) Apply(views.Rows[row.WindowId], row);
             Apply(views.Metadata, section.Metadata);
+        }
+        // Fit the box to its rows so no gap is left above the check times; resize an open popover.
+        nfloat height = (nfloat)Math.Min(MaximumQuotaHeight, Math.Ceiling(quotaStack.FittingSize.Height));
+        if (quotaHeight.Constant != height)
+        {
+            quotaHeight.Constant = height;
+            if (popover.Shown) FitContent();
         }
     }
 
@@ -350,8 +378,23 @@ internal sealed class MacStatusPanel : IDisposable
     {
         public override void DrawRect(CGRect dirtyRect)
         {
-            NSColor.ControlBackground.SetFill();
-            NSBezierPath.FromRoundedRect(Bounds, 8, 8).Fill();
+            // Same opaque background as the panel; a separator outline marks the card.
+            NSBezierPath path = NSBezierPath.FromRoundedRect(Bounds.Inset(0.5f, 0.5f), 8, 8);
+            MacControls.PanelBackground.SetFill();
+            path.Fill();
+            NSColor.Separator.SetStroke();
+            path.LineWidth = 1;
+            path.Stroke();
+        }
+    }
+
+    // Drawn per appearance, so it follows light/dark mode.
+    private sealed class BackgroundView : NSView
+    {
+        public override void DrawRect(CGRect dirtyRect)
+        {
+            MacControls.PanelBackground.SetFill();
+            NSGraphics.RectFill(dirtyRect);
         }
     }
 
@@ -365,7 +408,7 @@ internal sealed class MacStatusPanel : IDisposable
 
     internal CGSize Verify(ScheduleSnapshot snapshot, IReadOnlyList<ProviderStatus> states, IReadOnlyList<QuotaState> quotaStates)
     {
-        root.LayoutSubtreeIfNeeded();
+        content.LayoutSubtreeIfNeeded();
         var schedule = StatusPanelModel.Schedule(snapshot);
         if (state.StringValue != schedule.State || countdown.StringValue != schedule.Countdown ||
             next.StringValue != schedule.Next || next.ToolTip != schedule.NextDetail || timeZone.StringValue != schedule.TimeZone)
@@ -397,10 +440,12 @@ internal sealed class MacStatusPanel : IDisposable
                     views.Rows[row.WindowId].ToolTip != row.Detail))
                 throw new InvalidOperationException($"{section.Provider} quota lines differ from the shared panel model.");
         }
-        // Standard rows fit the quota box; only extra model-scoped rows scroll.
-        if (quotaStack.FittingSize.Height > QuotaHeight + 0.5)
-            throw new InvalidOperationException("Standard quota rows do not fit without scrolling.");
-        CGSize size = root.FittingSize;
+        // The quota box fits its standard rows exactly: no scrolling and no gap below them.
+        if (Math.Abs(quotaScroll.Frame.Height - Math.Ceiling(quotaStack.FittingSize.Height)) > 0.5 ||
+            quotaStack.FittingSize.Height > MaximumQuotaHeight)
+            throw new InvalidOperationException(
+                $"Quota box {quotaScroll.Frame.Height}pt does not fit its {quotaStack.FittingSize.Height}pt of rows.");
+        CGSize size = content.FittingSize;
         if (size.Width != PanelWidth || size.Height > MaximumHeight)
             throw new InvalidOperationException($"Popover size {size.Width}x{size.Height} exceeds {PanelWidth}x{MaximumHeight}.");
         NSView[] views2 = root.ArrangedSubviews;

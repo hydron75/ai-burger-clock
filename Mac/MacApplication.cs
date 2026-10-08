@@ -508,6 +508,35 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
 
             ShowPanel();
             if (!panel.IsShown) throw new InvalidOperationException("Status popover did not open.");
+            // Tooltips and active control accents need an active app and a key popover window right away.
+            // macOS grants activation on real user input (a status-item click). A smoke run has none, so
+            // activation is checked only when the system happens to grant it; the user check covers real clicks.
+            DateTime activation = DateTime.UtcNow.AddSeconds(2);
+            while (!(NSApplication.SharedApplication.Active && panel.Window?.IsKeyWindow == true) && DateTime.UtcNow < activation)
+                NSRunLoop.Main.RunUntil(NSRunLoopMode.Default, NSDate.FromTimeIntervalSinceNow(0.05));
+            if (panel.Window?.CanBecomeKeyWindow != true)
+                throw new InvalidOperationException("The popover window cannot become key.");
+            if (NSApplication.SharedApplication.Active && panel.Window.IsKeyWindow != true)
+                throw new InvalidOperationException("The app is active but the opened popover is not the key window.");
+            string activationResult = NSApplication.SharedApplication.Active
+                ? "popover active/key on open"
+                : "popover activation not checked (macOS did not grant activation without a user click)";
+            // Readable tone text on the opaque background whatever the desktop behind it, in both appearances.
+            double weakest = double.MaxValue;
+            foreach (NSString name in new[] { NSAppearance.NameAqua, NSAppearance.NameDarkAqua })
+            {
+                NSAppearance appearance = NSAppearance.GetAppearance(name)
+                    ?? throw new InvalidOperationException("Missing appearance " + name);
+                if (MacControls.IsDark(appearance) != (name == NSAppearance.NameDarkAqua))
+                    throw new InvalidOperationException("Appearance detection is wrong for " + name);
+                foreach (PanelTone tone in Enum.GetValues<PanelTone>())
+                {
+                    double contrast = MacControls.Contrast(MacControls.Color(tone), MacControls.PanelBackground, appearance);
+                    weakest = Math.Min(weakest, contrast);
+                    if (contrast < 4.5)
+                        throw new InvalidOperationException($"{tone} text contrast {contrast:0.00}:1 is below 4.5:1 in {name}.");
+                }
+            }
             panel.Close();
             if (panel.IsShown) throw new InvalidOperationException("Status popover did not close.");
             StatusItemClicked(); // No current mouse event: treated as a left click.
@@ -560,7 +589,7 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
             await statisticsWindow.RefreshAsync();
             if (!statisticsWindow.Window.IsVisible)
                 throw new InvalidOperationException("Statistics window did not reopen from the menu-bar action.");
-            Console.WriteLine($"PASS: bundle version, menu-tracking countdown timer, 20pt color menu icon/1x-2x pixels, left/right/control-click routing, right-click menu, popover open/close/reopen, shared panel text/record menu/quota lines, popover size/rows ({popoverSize.Width:0}x{popoverSize.Height:0}pt), 1,000-char note limit, temporary SQLite, four events/notes via shared factory, statistics, injected quota countdown; no account/network/settings changes.");
+            Console.WriteLine($"PASS: bundle version, menu-tracking countdown timer, 20pt color menu icon/1x-2x pixels, left/right/control-click routing, right-click menu, popover open/close/reopen, shared panel text/record menu/quota lines, {activationResult}, tone contrast >= 4.5:1 light+dark (min {weakest:0.0}:1), popover size/rows/quota box fit ({popoverSize.Width:0}x{popoverSize.Height:0}pt), 1,000-char note limit, temporary SQLite, four events/notes via shared factory, statistics, injected quota countdown; no account/network/settings changes.");
             ExitCode = 0;
         }
         catch (Exception error)

@@ -48,13 +48,52 @@ internal static class MacControls
         (bold ? NSFont.BoldSystemFontOfSize(size) : NSFont.SystemFontOfSize(size)) ??
         throw new InvalidOperationException("macOS 기본 글꼴을 불러오지 못했습니다.");
 
-    // Semantic system colors follow light/dark mode; the shared model only names the tone.
+    // Opaque popover background: white in light mode, the system dark control color in dark mode.
+    // A translucent popover lets a bright desktop wash out colored text behind it.
+    internal static NSColor PanelBackground => NSColor.ControlBackground;
+
+    // Tone colors are named light/dark pairs in Assets.xcassets (Tone*.colorset), chosen for at least
+    // 4.5:1 contrast on PanelBackground in both appearances; the bright system green/orange are only
+    // about 2:1 on white. The shared model only names the tone.
     internal static NSColor Color(PanelTone tone) => tone switch
     {
-        PanelTone.Good => NSColor.SystemGreen,
-        PanelTone.Caution => NSColor.SystemOrange,
-        PanelTone.Danger => NSColor.SystemRed,
-        PanelTone.Muted => NSColor.SecondaryLabel,
+        PanelTone.Good => Named("ToneGood"),
+        PanelTone.Caution => Named("ToneCaution"),
+        PanelTone.Danger => Named("ToneDanger"),
+        PanelTone.Muted => Named("ToneMuted"),
         _ => NSColor.Label
     };
+
+    private static readonly Dictionary<string, NSColor> named = [];
+
+    private static NSColor Named(string name)
+    {
+        if (!named.TryGetValue(name, out NSColor? color))
+            named[name] = color = NSColor.FromName(name) ??
+                throw new InvalidOperationException($"Asset catalog color {name} is missing from the bundle.");
+        return color;
+    }
+
+    // WCAG contrast ratio of two colors as drawn under the given appearance (native smoke check).
+    internal static double Contrast(NSColor foreground, NSColor background, NSAppearance appearance)
+    {
+        double a = 0, b = 0;
+        appearance.PerformAsCurrentDrawingAppearance(() =>
+        {
+            a = Luminance(foreground);
+            b = Luminance(background);
+        });
+        return (Math.Max(a, b) + 0.05) / (Math.Min(a, b) + 0.05);
+    }
+
+    private static double Luminance(NSColor color)
+    {
+        NSColor srgb = color.UsingColorSpace(NSColorSpace.SRGBColorSpace) ??
+            throw new InvalidOperationException("Color has no sRGB representation.");
+        static double Linear(double v) => v <= 0.03928 ? v / 12.92 : Math.Pow((v + 0.055) / 1.055, 2.4);
+        return 0.2126 * Linear(srgb.RedComponent) + 0.7152 * Linear(srgb.GreenComponent) + 0.0722 * Linear(srgb.BlueComponent);
+    }
+
+    internal static bool IsDark(NSAppearance appearance) =>
+        appearance.FindBestMatch([NSAppearance.NameAqua, NSAppearance.NameDarkAqua]) == NSAppearance.NameDarkAqua.ToString();
 }
