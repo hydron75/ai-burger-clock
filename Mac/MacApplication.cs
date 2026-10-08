@@ -567,6 +567,11 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
             if (!MacStatisticsWindow.FormatRows(report.Providers).Contains("n=4", StringComparison.Ordinal) ||
                 !MacStatisticsWindow.FormatRows(report.Hours).Contains("No data", StringComparison.Ordinal))
                 throw new InvalidOperationException("Statistics sample sizes/No data were not rendered.");
+            // Shared statistics text; the empty state names the Mac way to record (card right-click).
+            if (MacStatisticsWindow.SummaryFor(0, "No data", 0) !=
+                "직접 기록한 표본 n = 0 · 정책: No data\nNo data · " + MacStatisticsWindow.HowToRecord ||
+                !MacStatisticsWindow.HowToRecord.Contains("오른쪽 클릭", StringComparison.Ordinal))
+                throw new InvalidOperationException("Statistics empty-state text is wrong.");
             QuotaState quota = new(QuotaProvider.Codex, new(QuotaProvider.Codex,
                 [new("session", "5시간", 100, now.AddMinutes(15), 300),
                  new("weekly", "주간", 9, now.AddDays(6), 10080)]),
@@ -605,6 +610,9 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
             await statisticsWindow!.RefreshAsync();
             if (!statisticsWindow.Window.IsVisible || statisticsWindow.Window.DangerousReleasedWhenClosed)
                 throw new InvalidOperationException("Statistics window is not visible/retained.");
+            if (!statisticsWindow.SummaryText.StartsWith("직접 기록한 표본 n = 4 · 정책: ", StringComparison.Ordinal) ||
+                statisticsWindow.SummaryText.Contains('\n') || !statisticsWindow.ExplanationFits())
+                throw new InvalidOperationException("Statistics summary/explanation did not use the shared text or fit.");
             statisticsWindow.Window.Close();
             if (statisticsWindow.Window.IsVisible)
                 throw new InvalidOperationException("Statistics window did not close.");
@@ -612,7 +620,7 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
             await statisticsWindow.RefreshAsync();
             if (!statisticsWindow.Window.IsVisible)
                 throw new InvalidOperationException("Statistics window did not reopen from the menu-bar action.");
-            Console.WriteLine($"PASS: bundle version, menu-tracking countdown timer, 20pt menu icon white/dark disc + color glyph light/dark 1x-2x pixels (glyph contrast min {iconContrast:0.0}:1), left/right/control-click routing, right-click menu, popover open/close/reopen, shared panel text/record menu/quota lines, {activationResult}, tone contrast >= 4.5:1 light+dark (min {weakest:0.0}:1), card text x = quota box text x ({layout.BoxTextX:0}pt; titles {layout.TitleX:0}pt), whole-card click/quota boxes read-only, popover {layout.Size.Width:0}x{layout.Size.Height:0}pt (this screen usable {layout.UsableHeight:0}pt; 1280x800 fits; 1024x640 {small.Height:0}pt with quota area {smallQuota:0}pt scrolling), 1,000-char note limit, temporary SQLite, four events/notes via shared factory, statistics, injected quota countdown; no account/network/settings changes.");
+            Console.WriteLine($"PASS: bundle version, menu-tracking countdown timer, 20pt menu icon white/dark disc + color glyph light/dark 1x-2x pixels (glyph contrast min {iconContrast:0.0}:1), left/right/control-click routing, right-click menu, popover open/close/reopen, shared panel text/record menu/quota lines, {activationResult}, tone contrast >= 4.5:1 light+dark (min {weakest:0.0}:1), card text x = quota box text x ({layout.BoxTextX:0}pt; titles {layout.TitleX:0}pt), whole-card click/quota boxes read-only, popover {layout.Size.Width:0}x{layout.Size.Height:0}pt (this screen usable {layout.UsableHeight:0}pt; 1280x800 fits; 1024x640 {small.Height:0}pt with quota area {smallQuota:0}pt scrolling), 1,000-char note limit, temporary SQLite, four events/notes via shared factory, statistics (shared text, explanation fits, Mac empty-state hint), injected quota countdown; no account/network/settings changes.");
             ExitCode = 0;
         }
         catch (Exception error)

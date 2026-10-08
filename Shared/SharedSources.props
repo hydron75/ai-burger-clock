@@ -19,6 +19,7 @@
     <Compile Include="$(MSBuildThisFileDirectory)../NetworkRefreshScheduler.cs" Link="Shared/NetworkRefreshScheduler.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)../TrayPresentation.cs" Link="Shared/TrayPresentation.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)../StatisticsAnalysis.cs" Link="Shared/StatisticsAnalysis.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)../StatisticsText.cs" Link="Shared/StatisticsText.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)../DisplayFormatting.cs" Link="Shared/DisplayFormatting.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)../ProviderNames.cs" Link="Shared/ProviderNames.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)../StatusPanelModel.cs" Link="Shared/StatusPanelModel.cs" />
