@@ -144,7 +144,18 @@ internal static class PanelModelTests
         same(unknown.Heading, "Gemini   BURGER + CHECK", "unchecked heading during BURGER TIME");
         same(unknown.Official, "Official: UNKNOWN · 확인 불가", "unchecked official line");
         same(unknown.Detail, "클릭: 공식 상태 페이지 열기 · 우클릭: 사용 경험 기록\n아직 확인하지 않음\n최근 조회 시도: 없음\n" +
-            "마지막 상태 확인 성공: 없음\n관련: \n사건: \n사건 ID: \n마지막 알려진 상태: \n", "unchecked card detail");
+            "마지막 상태 확인 성공: 없음", "unchecked card detail has no empty optional fields");
+
+        // Only the supplied optional fields appear; blank values never leave a bare label.
+        var partial = StatusPanelModel.Card(new ProviderStatus(ProviderKind.Claude, OfficialStatus.Operational,
+            At("2026-06-16T05:00:10Z"), At("2026-06-16T05:00:10Z"), "관련 서비스 정상", "Claude API", "", "  ",
+            "https://status.claude.com"), AgentState.FullThrottle);
+        same(partial.Detail, "클릭: 공식 상태 페이지 열기 · 우클릭: 사용 경험 기록\n관련 서비스 정상\n최근 조회 시도: 06-16 14:00:10 KST\n" +
+            "마지막 상태 확인 성공: 06-16 14:00:10 KST\n관련: Claude API\nhttps://status.claude.com", "partial optional fields");
+        var lastKnownOnly = StatusPanelModel.Card(ProviderStatus.Unknown(ProviderKind.OpenAI) with
+            { Status = OfficialStatus.Stale, LastKnownStatus = OfficialStatus.Degraded }, AgentState.FullThrottle);
+        check(lastKnownOnly.Detail.EndsWith("\n마지막 알려진 상태: Degraded", StringComparison.Ordinal) &&
+            !lastKnownOnly.Detail.Contains("관련:", StringComparison.Ordinal), "last known status alone");
 
         var states = new[] { ProviderStatus.Unknown(ProviderKind.Gemini), ProviderStatus.Unknown(ProviderKind.OpenAI) };
         var cards = StatusPanelModel.Cards(states, AgentState.FullThrottle);
