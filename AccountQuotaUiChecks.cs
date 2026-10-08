@@ -1,4 +1,5 @@
 using Microsoft.Win32;
+using System.Globalization;
 
 namespace AiBurgerClock;
 
@@ -56,6 +57,11 @@ internal static class AccountQuotaUiChecks
         var scope = labels.Single(l => l.Text == "Work/Codex");
         Check(scope.Top >= chatGptHeading.Bottom && labels.Any(l => l.Top >= scope.Bottom && l.Text.StartsWith("5시간", StringComparison.Ordinal)),
             "ChatGPT quota heading has Work/Codex on a separate line above its limits");
+        Check(chatGptHeading.ForeColor == SystemColors.ControlText && scope.ForeColor == Color.DimGray,
+            "Shared Normal and Muted quota tones retain Windows heading and scope colors");
+        Check(labels.Single(l => l.Text.StartsWith("5시간  82%", StringComparison.Ordinal)).ForeColor == Color.FromArgb(25, 115, 75) &&
+            labels.Single(l => l.Text.StartsWith("주간  8%", StringComparison.Ordinal)).ForeColor == Color.DarkOrange,
+            "Shared Good and Caution quota tones retain Windows remaining-balance colors");
         Check(labels.All(l => l.Bottom <= context.StatusWindow.QuotaView.ClientSize.Height) &&
             !context.StatusWindow.QuotaView.VerticalScroll.Visible,
             "Standard Codex two-window and Claude three-window quotas fit the existing panel without scrolling");
@@ -74,6 +80,8 @@ internal static class AccountQuotaUiChecks
             !monitor.Snapshot().Single(s => s.Provider == QuotaProvider.Codex).IsPrevious, "One failed account keeps its previous values without downgrading the other account");
         Check(context.StatusWindow.QuotaView.Controls.OfType<Label>().Any(l => l.Text.Contains("Claude · 이전 조회값")),
             "Failed refresh explicitly labels the old quota instead of inventing zero or full balance");
+        Check(context.StatusWindow.QuotaView.Controls.OfType<Label>().Single(l => l.Text.StartsWith("5시간  100% (이전)", StringComparison.Ordinal)).ForeColor == Color.DimGray,
+            "Previous quota values keep the Windows muted color");
         SmokeTest.RenderAndCheckLayout(context.StatusWindow, "account-quotas-previous.png", reportDirectory);
         client.FailClaude = false;
 
@@ -91,12 +99,16 @@ internal static class AccountQuotaUiChecks
         context.StatusWindow.UpdateQuotas([expired], clock());
         Check(context.StatusWindow.QuotaView.Controls.OfType<Label>().Any(l => l.Text.Contains("3% (이전)") && l.Text.Contains("갱신 대기")),
             "Elapsed reset countdown preserves observed balance until a new result arrives");
+        Check(context.StatusWindow.QuotaView.Controls.OfType<Label>().Single(l => l.Text.Contains("3% (이전)")).ForeColor == Color.DimGray,
+            "Elapsed reset quota rows use the shared Muted tone with the Windows palette");
         var exhausted = new QuotaState(QuotaProvider.Claude, new(QuotaProvider.Claude,
             [new("weekly", "주간", 100, clock().AddDays(1), 10080)]),
             LastSuccessfulCheckUtc: clock(), NextCheckUtc: clock().AddMinutes(15));
         context.StatusWindow.UpdateQuotas([exhausted], clock());
         Check(context.StatusWindow.QuotaView.Controls.OfType<Label>().Any(l => l.Text.Contains("주간  0% 남음")),
             "Exhausted quota remains zero instead of inventing credit-based recovery");
+        Check(context.StatusWindow.QuotaView.Controls.OfType<Label>().Single(l => l.Text.StartsWith("주간  0% 남음", StringComparison.Ordinal)).ForeColor == Color.Firebrick,
+            "Exhausted quota rows retain the Windows Danger color");
         string nextExhaustedCheck = AgentSchedule.ToKst(exhausted.NextCheckUtc!.Value).ToString("MM-dd HH:mm");
         Check(context.StatusWindow.QuotaView.Controls.OfType<Label>().Any(l => l.Text.Contains("다음 " + nextExhaustedCheck)),
             "Quota metadata displays the exhausted provider's next 15m check");
@@ -116,6 +128,25 @@ internal static class AccountQuotaUiChecks
         Check(context.StatusWindow.QuotaView.Controls.OfType<Label>().Any(l => l.Text == "ChatGPT · 확인 중") &&
             context.StatusWindow.QuotaView.Controls.OfType<Label>().Any(l => l.Text == "Work/Codex"),
             "Refreshing Codex values keep the ChatGPT heading and Work/Codex scope");
+
+        context.StatusWindow.UpdateQuotas([previousCodex with { CacheError = "Synthetic cache error" }], clock());
+        Check(context.StatusWindow.QuotaView.Controls.OfType<Label>().Single(l => l.Text.StartsWith("성공 ", StringComparison.Ordinal)).ForeColor == Color.Firebrick,
+            "Shared cache-error metadata keeps the Windows Danger color");
+        context.StatusWindow.UpdateQuotas([new QuotaState(QuotaProvider.Claude)], clock());
+        Check(context.StatusWindow.QuotaView.Controls.OfType<Label>().Single(l => l.Text == "한도 조회 대기 · 공식 CLI 로그인 필요").ForeColor == Color.DimGray,
+            "Shared pre-reading placeholder keeps its text and Windows muted color");
+
+        var culture = CultureInfo.CurrentCulture;
+        try
+        {
+            CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("de-DE");
+            context.StatusWindow.UpdateQuotas([new QuotaState(QuotaProvider.Claude,
+                new QuotaReading(QuotaProvider.Claude, [new QuotaWindow("culture", "주간", 12.34, null)]))], clock());
+            var cultureRow = context.StatusWindow.QuotaView.Controls.OfType<Label>().Single(l => l.Text.StartsWith("주간  ", StringComparison.Ordinal));
+            Check(cultureRow.Text.Contains("87.7%") && cultureRow.AccessibleDescription?.Contains("사용 12.3% / 잔여 87.7%") == true,
+                "Windows quota row and tooltip use the shared invariant percentage format in de-DE");
+        }
+        finally { CultureInfo.CurrentCulture = culture; }
         context.RefreshStatus(false);
     }
 }

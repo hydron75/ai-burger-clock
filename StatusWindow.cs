@@ -12,7 +12,7 @@ internal sealed class StatusWindow : Form
     private readonly Button quotaButton;
     private readonly AccountQuotaView quotaView;
     private readonly List<Panel> statusPanels = new();
-    private string statusCaption = "공식 상태 갱신 대기";
+    private string statusCaption = StatusPanelModel.WaitingCaption;
     private readonly CheckBox autoStartCheckBox;
     private readonly CheckBox holidayCheckBox;
     private readonly ToolTip details = new() { AutoPopDelay = 25000 };
@@ -47,7 +47,7 @@ internal sealed class StatusWindow : Form
         BackColor = Color.FromArgb(248, 249, 250);
         Font = OwnedFont(9F);
 
-        AddLabel("AI AGENT TRAFFIC", 16, 10, 342, 18, 9F, FontStyle.Bold);
+        AddLabel(StatusPanelModel.Title, 16, 10, 342, 18, 9F, FontStyle.Bold);
         stateLabel = AddLabel("", 14, 31, 345, 36, 18F, FontStyle.Bold);
         countdownLabel = AddLabel("", 16, 73, 342, 24, 12F);
         nextLabel = AddLabel("", 17, 101, 342, 19, 9F);
@@ -75,23 +75,23 @@ internal sealed class StatusWindow : Form
         }
         quotaView = new AccountQuotaView { Location = new Point(16, 146), Size = new Size(342, 214), Visible = false };
         Controls.Add(quotaView);
-        checkedLabel = AddLabel("공식 상태 갱신 대기", 17, 366, 342, 35, 8.5F);
+        checkedLabel = AddLabel(StatusPanelModel.WaitingCaption, 17, 366, 342, 35, 8.5F);
         refreshButton = new Button { Text = "Refresh", Location = new Point(16, 407), Size = new Size(106, 28) };
         refreshButton.Click += (_, _) => RefreshRequested?.Invoke(this, EventArgs.Empty);
         var statisticsButton = new Button { Text = "Statistics", Location = new Point(130, 407), Size = new Size(106, 28) };
         statisticsButton.Click += (_, _) => StatisticsRequested?.Invoke(this, EventArgs.Empty);
         Controls.Add(refreshButton);
         Controls.Add(statisticsButton);
-        quotaButton = new Button { Text = "한도 보기", Location = new Point(244, 407), Size = new Size(114, 28) };
+        quotaButton = new Button { Text = QuotaPanelModel.ShowQuotas, Location = new Point(244, 407), Size = new Size(114, 28) };
         quotaButton.Click += (_, _) =>
         {
             quotaView.Visible = !quotaView.Visible;
             foreach (var panel in statusPanels) panel.Visible = !quotaView.Visible;
-            quotaButton.Text = quotaView.Visible ? "상태 보기" : "한도 보기";
+            quotaButton.Text = quotaView.Visible ? QuotaPanelModel.ShowStatus : QuotaPanelModel.ShowQuotas;
             SetQuotaCaption();
         };
         Controls.Add(quotaButton);
-        details.SetToolTip(quotaButton, "ChatGPT (Work/Codex) · Claude 개인 계정 한도. Gemini의 공식 서비스 상태는 그대로 유지합니다.");
+        details.SetToolTip(quotaButton, QuotaPanelModel.ToggleDetail);
         feedbackLabel = AddLabel(DefaultFeedback, 17, 442, 342, 19, 8.5F);
         feedbackLabel.AutoEllipsis = true;
         autoStartCheckBox = new CheckBox { AutoSize = true, Text = "Windows 시작 시 자동 실행", Location = new Point(17, 466) };
@@ -100,12 +100,12 @@ internal sealed class StatusWindow : Form
             if (!updatingAutoStart) AutoStartChanged?.Invoke(this, EventArgs.Empty);
         };
         Controls.Add(autoStartCheckBox);
-        holidayCheckBox = new CheckBox { AutoSize = true, Text = "미국 연방 공휴일 보정", Location = new Point(17, 492), Enabled = false };
+        holidayCheckBox = new CheckBox { AutoSize = true, Text = StatusPanelModel.HolidayOption, Location = new Point(17, 492), Enabled = false };
         holidayCheckBox.CheckedChanged += (_, _) =>
         {
             if (!updatingHoliday) HolidayAdjustmentChanged?.Invoke(this, EventArgs.Empty);
         };
-        details.SetToolTip(holidayCheckBox, "미국 연방 정기 공휴일·대체휴일의 업무 구간을 제외합니다.\n기업 휴무나 실제 서비스 품질을 보장하지 않는 시간표 정책입니다.");
+        details.SetToolTip(holidayCheckBox, StatusPanelModel.HolidayOptionDetail);
         Controls.Add(holidayCheckBox);
         Deactivate += (_, _) =>
         {
@@ -189,48 +189,35 @@ internal sealed class StatusWindow : Form
 
     public void UpdateStatus(ScheduleSnapshot snapshot)
     {
-        stateLabel.Text = "●  " + TrayPresentation.StateName(snapshot.State);
-        stateLabel.ForeColor = TrayPresentation.StateColor(snapshot.State);
-        countdownLabel.Text = "전환까지  " + FormatRemaining(snapshot.Remaining);
-        string extended = (snapshot.IsWeekendExtendedFullThrottle, snapshot.IsHolidayExtendedFullThrottle) switch
-        {
-            (true, true) => " · 주말+공휴일",
-            (true, false) => " · Weekend",
-            (false, true) => " · 공휴일",
-            _ => ""
-        };
-        nextLabel.Text = $"다음: {snapshot.NextTransitionKst:ddd HH:mm} KST" + extended;
-        SetDetail(nextLabel, $"다음 전환: {snapshot.NextTransitionKst:yyyy-MM-dd HH:mm:ss} KST\n공휴일 보정: {(snapshot.HolidayAdjustmentEnabled ? "켜짐" : "꺼짐")}\n연장에 반영된 공휴일: {snapshot.HolidayNames}\n주말 여부와 공휴일 연장은 독립적으로 기록됩니다.");
-        string mode = snapshot.EasternIsDst == snapshot.PacificIsDst ? (snapshot.EasternIsDst ? "DST" : "Standard") : "Mixed DST";
-        timeZoneLabel.Text = $"US: {mode} · ET {Offset(snapshot.EasternUtcOffsetMinutes)} / PT {Offset(snapshot.PacificUtcOffsetMinutes)}";
-        SetDetail(timeZoneLabel, $"Eastern: {snapshot.EasternLocalTime:yyyy-MM-dd HH:mm zzz}\nPacific: {snapshot.PacificLocalTime:yyyy-MM-dd HH:mm zzz}\n정책: {snapshot.SchedulePolicyVersion}");
+        var text = StatusPanelModel.Schedule(snapshot);
+        stateLabel.Text = text.State;
+        stateLabel.ForeColor = text.StateTone == PanelTone.Good ? Color.FromArgb(25, 145, 78) : Color.FromArgb(211, 61, 55);
+        countdownLabel.Text = text.Countdown;
+        nextLabel.Text = text.Next;
+        SetDetail(nextLabel, text.NextDetail);
+        timeZoneLabel.Text = text.TimeZone;
+        SetDetail(timeZoneLabel, text.TimeZoneDetail);
     }
 
     public void UpdateProviders(IReadOnlyList<ProviderStatus> states, ScheduleSnapshot schedule, bool refreshing,
         DateTimeOffset? nextRefreshUtc, string storageError = "")
     {
-        foreach (var status in states)
+        foreach (var card in StatusPanelModel.Cards(states, schedule.State))
         {
-            var row = rows[status.Provider];
-            var recommendation = RecommendationPolicy.Calculate(schedule.State, status.Status);
-            row.Heading.Text = WindowsProviderNames.Provider(status.Provider) + "   " + RecommendationPolicy.Label(recommendation);
-            row.Heading.ForeColor = recommendation switch
+            var row = rows[card.Provider];
+            row.Heading.Text = card.Heading;
+            row.Heading.ForeColor = card.HeadingTone switch
             {
-                Recommendation.Go => Color.FromArgb(25, 145, 78),
-                Recommendation.Stop or Recommendation.BurgerServiceIssue => Color.FromArgb(195, 50, 45),
-                Recommendation.Hold or Recommendation.BurgerTime => Color.FromArgb(160, 99, 20),
+                PanelTone.Good => Color.FromArgb(25, 145, 78),
+                PanelTone.Danger => Color.FromArgb(195, 50, 45),
+                PanelTone.Caution => Color.FromArgb(160, 99, 20),
                 _ => Color.DimGray
             };
-            row.Official.Text = "Official: " + RecommendationPolicy.OfficialLabel(status.Status);
-            row.Reason.Text = status.Reason;
-            string success = status.LastSuccessfulCheckUtc is { } time ? AgentSchedule.ToKst(time).ToString("MM-dd HH:mm:ss") + " KST" : "없음";
-            string attempted = status.CheckedAtUtc == DateTimeOffset.MinValue ? "없음" : AgentSchedule.ToKst(status.CheckedAtUtc).ToString("MM-dd HH:mm:ss") + " KST";
-            string detail = $"클릭: 공식 상태 페이지 열기 · 우클릭: 사용 경험 기록\n{status.Reason}\n최근 조회 시도: {attempted}\n마지막 상태 확인 성공: {success}\n관련: {status.RelevantComponent}\n사건: {status.IncidentTitle}\n사건 ID: {status.IncidentId}\n마지막 알려진 상태: {status.LastKnownStatus}\n{status.Source}";
-            foreach (var label in new[] { row.Heading, row.Official, row.Reason }) SetDetail(label, detail);
+            row.Official.Text = card.Official;
+            row.Reason.Text = card.Reason;
+            foreach (var label in new[] { row.Heading, row.Official, row.Reason }) SetDetail(label, card.Detail);
         }
-        var last = states.Select(s => s.CheckedAtUtc).DefaultIfEmpty(DateTimeOffset.MinValue).Max();
-        statusCaption = (last == DateTimeOffset.MinValue ? "최근 조회 시도: —" : $"최근 조회 시도: {AgentSchedule.ToKst(last):HH:mm:ss} KST") +
-            "\n" + (refreshing ? "공식 상태 확인 중…" : nextRefreshUtc is { } next ? $"다음 조회: {AgentSchedule.ToKst(next):HH:mm:ss} KST" : "다음 조회: —");
+        statusCaption = StatusPanelModel.CheckedCaption(states, refreshing, nextRefreshUtc);
         refreshButton.Enabled = !refreshing;
         SetQuotaCaption();
         // Called every second: show a storage error only when it changes, so it does not
@@ -255,8 +242,7 @@ internal sealed class StatusWindow : Form
 
     private void SetQuotaCaption()
     {
-        checkedLabel.Text = quotaButton.Text == "상태 보기"
-            ? "잔여량 = 100 − 사용률 · 시각은 KST\n마우스 올리기: 상세 · Refresh: 다시 조회" : statusCaption;
+        checkedLabel.Text = quotaButton.Text == QuotaPanelModel.ShowStatus ? QuotaPanelModel.Caption : statusCaption;
     }
 
     // A modal message owned by this window deactivates it; keep it visible meanwhile.
@@ -289,7 +275,6 @@ internal sealed class StatusWindow : Form
         Activate();
     }
 
-    private static string Offset(int minutes) => DisplayFormatting.Offset(minutes);
     internal static string FormatRemaining(TimeSpan remaining) => DisplayFormatting.FormatRemaining(remaining);
 
     protected override void Dispose(bool disposing)
