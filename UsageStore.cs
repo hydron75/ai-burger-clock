@@ -18,7 +18,7 @@ internal sealed class UsageStore(string? databasePath = null)
     public Task InitializeAsync(CancellationToken cancellationToken = default) =>
         ExecuteAsync(_ => true, cancellationToken);
 
-    // Two bounded cache entries in existing metadata; no measurement/history schema changes.
+    // One bounded cache entry per provider; no measurement/history schema changes.
     internal Task SaveQuotaAsync(QuotaCache cache, CancellationToken cancellationToken = default) =>
         ExecuteAsync(connection =>
         {

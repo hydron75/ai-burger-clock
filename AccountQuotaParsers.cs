@@ -72,6 +72,58 @@ internal static class AccountQuotaParsers
         return new QuotaReading(QuotaProvider.Codex, windows.AsReadOnly());
     });
 
+    // This is command.data from agy's local /usage response, not Gemini Apps quotas.
+    // The client verifies the outer command, zero model activity and empty conversation first.
+    public static QuotaReading ParseGemini(string commandDataJson) => Parse(commandDataJson, root =>
+    {
+        RequireObject(root);
+        if (!root.TryGetProperty("groups", out JsonElement groups) || groups.ValueKind != JsonValueKind.Array
+            || groups.GetArrayLength() is 0 or > MaximumWindows)
+            throw Invalid();
+
+        List<QuotaWindow> windows = [];
+        HashSet<string> ids = new(StringComparer.Ordinal);
+        bool foundGemini = false;
+        foreach (JsonElement group in groups.EnumerateArray())
+        {
+            RequireObject(group);
+            if (RequiredString(group, "name") != "Gemini Models") continue;
+            if (foundGemini) throw Invalid();
+            foundGemini = true;
+            if (!group.TryGetProperty("buckets", out JsonElement buckets) || buckets.ValueKind != JsonValueKind.Array
+                || buckets.GetArrayLength() is 0 or > MaximumWindows)
+                throw Invalid();
+
+            foreach (JsonElement bucket in buckets.EnumerateArray())
+            {
+                RequireObject(bucket);
+                string id = RequiredString(bucket, "id");
+                string slot = RequiredString(bucket, "window");
+                (string Label, int Minutes) window = (id, slot) switch
+                {
+                    ("gemini-5h", "5h") => ("5시간", 300),
+                    ("gemini-weekly", "weekly") => ("주간", 10080),
+                    // Unknown Gemini buckets may be binding limits; never silently omit them.
+                    _ => throw Invalid()
+                };
+                if (!ids.Add(id)) throw Invalid();
+                if (!bucket.TryGetProperty("remaining_fraction", out JsonElement value)
+                    || value.ValueKind != JsonValueKind.Number || !value.TryGetDouble(out double fraction)
+                    || !double.IsFinite(fraction) || fraction is < 0 or > 1)
+                    throw Invalid();
+                double used = 100 - fraction * 100;
+                // Subtracting an extremely small positive fraction can round to 100.
+                // Only a raw zero fraction is exhaustion, never rounding during conversion.
+                if (fraction > 0 && used == 100) used = Math.BitDecrement(100.0);
+                windows.Add(new QuotaWindow(id, window.Label, used,
+                    IsoReset(bucket, "reset_time"), window.Minutes));
+            }
+        }
+        if (!foundGemini) throw Invalid();
+        windows.Sort((left, right) => Nullable.Compare(left.WindowMinutes, right.WindowMinutes));
+        return new QuotaReading(QuotaProvider.Gemini, windows.AsReadOnly());
+    });
+
     private static void ParseCodexBucket(JsonElement bucket, string bucketId, List<QuotaWindow> windows)
     {
         RequireObject(bucket);

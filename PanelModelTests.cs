@@ -46,6 +46,7 @@ internal static class PanelModelTests
         same(ProviderNames.Provider("Unlisted"), "Unlisted", "unknown stored value is shown unchanged");
         same(ProviderNames.Quota(QuotaProvider.Codex), "ChatGPT", "Codex quota heading");
         same(ProviderNames.Quota(QuotaProvider.Claude), "Claude", "Claude quota heading");
+        same(ProviderNames.Quota(QuotaProvider.Gemini), "Gemini", "Gemini quota heading");
         check(QuotaNames.For(QuotaProvider.Codex) == "Work / Codex", "quota identity names stay unchanged");
     }
 
@@ -243,6 +244,29 @@ internal static class PanelModelTests
 
         var sections = QuotaPanelModel.Sections([claude, codex], now);
         check(sections.Select(s => s.Provider).SequenceEqual([QuotaProvider.Claude, QuotaProvider.Codex]), "sections keep the monitor's order");
+
+        var gemini = new QuotaState(QuotaProvider.Gemini, new(QuotaProvider.Gemini,
+            [new("gemini-5h", "5시간", 2.012, now.AddHours(2), 300),
+             new("gemini-weekly", "주간", 0.335, now.AddDays(6), 10080)]),
+            CheckedAtUtc: now, LastSuccessfulCheckUtc: now, NextCheckUtc: now.AddHours(6));
+        var geminiSection = QuotaPanelModel.Section(gemini, now);
+        same(geminiSection.Heading.Text, "Gemini", "Gemini keeps its product heading");
+        same(geminiSection.Scope!.Text, "Antigravity · Gemini 모델", "Gemini quota scope is explicit");
+        check(geminiSection.Scope.Tone == PanelTone.Muted && geminiSection.Scope.Detail.Contains("Gemini Apps") &&
+            geminiSection.Scope.Detail.Contains("Claude/GPT"), "Gemini scope does not imply web Apps or third-party subscription limits");
+        same(geminiSection.Rows[0].Text, "5시간  98% 남음 · 02:00:00", "Gemini five-hour countdown");
+        same(geminiSection.Rows[1].Text, "주간  99.7% 남음 · 6일 00:00", "Gemini weekly fraction is not the rounded TSV value");
+        check(geminiSection.Rows.All(row => row.Tone == PanelTone.Good), "Gemini uses existing quota tones");
+        check(geminiSection.Rows[0].Detail.Contains("Gemini (Antigravity)") &&
+            geminiSection.Rows[0].Detail.Contains("서버 데이터 생성 시각을 보장하지 않습니다"), "Gemini details preserve freshness qualification");
+        same(QuotaPanelModel.Section(new QuotaState(QuotaProvider.Gemini), now).Rows[0].Text,
+            "한도 조회 대기 · agy CLI 로그인 필요", "Gemini placeholder identifies agy");
+        var oldGemini = QuotaPanelModel.Section(gemini with { IsPrevious = true }, now);
+        same(oldGemini.Heading.Text, "Gemini · 이전 조회값", "failed Gemini quota is explicitly previous");
+        check(oldGemini.Rows.All(row => row.Tone == PanelTone.Muted) && oldGemini.Scope!.Text == geminiSection.Scope.Text,
+            "previous Gemini values retain scope and muted tones");
+        check(QuotaPanelModel.Sections([codex, claude, gemini], now).Count == 3,
+            "all three quota sections are available without replacing health data");
     }
 
     // Hosts run in the user's culture: day names follow it, percentages never do.

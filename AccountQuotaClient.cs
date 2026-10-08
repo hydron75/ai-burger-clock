@@ -11,7 +11,8 @@ internal sealed class AccountQuotaClient(
     string? codexExecutable = null,
     string? claudeExecutable = null,
     string? workingDirectory = null,
-    TimeSpan? timeout = null) : IAccountQuotaClient
+    TimeSpan? timeout = null,
+    string? geminiExecutable = null) : IAccountQuotaClient
 {
     internal const int MaximumOutputCharacters = 2 * 1024 * 1024;
     internal const int MaximumLineCharacters = 512 * 1024;
@@ -24,6 +25,7 @@ internal sealed class AccountQuotaClient(
         {
             QuotaProvider.Codex => codexExecutable ?? FindExecutable(provider),
             QuotaProvider.Claude => claudeExecutable ?? FindExecutable(provider),
+            QuotaProvider.Gemini => geminiExecutable ?? FindExecutable(provider),
             _ => throw new ArgumentOutOfRangeException(nameof(provider))
         };
         // Absolute paths and ArgumentList avoid shell interpretation and CWD lookup.
@@ -35,6 +37,10 @@ internal sealed class AccountQuotaClient(
         Directory.CreateDirectory(directory);
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         deadline.CancelAfter(commandTimeout);
+        // An older/incompatible CLI may treat an unknown slash command as model input.
+        // Only the separately verified 1.3.1 contract is enabled; never auto-upgrade it.
+        if (provider == QuotaProvider.Gemini)
+            await VerifyGeminiVersionAsync(executable, directory, deadline.Token, cancellationToken).ConfigureAwait(false);
         using var process = new Process { StartInfo = CreateStartInfo(provider, executable, directory) };
         Task? stderr = null;
         Task<QuotaReading>? stdout = null;
@@ -43,11 +49,16 @@ internal sealed class AccountQuotaClient(
         {
             if (!process.Start()) throw new InvalidOperationException("공식 CLI를 시작하지 못했습니다.");
             started = true;
-            stderr = DrainErrorAsync(process.StandardError, deadline.Token);
+            stderr = DrainErrorAsync(process.StandardError, deadline.Token, provider == QuotaProvider.Gemini);
             if (provider == QuotaProvider.Claude)
             {
                 process.StandardInput.Close();
                 stdout = ReadClaudeProtocolAsync(process.StandardOutput, deadline.Token);
+            }
+            else if (provider == QuotaProvider.Gemini)
+            {
+                process.StandardInput.Close();
+                stdout = ReadGeminiProtocolAsync(process.StandardOutput, deadline.Token);
             }
             else
             {
@@ -59,11 +70,11 @@ internal sealed class AccountQuotaClient(
             if (first == stderr) await stderr.ConfigureAwait(false);
             QuotaReading reading = await stdout.ConfigureAwait(false);
             if (stderr.IsFaulted) await stderr.ConfigureAwait(false);
-            if (provider == QuotaProvider.Claude)
+            if (provider != QuotaProvider.Codex)
             {
                 await process.WaitForExitAsync(deadline.Token).ConfigureAwait(false);
                 await stderr.ConfigureAwait(false);
-                if (process.ExitCode != 0) throw new InvalidDataException("Claude CLI 한도 조회가 실패했습니다.");
+                if (process.ExitCode != 0) throw new InvalidDataException("공식 CLI 한도 조회가 실패했습니다.");
             }
             cancellationToken.ThrowIfCancellationRequested();
             return reading;
@@ -139,6 +150,15 @@ internal sealed class AccountQuotaClient(
             // valid quota rows without it (2026-09-30 guarded A/B). Respect any
             // existing user environment instead of changing its persistent settings.
         }
+        else if (provider == QuotaProvider.Gemini)
+        {
+            foreach (string argument in new[] { "-p", "/usage", "--output-format", "json", "--print-timeout", "20s" })
+                start.ArgumentList.Add(argument);
+            start.Environment["AGY_CLI_DISABLE_AUTO_UPDATE"] = "true";
+            // 1.3.1 has no official per-invocation user hooks/MCP exclusion switch.
+            // The user accepted that limitation (2026-10-08). No bypass, remote
+            // control, resume, login, or slash-command-disabling flag is used.
+        }
         else throw new ArgumentOutOfRangeException(nameof(provider));
         if (OperatingSystem.IsMacOS())
         {
@@ -151,6 +171,60 @@ internal sealed class AccountQuotaClient(
             start.Environment["PATH"] = string.Join(Path.PathSeparator, directories.Distinct(StringComparer.Ordinal));
         }
         return start;
+    }
+
+    internal static bool IsSupportedGeminiVersion(string text) => text.Trim() == "1.3.1";
+
+    private static async Task VerifyGeminiVersionAsync(string executable, string directory,
+        CancellationToken token, CancellationToken callerToken)
+    {
+        using var versionLifetime = CancellationTokenSource.CreateLinkedTokenSource(token);
+        var start = CreateStartInfo(QuotaProvider.Gemini, executable, directory);
+        start.ArgumentList.Clear();
+        start.ArgumentList.Add("--version");
+        using var process = new Process { StartInfo = start };
+        Task<string>? output = null;
+        Task? error = null;
+        bool started = false;
+        try
+        {
+            if (!process.Start()) throw new InvalidOperationException("agy CLI를 시작하지 못했습니다.");
+            started = true;
+            process.StandardInput.Close();
+            output = ReadGeminiOutputAsync(process.StandardOutput, versionLifetime.Token);
+            error = DrainErrorAsync(process.StandardError, versionLifetime.Token, stopOnAuthentication: true);
+            Task first = await Task.WhenAny(output, error).ConfigureAwait(false);
+            if (first == error) await error.ConfigureAwait(false);
+            string version = await output.ConfigureAwait(false);
+            await process.WaitForExitAsync(versionLifetime.Token).ConfigureAwait(false);
+            await error.ConfigureAwait(false);
+            if (process.ExitCode != 0 || !IsSupportedGeminiVersion(version))
+                throw new NotSupportedException("검증된 agy CLI 1.3.1만 한도 조회에 사용합니다.");
+        }
+        catch (OperationCanceledException) when (!callerToken.IsCancellationRequested)
+        {
+            throw new TimeoutException("agy CLI 버전 확인 시간이 초과되었습니다.");
+        }
+        catch (Win32Exception)
+        {
+            throw new InvalidOperationException("agy CLI를 실행할 수 없습니다.");
+        }
+        finally
+        {
+            versionLifetime.Cancel();
+            if (started)
+            {
+                try { if (!process.HasExited) process.Kill(entireProcessTree: true); }
+                catch (InvalidOperationException) { }
+                catch (Win32Exception) { }
+                using var stop = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+                try { await process.WaitForExitAsync(stop.Token).ConfigureAwait(false); }
+                catch (OperationCanceledException) { }
+                catch (InvalidOperationException) { }
+            }
+            await ObserveStoppedAsync(output).ConfigureAwait(false);
+            await ObserveStoppedAsync(error).ConfigureAwait(false);
+        }
     }
 
     private static bool CanExecute(string executable)
@@ -227,6 +301,58 @@ internal sealed class AccountQuotaClient(
         throw new InvalidDataException("Codex CLI에서 구독 한도 응답을 받지 못했습니다.");
     }
 
+    internal static async Task<QuotaReading> ReadGeminiProtocolAsync(TextReader output, CancellationToken token)
+    {
+        string json = await ReadGeminiOutputAsync(output, token).ConfigureAwait(false);
+        try
+        {
+            using var document = JsonDocument.Parse(json, new JsonDocumentOptions { MaxDepth = 32 });
+            JsonElement root = document.RootElement;
+            string[] counters = ["input_tokens", "output_tokens", "thinking_tokens", "cache_read_tokens", "total_tokens"];
+            if (root.ValueKind != JsonValueKind.Object || String(root, "status") != "SUCCESS" ||
+                String(root, "conversation_id") != "" || !IsZero(root, "num_turns") ||
+                !root.TryGetProperty("usage", out var usage) || usage.ValueKind != JsonValueKind.Object ||
+                !counters.All(name => IsZero(usage, name)) || !usage.EnumerateObject().All(field => IsZero(usage, field.Name)) ||
+                !OptionalZero(root, "total_cost_usd") ||
+                !root.TryGetProperty("command", out var command) || command.ValueKind != JsonValueKind.Object ||
+                String(command, "name") != "usage" || !command.TryGetProperty("data", out var data) ||
+                data.ValueKind != JsonValueKind.Object)
+                throw new InvalidDataException("agy의 모델 호출 없는 /usage 결과를 확인하지 못했습니다.");
+            return AccountQuotaParsers.ParseGemini(data.GetRawText());
+        }
+        catch (JsonException)
+        {
+            throw new InvalidDataException("agy CLI에서 구조화된 한도 응답을 받지 못했습니다.");
+        }
+    }
+
+    // Accept a single JSON document, including pretty-printed output. Never use
+    // the human-readable TSV/prose field or report an OAuth URL/raw diagnostics.
+    private static async Task<string> ReadGeminiOutputAsync(TextReader reader, CancellationToken token)
+    {
+        var buffer = new char[4096];
+        var output = new StringBuilder();
+        string tail = "";
+        int read;
+        while ((read = await reader.ReadAsync(buffer.AsMemory(), token).ConfigureAwait(false)) != 0)
+        {
+            if (output.Length + read > MaximumOutputCharacters)
+                throw new InvalidDataException("공식 CLI 응답이 크기 제한을 초과했습니다.");
+            tail = CheckGeminiAuthentication(tail, buffer, read);
+            output.Append(buffer, 0, read);
+        }
+        return output.ToString();
+    }
+
+    private static string CheckGeminiAuthentication(string tail, char[] buffer, int count)
+    {
+        string text = tail + new string(buffer, 0, count);
+        if (new[] { "authentication required", "waiting for authentication", "could not authenticate", "sign in to continue", "accounts.google.com/o/oauth2" }
+            .Any(marker => text.Contains(marker, StringComparison.OrdinalIgnoreCase)))
+            throw new InvalidDataException("agy CLI 로그인은 공식 CLI에서 먼저 완료하세요.");
+        return text.Length <= 128 ? text : text[^128..];
+    }
+
     private static async Task SendLineAsync(TextWriter writer, string line, CancellationToken token)
     {
         await writer.WriteLineAsync(line.AsMemory(), token).ConfigureAwait(false);
@@ -287,15 +413,17 @@ internal sealed class AccountQuotaClient(
         if (remaining.Length > 0) yield return remaining;
     }
 
-    private static async Task DrainErrorAsync(TextReader reader, CancellationToken token)
+    internal static async Task DrainErrorAsync(TextReader reader, CancellationToken token, bool stopOnAuthentication = false)
     {
         var buffer = new char[4096];
         int total = 0;
+        string tail = "";
         int read;
         while ((read = await reader.ReadAsync(buffer.AsMemory(), token).ConfigureAwait(false)) != 0)
         {
             total += read;
             if (total > MaximumOutputCharacters) throw new InvalidDataException("공식 CLI 진단 출력이 크기 제한을 초과했습니다.");
+            if (stopOnAuthentication) tail = CheckGeminiAuthentication(tail, buffer, read);
         }
         // Intentionally do not retain or log stderr: it can contain private paths or account details.
     }
@@ -316,10 +444,10 @@ internal sealed class AccountQuotaClient(
                 Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), Environment.CurrentDirectory);
             foreach (string path in paths)
                 if (CanExecute(path)) return path;
-            throw new FileNotFoundException((provider == QuotaProvider.Codex ? "Codex" : "Claude") +
+            throw new FileNotFoundException(CliName(provider) +
                 " 공식 CLI가 필요합니다. 설치 및 본인 계정 로그인을 먼저 완료하세요.");
         }
-        string name = provider == QuotaProvider.Codex ? "codex.exe" : "claude.exe";
+        string name = CliName(provider).ToLowerInvariant() + ".exe";
         string local = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
         var candidates = new List<string>();
         string current = Path.GetFullPath(Environment.CurrentDirectory).TrimEnd(Path.DirectorySeparatorChar);
@@ -333,7 +461,7 @@ internal sealed class AccountQuotaClient(
                 candidates.Add(Path.Combine(path, name));
                 if (provider == QuotaProvider.Claude)
                     candidates.Add(Path.Combine(path, "node_modules", "@anthropic-ai", "claude-code", "bin", name));
-                else
+                else if (provider == QuotaProvider.Codex)
                 {
                     candidates.Add(Path.Combine(path, "node_modules", "@openai", "codex", "vendor", "x86_64-pc-windows-msvc", "codex", name));
                     candidates.Add(Path.Combine(path, "node_modules", "@openai", "codex-win32-x64", "vendor", "x86_64-pc-windows-msvc", "codex", name));
@@ -357,9 +485,19 @@ internal sealed class AccountQuotaClient(
             catch (IOException) { }
             catch (UnauthorizedAccessException) { }
         }
+        if (provider == QuotaProvider.Gemini)
+            candidates.Add(Path.Combine(local, "agy", "bin", name));
         foreach (string candidate in candidates)
             if (File.Exists(candidate)) return Path.GetFullPath(candidate);
-        throw new FileNotFoundException((provider == QuotaProvider.Codex ? "Codex" : "Claude") +
+        throw new FileNotFoundException(CliName(provider) +
             " 공식 CLI가 필요합니다. 설치 및 본인 계정 로그인을 먼저 완료하세요.");
     }
+
+    private static string CliName(QuotaProvider provider) => provider switch
+    {
+        QuotaProvider.Codex => "Codex",
+        QuotaProvider.Claude => "Claude",
+        QuotaProvider.Gemini => "agy",
+        _ => throw new ArgumentOutOfRangeException(nameof(provider))
+    };
 }

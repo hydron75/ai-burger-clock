@@ -65,6 +65,11 @@ internal static class PortablePlatformTests
             "no current directory or dot-segment lookup");
         Check(MacCliPaths.Candidates(QuotaProvider.Claude, [], "/Users/mac", "/")
             .All(path => path.EndsWith("/claude", StringComparison.Ordinal)), "separate Claude executable");
+        Check(MacCliPaths.Candidates(QuotaProvider.Gemini, [], "/Users/mac", "/")
+            .Contains("/Users/mac/.local/bin/agy"), "native agy fallback without shell lookup");
+        Check(MacCliPaths.Candidates(QuotaProvider.Gemini, paths, "/Users/mac", "/Users/mac/project")
+            .All(path => path.EndsWith("/agy", StringComparison.Ordinal) && !path.Contains("project", StringComparison.Ordinal)),
+            "Gemini uses agy, never the deprecated gemini binary or current directory");
         // Hosts may relabel providers in the tray tooltip; the default stays the enum name (Windows).
         var tooltipAt = AgentSchedule.GetSnapshot(DateTimeOffset.Parse("2026-10-03T06:00:00Z"), true);
         ProviderStatus[] healthy = Enum.GetValues<ProviderKind>().Select(provider =>

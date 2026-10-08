@@ -2,7 +2,9 @@
 
 Windows 2.2.3과 macOS preview 0.1.5 소스 기준입니다. Windows 사용법부터 보고 싶다면 [README](README.md), Mac 준비와 아직 남은 검증은 [Mac 안내](Mac/README.md)로 이동하세요. 아래 기존 실행·UI 설명은 Windows 기준이며 Mac의 차이는 12절에 정리했습니다.
 
-코드를 한 줄씩 번역한 문서는 아닙니다. **각 파일이 무엇을 맡고, 서로 어떻게 연결되는지** 설명합니다. 루트·Properties의 C# 49개, Mac 호스트 6개, 공통 검사 입구 1개로 총 56개와 빌드 설정을 다룹니다. 컴퓨터가 만든 `bin`·`obj`와 로컬 검증용 `artifacts`는 대상에서 뺍니다.
+코드를 한 줄씩 번역한 문서는 아닙니다. **각 파일이 무엇을 맡고, 서로 어떻게 연결되는지** 설명합니다. 현재 개발 소스의 루트·Properties C# 59개, Mac 호스트 7개, 공통 검사 입구 1개로 총 67개와 빌드 설정을 다룹니다. 컴퓨터가 만든 `bin`·`obj`와 로컬 검증용 `artifacts`는 대상에서 뺍니다.
+
+**미배포 추가:** [Gemini/Antigravity 한도](GEMINI_ANTIGRAVITY_QUOTAS.md)는 `agy` 1.3.1에서 Gemini 모델 그룹만 조회합니다. Windows 검증은 완료했고 Mac 검증·병합은 대기 중입니다. 배포본 2.2.3에는 아직 포함하지 않았습니다.
 
 공식 조회 방식의 변경을 조사하는 외부 모니터링 현황은 [BACKLOG](BACKLOG.md)에 있습니다. 이 조사는 아래 앱 코드의 계정 한도 조회 루프와 별개이며, 새 SDK가 공개됐다고 앱의 CLI나 의존성을 자동으로 바꾸지는 않습니다.
 
@@ -14,7 +16,7 @@ Windows 2.2.3과 macOS preview 0.1.5 소스 기준입니다. Windows 사용법�
 - **공지 확인 담당:** OpenAI·Claude·Gemini가 올린 공식 상태를 읽습니다.
 - **안내 담당:** 두 정보를 합쳐 Provider별 GO/HOLD/STOP/CHECK를 보여줍니다.
 - **기록 담당:** 사용자가 “느렸어요”, “잘 끝났어요”라고 남긴 경험을 저장합니다.
-- **잔여량 담당:** 공식 Codex·Claude CLI에 읽기 전용 조회를 부탁해 계정 한도를 보여줍니다. 인증은 CLI가 맡습니다.
+- **잔여량 담당:** 공식 Codex·Claude CLI에 읽기 전용 조회를 부탁해 계정 한도를 보여줍니다. 미배포 개발 소스에는 agy의 Antigravity Gemini 모델 한도를 추가했습니다. 인증은 CLI가 맡습니다.
 
 내가 오류를 기록했다고 공식 상태를 장애로 바꾸지 않습니다. 공식 장애라고 내 경험을 자동으로 Error로 적지도 않습니다.
 
@@ -293,7 +295,7 @@ Windows 내부 승인 형식은 알려진 경우만 해석합니다. 낯선 값�
 
 이름을 눌러 소스를 열 수 있습니다. 역할을 알고 필요한 파일부터 읽으면 됩니다.
 
-### 실제 앱 기능: 28개
+### 실제 앱 기능: 33개
 
 | 파일 | 맡은 일 |
 |---|---|
@@ -315,24 +317,32 @@ Windows 내부 승인 형식은 알려진 경우만 해석합니다. 낯선 값�
 | [RecommendationNotifications.cs](RecommendationNotifications.cs) | 마지막 확정 권고 기억, 중복 알림 방지 |
 | [TrayPresentation.cs](TrayPresentation.cs) | 트레이 문자·색상·짧은 도움말 결정. 두 OS가 함께 쓰는 전환·Provider 알림 문구 |
 | [WindowsProviderNames.cs](WindowsProviderNames.cs) | Windows 화면·메뉴·기록·통계·Tooltip·알림에서 OpenAI를 ChatGPT로 표시. 저장 식별자와 공식 URL은 유지 |
+| [ProviderNames.cs](ProviderNames.cs) | 두 OS가 사용하는 Provider·한도 제목 표시 이름 |
+| [StatusPanelModel.cs](StatusPanelModel.cs) | 상태 패널 본문 문구와 색상 대신 전달하는 공통 톤 |
+| [QuotaPanelModel.cs](QuotaPanelModel.cs) | 공통 한도 제목·조회 범위·행·리셋 카운트다운·Tooltip·톤. Gemini Apps와 Antigravity 구분 |
+| [UsageMeasurementFactory.cs](UsageMeasurementFactory.cs) | 공통 기록 생성·메모 길이 제한·기록 메뉴 항목 목록 |
+| [FeedbackText.cs](FeedbackText.cs) | 기록·공휴일 피드백과 알림 본문 |
 | [NetworkRefreshScheduler.cs](NetworkRefreshScheduler.cs) | 네트워크 변화 뒤 5초 대기 후 재조회, 1분에 한 번 제한, 연속 변화는 마지막 변화 기준 한 번으로 합침. 대기 끝에 쓸 수 있는 연결(링크 로컬이 아닌 주소)이 없으면 건너뜀 |
 | [UsageStore.cs](UsageStore.cs) | SQLite 생성·업그레이드·백업·설정·저장·일부 해석 불가 행 구분 |
 | [QuotaJsonContext.cs](QuotaJsonContext.cs) | 한도 캐시를 JSON으로 읽고 쓰는 타입 정보를 빌드 때 생성. Mac trimming 검사와 기존 캐시 호환성 유지 |
 | [AutoStartManager.cs](AutoStartManager.cs) | Windows 자동 시작 등록과 상태 판정 |
 | [AccountQuotaModels.cs](AccountQuotaModels.cs) | 한도 Provider·기간·사용률·리셋 시각과 조회 약속 |
 | [AccountQuotaParsers.cs](AccountQuotaParsers.cs) | 서로 다른 공식 CLI JSON을 검증한 공통 한도로 변환 |
-| [AccountQuotaClient.cs](AccountQuotaClient.cs) | PATH 등 표준 설치 경로의 native CLI 실행, 제한시간·출력 크기·취소·모델 호출 없는 결과 확인 |
+| [AccountQuotaClient.cs](AccountQuotaClient.cs) | 표준 경로의 native CLI 실행, 제한시간·출력 크기·취소·응답 검증. Gemini는 agy 1.3.1 사전 확인 후 `/usage`, 기존 hooks·MCP 설정 격리 제한 있음 |
 | [AccountQuotaPolicy.cs](AccountQuotaPolicy.cs) | 6시간·1시간·잔여 0%의 15분·리셋 전후 5분 규칙, 리셋 15분 전 진입, 실패 재시도 상한 계산 |
-| [AccountQuotaMonitor.cs](AccountQuotaMonitor.cs) | 두 독립 조회 루프, 마지막 성공값·실패 횟수·다음 조회·재시작 캐시 |
-| [AccountQuotaView.cs](AccountQuotaView.cs) | 기존 창 안에서 바꿔 보는 잔여량·리셋 카운트다운·조회 시각. ChatGPT 제목 아래 별도 Work/Codex 행 |
+| [AccountQuotaMonitor.cs](AccountQuotaMonitor.cs) | Provider별 독립 조회 루프, 마지막 성공값·실패 횟수·다음 조회·재시작 캐시. 미배포 소스는 Gemini도 포함 |
+| [AccountQuotaView.cs](AccountQuotaView.cs) | 같은 창의 한도 보기, Provider별 흰 박스와 내부 스크롤. ChatGPT 아래 Work/Codex, Gemini 아래 Antigravity 조회 범위 |
 
-### 검사와 진단: 20개
+### 검사와 진단: 25개
 
 미완성 임시 코드가 아닙니다. **특별한 검사 명령 때만 쓰는 정식 검사 코드**입니다.
 
 | 파일 | 확인하는 것 |
 |---|---|
 | [SelfTest.cs](SelfTest.cs) | 자체 검사들을 묶어서 실행하고 결과 반환 |
+| [SharedTestSuite.cs](SharedTestSuite.cs) | 공통 검사 등록 목록과 일괄 실행. Windows·Shared.Tests가 각각 한 번 호출 |
+| [PanelModelTests.cs](PanelModelTests.cs) | 공통 패널 문구·톤과 기존 Windows 문구의 golden 비교 |
+| [RecordingTests.cs](RecordingTests.cs) | 공통 기록 생성·메모 경계·메뉴·피드백 문구 검사 |
 | [ScheduleTests.cs](ScheduleTests.cs) | 공휴일 OFF 시간표, DST, 정확한 경계 |
 | [HolidayScheduleTests.cs](HolidayScheduleTests.cs) | 공휴일, 대체휴일, 연도 경계, 연장 구간 |
 | [TrayPresentationTests.cs](TrayPresentationTests.cs) | 색상 조합, F/B, 도움말 길이, 아이콘 그리기 |
@@ -348,6 +358,8 @@ Windows 내부 승인 형식은 알려진 경우만 해석합니다. 낯선 값�
 | [LiveStatusProbe.cs](LiveStatusProbe.cs) | 공식 상태를 실제 인터넷으로 조회해 출력 |
 | [AccountQuotaTests.cs](AccountQuotaTests.cs) | 한도 파서·잘못된 값·리셋 경계·조회 주기 |
 | [AccountQuotaClientTests.cs](AccountQuotaClientTests.cs) | 가짜 CLI 입출력으로 명령·크기 제한·취소·0턴 검증 |
+| [GeminiQuotaTests.cs](GeminiQuotaTests.cs) | 합성 agy 응답의 Gemini 그룹·5시간/주간·잔여율·리셋·잘못된 값 검사 |
+| [GeminiQuotaClientTests.cs](GeminiQuotaClientTests.cs) | 합성 입출력으로 agy 고정 명령·버전·0턴/0토큰·인증 대기·출력 제한 검사. 설치된 CLI는 실행하지 않음 |
 | [AccountQuotaMonitorTests.cs](AccountQuotaMonitorTests.cs) | 실패 격리·조회 합치기·종료·SQLite 캐시·재시작 |
 | [AccountQuotaUiChecks.cs](AccountQuotaUiChecks.cs) | 가짜 한도로 창 전환·퍼센트·실패·Refresh·기존 상태 복귀 |
 | [LiveQuotaProbe.cs](LiveQuotaProbe.cs) | 공식 CLI 실제 계정 조회 결과 중 한도 정보만 출력 |
@@ -359,14 +371,15 @@ Windows 내부 승인 형식은 알려진 경우만 해석합니다. 낯선 값�
 
 [Properties/AssemblyInfo.cs](Properties/AssemblyInfo.cs)는 프로그램 식별 정보 일부를 담습니다. 버전은 여기 아닌 프로젝트 파일에서 관리하고, 나머지 정보는 SDK가 생성합니다.
 
-### Mac 호스트: 6개 / 공통 검사 입구: 1개
+### Mac 호스트: 7개 / 공통 검사 입구: 1개
 
 | 파일 | 맡은 일 |
 |---|---|
 | [Mac/Program.cs](Mac/Program.cs) | Mac 실행 입구, 중복 실행 잠금, 임시 DB native smoke 분기 |
 | [Mac/MacApplication.cs](Mac/MacApplication.cs) | AppKit 메뉴바와 공통 조회·저장·알림·복귀·종료 연결 |
 | [Mac/MacStatusIcon.cs](Mac/MacStatusIcon.cs) | 20-point 상태색 원과 흰색 F/B의 1x·2x 이미지 생성. native smoke에서 실제 색·투명도·글자 픽셀 확인 |
-| [Mac/MacStatusWindow.cs](Mac/MacStatusWindow.cs) | 한 화면에 배치한 Mac 상태·일반 한도 창과 사용 경험 메뉴. 추가 한도만 내부 스크롤 |
+| [Mac/MacStatusPanel.cs](Mac/MacStatusPanel.cs) | AppKit 상태 팝오버·Provider 박스·한도 영역과 사용 경험 메뉴 |
+| [Mac/MacControls.cs](Mac/MacControls.cs) | 팝오버와 통계에서 사용하는 AppKit 컨트롤 생성 |
 | [Mac/MacStatisticsWindow.cs](Mac/MacStatisticsWindow.cs) | 공통 계산 결과를 보여주는 Mac 통계 창 |
 | [Mac/MacServices.cs](Mac/MacServices.cs) | macOS 알림 권한과 로그인 항목 등록 |
 | [Shared.Tests/Program.cs](Shared.Tests/Program.cs) | OS UI 없이 기존 검사들을 실행하는 공통 입구 |
@@ -381,7 +394,7 @@ Windows 내부 승인 형식은 알려진 경우만 해석합니다. 낯선 값�
 | [build.ps1](build.ps1) | 빌드와 자체 검사를 실행하는 순서 |
 | [Portable.pubxml](Properties/PublishProfiles/Portable.pubxml) | 배포용 단일 EXE 설정 |
 | [app.manifest](app.manifest) | Windows 권한·호환 설정. 관리자 권한으로 자동 상승하지 않음 |
-| [Shared/SharedSources.props](Shared/SharedSources.props) | 공통 C# 원본 20개를 Mac과 검사 프로젝트에 연결하는 목록 |
+| [Shared/SharedSources.props](Shared/SharedSources.props) | 공통 C# 원본 25개를 Mac과 검사 프로젝트에 연결하는 목록 |
 | [Shared.Tests/AiBurgerClock.Shared.Tests.csproj](Shared.Tests/AiBurgerClock.Shared.Tests.csproj) | net10.0 공통 검사, 임시 DB와 가짜 HTTP·CLI 사용 |
 | [Mac/AiBurgerClock.Mac.csproj](Mac/AiBurgerClock.Mac.csproj) | native AppKit, net10.0-macos27.0, osx-arm64, preview 버전과 bundle 버전(`ApplicationDisplayVersion`/`ApplicationVersion`) 지정 |
 | [Mac/tools/make-app-icon.swift](Mac/tools/make-app-icon.swift) | Mac 앱 아이콘 10개 크기를 코드로 생성해 `Mac/Assets.xcassets/AppIcon.appiconset`에 저장. 아이콘을 바꿀 때만 실행 |
@@ -463,6 +476,6 @@ Mac native smoke는 실제 Mac에서만 실행하며 Windows의 옵션을 그대
 - **왜 트레이가 이 색인지:** TrayPresentation → TrayApplicationContext.
 - **기록이 어떻게 쌓이는지:** Phase2Models → UsageStore → StatisticsAnalysis → OS별 통계 창.
 - **버튼이 하는 일:** StatusWindow → TrayApplicationContext.
-- **잔여량 조회와 다음 갱신:** AccountQuotaClient → AccountQuotaParsers → AccountQuotaMonitor / AccountQuotaPolicy → AccountQuotaView. 사용자 실측 통계와는 별개이며 캐시는 UsageStore의 AppMetadata 두 항목만 사용합니다.
+- **잔여량 조회와 다음 갱신:** AccountQuotaClient → AccountQuotaParsers → AccountQuotaMonitor / AccountQuotaPolicy → QuotaPanelModel → AccountQuotaView. 사용자 실측 통계와는 별개이며 캐시는 UsageStore의 AppMetadata에 Provider별 한 항목을 사용합니다. 미배포 Gemini 연결은 기존 schema 2를 유지하며 `AccountQuota.v1.Gemini`만 추가합니다.
 
 색상은 표시 문제, 공휴일은 시간표 정책, 경험 기록은 관찰 데이터, 추천 점수는 데이터 해석 문제입니다. 이 구분이 작은 앱의 가장 중요한 구조입니다.
