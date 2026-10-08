@@ -19,6 +19,7 @@ internal static class SharedTestSuite
             Report("US holidays", HolidayScheduleTests.Run());
             Report("official sources (in-memory HTTP)", ProviderStatusTests.Run());
             Report("service monitor/notification policy", await MonitorTests.RunAsync());
+            Report("tray colors/recommendations/tooltips (portable)", SharedTrayPresentationTests.Run());
             // StorageTests includes HolidayStorageTests; do not execute it a second time here.
             Report("SQLite/measurements/statistics/10,000 rows", await StorageTests.RunAsync(directory));
             Report("holiday metadata/cache", await HolidayMonitorTests.RunAsync(directory));
@@ -30,6 +31,7 @@ internal static class SharedTestSuite
             });
             Report("quota schemas/polling policy", quota);
             Report("quota monitor/restart/cancellation (fake CLI)", await AccountQuotaMonitorTests.RunAsync());
+            Report("quota CLI setup/protocol/cancellation (POSIX fixtures)", await SharedQuotaProtocolTests.RunAsync());
             Report("paths/IANA/formatting/CLI candidates", PortablePlatformTests.Run());
             Report("panel text/tones (Windows golden)", PanelModelTests.Run());
             Report("recording/note limit/feedback text (Windows golden)", RecordingTests.Run());
