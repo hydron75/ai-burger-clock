@@ -405,6 +405,11 @@ internal sealed class StatusTicker
 11. 남은 작업(2026-10-08): 순서는 문서 → PR 8(Windows 한 PR, Mac 확인) → S 통계 문구(Mac, Windows 전환 Sw는 ChatGPT) → 7a 공통 → 7a-w → 7a-m입니다. 7b·7c는 보류(7a 이후 재판단)입니다. 7a 공통 코드는 Mac이 작성하되, 코드 전에 API 초안(4-3)을 Windows가 리뷰합니다.
 12. 호스트 동작 차이(2026-10-08): 공통으로 옮길 때 기본은 Windows 기준입니다. 단 시작 순서와 "공휴일 토글 같은 값이면 무시"는 7b·7c 재판단 때 Mac 방식을 근거와 함께 다시 제안합니다.
 13. 7b·7c 재판단(2026-10-09): 둘 다 보류 유지입니다. 7b 재검토 기준은 "기록·공휴일 흐름 변경 요청이 두 번 이상" 또는 "한쪽만 고쳐진 문제가 하나 더"입니다. 결정 12의 Mac 방식 두 가지는 Windows에 적용해도 보이는 변화가 없어 제안하지 않습니다. 근거는 4-4절에 있습니다.
+14. Provider 카드 Tooltip의 빈 항목(2026-10-09, #37): 공통 `StatusPanelModel.Card`의 상세 Tooltip은 선택 항목을 **값이 있을 때만** 표시합니다. Windows·Mac에 같이 적용됩니다.
+   - 숨기는 조건: `관련`(`RelevantComponent`)·`사건`(`IncidentTitle`)·`사건 ID`(`IncidentId`)·출처(`Source`)는 `string.IsNullOrWhiteSpace`(빈 문자열 또는 공백뿐)일 때. `마지막 알려진 상태`(`LastKnownStatus`)는 `null`일 때.
+   - 항상 표시: 클릭 안내, 이유, `최근 조회 시도`, `마지막 상태 확인 성공`(조회 전에는 `없음`).
+   - 값이 있는 줄의 문구·순서는 바뀌지 않고, 표시할 값의 공백도 다듬지 않습니다.
+   - 주의: `ProviderStatus` 생성자 인자 순서는 `RelevantComponent, IncidentId, IncidentTitle, Source`입니다(사건 ID가 사건 제목보다 앞). 검사 fixture를 읽을 때 두 값을 바꿔 읽지 않도록 합니다.
 
 ## 6) 진행 방법 (Mac 새 로컬 챗)
 - Mac에서 저장소 폴더를 열고 `git switch main && git pull`로 최신 main을 받습니다. 기존 Mac 로컬 챗은 없으므로 새 Claude Code 챗을 엽니다.
