@@ -9,7 +9,7 @@ AI Burger Clock 저장소에서 코드를 고치는 사람과 에이전트를 �
 - SDK는 `global.json` 기준 10.0.100 이상, 같은 10.0의 최신 기능 밴드를 허용합니다. 미리보기 SDK는 쓰지 않습니다.
 - 직접 NuGet 의존성은 `Microsoft.Data.Sqlite 10.0.12` 하나입니다. 새 의존성은 추가하지 않는 것을 기본으로 합니다.
 - 배포본은 framework-dependent 단일 EXE입니다. .NET 10 Desktop Runtime x64가 별도로 필요하며 trimming과 NativeAOT는 쓰지 않습니다.
-- Linux·macOS에서는 `--self-test`·`--smoke-test`를 실행할 수 없습니다. 컴파일 확인은 `dotnet build -c Release -warnaserror -p:EnableWindowsTargeting=true`로 할 수 있습니다(Linux에서 확인).
+- Windows EXE의 `--self-test`·`--smoke-test`는 Linux·macOS에서 실행할 수 없습니다. Mac 앱의 `--smoke-test`는 macOS에서 실행합니다([Mac/README](Mac/README.md)). 컴파일 확인은 `dotnet build -c Release -warnaserror -p:EnableWindowsTargeting=true`로 할 수 있습니다(Linux에서 확인).
 
 ## 빌드
 
@@ -60,7 +60,7 @@ Windows 앱 검사는 앱 EXE에 옵션을 붙여 실행합니다. 분기는 [Pr
 - Windows 쪽에서 공통 원본을 고치면 Mac 공통 검사·native smoke 확인을 PR에 요청 항목으로 적습니다. Mac 담당이 그 PR HEAD로 `Mac/build.sh`와 `--smoke-test`를 실행하고 결과를 PR 코멘트로 남깁니다.
 - **분리 원칙(2026-10-08):** 필수 로직은 공통 원본에 두고, UI는 각 OS 네이티브(Windows WinForms, Mac AppKit)로 만듭니다. 패널 본문 문구와 표시 판정(톤)도 공통에 둡니다. 색·글꼴·레이아웃·클릭 동작·자동 실행 문구·메뉴 구성은 각 OS가 정합니다. 상세: [MACOS_UI_PLAN](MACOS_UI_PLAN.md).
 - **개선 전달:** Windows·Mac 구분 없이 먼저 개선안을 낸 쪽이 그 개선을 공통 원본 PR로 올립니다. 상대 담당은 자기 UI에 맞춰 반영하고, 반영할 수 없는 부분은 이유와 대안을 PR 코멘트로 회신합니다(재검토 회신).
-- Mac 버전은 `Mac/AiBurgerClock.Mac.csproj`의 `Version`·`ApplicationVersion`에서만 바꿉니다. `Info.plist`에는 적지 않습니다([Mac/README](Mac/README.md)).
+- Mac 버전은 `Mac/AiBurgerClock.Mac.csproj`에서만 바꿉니다. `Version`·`AssemblyVersion`·`FileVersion`·`ApplicationVersion`을 함께 바꿉니다. `AssemblyVersion`은 공식 상태 조회 User-Agent와 CLI 클라이언트 버전에 쓰입니다. `Info.plist`에는 적지 않습니다([Mac/README](Mac/README.md)).
 
 ## 작업 흐름: PR과 Windows 검증
 

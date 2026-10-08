@@ -190,12 +190,16 @@ PR #14에서 HTTP 설정, 알림 문구, 네트워크 재조회 제한은 이미
 | 3 | 공통(B층 일부): `UsageMeasurementFactory`, 메모 제한, 공휴일 피드백 문구, 기록 메뉴 항목 목록 | Mac 로컬 챗 | PR1과 같음 |
 | 4 | Mac: 상태 아이콘 왼쪽 클릭→팝오버, 오른쪽 클릭→짧은 메뉴(Refresh/로그인 항목 설정 열기…/종료 ⌘Q), "상태 창 열기"와 상태 NSWindow 제거. 팝오버 안은 PR1 모델로 Windows 순서 배치 | Mac 로컬 챗 | build.sh, smoke(새 레이아웃 검사), 실제 클릭·바깥 클릭·듀얼 모니터 |
 | 5 | Mac: 카드 왼쪽 클릭(공식 페이지), 오른쪽/control-클릭(기록 메뉴), 메모 흐름(팝오버 닫기→NSAlert→재오픈) | Mac 로컬 챗 | 실제 조작 |
-| 6 | Mac 0.2.0: "한도 보기" 전환, ⓘ→Tooltip, 흰 바탕+색 글자(패널·메뉴바 아이콘), 다크 모드 연동, MACOS_PORT 기록, 버전 0.2.0 | Mac 로컬 챗 | 라이트/다크·두 화면 스크린샷, 아이콘 픽셀 검사 갱신 |
-| 7 | 공통(B층 나머지): `AppCoordinator`(가칭)로 시작·갱신·공휴일 토글·기록 저장·종료 흐름 이동, 이후 양쪽 호스트 전환 | 먼저 착수하는 쪽 | 양쪽 self-test·smoke |
-| 8 | 공통 검사 정리: `TrayPresentationTests` 분할, `AccountQuotaClientTests` OS별 예시 | 먼저 착수하는 쪽 | 양쪽 |
+| 6 | Mac 0.2.0: "한도 보기" 전환, ⓘ→Tooltip, 흰 바탕+색 글자(패널·메뉴바 아이콘), 다크 모드 연동, MACOS_PORT 기록, 버전 0.2.0(`Version`·`AssemblyVersion`·`FileVersion`·`ApplicationVersion` 함께) | Mac 로컬 챗 | 라이트/다크·두 화면 스크린샷, 아이콘 픽셀 검사 갱신 |
+| 7 | 공통(B층 나머지): `AppCoordinator`(가칭)로 시작·갱신·공휴일 토글·기록 저장·종료 흐름 이동. 호스트는 아직 사용 안 함 | 먼저 착수하는 쪽 | Shared.Tests, Windows 컴파일 |
+| 7w | Windows: `TrayApplicationContext`를 `AppCoordinator`로 전환 | ChatGPT | Windows self-test·smoke |
+| 7m | Mac: `MacApplication`을 `AppCoordinator`로 전환 | Mac 로컬 챗 | build.sh, smoke |
+| 8 | 공통 검사 정리: `TrayPresentationTests`의 공통 부분과 `AccountQuotaClientTests`의 OS별 예시를 새 공통 검사로 추가 | 먼저 착수하는 쪽 | Shared.Tests |
+| 8w | Windows: 기존 `TrayPresentationTests`·`AccountQuotaClientTests`에서 옮긴 부분 정리, `SelfTest` 등록 | ChatGPT | Windows self-test |
 
 - PR1이 들어가면 PR2(Windows)와 PR4~6(Mac)은 서로 기다리지 않고 함께 진행할 수 있습니다.
 - PR7 앱 흐름 공통화는 범위가 커서 팝오버 작업 뒤로 둡니다(가정: 5-1 "권장안"에 포함된 것으로 해석).
+- 각 담당은 상대 OS 전용 파일을 고치지 않습니다(AGENTS.md). 그래서 공통 PR과 Windows·Mac 전환 PR을 나눴습니다.
 - 공통 영역은 링크 방식을 유지합니다(5-1). `AiBurgerClock.Core` 라이브러리 전환은 이번 계획에서 뺍니다.
 
 ---
