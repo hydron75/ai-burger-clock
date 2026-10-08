@@ -23,6 +23,8 @@
     <Compile Include="$(MSBuildThisFileDirectory)../ProviderNames.cs" Link="Shared/ProviderNames.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)../StatusPanelModel.cs" Link="Shared/StatusPanelModel.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)../QuotaPanelModel.cs" Link="Shared/QuotaPanelModel.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)../UsageMeasurementFactory.cs" Link="Shared/UsageMeasurementFactory.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)../FeedbackText.cs" Link="Shared/FeedbackText.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)../AppPaths.cs" Link="Shared/AppPaths.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)../MacCliPaths.cs" Link="Shared/MacCliPaths.cs" />
   </ItemGroup>
