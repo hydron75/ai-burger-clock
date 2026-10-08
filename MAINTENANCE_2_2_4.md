@@ -45,6 +45,7 @@ Windows 11 x64 / WinForms / net10.0-windows / framework-dependent 단일 EXE, Mi
 신규:
 
 - MAINTENANCE_2_2_4.md: 이 준비·검증·승인 후 교체 계획.
+- docs/reviews/windows-release-2.2.4-20261009/account-quotas-note-truncated.png: 가짜 응답·임시 DB를 사용한 새 통합 렌더. 개인 기록·계정 화면이 아님.
 
 C# 지도는 루트·Properties 65개(앱 기능 36 + 검사·진단 28 + 명찰 1), Mac 호스트 7개, 공통 검사 입구 1개로 총 73개다. 새 의존성·공통 DLL·상주 도구는 추가하지 않았다. 범위는 **Windows만 변경 + 기록 문서**다. 이번 PR의 공통 코드·Mac 코드 변경은 없고 기록·공휴일·시작·종료의 제품 흐름도 바꾸지 않는다.
 
@@ -57,9 +58,11 @@ Windows 11 Pro x64 10.0.26300 / .NET SDK **10.0.401**에서 실행했다. WinExe
 | 기존 dist 2.2.3 self-test | 250,779 assertions, ExitCode 0 | deployed-2.2.3/ |
 | 최신 main 26ae908 build.ps1 | 경고 0 / 오류 0, self-test 251,182, ExitCode 0 | baseline/ |
 | 2.2.4 후보 40cad7f build.ps1 | 경고 0 / 오류 0, self-test 251,182, ExitCode 0 | candidate/ |
-| 최신 main native smoke / PNG | 앱 정상 종료 대기, 미실행 | baseline/ |
-| 2.2.4 후보 native smoke / 통합 PNG | 앱 정상 종료 대기, 미실행 | candidate/ |
+| 최신 main native smoke / PNG | 252 PASS, 실제 ExitCode 0, stderr 0바이트 | baseline/ |
+| 2.2.4 후보 native smoke / 통합 PNG | 255 PASS (+3), 실제 ExitCode 0, stderr 0바이트 | candidate/ |
+| PNG 비교 | 기존 11쌍 모두 SHA-256 동일. 후보에 통합 화면 1장 추가, 눈으로 확인 | baseline/renders/ ↔ candidate/renders/ |
 | 현재 자동 시작 등록 | 기존 dist 절대 경로 + --autostart, Run String·StartupApproved Binary `020000000000000000000000` 읽기 확인. 변경 없음 | 읽기 전용 |
+| 검사 후 기존 배포본 실행 | PID 28244, Responding=True, 같은 dist 경로·FileVersion 2.2.3.0·원본 SHA-256 확인 | 교체 없이 --autostart 실행 |
 | build.ps1 -Publish / 최종 dist 검사 | **사용자 승인 전 미수행** | 승인 후 기록 |
 
 ### assertion 수 비교
@@ -92,16 +95,18 @@ Windows 11 Pro x64 10.0.26300 / .NET SDK **10.0.401**에서 실행했다. WinExe
 
 - 기존 상태·통계·트레이·공휴일·한도 검사와 #38의 박스/기준선/여백/hover 없음/스크롤 검사.
 - #39의 실제 메모 저장 6가지: 1,000 초과, 앞뒤 공백 포함 초과, 공백 제거만으로 정확히 1,000, 한 번만 정규화, 이모지 경계, 정확히 1,000.
-- 추가 3건: 한도 모드에서 트레이로 1,005자 메모 저장 → Codex/Claude 박스 유지·상태 카드 숨김 → ‘앞부분 1000자만 저장’ 안내 → 상태 모드 복귀 후 안내 유지.
+- 추가 3건: 한도 모드에서 트레이로 1,005자 메모 저장 → Codex/Claude 박스 유지·상태 카드 숨김 → ‘앞부분 1,000자만 저장’ 안내 → 상태 모드 복귀 후 안내 유지. 실제 실행에서 모두 통과했다.
 - `account-quotas-note-truncated.png`는 통합 상태의 가짜 응답 렌더이며 실제 계정·바탕화면 캡처가 아니다.
-- baseline과 후보에서 이름이 같은 PNG 전부를 해시·픽셀로 비교하고, 후보에만 있는 통합 PNG는 별도로 눈으로 확인한다.
+- baseline과 후보에서 이름이 같은 PNG 11쌍은 **바이트까지 동일**하여 렌더 픽셀도 동일하다. 상태·장애·공휴일·통계·메모·표준/이전값/소진 한도 화면을 포함한다. 후보에만 있는 통합 PNG(전체 창 774×1107 pixels)는 별도로 눈으로 확인했고 두 박스와 하단 잘림 안내가 함께 보였다. 논리 창 크기는 바꾸지 않았다.
+- 양쪽 smoke의 BalloonTipShown은 각각 17회였다. 이는 native 알림 이벤트 관측이며 모든 배너의 사용자 화면 노출을 보장하지 않는다. PNG의 자동 시작 ‘다른 경로’ 표시는 테스트 EXE가 bin/검사 스냅샷 경로여서 생긴 것으로 실제 등록을 바꾼 결과가 아니다.
+
+![한도 박스와 메모 잘림 안내를 함께 검증한 합성 화면](docs/reviews/windows-release-2.2.4-20261009/account-quotas-note-truncated.png)
 
 ### 미수행과 제한
 
-- 앱 종료 대기 중인 native smoke·PNG 비교는 위 표대로 미실행이며 통과로 적지 않는다.
 - 실제 전체 네트워크 단절·재연결·재부팅·로그인·절전·장기간 실시간 대기·실제 계정 소진/리셋·배너 전부의 눈에 보이는 노출은 미수행.
 - --verify-autostart, 실제 레지스트리 변경, 별도 --check-quotas / --check-providers, Mac build/native smoke, 사용자 DB 열람·DB 검사/백업은 미수행.
-- 초기 앱 정상 종료 메뉴 접근은 Computer Use에서 targetable window가 없어 사용자 종료를 요청했다. 강제 종료하지 않았다.
+- 초기 앱 정상 종료 메뉴 접근은 Computer Use에서 targetable window가 없어 사용자 종료를 요청했다. 사용자의 ‘종료완료’ 회신 뒤 실제 프로세스 부재를 확인하고 두 smoke를 진행했다. 강제 종료하지 않았으며 검사 후 **기존 2.2.3**을 다시 실행했다. 그 전후 Run 종류·원본 명령과 StartupApproved 종류·바이트도 동일했다.
 
 ## Git 기준점과 백업
 
