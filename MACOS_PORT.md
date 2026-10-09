@@ -1158,3 +1158,48 @@ PASS: bundle version, menu-tracking countdown timer, 20pt menu icon white/dark d
   2. `killall Dock`으로 Dock만 다시 시작해 본다.
   3. 로그아웃·재로그인한다.
   4. 그래도 남으면 AI Burger Clock 버전별 비교 빌드(0.1.5 `71272d2` / #24 직후 `a35e631` / 0.2.0 `aa8dd50` / 0.2.1 `e9504bc`)를 별도 worktree에서 하나씩 실행해 비교한다.
+
+## 40. 0.3.0 정리
+
+2026-10-09 KST. 0.2.1(37절, #41) 이후 Mac 앱에 들어간 변경을 **0.3.0 / build 9**로 정리했다. Gemini 한도 표시가 새 기능이라 둘째 자리를 올렸다. DB schema(2)·NuGet 의존성·`.app` 경로·자동 실행 설정은 그대로다. Gemini 한도 캐시는 기존 metadata에 새 키(`AccountQuota.v1.Gemini`)로 추가되며, 기존 Codex·Claude 캐시는 그대로 읽힌다.
+
+**Mac 앱에 들어간 변경**
+
+| PR | 내용 | 사용자에게 보이는 변화 |
+|---|---|---|
+| [#30](https://github.com/hydron75/ai-burger-clock/pull/30) | 공통: Gemini(Antigravity) 계정 한도. 공식 `agy` CLI 1.3.1 이상·2.0 미만, `agy -p /usage` JSON의 `Gemini Models` 그룹 5시간·주간 | 팝오버 한도 구간에 **Gemini 박스** 추가(제목 `Gemini`, 범위 줄 `Antigravity · Gemini 모델`). 조회 주기·실패 재시도·이전 값 표시는 Codex·Claude와 같음 |
+| [#42](https://github.com/hydron75/ai-burger-clock/pull/42) | Mac: 한도 영역 상한 240 → 300pt, smoke 세 박스, README agy 조회·설치 경로 제약, 38·39절 기록 | 큰 화면에서 세 박스가 스크롤 없이 보임. 짧은 화면은 한도 영역만 스크롤 |
+
+Mac 앱에 들어가지 않는 변경: `7e1342d`(BACKLOG 문서). #30의 Windows 화면 파일들.
+
+- 0.3.0 기준 설치 경로 제약(38절): Finder·로그인 항목으로 실행하면 `~/.local/bin`, `/opt/homebrew/bin`, `/usr/local/bin` 밖의 `agy`·`codex`·`claude`는 찾지 못한다.
+- 메뉴바 강제 표시 증상(39절)은 원인 미확정으로 남아 있고, 0.3.0에서 관련 코드는 바뀌지 않았다.
+
+### 이 Mac에서 수행한 검증
+
+| 항목 | 결과 |
+|---|---|
+| 앱 소스 | `59002bddae4135aface198515378104667eba270`(main `4c344e2` + 버전 변경) |
+| 도구 | Xcode 27.0, .NET SDK 10.0.401 |
+| Shared.Tests | `PASS ALL SHARED: 251,070 assertions` |
+| `Mac/build.sh --quit-running` | 실행 중이던 앱(PID 8601, 사용자 허락)을 종료 요청으로 닫은 뒤 빌드. 종료 코드 0, 공통 검사 251,070건, native Release 경고 0 / 오류 0 |
+| bundle | 0.3.0 / 9, 124M, `codesign --verify --deep --strict` 통과 |
+| `--smoke-test` | PASS / 종료 코드 0 |
+| SHA-256 실행 파일 | `06e85a2eafec4b6688a89240a7201e714687f9244e2f0ff0fa96b75346cd7424` |
+| SHA-256 앱 DLL | `7894bbdac9c645ca98b15ceea8fa1329c078dd044277a1168eee64f0fbdca0d5` |
+
+smoke 출력:
+
+```text
+PASS: bundle version, menu-tracking countdown timer, 20pt menu icon white/dark disc + color glyph light/dark 1x-2x pixels (glyph contrast min 4.9:1), left/right/control-click routing, right-click menu, popover open/close/reopen, shared panel text/record menu/quota lines, popover activation not checked (macOS did not grant activation without a user click), tone contrast >= 4.5:1 light+dark (min 4.7:1), card text x = quota box text x (20pt; titles 12pt), whole-card click/quota boxes read-only, three quota boxes incl. Gemini, popover 380x765pt (this screen usable 936pt; 1280x800 751pt not cut off, quota area 256pt; 1024x640 591pt with quota area 96pt scrolling), 1,000-char note limit, temporary SQLite, four events/notes via shared factory, display decisions via StatusTicker (no first alert, provider alert, transition only, icon reuse, duplicate kept-first + logged once), statistics (shared text, explanation fits, Mac empty-state hint), injected quota countdown; no account/network/settings changes.
+```
+
+- 빌드 뒤 같은 경로의 0.3.0 bundle로 앱을 다시 실행했다(PID 12827).
+- 앞서 확인된 것
+  - #30 확인: agy 1.3.2 실제 조회 성공, 앱 캐시가 `agy -p /usage` 결과와 같음, 최소 PATH 실행에서도 조회 성공(38절).
+  - #42: 사용자가 팝오버의 세 박스 모양·스크롤 없음·글자 정렬을 실제 화면으로 확인했다(2026-10-09).
+
+### 수행하지 않은 검증
+- Finder 더블클릭·로그인 항목 실행 자체에서의 실제 agy 조회(최소 PATH 실행으로 대신 확인).
+- agy 1.3.1·2.x·미설치·인증 필요 상황의 실제 기기 확인(공통 검사로만 확인).
+- 장기 사용, 재부팅 후 자동 실행, OS 알림 노출.
