@@ -1,8 +1,16 @@
-# AI Burger Clock · macOS preview 0.2.1
+# AI Burger Clock · macOS preview 0.3.0
 
-Apple Silicon / macOS 27을 위한 C# AppKit 메뉴바 앱입니다. Windows 2.2.4 배포본과 별도 앱이지만, 시간표·공식 상태·권고·한도 조회·기록·통계 계산 코드는 같은 저장소의 원본 소스를 링크해서 사용합니다. Windows 코드를 복사해 따로 유지하지 않습니다.
+Apple Silicon / macOS 27을 위한 C# AppKit 메뉴바 앱입니다. Windows 2.3.0 배포본과 별도 앱이지만, 시간표·공식 상태·권고·한도 조회·기록·통계 계산 코드는 같은 저장소의 원본 소스를 링크해서 사용합니다. Windows 코드를 복사해 따로 유지하지 않습니다.
 
 이 폴더는 **일반 사용 검증을 진행 중인 preview 소스**입니다. 2026-10-03 KST **0.1.2의 실제 Mac 공통 검사 244,347건·Release `.app`·서명·ARM64 SQLite·native smoke PASS에 이어, 일반 실행의 커진 컬러 아이콘과 양쪽 메뉴막대 표시도 확인했습니다.** 앞선 0.1.1의 한 화면 배치·두 계정 한도 수신도 확인했습니다. 이후 이 Mac에서 직접 빌드해 보니 **이전 bundle은 `Info.plist` 버전이 0.1.0 / 1로 남아 있었습니다.** 소스 `66fb868`에서 버전을 csproj로 옮겨 0.1.2 / 3이 반영되도록 고쳤고, native smoke가 bundle 버전도 검사합니다. 절전 복귀·연결 복구 자동 조회와 재로그인 자동 실행·로그아웃 정상 종료도 실제로 확인했습니다. OS 알림·장기 사용은 남아 있습니다. [재로그인 확인](../MACOS_PORT.md#27-로그아웃-정상-종료와-재로그인-자동-실행-실제-확인), [절전·연결 복구 확인](../MACOS_PORT.md#26-연결-복구절전-복귀-실제-확인), [버전 수정과 로컬 검증](../MACOS_PORT.md#24-012-bundle-버전-미반영-수정과-첫-로컬-mac-검증), [실제 Mac 빌드](../MACOS_PORT.md#21-012-실제-mac-release-빌드-성공), [native 검사](../MACOS_PORT.md#22-012-아이콘-native-smoke-pass), [실제 메뉴막대](../MACOS_PORT.md#23-012-실제-컬러-아이콘과-양쪽-메뉴막대-확인)
+
+## 0.3.0: Gemini 한도
+
+팝오버의 개인 계정 잔여 한도에 **Gemini(Antigravity)** 박스가 추가됐습니다. [기록](../MACOS_PORT.md#40-030-정리)
+
+- 공식 Antigravity CLI `agy`(1.3.1 이상·2.0 미만)의 `/usage` 결과에서 Gemini 모델 그룹의 5시간·주간 한도를 읽습니다. Gemini Apps(웹·모바일) 전체 한도가 아닙니다. 자세한 조회 방식은 아래 "Gemini 한도(agy)"를 보세요.
+- 박스 모양·조회 주기·실패 시 이전 값 표시는 ChatGPT·Claude와 같습니다. 세 박스가 들어가도록 한도 영역을 넓혀, 큰 화면에서는 스크롤 없이 보이고 짧은 화면에서는 한도 영역만 스크롤합니다.
+- **설치 위치 주의**: Finder·로그인 항목으로 실행한 앱은 `~/.local/bin`, `/opt/homebrew/bin`, `/usr/local/bin`에 있는 `agy`만 찾습니다(아래 "설치 경로 제약").
 
 ## 0.2.1: 문구 정리와 진단 로그
 
