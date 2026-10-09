@@ -468,13 +468,13 @@ $result.ExitCode
 | `--smoke-test --verify-autostart` | 자동 시작 UI까지 검사 | **실제 사용자 레지스트리의 이 앱 값을 잠시 변경 후 복원. 일반 사용 중 실행하지 않는 개발 전용 검사** |
 | `--smoke-test --report-directory 경로` | 검사 중 창을 PNG로 저장 | 지정 폴더에 이미지 생성. 바탕화면 전체 스크린샷은 아님 |
 | `--check-providers` | 세 공식 소스를 지금 조회해 출력 | 실제 인터넷 사용. 사용자 DB에 기록하지 않음 |
-| `--check-quotas` | 로그인된 Codex·Claude CLI에서 한도만 조회 | 실제 계정 조회. 모델 요청·리셋권 사용·사용자 DB 저장 없음. CLI가 자체 인증을 관리 |
+| `--check-quotas` | 로그인된 Codex·Claude CLI에서 한도만 조회. PR #30 개발 소스는 agy Gemini도 포함 | 실제 계정 조회. 모델 요청·리셋권 사용·사용자 DB 저장 없음. CLI가 자체 인증을 관리 |
 
 검사는 가짜 현재 시각을 전달하므로 Windows 시스템 시계를 바꾸지 않습니다. UI 검사에서 공식 페이지 열기는 실제 브라우저 대신 주소를 받는 함수로 확인합니다.
 
 검사 통과와 실제 재부팅 성공, 사용자 화면의 알림 노출은 다른 증거입니다. 최신 최종 EXE·배포 검증·사용자 확인은 [2.2.4 기록](MAINTENANCE_2_2_4.md), 이전 배포 검증은 [2.2.3 기록](MAINTENANCE_2_2_3.md)·[2.2.2 기록](MAINTENANCE_2_2_2.md)·[2.2.1 기록](MAINTENANCE_2_2_1.md)을 참고하세요.
 
-미배포 PR #30의 최신 main 통합 뒤 검사는 아직 실행하지 않았습니다. 초기 Windows 검사·계정 확인과 새 재검증 결과는 [Gemini/Antigravity 구현 기록](GEMINI_ANTIGRAVITY_QUOTAS.md)에서 구분하며 배포본 2.2.4의 검사 결과로 대신하지 않습니다.
+미배포 PR #30의 최신 main 통합 뒤 Windows self-test **251,377건**(공통 251,070 + Windows 전용 307)·smoke **278건**, 종료 코드 0을 확인했습니다. 초기 계정 확인과 이번 합성 10초 조회 응답성·화면 비교는 [Gemini/Antigravity 구현 기록](GEMINI_ANTIGRAVITY_QUOTAS.md)에서 구분합니다. Mac 검증·배포는 별도이며 기존 배포본 2.2.4의 결과로 대신하지 않습니다.
 
 공통 검사만 실행하려면 OS와 관계없이 다음 명령을 사용합니다. 가짜 응답과 임시 DB만 사용하며 계정·사용자 DB·자동 실행 설정은 건드리지 않습니다. Windows WinForms 검사를 대체하는 것은 아닙니다.
 
