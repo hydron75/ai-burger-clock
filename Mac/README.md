@@ -1,8 +1,16 @@
-# AI Burger Clock · macOS preview 0.2.0
+# AI Burger Clock · macOS preview 0.2.1
 
-Apple Silicon / macOS 27을 위한 C# AppKit 메뉴바 앱입니다. Windows 2.2.2 배포본과 별도 앱이지만, 시간표·공식 상태·권고·한도 조회·기록·통계 계산 코드는 같은 저장소의 원본 소스를 링크해서 사용합니다. Windows 코드를 복사해 따로 유지하지 않습니다.
+Apple Silicon / macOS 27을 위한 C# AppKit 메뉴바 앱입니다. Windows 2.2.4 배포본과 별도 앱이지만, 시간표·공식 상태·권고·한도 조회·기록·통계 계산 코드는 같은 저장소의 원본 소스를 링크해서 사용합니다. Windows 코드를 복사해 따로 유지하지 않습니다.
 
 이 폴더는 **일반 사용 검증을 진행 중인 preview 소스**입니다. 2026-10-03 KST **0.1.2의 실제 Mac 공통 검사 244,347건·Release `.app`·서명·ARM64 SQLite·native smoke PASS에 이어, 일반 실행의 커진 컬러 아이콘과 양쪽 메뉴막대 표시도 확인했습니다.** 앞선 0.1.1의 한 화면 배치·두 계정 한도 수신도 확인했습니다. 이후 이 Mac에서 직접 빌드해 보니 **이전 bundle은 `Info.plist` 버전이 0.1.0 / 1로 남아 있었습니다.** 소스 `66fb868`에서 버전을 csproj로 옮겨 0.1.2 / 3이 반영되도록 고쳤고, native smoke가 bundle 버전도 검사합니다. 절전 복귀·연결 복구 자동 조회와 재로그인 자동 실행·로그아웃 정상 종료도 실제로 확인했습니다. OS 알림·장기 사용은 남아 있습니다. [재로그인 확인](../MACOS_PORT.md#27-로그아웃-정상-종료와-재로그인-자동-실행-실제-확인), [절전·연결 복구 확인](../MACOS_PORT.md#26-연결-복구절전-복귀-실제-확인), [버전 수정과 로컬 검증](../MACOS_PORT.md#24-012-bundle-버전-미반영-수정과-첫-로컬-mac-검증), [실제 Mac 빌드](../MACOS_PORT.md#21-012-실제-mac-release-빌드-성공), [native 검사](../MACOS_PORT.md#22-012-아이콘-native-smoke-pass), [실제 메뉴막대](../MACOS_PORT.md#23-012-실제-컬러-아이콘과-양쪽-메뉴막대-확인)
+
+## 0.2.1: 문구 정리와 진단 로그
+
+0.2.0 이후 공통 코드 정리에 따른 변경을 담았습니다. 새 기능은 없습니다. [기록](../MACOS_PORT.md#37-021-정리)
+
+- **통계 창**: 설명·빈 상태·읽기 실패 문구가 Windows와 같은 공통 문구로 바뀌었습니다. 빈 상태 안내는 `메뉴바 팝오버의 Provider 카드를 오른쪽 클릭해 사용 경험을 기록하세요.`입니다.
+- **Provider 카드 Tooltip**: 값이 없는 `관련:`·`사건:`·`사건 ID:`·`마지막 알려진 상태:` 줄을 표시하지 않습니다.
+- **매초 판정**: 전환·Provider 알림과 아이콘 색 판정을 Windows와 같은 공통 엔진으로 합니다. 보이는 동작은 같습니다. 판정 입력에 이상(같은 Provider 중복)이 있으면 앱은 멈추지 않고 통합 로그에 남깁니다(아래 "앱 로그").
 
 ## 0.2.0: 메뉴바 팝오버와 새 아이콘
 
@@ -237,6 +245,17 @@ open "Mac/bin/Release/net10.0-macos27.0/osx-arm64/AI Burger Clock.app"
 일반 실행은 Mac 전용 사용자 DB를 생성/열고 공식 상태 페이지와 설치된 CLI의 한도를 조회합니다. 알림 권한 창이 나오면 사용자가 허용 여부를 선택합니다. 로그인 자동 실행은 현재 옵션을 유지합니다. 앱 위치를 나중에 변경하면 시스템 설정 → 일반 → 로그인 항목에서 등록 경로/승인 상태를 다시 확인하세요.
 
 메뉴바 아이콘을 왼쪽 클릭해 팝오버에서 Schedule·Provider 공식 상태·ChatGPT/Claude 한도·버튼이 보이는지 확인합니다. 오른쪽 클릭(또는 control-클릭)은 Refresh·로그인 항목 설정 열기…·종료만 있는 짧은 메뉴입니다. Provider 카드 아무 곳이나 클릭하면 공식 상태 페이지가 열리고, 사용 경험 기록은 카드의 오른쪽 클릭(또는 control-클릭) 메뉴에서 남깁니다(이전 상태 창과 메뉴바의 기록 하위 메뉴는 없앴습니다). 한도는 Provider별 박스에 표시하며 클릭 동작은 없습니다. 한도 카운트다운과 긴 이유의 Tooltip도 확인하세요. 사용자 0.1.1 전체 창/메뉴바 스크린샷에서 한 화면 표시와 두 계정 한도 수신을 확인했습니다. 실제 Tooltip·기록 메뉴·공식 링크 클릭, 추가 한도 내부 스크롤과 OS 동작까지 스크린샷으로 검증한 것은 아닙니다. 다른 Mac에서 CLI가 설치·로그인되지 않았다면 한도 조회 불가가 표시됩니다. Windows의 로그인은 자동 복사하지 않습니다. [일반 화면 기록](../MACOS_PORT.md#19-011-일반-상태-창과-메뉴바-확인)
+
+## 앱 로그 (통합 로그)
+
+앱은 macOS 통합 로그에 진단 메시지를 남깁니다. subsystem은 `com.hydron75.aiburgerclock`입니다. 지금은 매초 판정 입력에 같은 Provider가 두 번 들어온 경우만 기록합니다(category `display`). 이때 앱은 멈추지 않고 첫 값을 씁니다.
+
+```sh
+log show --last 1d --style compact --predicate 'subsystem == "com.hydron75.aiburgerclock"'
+log stream --predicate 'subsystem == "com.hydron75.aiburgerclock"'
+```
+
+콘솔 앱에서는 왼쪽에서 이 Mac을 고르고 검색창에 `subsystem:com.hydron75.aiburgerclock`를 입력한 뒤 "스트리밍 시작"을 누릅니다. `--smoke-test`도 중복 처리 검사 중에 같은 메시지를 한 번 남깁니다(프로세스는 smoke 실행).
 
 ## CLI를 찾지 못하는 경우
 

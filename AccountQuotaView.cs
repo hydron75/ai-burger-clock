@@ -1,6 +1,6 @@
 namespace AiBurgerClock;
 
-// Uses the existing popup's middle area; only the quota cards scroll.
+// Uses the existing popup's middle area; extra model-scoped windows can scroll.
 internal sealed class AccountQuotaView : Panel
 {
     private readonly ToolTip details = new() { AutoPopDelay = 30000 };
@@ -11,7 +11,7 @@ internal sealed class AccountQuotaView : Panel
     private readonly Dictionary<QuotaProvider, Label> metadata = new();
     private readonly Dictionary<(QuotaProvider, string), Label> rows = new();
     private string layoutKey = "";
-    private bool sizingCards;
+    private bool sizingBoxes;
 
     public AccountQuotaView()
     {
@@ -24,54 +24,48 @@ internal sealed class AccountQuotaView : Panel
     public void UpdateQuotas(IReadOnlyList<QuotaState> states, DateTimeOffset now)
     {
         var sections = QuotaPanelModel.Sections(states, now);
-        string key = DeviceDpi + "|" + string.Join('|', sections.Select(s => s.Provider + ":" +
-            (s.Scope is not null ? "scope:" : "") + string.Join(',', s.Rows.Select(r => r.WindowId))));
+        string key = DeviceDpi + "|" + string.Join('|', sections.Select(s => s.Provider + ":" + (s.Scope is not null) + ":" + string.Join(',', s.Rows.Select(row => row.WindowId))));
         if (key != layoutKey)
         {
             layoutKey = key;
-            var scroll = AutoScrollPosition;
-            SuspendLayout();
             AutoScrollPosition = Point.Empty;
+            SuspendLayout();
             details.RemoveAll();
             foreach (Control child in Controls.Cast<Control>().ToArray()) child.Dispose();
             headings.Clear(); metadata.Clear(); rows.Clear();
-            Controls.Add(new Label
-            {
-                Name = "QuotaTitle", Text = QuotaPanelModel.AccessibleName, Location = Point.Empty,
-                Size = new Size(ClientSize.Width, Scale(19)), Font = headingFont, AutoEllipsis = true
-            });
-            int y = 24;
+            int y = 0;
             foreach (var section in sections)
             {
-                var card = new Panel
+                var box = new Panel
                 {
-                    Name = section.Provider + "QuotaCard", Tag = section.Provider,
-                    Location = new Point(0, Scale(y)), Size = new Size(ClientSize.Width, 0),
-                    BackColor = Color.White
+                    Name = section.Provider + "QuotaBox",
+                    Location = new Point(0, Scale(y)),
+                    Width = ClientSize.Width,
+                    Margin = Padding.Empty,
+                    BackColor = Color.White,
+                    Cursor = Cursors.Default,
+                    AccessibleName = section.Heading.Text
                 };
+                Controls.Add(box);
                 int rowY = 4;
-                headings[section.Provider] = AddRow(card, rowY, headingFont); rowY += 20;
+                headings[section.Provider] = AddRow(box, rowY, headingFont); rowY += 20;
                 if (section.Scope is { } scopeText)
                 {
-                    var scope = AddRow(card, rowY, rowFont); rowY += 20;
+                    var scope = AddRow(box, rowY, rowFont); rowY += 20;
                     ApplyLine(scope, scopeText);
                 }
-                foreach (var line in section.Rows)
-                {
-                    rows[(section.Provider, line.WindowId)] = AddRow(card, rowY, rowFont); rowY += 20;
-                }
-                metadata[section.Provider] = AddRow(card, rowY, metaFont);
-                metadata[section.Provider].Name = "QuotaMetadata";
-                card.Height = Scale(rowY + 24);
-                Controls.Add(card);
-                y += rowY + 30;
+                foreach (var line in section.Rows) { rows[(section.Provider, line.WindowId)] = AddRow(box, rowY, rowFont); rowY += 20; }
+                metadata[section.Provider] = AddRow(box, rowY, metaFont); rowY += 20;
+                box.Height = Scale(rowY);
+                y += rowY + 6;
             }
-            AutoScrollMinSize = new Size(0, Scale(y - 4));
+            AutoScrollMinSize = new Size(0, Scale(Math.Max(0, y - 6)));
             ResumeLayout();
-            AutoScrollPosition = new Point(-scroll.X, -scroll.Y);
+            PerformLayout(); // Recalculate scroll ranges after OnResize narrows the boxes.
         }
         foreach (var section in sections)
         {
+            headings[section.Provider].Parent!.AccessibleName = section.Heading.Text;
             ApplyLine(headings[section.Provider], section.Heading);
             ApplyLine(metadata[section.Provider], section.Metadata);
             foreach (var line in section.Rows) ApplyLine(rows[(section.Provider, line.WindowId)], line);
@@ -96,36 +90,41 @@ internal sealed class AccountQuotaView : Panel
     internal static string ResetCountdown(DateTimeOffset? reset, DateTimeOffset now) =>
         DisplayFormatting.ResetCountdown(reset, now);
 
-    private Label AddRow(Panel card, int y, Font font)
+    protected override void OnResize(EventArgs e)
+    {
+        base.OnResize(e);
+        foreach (var box in Controls.OfType<Panel>()) box.Width = ClientSize.Width;
+    }
+
+    protected override void OnLayout(LayoutEventArgs e)
+    {
+        base.OnLayout(e);
+        if (sizingBoxes) return;
+        sizingBoxes = true;
+        try
+        {
+            foreach (var box in Controls.OfType<Panel>())
+            {
+                box.Width = ClientSize.Width;
+                foreach (var label in box.Controls.OfType<Label>())
+                    label.Width = Math.Max(0, box.ClientSize.Width - Scale(16));
+            }
+        }
+        finally { sizingBoxes = false; }
+    }
+
+    private Label AddRow(Panel box, int y, Font font)
     {
         var label = new Label
         {
             Location = new Point(Scale(8), Scale(y)),
-            Size = new Size(Math.Max(0, card.ClientSize.Width - Scale(16)), Scale(19)),
-            Font = font, AutoEllipsis = true
+            Size = new Size(box.Width - Scale(16), Scale(19)),
+            Font = font,
+            AutoEllipsis = true,
+            Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right
         };
-        card.Controls.Add(label);
+        box.Controls.Add(label);
         return label;
-    }
-
-    protected override void OnLayout(LayoutEventArgs levent)
-    {
-        base.OnLayout(levent);
-        if (sizingCards) return;
-        sizingCards = true;
-        try
-        {
-            // ClientSize excludes an active vertical scrollbar. Keep every card
-            // inside that actual viewport instead of creating horizontal overflow.
-            foreach (Control child in Controls)
-            {
-                child.Width = ClientSize.Width;
-                if (child is Panel card)
-                    foreach (Label label in card.Controls.OfType<Label>())
-                        label.Width = Math.Max(0, card.ClientSize.Width - Scale(16));
-            }
-        }
-        finally { sizingCards = false; }
     }
 
     private int Scale(int value) => (int)Math.Round(value * DeviceDpi / 96.0);

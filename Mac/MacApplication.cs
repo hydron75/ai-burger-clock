@@ -11,7 +11,8 @@ namespace AiBurgerClock;
 internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicationDelegate
 {
     private readonly CancellationTokenSource lifetime = new();
-    private readonly RecommendationNotifications recommendationNotifications = new();
+    // Unified log (Console app / `log`): subsystem = bundle id, category = display.
+    private static readonly CoreFoundation.OSLog DisplayLog = new("com.hydron75.aiburgerclock", "display");
     private readonly HashSet<Task> pendingWrites = [];
     private Task initialization = Task.CompletedTask;
     private HttpClient? http;
@@ -26,14 +27,15 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
     private NSMenu? contextMenu;
     private NSTimer? timer;
     private NSObject? wakeObserver;
-    private AgentState? lastSchedule;
-    private TrayAppearance? lastAppearance;
+    // Shared per-second decision (plan PR 7a): transitions, provider alerts and the icon state.
+    private StatusTicker? ticker;
+    // Smoke: notification requests (notifications are not authorized in a smoke run) and duplicate warnings.
+    private readonly List<(string Title, string Body)>? smokeNotifications = smoke ? [] : null;
+    private int duplicateWarnings;
     // Apply the user's holiday policy only after its stored setting is read successfully.
     private bool holidayEnabled;
     private bool holidayReady;
     private bool savingHoliday;
-    // Lets a holiday-policy notification yield to a provider alert raised by the same refresh.
-    private int providerNotificationSerial;
     private bool stopping;
     private bool stopped;
     private int uiRefreshQueued;
@@ -58,13 +60,13 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
             button.SendActionOn((NSEventType)(ulong)(NSEventMask.LeftMouseUp | NSEventMask.RightMouseUp));
             button.Activated += (_, _) => StatusItemClicked();
         }
-        RefreshDisplay(false);
+        RefreshDisplay(TickReason.Initial);
         // One existing-style countdown timer; Schedule itself caches its date/policy calculations.
         // Common modes keep it running while the menu-bar menu is open (event-tracking mode).
         timer = NSTimer.CreateRepeatingTimer(TimeSpan.FromSeconds(1), _ =>
         {
             timerTicks++;
-            RefreshDisplay(true);
+            RefreshDisplay(TickReason.Timer);
         });
         NSRunLoop.Main.AddTimer(timer, NSRunLoopMode.Common);
         initialization = InitializeAsync();
@@ -123,7 +125,7 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
             if (stopping) return;
             holidayReady = true;
             RefreshHolidayControls();
-            RefreshDisplay(false);
+            RefreshDisplay(TickReason.Initial);
             if (smoke)
             {
                 await RunSmokeAsync();
@@ -176,53 +178,56 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
         BeginInvokeOnMainThread(() =>
         {
             Volatile.Write(ref uiRefreshQueued, 0);
-            if (!stopping) RefreshDisplay(true);
+            if (!stopping) RefreshDisplay(TickReason.ProviderChanged);
         });
     }
 
-    private void RefreshDisplay(bool notify, bool notifyProviders = false)
+    private StatusTicker Ticker => ticker ??= new(ProviderNames.Provider, warn: WarnDuplicateProvider);
+
+    // The running app never throws on a duplicated provider: the ticker keeps the first value and
+    // reports each new duplicate set once here.
+    private void WarnDuplicateProvider(string message)
     {
-        if (stopping) return;
-        ScheduleSnapshot snapshot = Schedule(DateTimeOffset.UtcNow);
-        var providers = ProviderStates();
-        bool changed = lastSchedule.HasValue && lastSchedule != snapshot.State;
-        if (notify && changed)
-        {
-            var (title, body) = TrayPresentation.TransitionNotification(snapshot);
-            notifications?.Show(title, body);
-        }
-        lastSchedule = snapshot.State;
-        // A policy-only refresh must not consume a concurrently arrived provider incident.
-        foreach (ProviderStatus status in providers)
-        {
-            var recommendation = RecommendationPolicy.Calculate(snapshot.State, status.Status);
-            if (recommendationNotifications.Observe(status.Provider, snapshot.State, recommendation, (notify || notifyProviders) && !changed))
-            {
-                var (title, body) = TrayPresentation.ProviderNotification(status.Provider, recommendation, status.Reason,
-                    ProviderNames.Provider);
-                providerNotificationSerial++;
-                notifications?.Show(title, body);
-            }
-        }
-        TrayAppearance appearance = TrayPresentation.Calculate(snapshot.State, providers);
+        duplicateWarnings++;
+        DisplayLog.Log(CoreFoundation.OSLogLevel.Default, message);
+    }
+
+    private TickResult? RefreshDisplay(TickReason reason)
+    {
+        if (stopping) return null;
+        TickResult result = Ticker.Tick(Schedule(DateTimeOffset.UtcNow), ProviderStates(), reason);
+        ApplyTick(result);
+        return result;
+    }
+
+    // Same order as before 7a: transition notification, provider alerts, icon and tooltip, popover.
+    private void ApplyTick(TickResult result)
+    {
+        if (result.Transition is { } transition) Notify(transition.Title, transition.Body);
+        foreach (ProviderAlert alert in result.ProviderAlerts) Notify(alert.Title, alert.Body);
         if (statusItem?.Button is { } button)
         {
-            if (lastAppearance != appearance)
+            if (result.AppearanceChanged || button.Image is null)
             {
-                NSImage image = MacStatusIcon.Create(appearance);
+                NSImage image = MacStatusIcon.Create(result.Appearance);
                 NSImage? previous = statusImage;
                 button.Image = image;
                 button.Title = "";
                 statusImage = image;
                 previous?.Dispose();
-                lastAppearance = appearance;
             }
             // Minute precision: a per-second change would close the tooltip while it is being read.
-            string tooltip = TrayPresentation.Tooltip(snapshot, providers, ProviderNames.Provider, minutePrecision: true);
+            string tooltip = TrayPresentation.Tooltip(result.Schedule, result.Providers, ProviderNames.Provider, minutePrecision: true);
             if (button.ToolTip != tooltip) button.ToolTip = tooltip;
         }
         // The popover is redrawn only while it is open; ShowPanel fills it before showing.
-        if (panel?.IsShown == true) UpdatePanel(snapshot, providers);
+        if (panel?.IsShown == true) UpdatePanel(result.Schedule, result.Providers);
+    }
+
+    private void Notify(string title, string body)
+    {
+        smokeNotifications?.Add((title, body));
+        notifications?.Show(title, body);
     }
 
     private void UpdatePanel(ScheduleSnapshot snapshot, IReadOnlyList<ProviderStatus> providers) =>
@@ -236,7 +241,7 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
     {
         if (stopping || panel is null || statusItem?.Button is not { } button) return;
         if (!smoke) RefreshAutoStart();
-        RefreshDisplay(true);
+        RefreshDisplay(TickReason.Timer);
         UpdatePanel(Schedule(DateTimeOffset.UtcNow), ProviderStates());
         panel.Show(button);
     }
@@ -276,12 +281,12 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
             await save;
             if (stopping) return;
             holidayEnabled = enabled;
-            int alertsBeforeRefresh = providerNotificationSerial;
             // A policy change isn't a clock transition, but provider changes arriving now still notify.
-            RefreshDisplay(false, notifyProviders: true);
+            TickResult? policy = RefreshDisplay(TickReason.PolicyChanged);
             panel?.SetFeedback(FeedbackText.HolidaySaved(enabled));
-            // Do not immediately replace an important concurrent service alert (the Windows rule).
-            if (alertsBeforeRefresh == providerNotificationSerial)
+            // Do not immediately replace an important concurrent service alert (the Windows rule):
+            // only when this same refresh raised no provider alert.
+            if (policy is { ProviderAlerts.Count: 0 })
             {
                 var (title, body) = FeedbackText.HolidayNotification(enabled, Schedule(DateTimeOffset.UtcNow));
                 notifications?.Show(title, body);
@@ -473,6 +478,56 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
         }
     }
 
+    // Smoke: feed fixed decisions through the same apply path the timer uses and check the order of
+    // notification requests and the icon updates. Synchronous, so the real timer cannot interleave.
+    private string VerifyDisplayDecisions()
+    {
+        if (smokeNotifications is null || statusItem?.Button is not { } button)
+            throw new InvalidOperationException("Smoke display probe is unavailable.");
+        ScheduleSnapshot full = AgentSchedule.GetSnapshot(new DateTimeOffset(2026, 6, 16, 5, 0, 0, TimeSpan.Zero));
+        ScheduleSnapshot burger = AgentSchedule.GetSnapshot(new DateTimeOffset(2026, 6, 16, 14, 0, 0, TimeSpan.Zero));
+        ProviderStatus[] Providers(OfficialStatus openAi) => Enum.GetValues<ProviderKind>().Select(provider =>
+            new ProviderStatus(provider, provider == ProviderKind.OpenAI ? openAi : OfficialStatus.Operational,
+                DateTimeOffset.UtcNow, DateTimeOffset.UtcNow, provider + " fixture")).ToArray();
+        var probe = new StatusTicker(ProviderNames.Provider, strictInput: true);
+        smokeNotifications.Clear();
+
+        ApplyTick(probe.Tick(full, Providers(OfficialStatus.Operational), TickReason.Initial));
+        NSImage? green = statusImage;
+        if (smokeNotifications.Count != 0 || button.ToolTip?.Contains("FULL THROTTLE", StringComparison.Ordinal) != true)
+            throw new InvalidOperationException("The first decision must not notify and must show FULL THROTTLE.");
+
+        ApplyTick(probe.Tick(full, Providers(OfficialStatus.Degraded), TickReason.ProviderChanged));
+        var hold = TrayPresentation.ProviderNotification(ProviderKind.OpenAI, Recommendation.Hold, "OpenAI fixture", ProviderNames.Provider);
+        if (smokeNotifications is not [var alert] || alert != hold || ReferenceEquals(statusImage, green) ||
+            button.ToolTip?.Contains("ChatGPT HOLD", StringComparison.Ordinal) != true)
+            throw new InvalidOperationException("A provider change must request one ChatGPT alert and redraw the icon.");
+
+        ApplyTick(probe.Tick(burger, Providers(OfficialStatus.MajorOutage), TickReason.Timer));
+        if (smokeNotifications.Count != 2 || smokeNotifications[1] != TrayPresentation.TransitionNotification(burger) ||
+            button.ToolTip?.Contains("BURGER TIME", StringComparison.Ordinal) != true)
+            throw new InvalidOperationException("A schedule transition must request only the transition notification.");
+
+        NSImage? burgerIcon = statusImage;
+        ApplyTick(probe.Tick(burger, Providers(OfficialStatus.MajorOutage), TickReason.Timer));
+        if (smokeNotifications.Count != 2 || !ReferenceEquals(statusImage, burgerIcon))
+            throw new InvalidOperationException("An unchanged decision must not notify again or recreate the icon.");
+
+        // The app's own ticker path: a duplicate never throws, keeps the first value and logs once.
+        int warnings = duplicateWarnings;
+        var lenient = new StatusTicker(ProviderNames.Provider, warn: WarnDuplicateProvider);
+        ProviderStatus[] duplicated = [.. Providers(OfficialStatus.Degraded), new(ProviderKind.OpenAI,
+            OfficialStatus.Operational, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow, "smoke duplicate")];
+        TickResult kept = lenient.Tick(full, duplicated, TickReason.Timer);
+        lenient.Tick(full, duplicated, TickReason.Timer);
+        if (duplicateWarnings != warnings + 1 || kept.Providers[0].Status != OfficialStatus.Degraded)
+            throw new InvalidOperationException("A duplicated provider must keep the first value and log once.");
+
+        // Back to the real state for the rest of the smoke run.
+        RefreshDisplay(TickReason.Initial);
+        return "display decisions via StatusTicker (no first alert, provider alert, transition only, icon reuse, duplicate kept-first + logged once)";
+    }
+
     private async Task RunSmokeAsync()
     {
         // Opt-in native check: temporary DB, no HTTP/CLI, permission prompt, browser or login-item writes.
@@ -567,6 +622,11 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
             if (!MacStatisticsWindow.FormatRows(report.Providers).Contains("n=4", StringComparison.Ordinal) ||
                 !MacStatisticsWindow.FormatRows(report.Hours).Contains("No data", StringComparison.Ordinal))
                 throw new InvalidOperationException("Statistics sample sizes/No data were not rendered.");
+            // Shared statistics text; the empty state names the Mac way to record (card right-click).
+            if (MacStatisticsWindow.SummaryFor(0, "No data", 0) !=
+                "직접 기록한 표본 n = 0 · 정책: No data\nNo data · " + MacStatisticsWindow.HowToRecord ||
+                !MacStatisticsWindow.HowToRecord.Contains("오른쪽 클릭", StringComparison.Ordinal))
+                throw new InvalidOperationException("Statistics empty-state text is wrong.");
             QuotaState quota = new(QuotaProvider.Codex, new(QuotaProvider.Codex,
                 [new("session", "5시간", 100, now.AddMinutes(15), 300),
                  new("weekly", "주간", 9, now.AddDays(6), 10080)]),
@@ -601,10 +661,14 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
             if (!panel.QuotaRowText(QuotaProvider.Codex, "session").Contains("00:14:00", StringComparison.Ordinal))
                 throw new InvalidOperationException("Injected quota countdown did not advance.");
             panel.Close();
+            string displayResult = VerifyDisplayDecisions();
             ShowStatistics();
             await statisticsWindow!.RefreshAsync();
             if (!statisticsWindow.Window.IsVisible || statisticsWindow.Window.DangerousReleasedWhenClosed)
                 throw new InvalidOperationException("Statistics window is not visible/retained.");
+            if (!statisticsWindow.SummaryText.StartsWith("직접 기록한 표본 n = 4 · 정책: ", StringComparison.Ordinal) ||
+                statisticsWindow.SummaryText.Contains('\n') || !statisticsWindow.ExplanationFits())
+                throw new InvalidOperationException("Statistics summary/explanation did not use the shared text or fit.");
             statisticsWindow.Window.Close();
             if (statisticsWindow.Window.IsVisible)
                 throw new InvalidOperationException("Statistics window did not close.");
@@ -612,7 +676,7 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
             await statisticsWindow.RefreshAsync();
             if (!statisticsWindow.Window.IsVisible)
                 throw new InvalidOperationException("Statistics window did not reopen from the menu-bar action.");
-            Console.WriteLine($"PASS: bundle version, menu-tracking countdown timer, 20pt menu icon white/dark disc + color glyph light/dark 1x-2x pixels (glyph contrast min {iconContrast:0.0}:1), left/right/control-click routing, right-click menu, popover open/close/reopen, shared panel text/record menu/quota lines, {activationResult}, tone contrast >= 4.5:1 light+dark (min {weakest:0.0}:1), card text x = quota box text x ({layout.BoxTextX:0}pt; titles {layout.TitleX:0}pt), whole-card click/quota boxes read-only, popover {layout.Size.Width:0}x{layout.Size.Height:0}pt (this screen usable {layout.UsableHeight:0}pt; 1280x800 fits; 1024x640 {small.Height:0}pt with quota area {smallQuota:0}pt scrolling), 1,000-char note limit, temporary SQLite, four events/notes via shared factory, statistics, injected quota countdown; no account/network/settings changes.");
+            Console.WriteLine($"PASS: bundle version, menu-tracking countdown timer, 20pt menu icon white/dark disc + color glyph light/dark 1x-2x pixels (glyph contrast min {iconContrast:0.0}:1), left/right/control-click routing, right-click menu, popover open/close/reopen, shared panel text/record menu/quota lines, {activationResult}, tone contrast >= 4.5:1 light+dark (min {weakest:0.0}:1), card text x = quota box text x ({layout.BoxTextX:0}pt; titles {layout.TitleX:0}pt), whole-card click/quota boxes read-only, popover {layout.Size.Width:0}x{layout.Size.Height:0}pt (this screen usable {layout.UsableHeight:0}pt; 1280x800 fits; 1024x640 {small.Height:0}pt with quota area {smallQuota:0}pt scrolling), 1,000-char note limit, temporary SQLite, four events/notes via shared factory, {displayResult}, statistics (shared text, explanation fits, Mac empty-state hint), injected quota countdown; no account/network/settings changes.");
             ExitCode = 0;
         }
         catch (Exception error)

@@ -70,11 +70,25 @@ internal static class UIRegressionChecks
         context.RefreshStatus(true);
         Check(ReferenceEquals(unchangedIcon, context.TrayIcon.Icon), "Countdown ticks do not recreate unchanged tray icon");
         var notices = new List<(ProviderKind, Recommendation)>();
+        var providerApplyOrder = new List<bool>();
         context.ProviderNotificationRequested += (provider, recommendation) => notices.Add((provider, recommendation));
+        context.ProviderNotificationRequested += (provider, recommendation) =>
+        {
+            var status = monitor.Snapshot().Single(item => item.Provider == provider);
+            var expected = TrayPresentation.ProviderNotification(provider, recommendation, status.Reason, WindowsProviderNames.Provider);
+            string displayed = WindowsProviderNames.Provider(provider);
+            string name = recommendation.ToString().ToUpperInvariant();
+            providerApplyOrder.Add(context.CurrentAppearance == TrayPresentation.Calculate(AgentState.FullThrottle, monitor.Snapshot()) &&
+                context.TrayIcon.Text.Contains(displayed + " " + name, StringComparison.Ordinal) &&
+                context.TrayIcon.BalloonTipTitle == expected.Title && context.TrayIcon.BalloonTipText == expected.Body &&
+                context.TrayIcon.BalloonTipIcon == (recommendation == Recommendation.Go ? ToolTipIcon.Info : ToolTipIcon.Warning) &&
+                panels[(int)provider].Controls.OfType<Label>().Single(label => label.Font.Bold).Text != displayed + "   " + name);
+        };
         handler.OpenAiStatus = OfficialStatus.Degraded;
         await monitor.RefreshOnceAsync();
         context.RefreshStatus(true);
         Check(notices.SequenceEqual(new[] { (ProviderKind.OpenAI, Recommendation.Hold) }), "GO -> HOLD notification reaches tray handler");
+        Check(providerApplyOrder[0], "Provider warning event follows icon/tooltip and balloon, before provider UI");
         Check(panels[0].Controls.OfType<Label>().Any(l => l.Text == "ChatGPT   HOLD" && l.ForeColor == Color.FromArgb(160, 99, 20)),
             "Shared Caution tone retains the Windows Provider HOLD color");
         Check(context.CurrentAppearance == new TrayAppearance(AgentState.FullThrottle, TrayAttention.Orange) &&
@@ -140,6 +154,8 @@ internal static class UIRegressionChecks
         await monitor.RefreshOnceAsync();
         context.RefreshStatus(true);
         Check(notices.Count == 8 && notices.Last() == (ProviderKind.OpenAI, Recommendation.Go), "Recovery after uncertainty notifies once");
+        Check(providerApplyOrder.Count == 8 && providerApplyOrder.All(value => value),
+            "All Provider warning/recovery events preserve native application order");
         Check(context.TrayIcon.BalloonTipTitle == "ChatGPT 정상화", "Native Provider recovery title displays ChatGPT");
         Check(context.StatusWindow.Controls.OfType<Label>().Any(l => l.Text.StartsWith("최근 조회 시도:")), "UI labels attempted time explicitly");
 
@@ -355,38 +371,84 @@ internal static class UIRegressionChecks
         Check(statistics.IsDisposed, "Statistics window closes cleanly");
 
         // Render the original 13-record statistics fixture first. Then exercise the
-        // actual save handler's limit boundary without changing the PNG fixture.
-        Exception? boundaryError = null;
-        bool boundaryFilled = false;
-        using (var boundaryTimer = new Timer { Interval = 100 })
+        // actual save handler's note limits and feedback without changing the PNG fixture.
+        var savedNoteCases = new[]
         {
-            boundaryTimer.Tick += (_, _) =>
+            (Label: "over 1,000 units", Input: new string('a', 1005), Saved: new string('a', 1000), Truncated: true),
+            (Label: "padded over-limit note", Input: "  " + new string('c', 1005) + "  ", Saved: new string('c', 1000), Truncated: true),
+            (Label: "padding alone exceeds the limit", Input: "  " + new string('d', 1000) + "  ", Saved: new string('d', 1000), Truncated: false),
+            (Label: "trim then limit once", Input: new string('e', 999) + " f", Saved: new string('e', 999) + " ", Truncated: true),
+            (Label: "complete emoji at the boundary", Input: new string('f', 999) + "🍔", Saved: new string('f', 999), Truncated: true),
+            // End with a normal save so the later holiday PNG keeps its original feedback fixture.
+            (Label: "exactly 1,000 units", Input: new string('b', 1000), Saved: new string('b', 1000), Truncated: false)
+        };
+        int savedNoteCount = 13;
+        foreach (var noteCase in savedNoteCases)
+        {
+            bool combinedQuotaCase = noteCase.Label == "over 1,000 units";
+            if (combinedQuotaCase)
             {
-                var dialog = Application.OpenForms.OfType<MeasurementDialog>().SingleOrDefault();
-                if (dialog is null) return;
-                boundaryTimer.Stop();
-                try
+                context.ShowWindow();
+                context.StatusWindow.Controls.OfType<Button>().Single(b => b.Text == QuotaPanelModel.ShowQuotas).PerformClick();
+            }
+            Exception? noteError = null;
+            bool noteFilled = false;
+            using (var noteTimer = new Timer { Interval = 100 })
+            {
+                noteTimer.Tick += (_, _) =>
                 {
-                    Descendants(dialog).OfType<ComboBox>().Single().SelectedItem = UsageEventType.Interrupted;
-                    Descendants(dialog).OfType<TextBox>().Single().SelectedText = new string('e', 999) + " f";
-                    boundaryFilled = true;
-                    Descendants(dialog).OfType<Button>().Single(b => b.Text == "저장").PerformClick();
-                }
-                catch (Exception error)
-                {
-                    boundaryError = error;
-                    if (!dialog.IsDisposed) dialog.DialogResult = DialogResult.Cancel;
-                }
-            };
-            boundaryTimer.Start();
-            rowMenus[0].Items.OfType<ToolStripMenuItem>().Single(i => i.Text == "메모와 함께 기록…").PerformClick();
+                    var dialog = Application.OpenForms.OfType<MeasurementDialog>().SingleOrDefault();
+                    if (dialog is null) return;
+                    noteTimer.Stop();
+                    try
+                    {
+                        Descendants(dialog).OfType<ComboBox>().Single().SelectedItem = UsageEventType.Interrupted;
+                        var noteBox = Descendants(dialog).OfType<TextBox>().Single();
+                        noteBox.SelectedText = noteCase.Input;
+                        Check(noteBox.Text == noteCase.Input, "Note dialog preserves full input: " + noteCase.Label);
+                        noteFilled = true;
+                        Descendants(dialog).OfType<Button>().Single(b => b.Text == "저장").PerformClick();
+                    }
+                    catch (Exception error)
+                    {
+                        noteError = error;
+                        if (!dialog.IsDisposed) dialog.DialogResult = DialogResult.Cancel;
+                    }
+                };
+                noteTimer.Start();
+                var noteMenu = combinedQuotaCase
+                    ? trayRoot.DropDownItems.OfType<ToolStripMenuItem>().Single(i => i.Text == "ChatGPT").DropDownItems
+                    : rowMenus[0].Items;
+                noteMenu.OfType<ToolStripMenuItem>().Single(i => i.Text == "메모와 함께 기록…").PerformClick();
+            }
+            if (noteError is not null) throw new InvalidOperationException("Note limit dialog action failed: " + noteCase.Label, noteError);
+            string expectedFeedback = noteCase.Truncated
+                ? FeedbackText.NoteTruncated(noteCase.Saved.Length)
+                : "ChatGPT · Interrupted 저장됨 (12:00 KST)";
+            savedNoteCount++;
+            await WaitUntilAsync(async () => (await store.ReadUsageAsync(null)).Count == savedNoteCount &&
+                feedback.Text == expectedFeedback);
+            Check(noteFilled && (await new UsageStore(store.DatabasePath).ReadUsageAsync(null)).Any(e =>
+                e.EventType == UsageEventType.Interrupted && e.UserNote == noteCase.Saved),
+                "Actual note save persists the expected complete note: " + noteCase.Label);
+            Check(feedback.Text == expectedFeedback && feedback.ForeColor == Color.DimGray,
+                "Actual note save uses the expected non-error feedback: " + noteCase.Label);
+            if (combinedQuotaCase)
+            {
+                context.ShowWindow();
+                var quotaView = context.StatusWindow.Controls.OfType<AccountQuotaView>().Single();
+                Check(quotaView.Visible && quotaView.Controls.OfType<Panel>().Select(p => p.Name)
+                    .SequenceEqual(new[] { "CodexQuotaBox", "ClaudeQuotaBox", "GeminiQuotaBox" }) && panels.Take(3).All(p => !p.Visible),
+                    "Combined quota/note save keeps all three Provider boxes visible and status cards hidden");
+                Check(feedback.Text == expectedFeedback && feedback.ForeColor == Color.DimGray,
+                    "Combined quota/note save shows the truncation feedback in quota mode");
+                SaveFormImage(context.StatusWindow, "account-quotas-note-truncated.png", reportDirectory);
+                context.StatusWindow.Controls.OfType<Button>().Single(b => b.Text == QuotaPanelModel.ShowStatus).PerformClick();
+                Check(!quotaView.Visible && panels.Take(3).All(p => p.Visible) && feedback.Text == expectedFeedback,
+                    "Combined quota/note save returns to status mode without clearing truncation feedback");
+                SaveFormImage(context.StatusWindow, "note-truncated.png", reportDirectory);
+            }
         }
-        if (boundaryError is not null) throw new InvalidOperationException("Note boundary dialog action failed", boundaryError);
-        await WaitUntilAsync(async () => (await store.ReadUsageAsync(null)).Count == 14 &&
-            feedback.Text == "ChatGPT · Interrupted 저장됨 (12:00 KST)");
-        Check(boundaryFilled && (await new UsageStore(store.DatabasePath).ReadUsageAsync(null)).Any(e =>
-            e.EventType == UsageEventType.Interrupted && e.UserNote == new string('e', 999) + " " && e.UserNote.Length == 1000),
-            "Actual note save applies trim then limit once and persists the complete 1,000-unit boundary");
         Check((await store.ReadLatestStatusesAsync()).Count == 3, "Official cache saved independently of user observations");
     }
 

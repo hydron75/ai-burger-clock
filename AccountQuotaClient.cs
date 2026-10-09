@@ -38,7 +38,7 @@ internal sealed class AccountQuotaClient(
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         deadline.CancelAfter(commandTimeout);
         // An older/incompatible CLI may treat an unknown slash command as model input.
-        // Only the separately verified 1.3.1 contract is enabled; never auto-upgrade it.
+        // Enable only stable 1.x releases from 1.3.1; never auto-upgrade the CLI.
         if (provider == QuotaProvider.Gemini)
             await VerifyGeminiVersionAsync(executable, directory, deadline.Token, cancellationToken).ConfigureAwait(false);
         using var process = new Process { StartInfo = CreateStartInfo(provider, executable, directory) };
@@ -173,7 +173,16 @@ internal sealed class AccountQuotaClient(
         return start;
     }
 
-    internal static bool IsSupportedGeminiVersion(string text) => text.Trim() == "1.3.1";
+    internal static bool IsSupportedGeminiVersion(string text)
+    {
+        string versionText = text.Trim();
+        string[] parts = versionText.Split('.');
+        if (parts.Length != 3 || parts.Any(part => part.Length == 0 ||
+            (part.Length > 1 && part[0] == '0') || part.Any(c => c < '0' || c > '9')))
+            return false;
+        return Version.TryParse(versionText, out var version) && version.Major == 1 &&
+            (version.Minor > 3 || (version.Minor == 3 && version.Build >= 1));
+    }
 
     private static async Task VerifyGeminiVersionAsync(string executable, string directory,
         CancellationToken token, CancellationToken callerToken)
@@ -199,7 +208,7 @@ internal sealed class AccountQuotaClient(
             await process.WaitForExitAsync(versionLifetime.Token).ConfigureAwait(false);
             await error.ConfigureAwait(false);
             if (process.ExitCode != 0 || !IsSupportedGeminiVersion(version))
-                throw new NotSupportedException("검증된 agy CLI 1.3.1만 한도 조회에 사용합니다.");
+                throw new NotSupportedException("agy CLI 1.3.1 이상, 2.0 미만의 안정 버전만 한도 조회에 사용합니다.");
         }
         catch (OperationCanceledException) when (!callerToken.IsCancellationRequested)
         {

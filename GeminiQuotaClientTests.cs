@@ -52,10 +52,12 @@ internal static class GeminiQuotaClientTests
         Check(Environment.GetEnvironmentVariable("AGY_CLI_DISABLE_AUTO_UPDATE") == updaterBefore, "parent settings remain unchanged");
         Check(!start.ArgumentList.Contains("--disable-slash-commands") && !start.ArgumentList.Contains("--agent") &&
             !start.ArgumentList.Contains("--remote-control") && !start.ArgumentList.Contains("--continue"), "no model fallback or remote/resume options");
-        Check(AccountQuotaClient.IsSupportedGeminiVersion("1.3.1") && AccountQuotaClient.IsSupportedGeminiVersion("1.3.1\r\n"),
-            "only the verified release and terminal newline are accepted");
-        foreach (string version in new[] { "", "1.1.10", "1.1.11", "1.3.0", "1.3.2", "2.0.0", "agy 1.3.1", "1.3.1\n/usage" })
-            Check(!AccountQuotaClient.IsSupportedGeminiVersion(version), "unverified version is blocked before sending a prompt");
+        foreach (string version in new[] { "1.3.1", "1.3.1\r\n", "1.3.2", "1.3.10", "1.4.0", "1.4.12", "1.10.0" })
+            Check(AccountQuotaClient.IsSupportedGeminiVersion(version), "stable supported version accepted: " + version.Trim());
+        foreach (string version in new[] { "", "1.1.10", "1.1.11", "1.2.99", "1.3.0", "2.0.0", "2.1.0", "agy 1.3.1",
+            "1.3.1\n/usage", "1.3", "1.3.1.0", "1.3.2-beta.1", "1.3.2+build.5", "1.03.1", "1.3.-1", "1.3.2147483648",
+            "1.3.x", "1. 3.1" })
+            Check(!AccountQuotaClient.IsSupportedGeminiVersion(version), "unsupported or ambiguous version blocked before sending a prompt: " + version);
 
         QuotaReading reading = await Read(Success);
         Check(reading.Provider == QuotaProvider.Gemini && reading.Windows.Count == 2, "single pretty-printed command result is accepted");

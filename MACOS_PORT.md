@@ -1045,3 +1045,46 @@ PASS: bundle version, menu-tracking countdown timer, 20pt menu icon white/dark d
 - 실제 메뉴바의 아이콘 표시: 밝은 메뉴바(밝은 배경화면), 다크 모드, 비활성 화면 메뉴바, 두 화면 동시 표시. 이 Mac의 화면 기록 권한이 없어 스크린샷을 찍지 못했다.
 - 외형 전환(라이트↔다크) 때 아이콘이 다시 그려지는지.
 - 팝오버의 실제 활성화(사용자 클릭 시), OS 알림 배너, 장기 사용, 재부팅 후 자동 실행.
+
+## 37. 0.2.1 정리
+
+2026-10-09 KST. Windows 2.2.4 배포 뒤, 0.2.0(36절, #28) 이후 main에 병합된 변경 중 Mac 앱에 들어가는 것을 **0.2.1 / build 8**로 정리했다. 새 기능은 없고 문구 수정·내부 정리·진단 로그뿐이라 패치 버전으로 올렸다. DB schema·NuGet 의존성·`.app` 경로·자동 실행 설정은 그대로다.
+
+**Mac 앱에 들어간 변경**
+
+| PR | 내용 | 사용자에게 보이는 변화 |
+|---|---|---|
+| [#32](https://github.com/hydron75/ai-burger-clock/pull/32) | 공통 `StatisticsText`. Mac 통계 창이 Windows와 같은 문구를 씀 | 통계 창 설명 3줄·읽기 실패 문구가 Windows 문구로 바뀜. 빈 상태 안내가 `No data · 메뉴바 팝오버의 Provider 카드를 오른쪽 클릭해 사용 경험을 기록하세요.`로 바뀜(0.2.0에서 없어진 메뉴바 기록 하위 메뉴를 가리키던 문구 수정) |
+| [#33](https://github.com/hydron75/ai-burger-clock/pull/33)·[#35](https://github.com/hydron75/ai-burger-clock/pull/35) | 공통 매초 판정 엔진 `StatusTicker`(7a)와 Mac 전환(7a-m) | 없음(전환·Provider 알림, 아이콘 색, 팝오버는 같음). 같은 Provider가 판정에 두 번 들어오면 첫 값을 쓰고 통합 로그(subsystem `com.hydron75.aiburgerclock`, category `display`)에 남김 |
+| [#37](https://github.com/hydron75/ai-burger-clock/pull/37) | Provider 카드 Tooltip 빈 항목 숨기기(공통 `StatusPanelModel`, 결정 14) | Tooltip에서 값이 없는 `관련:`·`사건:`·`사건 ID:`·`마지막 알려진 상태:` 줄과 끝 빈 줄이 사라짐 |
+
+Mac 앱에 들어가지 않는 변경: #29(계획 문서), #31(공통 검사 정리), #34·#36·#38·#39·#40(Windows 화면·흐름·2.2.4 배포).
+
+### 이 Mac에서 수행한 검증
+
+| 항목 | 결과 |
+|---|---|
+| 앱 소스 | `d98bdccd217ad5e4af5e00643e71a0537f788a18`(main `8b8a67c` + 버전 변경) |
+| 도구 | Xcode 27.0, .NET SDK 10.0.401 |
+| Shared.Tests | `PASS ALL SHARED: 250,875 assertions` |
+| `Mac/build.sh --quit-running` | 실행 중이던 0.2.0 앱(PID 9634, 사용자 허락)을 종료 요청으로 닫은 뒤 빌드. 종료 코드 0, 공통 검사 250,875건, native Release 경고 0 / 오류 0 |
+| bundle | 0.2.1 / 8, 124M, `codesign --verify --deep --strict` 통과 |
+| `--smoke-test` | PASS / 종료 코드 0 |
+| SHA-256 실행 파일 | `b5344241bca78f9f3a6cb88600ab3d5b9f93c788ceb720bc1ad89c0ea749e6e6` |
+| SHA-256 앱 DLL | `2cac89ee5417ba58f03e9ad602072ceb987ece2044074b6f6cf6534073ecf93b` |
+
+smoke 출력:
+
+```text
+PASS: bundle version, menu-tracking countdown timer, 20pt menu icon white/dark disc + color glyph light/dark 1x-2x pixels (glyph contrast min 4.9:1), left/right/control-click routing, right-click menu, popover open/close/reopen, shared panel text/record menu/quota lines, popover activation not checked (macOS did not grant activation without a user click), tone contrast >= 4.5:1 light+dark (min 4.7:1), card text x = quota box text x (20pt; titles 12pt), whole-card click/quota boxes read-only, popover 380x673pt (this screen usable 1026pt; 1280x800 fits; 1024x640 591pt with quota area 96pt scrolling), 1,000-char note limit, temporary SQLite, four events/notes via shared factory, display decisions via StatusTicker (no first alert, provider alert, transition only, icon reuse, duplicate kept-first + logged once), statistics (shared text, explanation fits, Mac empty-state hint), injected quota countdown; no account/network/settings changes.
+```
+
+- 빌드 뒤 같은 경로의 0.2.1 bundle로 앱을 다시 실행했다(PID 38684).
+- 앞서 확인된 것
+  - #35(7a-m) 화면 확인: 사용자가 전환 알림, 공휴일 토글 알림, 아이콘 색, Tooltip, 팝오버 갱신, 통합 로그(`log show`·`log stream`)를 정상으로 확인했다(#35 대화 기록).
+  - #37 Tooltip: Windows 검증에서 실제 WinForms 컨트롤 문자열로 확인했다. Mac은 smoke가 카드 Tooltip이 공통 모델 결과와 같은지 검사한다.
+- smoke의 중복 Provider 검사는 실행할 때마다 통합 로그에 한 줄을 남긴다(프로세스는 smoke 실행). 정상 앱 프로세스는 중복 경고를 남기지 않는다.
+
+### 수행하지 않은 검증
+- 0.2.1 bundle로 Mac Provider 카드 Tooltip과 통계 창을 눈으로 확인하는 일(사용자 확인 대상).
+- 실제 공식 상태 변화에 따른 Provider 알림, 장기 사용, 재부팅 후 자동 실행.

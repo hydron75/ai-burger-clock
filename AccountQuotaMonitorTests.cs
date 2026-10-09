@@ -234,7 +234,8 @@ internal static class AccountQuotaMonitorTests
         check(previous.NextCheckUtc == now.AddMinutes(15) && !previous.Error.Contains("secret"), "Gemini retries without exposing diagnostics");
         client.Handler = (_, _) => Task.FromException<QuotaReading>(new NotSupportedException("Unknown agy version"));
         await monitor.RefreshOnceAsync(QuotaProvider.Gemini);
-        check(State(monitor, QuotaProvider.Gemini).Error.Contains("agy CLI 1.3.1"), "Unverified CLI version asks for compatibility validation, not agent fallback");
+        check(State(monitor, QuotaProvider.Gemini).Error == "agy CLI 1.3.1 이상이 필요합니다(2.0 미만 안정 버전).",
+            "Unsupported CLI version explains the stable minimum and excluded major versions without agent fallback");
         check(State(monitor, QuotaProvider.Gemini).NextCheckUtc == now.AddMinutes(30), "Gemini failure backoff uses the existing policy");
         check(!State(monitor, QuotaProvider.Codex).IsPrevious && !State(monitor, QuotaProvider.Claude).IsPrevious,
             "Gemini failure does not mark other providers as previous");
