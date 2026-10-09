@@ -8,11 +8,11 @@ internal static class UIRegressionChecks
 {
     public static async Task RunAsync(TrayApplicationContext context, UsageStore store,
         TestStatusHttpHandler handler, string? reportDirectory, List<Uri> openedPages,
-        DateTimeOffset initialNow, Action<DateTimeOffset> setNow)
+        DateTimeOffset initialNow, Action<DateTimeOffset> setNow, SmokeDiagnostics diagnostics)
     {
         void Check(bool value, string message)
         {
-            if (!value) throw new InvalidOperationException("UI integration: " + message);
+            if (!value) { diagnostics.Record("ui.check-failed", new { message }); throw new InvalidOperationException("UI integration: " + message); }
             Console.WriteLine("PASS: " + message);
         }
         var monitor = context.ProviderMonitor ?? throw new InvalidOperationException("Test monitor missing");
@@ -40,13 +40,19 @@ internal static class UIRegressionChecks
         await WaitUntilAsync(() => Task.FromResult(!monitor.IsRefreshing && monitor.NextRefreshUtc.HasValue));
         // The popup may auto-hide while this async test yields. Reopen it through
         // the normal tray path before PerformClick, which requires a selectable button.
-        context.StatusWindow.Hide();
-        context.ShowWindow();
         var refreshButton = context.StatusWindow.Controls.OfType<Button>().Single(b => b.Text == "Refresh");
+        int refreshClicks = diagnostics.RefreshClicks;
+        context.StatusWindow.Hide();
+        Check(!context.StatusWindow.Visible && !refreshButton.CanSelect,
+            "Hidden popup makes Refresh unselectable even when enabled");
+        refreshButton.PerformClick();
+        Check(diagnostics.RefreshClicks == refreshClicks, "Hidden Refresh PerformClick never emits an actual Click");
+        context.ShowWindow();
         Check(context.StatusWindow.Visible && refreshButton.Enabled && refreshButton.CanSelect,
             "Reopening the status window makes Refresh actionable");
         int requests = handler.RequestCount;
         refreshButton.PerformClick();
+        Check(diagnostics.RefreshClicks == refreshClicks + 1, "Reopened Refresh emits exactly one actual Click");
         await WaitUntilAsync(() => Task.FromResult(handler.RequestCount > requests && !monitor.IsRefreshing && monitor.NextRefreshUtc.HasValue));
         Check(true, "Main Refresh button triggers asynchronous provider update");
         requests = handler.RequestCount;
@@ -157,6 +163,7 @@ internal static class UIRegressionChecks
         Check(providerApplyOrder.Count == 8 && providerApplyOrder.All(value => value),
             "All Provider warning/recovery events preserve native application order");
         Check(context.TrayIcon.BalloonTipTitle == "ChatGPT 정상화", "Native Provider recovery title displays ChatGPT");
+        diagnostics.Record("ui.status-footer-before-check");
         Check(context.StatusWindow.Controls.OfType<Label>().Any(l => l.Text.StartsWith("최근 조회 시도:")), "UI labels attempted time explicitly");
 
         // Synchronous sequence: the 1-second UI timer cannot run between these calls.
@@ -438,8 +445,8 @@ internal static class UIRegressionChecks
                 context.ShowWindow();
                 var quotaView = context.StatusWindow.Controls.OfType<AccountQuotaView>().Single();
                 Check(quotaView.Visible && quotaView.Controls.OfType<Panel>().Select(p => p.Name)
-                    .SequenceEqual(new[] { "CodexQuotaBox", "ClaudeQuotaBox" }) && panels.Take(3).All(p => !p.Visible),
-                    "Combined quota/note save keeps both Provider boxes visible and status cards hidden");
+                    .SequenceEqual(new[] { "CodexQuotaBox", "ClaudeQuotaBox", "GeminiQuotaBox" }) && panels.Take(3).All(p => !p.Visible),
+                    "Combined quota/note save keeps all three Provider boxes visible and status cards hidden");
                 Check(feedback.Text == expectedFeedback && feedback.ForeColor == Color.DimGray,
                     "Combined quota/note save shows the truncation feedback in quota mode");
                 SaveFormImage(context.StatusWindow, "account-quotas-note-truncated.png", reportDirectory);

@@ -77,7 +77,7 @@ namespace AiBurgerClock
             menu.Items.Add(countdownMenuItem);
             menu.Items.Add(new ToolStripSeparator());
             menu.Items.Add(showItem);
-            var refreshItem = new ToolStripMenuItem("상태·한도 새로 고침") { ToolTipText = "공식 서비스 상태와 ChatGPT (Work/Codex)·Claude 계정 한도를 함께 갱신" };
+            var refreshItem = new ToolStripMenuItem("상태·한도 새로 고침") { ToolTipText = "공식 서비스 상태와 ChatGPT (Work/Codex)·Claude·Gemini (Antigravity) 계정 한도를 함께 갱신" };
             refreshItem.Click += (_, _) => RefreshAll();
             menu.Items.Add(refreshItem);
             var recordRoot = new ToolStripMenuItem("사용 경험 기록");

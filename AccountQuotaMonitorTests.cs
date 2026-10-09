@@ -19,6 +19,7 @@ internal static class AccountQuotaMonitorTests
         {
             await StateTestsAsync(Check);
             await ExhaustedPollingTestsAsync(Check);
+            await GeminiPollingTestsAsync(Check);
             await OverlapTestsAsync(Check);
             await PollingTestsAsync(Check);
             await CacheTestsAsync(directory, Check);
@@ -194,6 +195,53 @@ internal static class AccountQuotaMonitorTests
         await monitor.StopAsync();
     }
 
+    private static async Task GeminiPollingTestsAsync(Action<bool, string> check)
+    {
+        DateTimeOffset now = Now;
+        double used = 100;
+        DateTimeOffset? reset = null;
+        var client = new FakeClient((provider, _) => Task.FromResult(provider == QuotaProvider.Gemini
+            ? new QuotaReading(provider, [new("gemini-5h", "5시간", used, reset, 300),
+                new("gemini-weekly", "주간", 5, null, 10080)]) : Reading(provider, 20)));
+        using var monitor = new AccountQuotaMonitor(client, utcNow: () => now);
+        await Task.WhenAll(Enum.GetValues<QuotaProvider>().Select(provider => monitor.RefreshOnceAsync(provider)));
+        check(State(monitor, QuotaProvider.Gemini).NextCheckUtc == now.AddMinutes(15), "Gemini exhaustion polls every 15m");
+        check(State(monitor, QuotaProvider.Codex).NextCheckUtc == now.AddHours(6) &&
+            State(monitor, QuotaProvider.Claude).NextCheckUtc == now.AddHours(6), "Gemini exhaustion cannot shorten other providers' cadence");
+        check(State(monitor, QuotaProvider.Gemini).Reading?.Windows.Count == 2, "Gemini five-hour and weekly windows stay together");
+        used = 96;
+        await monitor.RefreshOnceAsync(QuotaProvider.Gemini);
+        check(State(monitor, QuotaProvider.Gemini).NextCheckUtc == now.AddHours(1), "Verified low Gemini recovery changes to hourly polling");
+        used = 20;
+        reset = now.AddHours(2);
+        await monitor.RefreshOnceAsync(QuotaProvider.Gemini);
+        check(State(monitor, QuotaProvider.Gemini).NextCheckUtc == reset.Value.AddMinutes(-15), "Gemini enters the reset band before a long wait ends");
+        now = reset.Value.AddMinutes(-10);
+        await monitor.RefreshOnceAsync(QuotaProvider.Gemini);
+        check(State(monitor, QuotaProvider.Gemini).NextCheckUtc == now.AddMinutes(5), "Gemini reset band polls every 5m");
+        reset = reset.Value.AddDays(7);
+        await monitor.RefreshOnceAsync(QuotaProvider.Gemini);
+        check(State(monitor, QuotaProvider.Gemini).NextCheckUtc == now.AddMinutes(5), "Gemini preserves the old reset anchor after rollover");
+        now = now.AddMinutes(26);
+        await monitor.RefreshOnceAsync(QuotaProvider.Gemini);
+        check(State(monitor, QuotaProvider.Gemini).NextCheckUtc == now.AddHours(6), "Gemini returns to 6h outside the reset band");
+        DateTimeOffset success = now;
+        client.Handler = (_, _) => Task.FromException<QuotaReading>(new IOException("Synthetic agy diagnostic secret"));
+        await monitor.RefreshOnceAsync(QuotaProvider.Gemini);
+        var previous = State(monitor, QuotaProvider.Gemini);
+        check(previous.IsPrevious && previous.Reading?.Windows[0].UsedPercent == 20 && previous.LastSuccessfulCheckUtc == success,
+            "Gemini failure keeps previous values and original successful time");
+        check(previous.NextCheckUtc == now.AddMinutes(15) && !previous.Error.Contains("secret"), "Gemini retries without exposing diagnostics");
+        client.Handler = (_, _) => Task.FromException<QuotaReading>(new NotSupportedException("Unknown agy version"));
+        await monitor.RefreshOnceAsync(QuotaProvider.Gemini);
+        check(State(monitor, QuotaProvider.Gemini).Error == "agy CLI 1.3.1 이상이 필요합니다(2.0 미만 안정 버전).",
+            "Unsupported CLI version explains the stable minimum and excluded major versions without agent fallback");
+        check(State(monitor, QuotaProvider.Gemini).NextCheckUtc == now.AddMinutes(30), "Gemini failure backoff uses the existing policy");
+        check(!State(monitor, QuotaProvider.Codex).IsPrevious && !State(monitor, QuotaProvider.Claude).IsPrevious,
+            "Gemini failure does not mark other providers as previous");
+        await monitor.StopAsync();
+    }
+
     private static async Task PollingTestsAsync(Action<bool, string> check)
     {
         var release = Signal();
@@ -258,7 +306,7 @@ internal static class AccountQuotaMonitorTests
         var client = new FakeClient((provider, _) => Task.FromResult(Reading(provider, provider == QuotaProvider.Codex ? 25 : 75)));
         using (var monitor = new AccountQuotaMonitor(client, store, () => Now))
         {
-            await Task.WhenAll(monitor.RefreshOnceAsync(QuotaProvider.Codex), monitor.RefreshOnceAsync(QuotaProvider.Claude));
+            await Task.WhenAll(Enum.GetValues<QuotaProvider>().Select(provider => monitor.RefreshOnceAsync(provider)));
             check(monitor.Snapshot().All(state => state.CacheError.Length == 0), "Successful readings saved without cache errors");
             for (int index = 0; index < 5; index++) await monitor.RefreshOnceAsync(QuotaProvider.Codex);
             await monitor.StopAsync();
@@ -269,8 +317,11 @@ internal static class AccountQuotaMonitorTests
         check(codex is { Version: 1 } && codex.SuccessfulAtUtc == Now && codex.Reading.Windows[0].UsedPercent == 25,
             "Reopened DB returns exact normalized quota and successful time");
         check(claude?.Reading.Windows[0].UsedPercent == 75, "Provider caches persist independently");
-        check(Scalar(path, "SELECT COUNT(*) FROM AppMetadata WHERE Key LIKE 'AccountQuota.v1.%';") == 2,
-            "Repeated polling overwrites two bounded metadata cache entries");
+        check(Scalar(path, "SELECT COUNT(*) FROM AppMetadata WHERE Key LIKE 'AccountQuota.v1.%';") == 3,
+            "Repeated polling overwrites three bounded metadata cache entries");
+        QuotaCache? geminiCache = await reopened.ReadQuotaAsync(QuotaProvider.Gemini);
+        check(geminiCache?.Reading.Provider == QuotaProvider.Gemini && geminiCache.Reading.Windows[0].UsedPercent == 75,
+            "Gemini cache persists independently under its new key");
         check(Scalar(path, "SELECT COUNT(*) FROM UsageEvents;") == 0 && Scalar(path, "SELECT COUNT(*) FROM ProviderStatusHistory;") == 0,
             "Quota cache does not create measurements or provider-status history");
         check(Scalar(path, "PRAGMA user_version;") == 2, "Quota cache uses metadata without changing schema version");
@@ -303,7 +354,7 @@ internal static class AccountQuotaMonitorTests
                 "Source-generated quota save and restart preserve every normalized field");
         }
         check(Scalar(legacyPath, "PRAGMA user_version;") == 2 &&
-              Scalar(legacyPath, "SELECT COUNT(*) FROM AppMetadata WHERE Key LIKE 'AccountQuota.v1.%';") == 2,
+              Scalar(legacyPath, "SELECT COUNT(*) FROM AppMetadata WHERE Key LIKE 'AccountQuota.v1.%';") == 3,
             "Source generation changes neither SQLite schema nor quota metadata keys");
 
         var offline = new FakeClient((_, _) => Task.FromException<QuotaReading>(new IOException("Offline")));
@@ -440,9 +491,9 @@ internal static class AccountQuotaMonitorTests
 
     private sealed class FakeClient(Func<QuotaProvider, CancellationToken, Task<QuotaReading>> handler) : IAccountQuotaClient
     {
-        private readonly int[] calls = new int[2];
-        private readonly int[] active = new int[2];
-        private readonly int[] maximumActive = new int[2];
+        private readonly int[] calls = new int[Enum.GetValues<QuotaProvider>().Length];
+        private readonly int[] active = new int[Enum.GetValues<QuotaProvider>().Length];
+        private readonly int[] maximumActive = new int[Enum.GetValues<QuotaProvider>().Length];
         private readonly object sync = new();
         public Func<QuotaProvider, CancellationToken, Task<QuotaReading>> Handler { get; set; } = handler;
         public int Calls(QuotaProvider provider) { lock (sync) return calls[(int)provider]; }

@@ -124,6 +124,7 @@ internal sealed class AccountQuotaMonitor : IDisposable
                 {
                     OperationCanceledException or TimeoutException => "한도 조회 시간 초과",
                     FileNotFoundException => "공식 CLI를 찾지 못했습니다. 설치 경로를 확인하세요.",
+                    NotSupportedException when provider == QuotaProvider.Gemini => "agy CLI 1.3.1 이상이 필요합니다(2.0 미만 안정 버전).",
                     UnauthorizedAccessException => "공식 CLI 실행 권한을 확인하세요.",
                     InvalidDataException => "한도 응답 없음 · CLI 로그인과 사용량 화면을 확인하세요.",
                     _ => "한도 조회 실패 · 네트워크와 CLI 로그인을 확인하세요."

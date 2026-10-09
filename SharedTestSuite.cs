@@ -31,6 +31,8 @@ internal static class SharedTestSuite
                 quota++;
             });
             Report("quota schemas/polling policy", quota);
+            Report("Gemini Antigravity quota schemas/policy", GeminiQuotaTests.Run());
+            Report("Gemini quota CLI guards/protocol (synthetic)", await GeminiQuotaClientTests.RunAsync());
             Report("quota monitor/restart/cancellation (fake CLI)", await AccountQuotaMonitorTests.RunAsync());
             Report("quota CLI setup/protocol/cancellation (POSIX fixtures)", await SharedQuotaProtocolTests.RunAsync());
             Report("paths/IANA/formatting/CLI candidates", PortablePlatformTests.Run());

@@ -3,50 +3,94 @@ using System.Globalization;
 
 namespace AiBurgerClock;
 
-internal sealed class TestAccountQuotaClient(Func<DateTimeOffset> clock) : IAccountQuotaClient
+internal sealed class TestAccountQuotaClient(Func<DateTimeOffset> clock, SmokeQueryActivity? activity = null) : IAccountQuotaClient
 {
     private int codexCalls;
     private int claudeCalls;
+    private int geminiCalls;
+    private int geminiDelayMilliseconds;
     internal bool FailClaude { get; set; }
-    internal int Calls(QuotaProvider provider) => provider == QuotaProvider.Codex ? Volatile.Read(ref codexCalls) : Volatile.Read(ref claudeCalls);
-    public Task<QuotaReading> ReadAsync(QuotaProvider provider, CancellationToken cancellationToken)
+    internal bool FailGemini { get; set; }
+    internal int GeminiDelayMilliseconds { set => Volatile.Write(ref geminiDelayMilliseconds, value); }
+    internal int Calls(QuotaProvider provider) => provider switch
+    {
+        QuotaProvider.Codex => Volatile.Read(ref codexCalls),
+        QuotaProvider.Claude => Volatile.Read(ref claudeCalls),
+        _ => Volatile.Read(ref geminiCalls)
+    };
+    public async Task<QuotaReading> ReadAsync(QuotaProvider provider, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        if (provider == QuotaProvider.Codex) Interlocked.Increment(ref codexCalls);
-        else Interlocked.Increment(ref claudeCalls);
-        if (provider == QuotaProvider.Claude && FailClaude) throw new IOException("Synthetic offline condition");
+        switch (provider)
+        {
+            case QuotaProvider.Codex: Interlocked.Increment(ref codexCalls); break;
+            case QuotaProvider.Claude: Interlocked.Increment(ref claudeCalls); break;
+            case QuotaProvider.Gemini:
+                Interlocked.Increment(ref geminiCalls);
+                break;
+        }
+        int delay = provider == QuotaProvider.Gemini ? Interlocked.Exchange(ref geminiDelayMilliseconds, 0) : 0;
+        using var query = activity?.Begin("fake-quota/" + provider, delay);
+        if (delay > 0) await Task.Delay(delay, cancellationToken);
+        if ((provider == QuotaProvider.Claude && FailClaude) || (provider == QuotaProvider.Gemini && FailGemini))
+            throw new IOException("Synthetic offline condition");
         var now = clock();
-        QuotaWindow[] windows = provider == QuotaProvider.Codex
-            ? [new("session", "5시간", 18, now.AddHours(2), 300), new("weekly", "주간", 92, now.AddDays(2), 10080)]
-            : [new("session", "5시간", 0, now.AddMinutes(12), 300), new("weekly", "주간", 45, now.AddDays(3), 10080), new("fable", "주간 · Fable", 1, now.AddDays(3), 10080)];
-        return Task.FromResult(new QuotaReading(provider, windows));
+        QuotaWindow[] windows = provider switch
+        {
+            QuotaProvider.Codex => [new("session", "5시간", 18, now.AddHours(2), 300), new("weekly", "주간", 92, now.AddDays(2), 10080)],
+            QuotaProvider.Claude => [new("session", "5시간", 0, now.AddMinutes(12), 300), new("weekly", "주간", 45, now.AddDays(3), 10080), new("fable", "주간 · Fable", 1, now.AddDays(3), 10080)],
+            _ => [new("gemini-5h", "5시간", 2.01, now.AddHours(3), 300), new("gemini-weekly", "주간", 0.34, now.AddDays(6), 10080)]
+        };
+        return new QuotaReading(provider, windows);
     }
 }
 
 internal static class AccountQuotaUiChecks
 {
     internal static async Task RunAsync(TrayApplicationContext context, TestAccountQuotaClient client,
-        Func<DateTimeOffset> clock, string? reportDirectory)
+        Func<DateTimeOffset> clock, Action<DateTimeOffset> setClock, string? reportDirectory, SmokeDiagnostics diagnostics)
     {
         void Check(bool condition, string label)
         {
-            if (!condition) throw new InvalidOperationException(label);
+            if (!condition) { diagnostics.Record("quota.check-failed", new { label }); throw new InvalidOperationException(label); }
             Console.WriteLine("PASS: " + label);
         }
-        async Task Wait(Func<bool> condition)
+        async Task Wait(Func<bool> condition, string label = "Quota UI condition", Func<object>? detail = null)
         {
+            var elapsed = System.Diagnostics.Stopwatch.StartNew();
+            diagnostics.Record("quota.wait-start", new { label, detail = detail?.Invoke() });
             var deadline = DateTime.UtcNow.AddSeconds(5);
             while (!condition())
             {
-                if (DateTime.UtcNow > deadline) throw new TimeoutException("Quota UI condition");
+                if (DateTime.UtcNow > deadline)
+                {
+                    diagnostics.Record("quota.wait-timeout", new { label, elapsedMs = elapsed.Elapsed.TotalMilliseconds, detail = detail?.Invoke() });
+                    throw new TimeoutException("Quota UI condition: " + label);
+                }
                 await Task.Delay(25);
             }
+            diagnostics.Record("quota.wait-end", new { label, elapsedMs = elapsed.Elapsed.TotalMilliseconds, detail = detail?.Invoke() });
+        }
+        void ClickQuotaButton(string label)
+        {
+            // Async checks yield to the real popup's Deactivate/auto-hide policy.
+            // Use the same reopening path as a user; do not force visibility or disable auto-hide.
+            context.ShowWindow();
+            diagnostics.Record("quota.toggle-before-click", new { label });
+            Check(context.StatusWindow.Visible && context.StatusWindow.QuotaButton.Enabled && context.StatusWindow.QuotaButton.CanSelect,
+                label + ": quota toggle is actionable after normal reopening");
+            int clicks = diagnostics.QuotaClicks;
+            context.StatusWindow.QuotaButton.PerformClick();
+            diagnostics.Record("quota.toggle-after-click", new { label });
+            Check(diagnostics.QuotaClicks == clicks + 1, label + ": exactly one actual quota Click");
         }
         var monitor = context.QuotaMonitor!;
         Label[] QuotaLabels() => context.StatusWindow.QuotaView.Controls.OfType<Panel>()
             .SelectMany(box => box.Controls.OfType<Label>()).ToArray();
-        await monitor.RefreshOnceAsync(QuotaProvider.Codex);
-        await monitor.RefreshOnceAsync(QuotaProvider.Claude);
+        Panel Box(QuotaProvider provider) => context.StatusWindow.QuotaView.Controls.OfType<Panel>()
+            .Single(box => box.Name == provider + "QuotaBox");
+        Label[] ProviderLabels(QuotaProvider provider) => Box(provider).Controls.OfType<Label>().ToArray();
+        foreach (var provider in Enum.GetValues<QuotaProvider>()) await monitor.RefreshOnceAsync(provider);
         context.ShowWindow();
         var appearance = context.CurrentAppearance;
         var size = context.StatusWindow.ClientSize;
@@ -54,8 +98,17 @@ internal static class AccountQuotaUiChecks
         var titleBounds = title.Bounds;
         var statusBoxes = context.StatusWindow.Controls.OfType<Panel>()
             .Where(panel => panel != context.StatusWindow.QuotaView).ToArray();
+        int hiddenQuotaClicks = diagnostics.QuotaClicks;
+        string hiddenQuotaText = context.StatusWindow.QuotaButton.Text;
+        context.StatusWindow.Hide();
+        Check(!context.StatusWindow.Visible && !context.StatusWindow.QuotaButton.CanSelect,
+            "Hidden popup makes the quota toggle unselectable");
         context.StatusWindow.QuotaButton.PerformClick();
+        Check(diagnostics.QuotaClicks == hiddenQuotaClicks && context.StatusWindow.QuotaButton.Text == hiddenQuotaText,
+            "Hidden quota PerformClick emits no Click and preserves the selected mode");
+        ClickQuotaButton("Show initial quota view");
         Check(context.StatusWindow.QuotaView.Visible, "Quota toggle shows ChatGPT Work/Codex and Claude without enlarging the popup");
+        context.StatusWindow.UpdateQuotas(monitor.Snapshot().Where(s => s.Provider != QuotaProvider.Gemini).ToArray(), clock());
         var labels = QuotaLabels();
         var boxes = context.StatusWindow.QuotaView.Controls.OfType<Panel>().ToArray();
         Check(boxes.Length == 2 && boxes[0].Name == "CodexQuotaBox" && boxes[1].Name == "ClaudeQuotaBox",
@@ -85,10 +138,10 @@ internal static class AccountQuotaUiChecks
             mouseLeave.Invoke(box, [EventArgs.Empty]);
         }
         Check(labels.Any(l => l.Text == "ChatGPT") && labels.Any(l => l.Text == "Work/Codex") && labels.Any(l => l.Text.Contains("Claude")) &&
-            !labels.Any(l => l.Text.Contains("Gemini")), "Only requested account quota providers appear; no Gemini quota substitute");
+            !labels.Any(l => l.Text.Contains("Gemini")), "Existing two-provider layout remains unchanged when Gemini is absent");
         var chatGptHeading = labels.Single(l => l.Text == "ChatGPT");
         var scope = labels.Single(l => l.Text == "Work/Codex");
-        Check(scope.Top >= chatGptHeading.Bottom && labels.Any(l => l.Top >= scope.Bottom && l.Text.StartsWith("5시간", StringComparison.Ordinal)),
+        Check(scope.Top >= chatGptHeading.Bottom && ProviderLabels(QuotaProvider.Codex).Any(l => l.Top >= scope.Bottom && l.Text.StartsWith("5시간", StringComparison.Ordinal)),
             "ChatGPT quota heading has Work/Codex on a separate line above its limits");
         Check(chatGptHeading.ForeColor == SystemColors.ControlText && scope.ForeColor == Color.DimGray,
             "Shared Normal and Muted quota tones retain Windows heading and scope colors");
@@ -105,7 +158,50 @@ internal static class AccountQuotaUiChecks
             "Quota tooltip explains exhausted 15m polling separately from the 5m reset band");
         Check(labels.All(l => l.Height >= TextRenderer.MeasureText(l.Text, l.Font).Height), "Quota rows accommodate DPI-scaled text height");
         Check(context.StatusWindow.ClientSize == size && context.CurrentAppearance == appearance, "Quota values never change tray health or original window dimensions");
+        SmokeTest.RenderAndCheckLayout(context.StatusWindow, "account-quotas-two-providers.png", reportDirectory);
+
+        context.RefreshStatus(false);
+        boxes = context.StatusWindow.QuotaView.Controls.OfType<Panel>().ToArray();
+        labels = QuotaLabels();
+        Check(boxes.Select(box => box.Name).SequenceEqual(new[] { "CodexQuotaBox", "ClaudeQuotaBox", "GeminiQuotaBox" }),
+            "Gemini has a third Provider box after ChatGPT and Claude");
+        var geminiBox = Box(QuotaProvider.Gemini);
+        Check(geminiBox.BackColor == Color.White && geminiBox.BorderStyle == boxes[0].BorderStyle &&
+            geminiBox.Width == boxes[0].Width && geminiBox.Cursor == Cursors.Default &&
+            geminiBox.Controls.OfType<Label>().All(label => label.Left == boxes[0].Controls.OfType<Label>().First().Left),
+            "Gemini quota box uses the same non-clickable white card and text padding");
+        mouseEnter.Invoke(geminiBox, [EventArgs.Empty]);
+        foreach (Control label in geminiBox.Controls) mouseEnter.Invoke(label, [EventArgs.Empty]);
+        Check(geminiBox.BackColor == Color.White && geminiBox.Controls.Cast<Control>().All(control => control.BackColor == Color.White),
+            "Gemini quota box has no hover effect");
+        Check(ProviderLabels(QuotaProvider.Gemini).Any(l => l.Text == "Gemini") &&
+            ProviderLabels(QuotaProvider.Gemini).Any(l => l.Text == QuotaPanelModel.GeminiScope) &&
+            ProviderLabels(QuotaProvider.Gemini).Any(l => l.Text.StartsWith("5시간  98%", StringComparison.Ordinal)) &&
+            ProviderLabels(QuotaProvider.Gemini).Any(l => l.Text.StartsWith("주간  99.7%", StringComparison.Ordinal)),
+            "Gemini shows only Antigravity Gemini-model scope and two percentage windows from the shared model");
+        Check(ProviderLabels(QuotaProvider.Gemini).Any(l => l.AccessibleDescription?.Contains("Gemini Apps 웹·모바일의 전체 한도가 아니며", StringComparison.Ordinal) == true),
+            "Gemini scope details do not imply Gemini Apps or third-party model quotas");
+        Check(context.StatusWindow.ClientSize == size && context.StatusWindow.QuotaView.VerticalScroll.Visible &&
+            !context.StatusWindow.QuotaView.HorizontalScroll.Visible && boxes.All(box =>
+                box.Controls.OfType<Label>().All(label => label.Bottom <= box.Height)),
+            "Three Provider boxes scroll only inside the existing quota viewport without enlarging the popup");
+        Check(labels.All(l => l.Height >= TextRenderer.MeasureText(l.Text, l.Font).Height),
+            "All three Provider boxes accommodate DPI-scaled text height");
         SmokeTest.RenderAndCheckLayout(context.StatusWindow, "account-quotas.png", reportDirectory);
+        context.StatusWindow.QuotaView.ScrollControlIntoView(geminiBox);
+        var geminiMetadata = ProviderLabels(QuotaProvider.Gemini).Single(l => l.Text.StartsWith("성공 ", StringComparison.Ordinal));
+        Check(context.StatusWindow.QuotaView.RectangleToScreen(context.StatusWindow.QuotaView.ClientRectangle)
+            .Contains(geminiMetadata.RectangleToScreen(geminiMetadata.ClientRectangle)),
+            "Gemini metadata is reachable by quota-only vertical scrolling");
+        var scrollPosition = context.StatusWindow.QuotaView.AutoScrollPosition;
+        var retainedBoxes = boxes.ToArray();
+        context.StatusWindow.UpdateQuotas(monitor.Snapshot(), clock().AddSeconds(1));
+        Check(retainedBoxes.SequenceEqual(context.StatusWindow.QuotaView.Controls.OfType<Panel>()) &&
+            context.StatusWindow.QuotaView.AutoScrollPosition == scrollPosition,
+            "Countdown refresh preserves Provider boxes and the scrolled Gemini position");
+        context.StatusWindow.UpdateQuotas(monitor.Snapshot(), clock());
+        SmokeTest.RenderAndCheckLayout(context.StatusWindow, "account-quotas-gemini.png", reportDirectory);
+        context.StatusWindow.QuotaView.AutoScrollPosition = Point.Empty;
 
         client.FailClaude = true;
         await monitor.RefreshOnceAsync(QuotaProvider.Claude);
@@ -118,15 +214,43 @@ internal static class AccountQuotaUiChecks
             "Previous quota values keep the Windows muted color");
         SmokeTest.RenderAndCheckLayout(context.StatusWindow, "account-quotas-previous.png", reportDirectory);
         client.FailClaude = false;
+        await monitor.RefreshOnceAsync(QuotaProvider.Claude);
+        client.FailGemini = true;
+        await monitor.RefreshOnceAsync(QuotaProvider.Gemini);
+        context.RefreshStatus(false);
+        Check(monitor.Snapshot().Single(s => s.Provider == QuotaProvider.Gemini).IsPrevious &&
+            monitor.Snapshot().Where(s => s.Provider != QuotaProvider.Gemini).All(s => !s.IsPrevious),
+            "Gemini lookup failure retains only its own previous verified reading");
+        Check(ProviderLabels(QuotaProvider.Gemini).Any(l => l.Text == "Gemini · 이전 조회값") &&
+            ProviderLabels(QuotaProvider.Gemini).Single(l => l.Text.StartsWith("5시간  ", StringComparison.Ordinal)).ForeColor == Color.DimGray,
+            "Gemini previous values are explicitly labeled and muted");
+        context.StatusWindow.QuotaView.ScrollControlIntoView(Box(QuotaProvider.Gemini));
+        SmokeTest.RenderAndCheckLayout(context.StatusWindow, "account-quotas-gemini-previous.png", reportDirectory);
+        client.FailGemini = false;
 
+        await Wait(() => !context.ProviderMonitor!.IsRefreshing && monitor.Snapshot().All(s => !s.IsRefreshing),
+            "providers idle before manual Refresh");
+        context.ShowWindow();
+        var refreshButton = context.StatusWindow.Controls.OfType<Button>().Single(b => b.Text == "Refresh");
+        Check(context.StatusWindow.Visible && refreshButton.Enabled && refreshButton.CanSelect,
+            "Quota Refresh is actionable after normal reopening and provider completion");
+        var callsBeforeRefresh = Enum.GetValues<QuotaProvider>().ToDictionary(provider => provider, client.Calls);
         int before = client.Calls(QuotaProvider.Claude);
-        context.StatusWindow.Controls.OfType<Button>().Single(b => b.Text == "Refresh").PerformClick();
-        await Wait(() => client.Calls(QuotaProvider.Claude) > before && monitor.Snapshot().All(s => !s.IsRefreshing));
-        Check(!monitor.Snapshot().Single(s => s.Provider == QuotaProvider.Claude).IsPrevious, "Existing Refresh button recovers quota display");
+        int refreshClicks = diagnostics.RefreshClicks;
+        diagnostics.Record("quota.refresh-before-click", new { callsBeforeRefresh });
+        refreshButton.PerformClick();
+        diagnostics.Record("quota.refresh-after-click");
+        Check(diagnostics.RefreshClicks == refreshClicks + 1, "Quota Refresh emits exactly one actual Click before waiting for results");
+        await Wait(() => client.Calls(QuotaProvider.Claude) > before && monitor.Snapshot().All(s => !s.IsRefreshing), "manual Refresh",
+            () => new { claudeBefore = before, claudeNow = client.Calls(QuotaProvider.Claude), claudeAdvanced = client.Calls(QuotaProvider.Claude) > before, allIdle = monitor.Snapshot().All(s => !s.IsRefreshing) });
+        Check(monitor.Snapshot().All(s => !s.IsPrevious) &&
+            Enum.GetValues<QuotaProvider>().All(provider => client.Calls(provider) > callsBeforeRefresh[provider]),
+            "Existing Refresh button recovers all three independent quota displays");
         before = client.Calls(QuotaProvider.Claude);
         context.OnPowerModeChanged(null, new PowerModeChangedEventArgs(PowerModes.Resume));
-        await Wait(() => client.Calls(QuotaProvider.Claude) > before && monitor.Snapshot().All(s => !s.IsRefreshing));
-        Check(true, "Sleep resume queues one fresh official CLI quota read");
+        await Wait(() => client.Calls(QuotaProvider.Claude) > before && monitor.Snapshot().All(s => !s.IsRefreshing), "Resume",
+            () => new { claudeBefore = before, claudeNow = client.Calls(QuotaProvider.Claude), claudeAdvanced = client.Calls(QuotaProvider.Claude) > before, allIdle = monitor.Snapshot().All(s => !s.IsRefreshing) });
+        Check(true, "Sleep resume queues fresh quota reads including Gemini");
 
         var expired = new QuotaState(QuotaProvider.Codex, new(QuotaProvider.Codex,
             [new("expired", "5시간", 97, clock().AddSeconds(-1), 300)]), LastSuccessfulCheckUtc: clock());
@@ -148,7 +272,9 @@ internal static class AccountQuotaUiChecks
             "Quota metadata displays the exhausted provider's next 15m check");
         SmokeTest.RenderAndCheckLayout(context.StatusWindow, "account-quotas-exhausted.png", reportDirectory);
         context.RefreshStatus(false);
-        context.StatusWindow.QuotaButton.PerformClick();
+        diagnostics.Record("quota.status-toggle-before-click");
+        ClickQuotaButton("Restore official status view");
+        diagnostics.Record("quota.status-toggle-before-check");
         Check(!context.StatusWindow.QuotaView.Visible && context.StatusWindow.Controls.OfType<Panel>().Count(p => p.Visible) == 3,
             "Status toggle restores all three official status rows including Gemini");
         Check(title.Text == StatusPanelModel.Title && title.Bounds == titleBounds,
@@ -172,6 +298,15 @@ internal static class AccountQuotaUiChecks
         Check(QuotaLabels().Single(l => l.Text == "한도 조회 대기 · 공식 CLI 로그인 필요").ForeColor == Color.DimGray,
             "Shared pre-reading placeholder keeps its text and Windows muted color");
 
+        context.StatusWindow.UpdateQuotas([new QuotaState(QuotaProvider.Gemini)], clock());
+        Check(QuotaLabels().Any(l => l.Text == "Gemini") && QuotaLabels().Any(l => l.Text == QuotaPanelModel.GeminiScope) &&
+            QuotaLabels().Single(l => l.Text == "한도 조회 대기 · agy CLI 로그인 필요").ForeColor == Color.DimGray,
+            "Missing Gemini reading uses the agy login placeholder without inventing a balance");
+        context.StatusWindow.UpdateQuotas([new QuotaState(QuotaProvider.Gemini, Error: "한도 응답 형식을 확인하지 못했습니다.")], clock());
+        Check(QuotaLabels().Any(l => l.Text == "한도 응답 형식을 확인하지 못했습니다.") &&
+            QuotaLabels().All(l => !l.Text.Contains("%", StringComparison.Ordinal)),
+            "Unavailable Gemini schema is explained instead of displaying guessed quota percentages");
+
         var culture = CultureInfo.CurrentCulture;
         try
         {
@@ -184,17 +319,85 @@ internal static class AccountQuotaUiChecks
         }
         finally { CultureInfo.CurrentCulture = culture; }
 
-        context.StatusWindow.QuotaButton.PerformClick();
+        ClickQuotaButton("Show extra quota rows");
         var extraWindows = Enumerable.Range(0, 12).Select(index => new QuotaWindow("extra-" + index, "주간 · 모델 " + index,
             index, clock().AddDays(1))).ToArray();
         context.StatusWindow.UpdateQuotas([new QuotaState(QuotaProvider.Claude, new QuotaReading(QuotaProvider.Claude, extraWindows))], clock());
         Check(context.StatusWindow.QuotaView.VerticalScroll.Visible && !context.StatusWindow.QuotaView.HorizontalScroll.Visible &&
             context.StatusWindow.ClientSize == size,
             "Extra model-scoped quota rows scroll vertically without enlarging the popup");
-        context.RefreshStatus(false);
+        context.StatusWindow.UpdateQuotas(monitor.Snapshot().Where(s => s.Provider != QuotaProvider.Gemini).ToArray(), clock());
         Check(!context.StatusWindow.QuotaView.VerticalScroll.Visible && !context.StatusWindow.QuotaView.HorizontalScroll.Visible,
-            "Returning to standard quotas removes both scrollbars");
-        context.StatusWindow.QuotaButton.PerformClick();
+            "Returning to the original two-provider quotas removes both scrollbars");
         context.RefreshStatus(false);
+        diagnostics.Phase = "quota.synthetic-10s";
+        diagnostics.Record("quota.synthetic-10s-start");
+        await CheckResponsiveRefreshAsync(context, client, clock, setClock, Check, condition => Wait(condition));
+        ClickQuotaButton("Restore status after delayed Gemini response");
+        context.RefreshStatus(false);
+    }
+
+    private static async Task CheckResponsiveRefreshAsync(TrayApplicationContext context, TestAccountQuotaClient client,
+        Func<DateTimeOffset> clock, Action<DateTimeOffset> setClock, Action<bool, string> check, Func<Func<bool>, Task> wait)
+    {
+        var monitor = context.QuotaMonitor!;
+        var originalNow = clock();
+        var calls = Enum.GetValues<QuotaProvider>().ToDictionary(provider => provider, client.Calls);
+        var menu = context.TrayIcon.ContextMenuStrip!;
+        int uiTicks = 0;
+        var tooltipValues = new HashSet<string>();
+        var countdownValues = new HashSet<string>();
+        using var heartbeat = new System.Windows.Forms.Timer { Interval = 200 };
+        heartbeat.Tick += (_, _) =>
+        {
+            setClock(clock().AddSeconds(1));
+            uiTicks++;
+            tooltipValues.Add(context.TrayIcon.Text);
+            foreach (var label in context.StatusWindow.Controls.OfType<Label>().Where(l => l.Text.StartsWith("전환까지", StringComparison.Ordinal)))
+                countdownValues.Add(label.Text);
+        };
+        try
+        {
+            client.GeminiDelayMilliseconds = 10000;
+            var elapsed = System.Diagnostics.Stopwatch.StartNew();
+            heartbeat.Start();
+            menu.Items.OfType<ToolStripMenuItem>().Single(item => item.Text == "상태·한도 새로 고침").PerformClick();
+            check(elapsed.ElapsedMilliseconds < 1000, "Tray Refresh action returns immediately while Gemini waits for a synthetic 10-second response");
+            await wait(() => client.Calls(QuotaProvider.Gemini) > calls[QuotaProvider.Gemini] &&
+                monitor.Snapshot().Single(s => s.Provider == QuotaProvider.Gemini).IsRefreshing);
+            await Task.Delay(1500);
+            menu.Show(context.StatusWindow, new Point(20, 20));
+            check(menu.Visible && monitor.Snapshot().Single(s => s.Provider == QuotaProvider.Gemini).IsRefreshing,
+                "Native tray context menu opens while Gemini quota lookup remains pending");
+            menu.Close();
+            context.StatusWindow.Close();
+            check(!context.StatusWindow.Visible && !context.StatusWindow.IsDisposed,
+                "Status window can hide while Gemini quota lookup is pending");
+            menu.Items.OfType<ToolStripMenuItem>().Single(item => item.Text == "상태 창 열기").PerformClick();
+            check(context.StatusWindow.Visible && monitor.Snapshot().Single(s => s.Provider == QuotaProvider.Gemini).IsRefreshing,
+                "Tray menu reopens the status window before the Gemini lookup finishes");
+            await Task.Delay(6000);
+            check(monitor.Snapshot().Single(s => s.Provider == QuotaProvider.Gemini).IsRefreshing && uiTicks >= 20 &&
+                tooltipValues.Count >= 3 && countdownValues.Count >= 3,
+                "Real Windows timer keeps tray tooltip and status countdown updating during Gemini's 10-second lookup");
+            check(monitor.Snapshot().Where(s => s.Provider != QuotaProvider.Gemini).All(s => !s.IsRefreshing) &&
+                client.Calls(QuotaProvider.Codex) > calls[QuotaProvider.Codex] &&
+                client.Calls(QuotaProvider.Claude) > calls[QuotaProvider.Claude] &&
+                client.Calls(QuotaProvider.Gemini) == calls[QuotaProvider.Gemini] + 1,
+                "Other quota providers complete independently without repeating the pending Gemini lookup");
+            await wait(() => !monitor.Snapshot().Single(s => s.Provider == QuotaProvider.Gemini).IsRefreshing);
+            await wait(() => context.StatusWindow.QuotaView.Controls.OfType<Panel>()
+                .Single(box => box.Name == "GeminiQuotaBox").Controls.OfType<Label>().Any(label => label.Text == "Gemini"));
+            check(!monitor.Snapshot().Single(s => s.Provider == QuotaProvider.Gemini).IsPrevious,
+                "Delayed Gemini response updates its Provider box after completion");
+            Console.WriteLine($"INFO: synthetic Gemini delay completed in {elapsed.Elapsed.TotalSeconds:0.00}s; UI heartbeat={uiTicks}, tray countdown values={tooltipValues.Count}, status countdown values={countdownValues.Count}.");
+        }
+        finally
+        {
+            heartbeat.Stop();
+            menu.Close();
+            setClock(originalNow);
+            context.RefreshStatus(false);
+        }
     }
 }

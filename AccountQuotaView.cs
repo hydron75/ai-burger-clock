@@ -11,6 +11,7 @@ internal sealed class AccountQuotaView : Panel
     private readonly Dictionary<QuotaProvider, Label> metadata = new();
     private readonly Dictionary<(QuotaProvider, string), Label> rows = new();
     private string layoutKey = "";
+    private bool sizingBoxes;
 
     public AccountQuotaView()
     {
@@ -23,7 +24,7 @@ internal sealed class AccountQuotaView : Panel
     public void UpdateQuotas(IReadOnlyList<QuotaState> states, DateTimeOffset now)
     {
         var sections = QuotaPanelModel.Sections(states, now);
-        string key = DeviceDpi + "|" + string.Join('|', states.Select(s => s.Provider + ":" + string.Join(',', s.Reading?.Windows.Select(w => w.Id) ?? [])));
+        string key = DeviceDpi + "|" + string.Join('|', sections.Select(s => s.Provider + ":" + (s.Scope is not null) + ":" + string.Join(',', s.Rows.Select(row => row.WindowId))));
         if (key != layoutKey)
         {
             layoutKey = key;
@@ -93,6 +94,23 @@ internal sealed class AccountQuotaView : Panel
     {
         base.OnResize(e);
         foreach (var box in Controls.OfType<Panel>()) box.Width = ClientSize.Width;
+    }
+
+    protected override void OnLayout(LayoutEventArgs e)
+    {
+        base.OnLayout(e);
+        if (sizingBoxes) return;
+        sizingBoxes = true;
+        try
+        {
+            foreach (var box in Controls.OfType<Panel>())
+            {
+                box.Width = ClientSize.Width;
+                foreach (var label in box.Controls.OfType<Label>())
+                    label.Width = Math.Max(0, box.ClientSize.Width - Scale(16));
+            }
+        }
+        finally { sizingBoxes = false; }
     }
 
     private Label AddRow(Panel box, int y, Font font)

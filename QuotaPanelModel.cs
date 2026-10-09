@@ -14,10 +14,12 @@ internal static class QuotaPanelModel
     public const string AccessibleName = "개인 계정 잔여 한도";
     public const string ShowQuotas = "한도 보기";
     public const string ShowStatus = "상태 보기";
-    public const string ToggleDetail = "ChatGPT (Work/Codex) · Claude 개인 계정 한도. Gemini의 공식 서비스 상태는 그대로 유지합니다.";
+    public const string ToggleDetail = "ChatGPT (Work/Codex) · Claude · Gemini (Antigravity) 계정 한도. 일반 채팅의 모든 모델 한도를 뜻하지 않습니다. 공식 서비스 상태는 그대로 유지합니다.";
     public const string Caption = "잔여량 = 100 − 사용률 · 시각은 KST\n마우스 올리기: 상세 · Refresh: 다시 조회";
     public const string CodexScope = "Work/Codex";
     public const string CodexScopeDetail = "ChatGPT 계정의 Work/Codex 한도입니다. 일반 채팅의 모든 모델 한도를 뜻하지 않습니다.";
+    public const string GeminiScope = "Antigravity · Gemini 모델";
+    public const string GeminiScopeDetail = "agy CLI의 Antigravity Gemini 모델 그룹 한도입니다. Gemini Apps 웹·모바일의 전체 한도가 아니며, Antigravity의 Claude/GPT 모델 그룹과 크레딧은 포함하지 않습니다.";
 
     // A previous value, or one whose reset time has passed, is never shown as current.
     public static PanelTone Tone(QuotaWindow window, bool previous, DateTimeOffset now)
@@ -34,21 +36,24 @@ internal static class QuotaPanelModel
     {
         bool previous = state.IsPrevious;
         bool codex = state.Provider == QuotaProvider.Codex;
+        bool gemini = state.Provider == QuotaProvider.Gemini;
         string name = ProviderNames.Quota(state.Provider);
         var succeeded = state.LastSuccessfulCheckUtc is { } success ? AgentSchedule.ToKst(success).ToString("MM-dd HH:mm") : "—";
         var next = state.NextCheckUtc is { } due ? AgentSchedule.ToKst(due).ToString("MM-dd HH:mm") : "—";
-        string note = $"{name}{(codex ? " (Work/Codex)" : "")} · 모든 시각 KST\n마지막 성공: {succeeded}\n다음 조회: {next}\n최근 시도: {(state.CheckedAtUtc is { } attempt ? AgentSchedule.ToKst(attempt).ToString("MM-dd HH:mm:ss") : "—")}\n" +
+        string note = $"{name}{(codex ? " (Work/Codex)" : gemini ? " (Antigravity)" : "")} · 모든 시각 KST\n마지막 성공: {succeeded}\n다음 조회: {next}\n최근 시도: {(state.CheckedAtUtc is { } attempt ? AgentSchedule.ToKst(attempt).ToString("MM-dd HH:mm:ss") : "—")}\n" +
             $"{state.Error}\n{state.CacheError}\n기본 6시간 · 잔여 0% 초과~10% 미만 1시간 · 잔여 0%는 15분 · 리셋 전후 15분은 5분 · 실패 시 15분부터 재시도\n공식 CLI 응답 수신 시각이며 서버 데이터 생성 시각을 보장하지 않습니다.";
+        if (gemini) note += "\n" + GeminiScopeDetail;
 
         var heading = new QuotaLine(
             name + (state.IsRefreshing ? " · 확인 중" : previous && state.Reading is not null ? " · 이전 조회값" : ""),
             PanelTone.Normal, note);
-        var scope = codex ? new QuotaLine(CodexScope, PanelTone.Muted, CodexScopeDetail) : null;
+        var scope = codex ? new QuotaLine(CodexScope, PanelTone.Muted, CodexScopeDetail) :
+            gemini ? new QuotaLine(GeminiScope, PanelTone.Muted, GeminiScopeDetail) : null;
         var metadata = new QuotaLine($"성공 {succeeded} · 다음 {next}",
             state.CacheError.Length > 0 ? PanelTone.Danger : PanelTone.Muted, note);
 
         QuotaLine[] rows = state.Reading is null
-            ? [new(state.Error.Length > 0 ? state.Error : "한도 조회 대기 · 공식 CLI 로그인 필요", PanelTone.Muted, note)]
+            ? [new(state.Error.Length > 0 ? state.Error : gemini ? "한도 조회 대기 · agy CLI 로그인 필요" : "한도 조회 대기 · 공식 CLI 로그인 필요", PanelTone.Muted, note)]
             : state.Reading.Windows.Select(window =>
             {
                 bool elapsed = window.ResetsAtUtc is { } reset && reset <= now;

@@ -12,6 +12,7 @@ internal static class MacCliPaths
         {
             QuotaProvider.Codex => "codex",
             QuotaProvider.Claude => "claude",
+            QuotaProvider.Gemini => "agy",
             _ => throw new ArgumentOutOfRangeException(nameof(provider))
         };
         var directories = pathEntries.Concat([homeDirectory.TrimEnd('/') + "/.local/bin",

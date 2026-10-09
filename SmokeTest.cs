@@ -11,17 +11,21 @@ internal static class SmokeTest
         var now = new DateTimeOffset(2026, 9, 19, 9, 59, 58, TimeSpan.FromHours(9));
         string testDirectory = Directory.CreateTempSubdirectory("AiBurgerClock-ui-tests-").FullName;
         var testStore = new UsageStore(Path.Combine(testDirectory, "ui-test.db"));
+        var activity = new SmokeQueryActivity();
         var statusHandler = new TestStatusHttpHandler();
-        using var statusHttp = new HttpClient(statusHandler);
+        using var statusHttp = new HttpClient(new SmokeStatusHttpHandler(activity, statusHandler));
         var openedPages = new List<Uri>();
-        var quotaClient = new TestAccountQuotaClient(() => now);
+        var quotaClient = new TestAccountQuotaClient(() => now, activity);
         using var context = new TrayApplicationContext(true, () => now, usageStore: testStore, statusHttpClient: statusHttp, openStatusPage: openedPages.Add, accountQuotaClient: quotaClient);
+        using var diagnostics = new SmokeDiagnostics(context, activity);
         using var timer = new Timer { Interval = 1500 };
         var notifications = new List<AgentState>();
         var transitionApplyOrder = new List<bool>();
         int balloonEvents = 0;
         int step = 0;
         int exitCode = 0;
+        int callbackSequence = 0;
+        int callbacksInFlight = 0;
         context.TransitionNotificationRequested += notifications.Add;
         context.TransitionNotificationRequested += state => transitionApplyOrder.Add(
             context.StatusWindow.Controls.OfType<Label>().Any(label => label.Text == "●  " + TrayPresentation.StateName(state)) &&
@@ -39,6 +43,9 @@ internal static class SmokeTest
 
         timer.Tick += async (_, _) =>
         {
+            int callbackId = ++callbackSequence;
+            callbacksInFlight++;
+            diagnostics.Record("smoke.timer-enter", new { callbackId, callbacksInFlight, step });
             try
             {
                 switch (step++)
@@ -79,9 +86,12 @@ internal static class SmokeTest
                         timer.Stop();
                         now = new DateTimeOffset(2026, 9, 19, 12, 0, 0, TimeSpan.FromHours(9));
                         context.RefreshStatus(false);
-                        await UIRegressionChecks.RunAsync(context, testStore, statusHandler, reportDirectory, openedPages, now, value => now = value);
+                        diagnostics.Phase = "ui.regression";
+                        await UIRegressionChecks.RunAsync(context, testStore, statusHandler, reportDirectory, openedPages, now, value => now = value, diagnostics);
+                        diagnostics.Phase = "holiday";
                         await HolidayUiChecks.RunAsync(context, testStore, statusHandler, value => now = value, reportDirectory);
-                        await AccountQuotaUiChecks.RunAsync(context, quotaClient, () => now, reportDirectory);
+                        diagnostics.Phase = "quota";
+                        await AccountQuotaUiChecks.RunAsync(context, quotaClient, () => now, value => now = value, reportDirectory, diagnostics);
                         if (verifyAutoStart)
                             VerifyAutoStart(context, reportDirectory);
                         Console.WriteLine($"Windows BalloonTipShown events: {balloonEvents} (visual delivery depends on Windows notification settings).");
@@ -93,14 +103,21 @@ internal static class SmokeTest
             catch (Exception error)
             {
                 exitCode = 1;
+                diagnostics.Record("smoke.failure", new { error = error.ToString() });
                 Console.Error.WriteLine("FAIL: " + error);
                 timer.Stop();
                 context.ExitApplication();
+            }
+            finally
+            {
+                callbacksInFlight--;
+                diagnostics.Record("smoke.timer-exit", new { callbackId, callbacksInFlight, step });
             }
         };
 
         timer.Start();
         Application.Run(context);
+        diagnostics.Dispose();
         context.Dispose();
         if (!context.StatusWindow.IsDisposed)
             return 1;
