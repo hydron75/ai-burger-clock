@@ -636,20 +636,29 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
                  new("weekly_all", "주간 전체", 37, now.AddDays(3), 10080),
                  new("weekly_scoped", "주간 Fable", 2, now.AddDays(3), 10080)]),
                 LastSuccessfulCheckUtc: now, NextCheckUtc: now.AddMinutes(83));
+            // Gemini (Antigravity, agy) is the third standard box since #30.
+            QuotaState geminiQuota = new(QuotaProvider.Gemini, new(QuotaProvider.Gemini,
+                [new("gemini-5h", "5시간", 0, now.AddHours(5), 300),
+                 new("gemini-weekly", "주간", 0.4, now.AddDays(6), 10080)]),
+                LastSuccessfulCheckUtc: now, NextCheckUtc: now.AddHours(6));
+            QuotaState[] quotas = [quota, claudeQuota, geminiQuota];
             ProviderStatus[] healthy = Enum.GetValues<ProviderKind>().Select(provider =>
                 new ProviderStatus(provider, OfficialStatus.Operational, now, now, "관련 서비스 정상")).ToArray();
-            panel.Update(Schedule(now), healthy, [quota, claudeQuota], false, now.AddMinutes(5), "");
-            MacStatusPanel.Layout layout = panel.Verify(Schedule(now), healthy, [quota, claudeQuota]);
+            panel.Update(Schedule(now), healthy, quotas, false, now.AddMinutes(5), "");
+            MacStatusPanel.Layout layout = panel.Verify(Schedule(now), healthy, quotas);
+            if (!panel.QuotaRowText(QuotaProvider.Gemini, "gemini-5h").StartsWith("5시간  100% 남음", StringComparison.Ordinal))
+                throw new InvalidOperationException("The Gemini quota box did not show its rows.");
             // The whole card opens the official page (VoiceOver press and click share the action).
             int requests = statusPageRequests;
             if (!panel.PressCard(ProviderKind.Claude) || statusPageRequests != requests + 1)
                 throw new InvalidOperationException("Pressing a provider card did not request its official page.");
-            // Screen fit: a 1280x800 screen shows everything; a 1024x640 screen (13-inch "larger text")
-            // keeps the whole popover visible by shrinking and scrolling only the quota area.
+            // Screen fit: with three quota boxes a 1280x800 screen is a little too short, so there and on a
+            // 1024x640 screen (13-inch "larger text") the popover stays whole and only the quota area scrolls.
             const int MenuBarAndMargin = 25 + 24;
             CGSize standard = panel.FitFor(800 - MenuBarAndMargin);
-            if (standard.Height > 800 - MenuBarAndMargin || panel.QuotaAreaHeight != panel.QuotaRowsHeight)
-                throw new InvalidOperationException($"Popover {standard.Height}pt does not fit a 1280x800 screen without scrolling.");
+            nfloat standardQuota = panel.QuotaAreaHeight;
+            if (standard.Height > 800 - MenuBarAndMargin)
+                throw new InvalidOperationException($"Popover {standard.Height}pt is cut off on a 1280x800 screen.");
             CGSize small = panel.FitFor(640 - MenuBarAndMargin);
             nfloat smallQuota = panel.QuotaAreaHeight;
             if (small.Height > 640 - MenuBarAndMargin || smallQuota >= panel.QuotaRowsHeight)
@@ -657,7 +666,7 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
             panel.FitFor(layout.UsableHeight);
             if (!panel.QuotaRowText(QuotaProvider.Codex, "session").Contains("0% 남음 · 00:15:00", StringComparison.Ordinal))
                 throw new InvalidOperationException("Exhausted quota/countdown display failed.");
-            panel.Update(Schedule(now.AddMinutes(1)), healthy, [quota, claudeQuota], false, now.AddMinutes(5), "");
+            panel.Update(Schedule(now.AddMinutes(1)), healthy, quotas, false, now.AddMinutes(5), "");
             if (!panel.QuotaRowText(QuotaProvider.Codex, "session").Contains("00:14:00", StringComparison.Ordinal))
                 throw new InvalidOperationException("Injected quota countdown did not advance.");
             panel.Close();
@@ -676,7 +685,7 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
             await statisticsWindow.RefreshAsync();
             if (!statisticsWindow.Window.IsVisible)
                 throw new InvalidOperationException("Statistics window did not reopen from the menu-bar action.");
-            Console.WriteLine($"PASS: bundle version, menu-tracking countdown timer, 20pt menu icon white/dark disc + color glyph light/dark 1x-2x pixels (glyph contrast min {iconContrast:0.0}:1), left/right/control-click routing, right-click menu, popover open/close/reopen, shared panel text/record menu/quota lines, {activationResult}, tone contrast >= 4.5:1 light+dark (min {weakest:0.0}:1), card text x = quota box text x ({layout.BoxTextX:0}pt; titles {layout.TitleX:0}pt), whole-card click/quota boxes read-only, popover {layout.Size.Width:0}x{layout.Size.Height:0}pt (this screen usable {layout.UsableHeight:0}pt; 1280x800 fits; 1024x640 {small.Height:0}pt with quota area {smallQuota:0}pt scrolling), 1,000-char note limit, temporary SQLite, four events/notes via shared factory, {displayResult}, statistics (shared text, explanation fits, Mac empty-state hint), injected quota countdown; no account/network/settings changes.");
+            Console.WriteLine($"PASS: bundle version, menu-tracking countdown timer, 20pt menu icon white/dark disc + color glyph light/dark 1x-2x pixels (glyph contrast min {iconContrast:0.0}:1), left/right/control-click routing, right-click menu, popover open/close/reopen, shared panel text/record menu/quota lines, {activationResult}, tone contrast >= 4.5:1 light+dark (min {weakest:0.0}:1), card text x = quota box text x ({layout.BoxTextX:0}pt; titles {layout.TitleX:0}pt), whole-card click/quota boxes read-only, three quota boxes incl. Gemini, popover {layout.Size.Width:0}x{layout.Size.Height:0}pt (this screen usable {layout.UsableHeight:0}pt; 1280x800 {standard.Height:0}pt not cut off, quota area {standardQuota:0}pt; 1024x640 {small.Height:0}pt with quota area {smallQuota:0}pt scrolling), 1,000-char note limit, temporary SQLite, four events/notes via shared factory, {displayResult}, statistics (shared text, explanation fits, Mac empty-state hint), injected quota countdown; no account/network/settings changes.");
             ExitCode = 0;
         }
         catch (Exception error)

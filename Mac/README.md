@@ -62,7 +62,7 @@ open "/Users/hydron/ai-burger-clock/Mac/bin/Release/net10.0-macos27.0/osx-arm64/
 - 메뉴바의 F/B 아이콘과 공식 상태에 따른 색상, KST 카운트다운.
 - 미국 ET 09:00~PT 18:00 업무시간, DST, 미국 연방 공휴일 보정. Windows와 같은 정책입니다.
 - OpenAI·Claude·Gemini 공식 상태와 Provider별 독립 권고. 클릭하면 기본 브라우저에서 공식 상태 페이지를 엽니다.
-- ChatGPT 제목 아래 Work/Codex 한도, Claude 한도. 설치·로그인된 공식 CLI가 조회하며 앱은 토큰·Keychain·쿠키를 읽지 않습니다. Gemini **개인 계정 한도**는 포함하지 않습니다.
+- 개인 계정 한도: ChatGPT(Work/Codex), Claude, Gemini(Antigravity의 Gemini 모델 그룹, #30). 설치·로그인된 공식 CLI(`codex`, `claude`, `agy`)가 조회하며 앱은 토큰·Keychain·쿠키를 읽지 않습니다. Gemini는 Gemini Apps(웹·모바일) 전체 한도가 아니라 Antigravity CLI의 Gemini 모델 그룹 5시간·주간 한도입니다. 아래 "Gemini 한도(agy)"를 보세요.
 - 기본 6시간, 잔여 0% 초과~10% 미만 1시간, 정확히 0%는 15분, 리셋 전후 각 15분은 5분 조회. 조건이 겹치면 짧은 주기가 적용됩니다. 예정 리셋 시각 경과만으로 100% 회복을 가정하지 않습니다.
 - 수동 Refresh, 절전 복귀 조회, 연결 복구 조회(네트워크 이벤트는 1분 제한), 정상 종료 시 작업 취소.
 - 화면의 Provider 이름은 ChatGPT·Claude·Gemini 제품 이름으로 표시합니다. 저장되는 값과 공식 상태 주소는 그대로입니다(OpenAI 상태 페이지).
@@ -257,14 +257,35 @@ log stream --predicate 'subsystem == "com.hydron75.aiburgerclock"'
 
 콘솔 앱에서는 왼쪽에서 이 Mac을 고르고 검색창에 `subsystem:com.hydron75.aiburgerclock`를 입력한 뒤 "스트리밍 시작"을 누릅니다. `--smoke-test`도 중복 처리 검사 중에 같은 메시지를 한 번 남깁니다(프로세스는 smoke 실행).
 
+## Gemini 한도(agy)
+
+Gemini 한도는 공식 Antigravity CLI `agy`의 내장 명령 결과를 읽습니다(#30, 공통 코드).
+
+- 먼저 `agy --version`을 실행해 **1.3.1 이상·2.0 미만 안정 버전**인지 확인합니다. 그 밖의 버전, 사전 배포 버전, 알 수 없는 출력이면 조회하지 않고 안내만 표시합니다.
+- 이어서 `agy -p /usage --output-format json --print-timeout 20s`를 셸 없이 절대 경로로 실행합니다. 이때 CLI 자동 업데이트는 꺼 둡니다(`AGY_CLI_DISABLE_AUTO_UPDATE=true`).
+- 결과에서 `Gemini Models` 그룹의 5시간·주간 창만 씁니다. 잔여율은 `remaining_fraction × 100`이고, 리셋은 UTC로 저장해 KST로 표시합니다.
+- 정상 종료, `SUCCESS`, 빈 대화 ID, 0턴, 토큰 0을 확인합니다. 모델 요청이 일어난 응답이나 형식이 바뀐 응답은 버리고, 이전 성공값을 "이전" 표시로 보여 줍니다.
+- 앱은 agy의 로그인 정보·토큰을 읽지 않습니다. 로그인은 터미널에서 agy로 먼저 마칩니다. agy 실행 중 기존 hooks/MCP 설정이 읽힐 수 있다는 제한은 사용자가 받아들인 조건입니다.
+- 조회 주기와 실패 재시도는 Codex·Claude와 같습니다. 2026-10-09 이 Mac(agy 1.3.2)에서 한 번 조회에 약 8초가 걸렸습니다.
+
+### 설치 경로 제약 (중요)
+
+Finder 더블클릭이나 로그인 항목으로 실행된 앱은 터미널의 PATH를 받지 못합니다(launchd 기본값 `/usr/bin:/bin:/usr/sbin:/sbin`). 그래서 앱은 PATH 대신 다음 세 폴더를 항상 함께 확인합니다.
+
+- `~/.local/bin`
+- `/opt/homebrew/bin`
+- `/usr/local/bin`
+
+**`agy`(그리고 `codex`·`claude`)가 이 세 폴더 밖에 있으면 Finder·로그인 항목으로 실행한 앱은 찾지 못합니다.** 예: `~/bin`, `~/.npm-global/bin`. 이때 Gemini 한도 박스에 `공식 CLI를 찾지 못했습니다. 설치 경로를 확인하세요.`가 나옵니다(이전 성공값이 있으면 그 값을 "이전"으로 함께 표시). 터미널에서 `open`으로 실행하면 터미널 PATH가 넘어가서 찾을 수 있으므로, 터미널 실행만으로는 이 문제를 확인할 수 없습니다. 해결하려면 실행 파일을 위 폴더 중 하나에 두거나 링크합니다. 예: `ln -s ~/bin/agy ~/.local/bin/agy`.
+
 ## CLI를 찾지 못하는 경우
 
 첫 일반 실행 스크린샷에서는 두 계정 한도에 `공식 CLI를 찾지 못했습니다`가 표시됐고, 이후 사용자가 CLI를 설치해 정상 수신했습니다. 이 메시지는 인증 응답이 아니라 실행 파일 탐색 실패입니다. 다른 설치에서 같은 문제가 생기면 미설치·GUI에 보이지 않는 설치 경로·실행 권한을 구분합니다.
 
-앱은 GUI 프로세스의 PATH와 `~/.local/bin`, `/opt/homebrew/bin`, `/usr/local/bin`을 확인합니다. 터미널의 셸 프로필은 읽거나 실행하지 않으므로 터미널에서 명령이 보여도 GUI 앱에는 안 보일 수 있습니다. 먼저 맥 터미널에서 아래 읽기 전용 확인 결과를 확인하세요.
+앱은 GUI 프로세스의 PATH와 `~/.local/bin`, `/opt/homebrew/bin`, `/usr/local/bin`을 확인합니다(위 "설치 경로 제약"). 아래 결과가 이 세 폴더 밖이면 Finder·로그인 항목 실행에서는 찾지 못합니다. 터미널의 셸 프로필은 읽거나 실행하지 않으므로 터미널에서 명령이 보여도 GUI 앱에는 안 보일 수 있습니다. 먼저 맥 터미널에서 아래 읽기 전용 확인 결과를 확인하세요.
 
 ```sh
-for task_cli in codex claude node npm
+for task_cli in codex claude agy node npm
 do
   printf '%s: ' "$task_cli"
   command -v "$task_cli" || printf '없음\n'

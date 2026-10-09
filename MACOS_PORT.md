@@ -1088,3 +1088,73 @@ PASS: bundle version, menu-tracking countdown timer, 20pt menu icon white/dark d
 ### 수행하지 않은 검증
 - 0.2.1 bundle로 Mac Provider 카드 Tooltip과 통계 창을 눈으로 확인하는 일(사용자 확인 대상).
 - 실제 공식 상태 변화에 따른 Provider 알림, 장기 사용, 재부팅 후 자동 실행.
+
+## 38. Gemini(agy) 한도 박스 후속
+
+2026-10-09 KST. #30(Windows 담당, 공통 코드)으로 Gemini(Antigravity) 한도가 공통 `AccountQuotaMonitor`에 들어왔다. Mac 팝오버는 공통 `QuotaPanelModel.Sections`를 그대로 박스로 만들어서, Gemini는 ChatGPT·Claude 다음 세 번째 박스로 자동 표시된다. #30 Mac 확인([코멘트](https://github.com/hydron75/ai-burger-clock/pull/30#issuecomment-6071703373))에서 나온 Mac 쪽 후속을 이 절에서 처리했다.
+
+### 조회 방식과 설치 경로
+- agy 조회
+  - `agy --version`이 1.3.1 이상·2.0 미만 안정 버전일 때만 `agy -p /usage --output-format json --print-timeout 20s`를 셸 없이 절대 경로로 실행한다. 자동 업데이트는 끈다.
+  - `Gemini Models` 그룹의 5시간·주간 창만 쓴다. 정상 종료·SUCCESS·빈 대화 ID·0턴·토큰 0을 확인한다.
+- 실행 파일 탐색(`MacCliPaths.Candidates`): 앱 PATH 항목 + 고정 `~/.local/bin`, `/opt/homebrew/bin`, `/usr/local/bin`. 셸 프로필은 읽지 않는다.
+- **제약**: Finder·로그인 항목 실행은 launchd 기본 PATH(`/usr/bin:/bin:/usr/sbin:/sbin`)라, 위 세 폴더 밖에 설치한 `agy`는 찾지 못한다(Codex·Claude도 같음). 터미널에서 `open`으로 실행하면 터미널 PATH가 넘어가서 이 문제가 드러나지 않는다.
+- #30 확인 때 이 Mac 결과
+  - agy 1.3.2(`~/.local/bin/agy`) 실제 조회가 성공했다. 앱 캐시 값이 `agy -p /usage` 결과와 같았다.
+  - `env -i`로 PATH를 `/usr/bin:/bin:/usr/sbin:/sbin`만 준 실행에서도 시작 8초 안에 세 계정 모두 조회에 성공했다.
+  - Finder 더블클릭·로그인 항목 실행 자체로 확인하지는 않았다.
+
+### 한도 영역 높이
+- 세 박스의 표준 높이는 270pt인데 한도 영역 상한이 240pt여서, 큰 화면에서도 Gemini 박스 아래 30pt를 스크롤해야 보였다.
+- `MacStatusPanel.MaximumQuotaHeight`를 **240 → 300pt**로 올렸다.
+
+| 화면 | 이전(상한 240) | 이후(상한 300) |
+|---|---|---|
+| 이 Mac(사용 가능 936pt) | 735pt, 한도 240/270pt 스크롤 | **765pt, 스크롤 없음** |
+| 1280×800(사용 가능 751pt) | 735pt, 한도 240/270pt 스크롤 | 751pt, 한도 256/270pt 스크롤, 잘림 없음 |
+| 1024×640(사용 가능 591pt) | 591pt, 한도 96/270pt 스크롤 | 591pt, 한도 96/270pt 스크롤 |
+
+- 화면이 짧으면 지금처럼 한도 영역만 줄여(최소 90pt) 스크롤하고 나머지는 잘리지 않는다(#26).
+
+### smoke 변경
+- 주입 한도를 ChatGPT·Claude·**Gemini** 세 개로 바꿨다(Gemini 5시간·주간 두 창).
+- 기존 검사가 세 박스에 그대로 적용된다: 공통 모델 문구·범위 줄(`Antigravity · Gemini 모델`)·Tooltip, 박스 글자 시작 x, 클릭·메뉴 없음, 이 화면에서 한도 영역 = 박스 높이(스크롤 없음).
+- "1280×800에서 스크롤 없음" 기대는 세 박스에서는 맞지 않아 **"1280×800에서 잘리지 않음"**으로 바꿨다. 결과 출력에 그 화면의 한도 영역 높이를 함께 남긴다.
+
+### 이 Mac에서 수행한 검증
+| 항목 | 결과 |
+|---|---|
+| 기준 | main `7e1342d`(#30 병합 `4695a55` 포함) |
+| Shared.Tests | `PASS ALL SHARED: 251,070 assertions` |
+| `Mac/build.sh --quit-running` | 실행 중이던 0.2.1 앱(PID 863, 사용자 허락)을 종료 요청으로 닫은 뒤 빌드. 종료 코드 0, 경고 0 / 오류 0 |
+| `--smoke-test` | PASS / 종료 코드 0. `three quota boxes incl. Gemini, popover 380x765pt (this screen usable 936pt; 1280x800 751pt not cut off, quota area 256pt; 1024x640 591pt with quota area 96pt scrolling)` |
+
+- 빌드 뒤 같은 경로의 앱을 다시 실행했다. 버전은 0.2.1 그대로다(이 절은 버전을 올리지 않음).
+- 수행하지 않은 검증: 실제 팝오버의 세 박스 모양(사용자 확인 대상), Finder·로그인 항목 실행의 실제 agy 조회.
+
+## 39. 메뉴바 강제 표시 증상 (원인 미확정, 재부팅 후 해소)
+
+2026-10-09 KST, 사용자 환경에서 관찰. **재발하면 그때 조사한다.**
+
+- **증상**: 전체 화면 모니터를 클릭해 포커스를 옮기면, 숨어 있어야 할 macOS 메뉴바가 강제로 나타났다. 다른 모니터를 클릭하면 사라졌다.
+- **발생 환경**: 모니터 두 개. 한쪽에서 Windows App(RDP)을 전체 화면으로 사용. 최근 빌드(0.2.x) 작업 이후 처음 알아챘다.
+- **경과**
+  - AI Burger Clock을 종료해도 그대로였다. 확인 시점에 AI Burger Clock 인스턴스는 0개였다(시험용 smoke·최소 PATH 인스턴스 포함).
+  - 재부팅 직전까지 실행 중인 앱을 하나씩 모두 종료해도 계속 재현됐다.
+  - **재부팅 후 해소**됐다. 재부팅 뒤에는 AI Burger Clock 0.2.1(로그인 항목)과 Codex Computer Use 서비스가 함께 실행 중이어도 증상이 없었다.
+- **의심했던 후보와 확인 결과**
+
+  | 후보 | 확인 결과 |
+  |---|---|
+  | #24 앱 활성화 처리(`ActivateIgnoringOtherApps` + 팝오버 키 윈도우) | 호출 지점은 팝오버 열기(아이콘 클릭, 메모 창 뒤 재열기), 메모 NSAlert, 통계 창뿐이다. 모두 사용자 조작이고 매초 경로에는 없다. #24 이후 0.2.1까지 활성화·창 순서 관련 코드 변경은 없었다 |
+  | #28 메뉴바 아이콘 동적 그리기 | 그리기 핸들러는 그리기만 한다. 이미지는 주의도·Schedule 상태가 바뀔 때만 교체하고 Tooltip은 분 단위다. 활성화·창 생성은 없다 |
+  | 매초 상태 갱신 | 판정(`StatusTicker`)과 아이콘·Tooltip 갱신뿐이다. 팝오버가 닫혀 있으면 패널 갱신도 하지 않는다 |
+  | 시험용 인스턴스 잔존 | 확인 시점에 0개였다. smoke는 실행되는 몇 초 동안 팝오버를 열어 활성화를 가져가므로, 그 사이 메뉴바가 잠깐 보였을 수는 있다. 지속 증상은 설명하지 못한다 |
+  | 기타 | 같은 시기 ChatGPT의 Codex Computer Use 클라이언트(`SkyComputerUseClient`, UIElement)가 여러 개 실행 중이었다. 메뉴바·Spaces 시스템 설정은 기본값이었다(읽기만 함) |
+
+- **판단**: 앱을 모두 종료해도 남고 재부팅으로 풀린 점으로 보아, 특정 앱의 실행 상태보다 macOS 전체 화면 Space·메뉴바 상태(WindowServer·Dock)가 꼬였던 것으로 본다. 처음 원인은 확정하지 못했다.
+- **재발 시 조사 순서(제안)**
+  1. 전체 화면 모니터를 클릭하는 순간 앞으로 나오는 앱을 기록한다: `while true; do printf '%s  ' "$(date +%T)"; lsappinfo info -only name "$(lsappinfo front)" | cut -d'"' -f2; sleep 0.5; done`
+  2. `killall Dock`으로 Dock만 다시 시작해 본다.
+  3. 로그아웃·재로그인한다.
+  4. 그래도 남으면 AI Burger Clock 버전별 비교 빌드(0.1.5 `71272d2` / #24 직후 `a35e631` / 0.2.0 `aa8dd50` / 0.2.1 `e9504bc`)를 별도 worktree에서 하나씩 실행해 비교한다.
