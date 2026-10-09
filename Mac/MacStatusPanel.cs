@@ -14,7 +14,8 @@ internal sealed class MacStatusPanel : IDisposable
     private const int ContentWidth = PanelWidth - Inset * 2;
     private const int CardPadding = 8;
     // Quota area grows with its boxes up to this height; only extra model-scoped rows scroll.
-    private const int MaximumQuotaHeight = 240;
+    // 300pt holds the three standard boxes (ChatGPT, Claude, Gemini: about 270pt) without scrolling.
+    private const int MaximumQuotaHeight = 300;
     // On a short screen the quota area gives up height first, down to about one box.
     private const int MinimumQuotaHeight = 90;
     // Room kept for the popover arrow and the gap below the menu bar.
