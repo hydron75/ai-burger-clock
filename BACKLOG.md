@@ -1,17 +1,17 @@
 # 다음 개선 항목
 
-## Windows 2.3.0 배포 준비 (승인 대기)
+## Windows 2.3.0에 반영
 
-- 기록일: 2026-10-09 KST. #30·#42가 병합된 main `4c344e2`에서 `feature/windows-release-2-3-0`을 만들고 Windows Version 2.3.0·AssemblyVersion/FileVersion 2.3.0.0으로 준비했다. [변경·검증·교체 계획](MAINTENANCE_2_3_0.md).
-- **2.3.0 후보에 반영·미배포:** #30의 Antigravity Gemini 모델 한도, 세 번째 Provider 박스·독립 조회·캐시, smoke 클릭 전제 보완·진단 유지. #41·#42는 Mac 전용 후속으로 Windows 신규 변경에 세지 않는다. 이번 준비 PR은 버전·문서만 변경한다.
+- 기록일: 2026-10-09 KST. #30·#42가 병합된 main `4c344e2`에서 Windows 2.3.0을 준비하고, 사용자 승인 뒤 #44를 병합해 main `019d3f3`에서 배포했다. [변경·검증·최종 EXE·백업·교체·복원 기록](MAINTENANCE_2_3_0.md).
+- **2.3.0에 반영·배포 완료:** #30의 Antigravity Gemini 모델 한도, 세 번째 Provider 박스·독립 조회·캐시, smoke 클릭 전제 보완·진단 유지. #41·#42는 Mac 전용 후속으로 Windows 신규 변경에 세지 않는다. #44와 배포 후 기록은 버전·문서만 변경한다.
 - SDK 10.0.401, `build.ps1` 경고 0·오류 0. 실제 기존 dist 2.2.4와 후보의 self-test는 **251,182 → 251,377건(+195)**, 공통 **250,875 → 251,070**, Windows 전용 **307 그대로**, 실제 ExitCode 모두 0이다. 감소한 검사 그룹은 없다.
-- 후보 smoke **5회 모두 293 PASS·ExitCode 0, 실패 0/5회**. Gemini 박스·메모 잘림 통합과 합성 10초 대기 중 응답성을 확인했다. 아래 원인 미확정 초기 관찰과 진단은 계속 남긴다.
+- 준비 후보 smoke **5회 모두 293 PASS·ExitCode 0, 실패 0/5회**. 병합 main의 최종 단일 EXE도 build/publish 경고 0·오류 0, self-test **251,377건·ExitCode 0**, smoke **293 PASS·ExitCode 0**이다. Gemini 박스·메모 잘림 통합과 합성 10초 대기 중 응답성을 확인했다. 아래 원인 미확정 초기 관찰과 진단은 계속 남긴다.
 - 이 PC의 agy **1.3.2**로 후보 Gemini 클라이언트만 실제 조회해 **8.37초·5시간/주간 두 창·ExitCode 0**을 확인했다. 사용자 DB와 다른 Provider는 probe에서 조회하지 않았으며 계정 수치는 게시하지 않는다. 설정 격리 제한과 신선도·절대 비소비 비보장도 유지한다.
-- **병합·release 백업·publish·dist 교체는 승인 대기·미수행.** 현재 배포 2.2.4 EXE·자동 시작 경로를 유지하고 검사 뒤 같은 배포본을 다시 실행했다. 새 버전의 실제 재부팅·절전·전체 네트워크 단절·장시간 자동 조회·복원 시험은 미수행이다.
+- **배포 완료:** 정상 종료·WAL/SHM 부재 확인 → `../backups/release-2.3.0-20261009/`에 기존 2.2.4 EXE·dist·소스·DB 백업 → 병합 main publish·최종 검사 → 새 2.3.0 일반 실행. 자동 시작 종류·값은 전후 동일하며 같은 등록 경로가 새 EXE를 가리킨다. **트레이·상태 창·Gemini 값 모두 정상은 사용자 확인**이다. 새 버전의 실제 재부팅·재로그인·절전·전체 네트워크 단절·장시간 자동 조회·복원 시험은 미수행이다.
 
-## Gemini / Antigravity 한도 표시 (PR #30 main 병합·미배포)
+## Gemini / Antigravity 한도 표시 (PR #30, 2.3.0에 반영)
 
-- 기록일: 2026-10-09 KST. Windows 재검증과 Mac 확인 뒤 사용자 승인으로 [PR #30](https://github.com/hydron75/ai-burger-clock/pull/30)의 Draft·병합 보류를 해제하고 main에 병합했다(검증 HEAD `6a12acb98dcaf5769dbfb5977288afa49ae424f8`, 병합 `4695a55dc00dd90e95a93aa9ba6f80200fb23a0c`). **2.3.0 후보에 반영·미배포**이며 배포 EXE는 2.2.4 그대로다. 초기 구현·검증과 main 통합 뒤 결과는 [구현·검증 기록](GEMINI_ANTIGRAVITY_QUOTAS.md), 새 후보 검증은 [2.3.0 준비 기록](MAINTENANCE_2_3_0.md)에서 구분한다.
+- 기록일: 2026-10-09 KST. Windows 재검증과 Mac 확인 뒤 사용자 승인으로 [PR #30](https://github.com/hydron75/ai-burger-clock/pull/30)의 Draft·병합 보류를 해제하고 main에 병합했다(검증 HEAD `6a12acb98dcaf5769dbfb5977288afa49ae424f8`, 병합 `4695a55dc00dd90e95a93aa9ba6f80200fb23a0c`). **Windows 2.3.0 배포본에 반영했다.** 초기 구현·검증과 main 통합 뒤 결과는 [구현·검증 기록](GEMINI_ANTIGRAVITY_QUOTAS.md), 준비·최종 배포 검증은 [2.3.0 기록](MAINTENANCE_2_3_0.md)에서 구분한다.
 - 공식 `agy` CLI **1.3.1 이상, 2.0 미만**의 `-p /usage --output-format json`에서 `Gemini Models` 그룹의 5시간·주간 잔여율과 리셋을 읽는다. 1.3.1 미만·2.x·해석할 수 없는 버전은 거부하며 Gemini Apps 전체 한도·Claude/GPT 그룹·크레딧은 제외한다.
 - 사용자 hooks·MCP 설정 격리 제한을 사용자가 수용한 조건으로 자동 조회에 연결했다. 버전 사전 확인, 자동 업데이트 차단, 입력 닫기, 제한시간, 0턴·0토큰 검증을 적용한다. 완전한 설정 격리·모든 실행의 절대 비소비·서버 데이터 신선도 보장은 아니다.
 - Windows는 한도 보기 전환·기존 창 크기를 유지하며 Provider별 박스와 한도 영역 내부 스크롤을 사용한다. 제목 바깥 기준선·클릭되지 않는 박스의 hover 없음은 UI 계획 결정 9/10을 따른다.
@@ -153,8 +153,8 @@
 ## 보류: Gemini 개인 사용량 / Claude 지원 안정화 추적
 
 - 기록일: 2026-09-26
-- 문서 갱신일: 2026-10-04 KST. 당시 앱 버전은 2.2.3이며 공개 조사 일정은 변경하지 않았다. 현재 Windows 배포는 위 2.2.4 기록과 구분한다.
-- 상태: **Gemini 개인 Apps 한도** 구현은 보류. 별도 제품인 Antigravity Gemini 모델 한도는 Mac 확인 뒤 PR #30으로 main에 병합했으며 **미배포**다. Claude 공식 CLI 경로는 위 기능으로 추가하되 null 응답·신선도·공식 지원 안정화는 추적 대상이다. 브라우저 확장/화면 추출 방식은 구현하지 않는다.
+- 공개 조사 기록 갱신일: 2026-10-04 KST. 당시 앱 버전은 2.2.3이며 공개 조사 일정은 변경하지 않았다. 현재 Windows 배포는 위 2.3.0 기록과 구분한다.
+- 상태: **Gemini 개인 Apps 한도** 구현은 보류. 별도 제품인 Antigravity Gemini 모델 한도는 Mac 확인 뒤 PR #30으로 main에 병합했고 **Windows 2.3.0에 배포했다.** Claude 공식 CLI 경로는 위 기능으로 추가하되 null 응답·신선도·공식 지원 안정화는 추적 대상이다. 브라우저 확장/화면 추출 방식은 구현하지 않는다.
 - Gemini 개인 Apps 한도의 공식 독립 조회 경로는 조사한 공개 자료에서 확인하지 못했다. 그런 경로가 절대 없다는 뜻은 아니다.
 - Claude Code statusline의 수동적 데이터와 interactive `/usage`, Gemini CLI·Code Assist·Antigravity·API 과금 한도를 개인 Gemini Apps 한도와 혼동하지 않는다.
 - 공식 API·CLI JSON 명령·로컬 앱 인터페이스 등 새로운 조회 방식 또는 중요한 지원 범위 변화가 생기는지 이 대화에 연결된 모니터링으로 정기 확인한다.

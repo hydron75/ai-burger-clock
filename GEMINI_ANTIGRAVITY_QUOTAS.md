@@ -1,6 +1,6 @@
-# Gemini / Antigravity 한도 — #30 병합·미배포 구현 기록
+# Gemini / Antigravity 한도 — #30 구현·2.3.0 배포 기록
 
-**현재 상태(2026-10-09 KST):** #30은 Windows 재진단과 Mac 확인 뒤 사용자 승인으로 main에 병합됐다. #42의 Mac Gemini UI 후속도 병합됐다. Windows 배포본은 아직 **2.2.4**이며, [2.3.0 배포 준비 기록](MAINTENANCE_2_3_0.md)에 새 후보의 self-test 251,377건·smoke 5회 모두 293 PASS/종료 코드 0과 agy **1.3.2 실제 조회(8.37초·두 한도 창)**를 따로 기록했다. 병합된 기능과 승인 대기인 Windows 배포를 구분한다.
+**현재 상태(2026-10-09 KST):** #30은 Windows 재진단과 Mac 확인 뒤 사용자 승인으로 main에 병합됐고 #42의 Mac Gemini UI 후속도 병합됐다. #44 승인 뒤 main `019d3f3`에서 **Windows 2.3.0을 배포했다.** [2.3.0 배포 기록](MAINTENANCE_2_3_0.md)에 준비 self-test 251,377건·smoke 5회 모두 293 PASS/종료 코드 0과 agy **1.3.2 실제 조회(8.37초·두 창)**, 최종 단일 EXE 검사·해시·백업을 구분해 적었다. 최종 self-test 251,377건·smoke 293 PASS/종료 코드 0이며 새 트레이·상태 창·Gemini 값 정상 표시는 **사용자 확인**이다.
 
 아래 절은 #30 구현 당시의 날짜·비교 기준·실행 결과다. 당시의 Mac 확인 요청·미수행 항목을 현재 상태로 읽지 않는다. 후속 Windows 진단·검사 전제 보완과 초기 오류 원인 미확정 관찰은 [BACKLOG](BACKLOG.md#관찰-windows-smoke의-뜻밖의-한도-모드-원인-미확정), [#30 재진단 결과](https://github.com/hydron75/ai-burger-clock/pull/30#issuecomment-6072308296), [Mac 확인](https://github.com/hydron75/ai-burger-clock/pull/30#issuecomment-6071703373)에 남긴다. smoke 진단은 현재 코드에도 유지한다.
 
@@ -8,7 +8,7 @@
 
 작업 중 main에 병합된 PR #29의 계획 문서 갱신만 fast-forward로 반영했다. PR base는 `612df8716e507733847204c5f3ce8214c6f1b357`이며 앱·검사 코드는 기존 비교 기준과 동일하다. 아래 비교 수치는 실제 실행한 `aa8dd50` 기준을 사용한다.
 
-공통 코드와 Windows 한도 UI 변경이다. **이 구현 기록 작성 당시에는 Mac 검증·PR 병합 대기였으며 버전 변경·publish·dist 교체를 하지 않았다.** 현재 상태는 상단과 2.3.0 준비 기록을 따른다. 이 문서는 배포 완료 기록이 아니다.
+공통 코드와 Windows 한도 UI 변경이다. **이 구현 기록 작성 당시에는 Mac 검증·PR 병합 대기였으며 버전 변경·publish·dist 교체를 하지 않았다.** 아래는 당시의 구현 기록이고, 현재 상태는 상단과 별도 [2.3.0 배포 기록](MAINTENANCE_2_3_0.md)을 따른다.
 
 ## 조회 대상과 데이터
 
