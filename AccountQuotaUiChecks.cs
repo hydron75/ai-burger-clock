@@ -3,7 +3,7 @@ using System.Globalization;
 
 namespace AiBurgerClock;
 
-internal sealed class TestAccountQuotaClient(Func<DateTimeOffset> clock) : IAccountQuotaClient
+internal sealed class TestAccountQuotaClient(Func<DateTimeOffset> clock, SmokeQueryActivity? activity = null) : IAccountQuotaClient
 {
     private int codexCalls;
     private int claudeCalls;
@@ -27,10 +27,11 @@ internal sealed class TestAccountQuotaClient(Func<DateTimeOffset> clock) : IAcco
             case QuotaProvider.Claude: Interlocked.Increment(ref claudeCalls); break;
             case QuotaProvider.Gemini:
                 Interlocked.Increment(ref geminiCalls);
-                int delay = Interlocked.Exchange(ref geminiDelayMilliseconds, 0);
-                if (delay > 0) await Task.Delay(delay, cancellationToken);
                 break;
         }
+        int delay = provider == QuotaProvider.Gemini ? Interlocked.Exchange(ref geminiDelayMilliseconds, 0) : 0;
+        using var query = activity?.Begin("fake-quota/" + provider, delay);
+        if (delay > 0) await Task.Delay(delay, cancellationToken);
         if ((provider == QuotaProvider.Claude && FailClaude) || (provider == QuotaProvider.Gemini && FailGemini))
             throw new IOException("Synthetic offline condition");
         var now = clock();
@@ -47,21 +48,28 @@ internal sealed class TestAccountQuotaClient(Func<DateTimeOffset> clock) : IAcco
 internal static class AccountQuotaUiChecks
 {
     internal static async Task RunAsync(TrayApplicationContext context, TestAccountQuotaClient client,
-        Func<DateTimeOffset> clock, Action<DateTimeOffset> setClock, string? reportDirectory)
+        Func<DateTimeOffset> clock, Action<DateTimeOffset> setClock, string? reportDirectory, SmokeDiagnostics diagnostics)
     {
         void Check(bool condition, string label)
         {
-            if (!condition) throw new InvalidOperationException(label);
+            if (!condition) { diagnostics.Record("quota.check-failed", new { label }); throw new InvalidOperationException(label); }
             Console.WriteLine("PASS: " + label);
         }
-        async Task Wait(Func<bool> condition)
+        async Task Wait(Func<bool> condition, string label = "Quota UI condition", Func<object>? detail = null)
         {
+            var elapsed = System.Diagnostics.Stopwatch.StartNew();
+            diagnostics.Record("quota.wait-start", new { label, detail = detail?.Invoke() });
             var deadline = DateTime.UtcNow.AddSeconds(5);
             while (!condition())
             {
-                if (DateTime.UtcNow > deadline) throw new TimeoutException("Quota UI condition");
+                if (DateTime.UtcNow > deadline)
+                {
+                    diagnostics.Record("quota.wait-timeout", new { label, elapsedMs = elapsed.Elapsed.TotalMilliseconds, detail = detail?.Invoke() });
+                    throw new TimeoutException("Quota UI condition: " + label);
+                }
                 await Task.Delay(25);
             }
+            diagnostics.Record("quota.wait-end", new { label, elapsedMs = elapsed.Elapsed.TotalMilliseconds, detail = detail?.Invoke() });
         }
         var monitor = context.QuotaMonitor!;
         Label[] QuotaLabels() => context.StatusWindow.QuotaView.Controls.OfType<Panel>()
@@ -201,14 +209,18 @@ internal static class AccountQuotaUiChecks
 
         var callsBeforeRefresh = Enum.GetValues<QuotaProvider>().ToDictionary(provider => provider, client.Calls);
         int before = client.Calls(QuotaProvider.Claude);
+        diagnostics.Record("quota.refresh-before-click", new { callsBeforeRefresh });
         context.StatusWindow.Controls.OfType<Button>().Single(b => b.Text == "Refresh").PerformClick();
-        await Wait(() => client.Calls(QuotaProvider.Claude) > before && monitor.Snapshot().All(s => !s.IsRefreshing));
+        diagnostics.Record("quota.refresh-after-click");
+        await Wait(() => client.Calls(QuotaProvider.Claude) > before && monitor.Snapshot().All(s => !s.IsRefreshing), "manual Refresh",
+            () => new { claudeBefore = before, claudeNow = client.Calls(QuotaProvider.Claude), claudeAdvanced = client.Calls(QuotaProvider.Claude) > before, allIdle = monitor.Snapshot().All(s => !s.IsRefreshing) });
         Check(monitor.Snapshot().All(s => !s.IsPrevious) &&
             Enum.GetValues<QuotaProvider>().All(provider => client.Calls(provider) > callsBeforeRefresh[provider]),
             "Existing Refresh button recovers all three independent quota displays");
         before = client.Calls(QuotaProvider.Claude);
         context.OnPowerModeChanged(null, new PowerModeChangedEventArgs(PowerModes.Resume));
-        await Wait(() => client.Calls(QuotaProvider.Claude) > before && monitor.Snapshot().All(s => !s.IsRefreshing));
+        await Wait(() => client.Calls(QuotaProvider.Claude) > before && monitor.Snapshot().All(s => !s.IsRefreshing), "Resume",
+            () => new { claudeBefore = before, claudeNow = client.Calls(QuotaProvider.Claude), claudeAdvanced = client.Calls(QuotaProvider.Claude) > before, allIdle = monitor.Snapshot().All(s => !s.IsRefreshing) });
         Check(true, "Sleep resume queues fresh quota reads including Gemini");
 
         var expired = new QuotaState(QuotaProvider.Codex, new(QuotaProvider.Codex,
@@ -231,7 +243,9 @@ internal static class AccountQuotaUiChecks
             "Quota metadata displays the exhausted provider's next 15m check");
         SmokeTest.RenderAndCheckLayout(context.StatusWindow, "account-quotas-exhausted.png", reportDirectory);
         context.RefreshStatus(false);
+        diagnostics.Record("quota.status-toggle-before-click");
         context.StatusWindow.QuotaButton.PerformClick();
+        diagnostics.Record("quota.status-toggle-before-check");
         Check(!context.StatusWindow.QuotaView.Visible && context.StatusWindow.Controls.OfType<Panel>().Count(p => p.Visible) == 3,
             "Status toggle restores all three official status rows including Gemini");
         Check(title.Text == StatusPanelModel.Title && title.Bounds == titleBounds,
@@ -287,7 +301,9 @@ internal static class AccountQuotaUiChecks
         Check(!context.StatusWindow.QuotaView.VerticalScroll.Visible && !context.StatusWindow.QuotaView.HorizontalScroll.Visible,
             "Returning to the original two-provider quotas removes both scrollbars");
         context.RefreshStatus(false);
-        await CheckResponsiveRefreshAsync(context, client, clock, setClock, Check, Wait);
+        diagnostics.Phase = "quota.synthetic-10s";
+        diagnostics.Record("quota.synthetic-10s-start");
+        await CheckResponsiveRefreshAsync(context, client, clock, setClock, Check, condition => Wait(condition));
         context.StatusWindow.QuotaButton.PerformClick();
         context.RefreshStatus(false);
     }

@@ -8,11 +8,11 @@ internal static class UIRegressionChecks
 {
     public static async Task RunAsync(TrayApplicationContext context, UsageStore store,
         TestStatusHttpHandler handler, string? reportDirectory, List<Uri> openedPages,
-        DateTimeOffset initialNow, Action<DateTimeOffset> setNow)
+        DateTimeOffset initialNow, Action<DateTimeOffset> setNow, SmokeDiagnostics diagnostics)
     {
         void Check(bool value, string message)
         {
-            if (!value) throw new InvalidOperationException("UI integration: " + message);
+            if (!value) { diagnostics.Record("ui.check-failed", new { message }); throw new InvalidOperationException("UI integration: " + message); }
             Console.WriteLine("PASS: " + message);
         }
         var monitor = context.ProviderMonitor ?? throw new InvalidOperationException("Test monitor missing");
@@ -157,6 +157,7 @@ internal static class UIRegressionChecks
         Check(providerApplyOrder.Count == 8 && providerApplyOrder.All(value => value),
             "All Provider warning/recovery events preserve native application order");
         Check(context.TrayIcon.BalloonTipTitle == "ChatGPT 정상화", "Native Provider recovery title displays ChatGPT");
+        diagnostics.Record("ui.status-footer-before-check");
         Check(context.StatusWindow.Controls.OfType<Label>().Any(l => l.Text.StartsWith("최근 조회 시도:")), "UI labels attempted time explicitly");
 
         // Synchronous sequence: the 1-second UI timer cannot run between these calls.
