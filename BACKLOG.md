@@ -1,8 +1,17 @@
 # 다음 개선 항목
 
+## Windows 2.3.0 배포 준비 (승인 대기)
+
+- 기록일: 2026-10-09 KST. #30·#42가 병합된 main `4c344e2`에서 `feature/windows-release-2-3-0`을 만들고 Windows Version 2.3.0·AssemblyVersion/FileVersion 2.3.0.0으로 준비했다. [변경·검증·교체 계획](MAINTENANCE_2_3_0.md).
+- **2.3.0 후보에 반영·미배포:** #30의 Antigravity Gemini 모델 한도, 세 번째 Provider 박스·독립 조회·캐시, smoke 클릭 전제 보완·진단 유지. #41·#42는 Mac 전용 후속으로 Windows 신규 변경에 세지 않는다. 이번 준비 PR은 버전·문서만 변경한다.
+- SDK 10.0.401, `build.ps1` 경고 0·오류 0. 실제 기존 dist 2.2.4와 후보의 self-test는 **251,182 → 251,377건(+195)**, 공통 **250,875 → 251,070**, Windows 전용 **307 그대로**, 실제 ExitCode 모두 0이다. 감소한 검사 그룹은 없다.
+- 후보 smoke **5회 모두 293 PASS·ExitCode 0, 실패 0/5회**. Gemini 박스·메모 잘림 통합과 합성 10초 대기 중 응답성을 확인했다. 아래 원인 미확정 초기 관찰과 진단은 계속 남긴다.
+- 이 PC의 agy **1.3.2**로 후보 Gemini 클라이언트만 실제 조회해 **8.37초·5시간/주간 두 창·ExitCode 0**을 확인했다. 사용자 DB와 다른 Provider는 probe에서 조회하지 않았으며 계정 수치는 게시하지 않는다. 설정 격리 제한과 신선도·절대 비소비 비보장도 유지한다.
+- **병합·release 백업·publish·dist 교체는 승인 대기·미수행.** 현재 배포 2.2.4 EXE·자동 시작 경로를 유지하고 검사 뒤 같은 배포본을 다시 실행했다. 새 버전의 실제 재부팅·절전·전체 네트워크 단절·장시간 자동 조회·복원 시험은 미수행이다.
+
 ## Gemini / Antigravity 한도 표시 (PR #30 main 병합·미배포)
 
-- 기록일: 2026-10-09 KST. Windows 재검증과 Mac 확인 뒤 사용자 승인으로 [PR #30](https://github.com/hydron75/ai-burger-clock/pull/30)의 Draft·병합 보류를 해제하고 main에 병합했다(검증 HEAD `6a12acb98dcaf5769dbfb5977288afa49ae424f8`, 병합 `4695a55dc00dd90e95a93aa9ba6f80200fb23a0c`). **미배포**이며 배포 EXE는 2.2.4 그대로다. 초기 구현·검증과 main 통합 뒤 결과는 [구현·검증 기록](GEMINI_ANTIGRAVITY_QUOTAS.md)에서 구분한다.
+- 기록일: 2026-10-09 KST. Windows 재검증과 Mac 확인 뒤 사용자 승인으로 [PR #30](https://github.com/hydron75/ai-burger-clock/pull/30)의 Draft·병합 보류를 해제하고 main에 병합했다(검증 HEAD `6a12acb98dcaf5769dbfb5977288afa49ae424f8`, 병합 `4695a55dc00dd90e95a93aa9ba6f80200fb23a0c`). **2.3.0 후보에 반영·미배포**이며 배포 EXE는 2.2.4 그대로다. 초기 구현·검증과 main 통합 뒤 결과는 [구현·검증 기록](GEMINI_ANTIGRAVITY_QUOTAS.md), 새 후보 검증은 [2.3.0 준비 기록](MAINTENANCE_2_3_0.md)에서 구분한다.
 - 공식 `agy` CLI **1.3.1 이상, 2.0 미만**의 `-p /usage --output-format json`에서 `Gemini Models` 그룹의 5시간·주간 잔여율과 리셋을 읽는다. 1.3.1 미만·2.x·해석할 수 없는 버전은 거부하며 Gemini Apps 전체 한도·Claude/GPT 그룹·크레딧은 제외한다.
 - 사용자 hooks·MCP 설정 격리 제한을 사용자가 수용한 조건으로 자동 조회에 연결했다. 버전 사전 확인, 자동 업데이트 차단, 입력 닫기, 제한시간, 0턴·0토큰 검증을 적용한다. 완전한 설정 격리·모든 실행의 절대 비소비·서버 데이터 신선도 보장은 아니다.
 - Windows는 한도 보기 전환·기존 창 크기를 유지하며 Provider별 박스와 한도 영역 내부 스크롤을 사용한다. 제목 바깥 기준선·클릭되지 않는 박스의 hover 없음은 UI 계획 결정 9/10을 따른다.

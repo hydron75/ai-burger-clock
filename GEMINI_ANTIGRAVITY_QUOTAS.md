@@ -1,10 +1,14 @@
-# Gemini / Antigravity 한도 — 미배포 구현·Windows 검증
+# Gemini / Antigravity 한도 — #30 병합·미배포 구현 기록
+
+**현재 상태(2026-10-09 KST):** #30은 Windows 재진단과 Mac 확인 뒤 사용자 승인으로 main에 병합됐다. #42의 Mac Gemini UI 후속도 병합됐다. Windows 배포본은 아직 **2.2.4**이며, [2.3.0 배포 준비 기록](MAINTENANCE_2_3_0.md)에 새 후보의 self-test 251,377건·smoke 5회 모두 293 PASS/종료 코드 0과 agy **1.3.2 실제 조회(8.37초·두 한도 창)**를 따로 기록했다. 병합된 기능과 승인 대기인 Windows 배포를 구분한다.
+
+아래 절은 #30 구현 당시의 날짜·비교 기준·실행 결과다. 당시의 Mac 확인 요청·미수행 항목을 현재 상태로 읽지 않는다. 후속 Windows 진단·검사 전제 보완과 초기 오류 원인 미확정 관찰은 [BACKLOG](BACKLOG.md#관찰-windows-smoke의-뜻밖의-한도-모드-원인-미확정), [#30 재진단 결과](https://github.com/hydron75/ai-burger-clock/pull/30#issuecomment-6072308296), [Mac 확인](https://github.com/hydron75/ai-burger-clock/pull/30#issuecomment-6071703373)에 남긴다. smoke 진단은 현재 코드에도 유지한다.
 
 초기 구현·검증일: **2026-10-08 KST**. 최신 main 통합·재검증일: **2026-10-09 KST**. 브랜치: `feature/gemini-agy-quotas`. 작업 전 main: `aa8dd50c2d6a66df951306f410537dbff42a525d`.
 
 작업 중 main에 병합된 PR #29의 계획 문서 갱신만 fast-forward로 반영했다. PR base는 `612df8716e507733847204c5f3ce8214c6f1b357`이며 앱·검사 코드는 기존 비교 기준과 동일하다. 아래 비교 수치는 실제 실행한 `aa8dd50` 기준을 사용한다.
 
-공통 코드와 Windows 한도 UI 변경이다. **Mac 검증·PR 병합은 대기 중이며 버전 변경·publish·dist 교체는 하지 않았다.** 현재 Windows 배포본은 2.2.4 그대로다. 이 문서는 배포 완료 기록이 아니다.
+공통 코드와 Windows 한도 UI 변경이다. **이 구현 기록 작성 당시에는 Mac 검증·PR 병합 대기였으며 버전 변경·publish·dist 교체를 하지 않았다.** 현재 상태는 상단과 2.3.0 준비 기록을 따른다. 이 문서는 배포 완료 기록이 아니다.
 
 ## 조회 대상과 데이터
 
@@ -56,7 +60,7 @@ agy -p /usage --output-format json --print-timeout 20s
 
 기존 창 크기 374×518 logical px와 한도 viewport 342×214를 유지한다. 세 Provider가 늘어난 만큼 **한도 영역만 세로 스크롤**하며 가로 스크롤이나 창 전체 스크롤은 없다. 같은 행 구성의 매초 갱신은 컨트롤과 스크롤 위치를 보존한다. 범위 설명·정확한 KST 리셋·최근 성공/시도·다음 조회·실패 이유는 Tooltip에 남긴다.
 
-## 최신 main 통합 뒤 Windows 검증 (2026-10-09 KST)
+## #30 main 통합 당시 Windows 검증 (2026-10-09 KST·과거 결과)
 
 Git 비교 기준은 `main @ e9504bc3e119bec4faf3ebb2c2cef40147701964`(#41 포함)이다. 기존 PR HEAD `14cef69de9350803158da39090635167a799ae05`에 main을 merge했고, 검증한 C# 소스는 통합 커밋 `243468d337d2d02a2447c11abd02c5241fb767ce`와 같다. 후속 커밋은 검증 기록·PNG만 추가한다. main의 공통 검사 분리·StatisticsText·StatusTicker·Provider별 박스·메모 잘림 안내를 보존했다. Mac 전용 파일·AGENTS·계획·버전 파일은 main 대비 변경하지 않았다.
 
@@ -82,7 +86,7 @@ SDK **10.0.401**. 두 소스에서 `build.ps1`을 실행해 각각 **경고 0 / 
 - 통합 후 최종 Release EXE: **278 PASS**, 종료 코드 **0**. 임시 DB·가짜 HTTP/CLI·주입 시계만 사용했으며 `--verify-autostart`는 사용하지 않았다.
 - 실제 Windows 메시지 루프에서 Gemini 가짜 응답만 **10초** 지연했다. 트레이 Refresh handler가 즉시 반환했고, 대기 중 native 메뉴 표시·상태 창 닫기/재열기가 정상 동작했다.
 - 최종 측정 **10.04초**, UI heartbeat **49회**, 실제 트레이 Tooltip/상태 카운트다운 각각 **12종**으로 갱신됐다. 다른 두 Provider는 독립 완료했고 Gemini 중복 조회는 없었다. 이 검사는 **합성 지연의 응답성**이며 설치된 agy 1.3.2의 실제 계정 조회는 이번에 실행하지 않았다.
-- 초기 두 번은 상태 하단 문구 검사에서 예상치 않은 한도 모드가 관측되어 실패했다. 당시 Click 경로를 기록하지 않아 원인은 **미확정**이다. 임시 호출 추적을 추가한 검사와 이를 제거한 최종 검사 모두 통과했으며, 상태 모드·알림 제품 코드는 수정하지 않았다. 임시 추적은 커밋하지 않았다.
+- 초기 상태 하단 문구 검사 오류는 **2회**다. 뜻밖의 한도 모드가 기록된 것은 두 번째 **1회**이며 첫 번째 모드는 미기록이다. 당시 Click 경로도 없어 원인은 **미확정**이다. 당시 임시 호출 추적을 추가한 검사와 이를 제거한 검사 모두 통과했으며, 이후 별도의 정식 smoke 진단과 숨긴 창 클릭 전제 보완을 커밋했다. 그 보완을 이 초기 모드 오류의 확정 원인으로 적지 않으며 제품 상태 모드·알림 코드는 변경하지 않았다.
 - BalloonTipShown **17건** 관측은 시각적 알림 전달 보장이 아니다.
 
 ### 전후 PNG 비교
