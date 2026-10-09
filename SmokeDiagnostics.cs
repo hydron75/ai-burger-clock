@@ -78,13 +78,20 @@ internal sealed class SmokeQueryActivity
         }
     }
 
-    internal void Write(string point, object state) => Console.Error.WriteLine("DIAG: " + JsonSerializer.Serialize(new
+    internal void Write(string point, object state)
     {
-        elapsedMs = ElapsedMs,
-        thread = Environment.CurrentManagedThreadId,
-        point,
-        state
-    }));
+        try
+        {
+            Console.Error.WriteLine("DIAG: " + JsonSerializer.Serialize(new
+            {
+                elapsedMs = ElapsedMs,
+                thread = Environment.CurrentManagedThreadId,
+                point,
+                state
+            }));
+        }
+        catch (Exception) { /* Diagnostics must never replace the original test failure or prevent exit. */ }
+    }
 
     private sealed class QueryScope(Action finish) : IDisposable
     {
@@ -134,6 +141,12 @@ internal sealed class SmokeDiagnostics : IDisposable
     }
 
     internal void Record(string point, object? detail = null)
+    {
+        try { RecordState(point, detail); }
+        catch (Exception error) { activity.Write("diagnostic.unavailable", new { point, error = error.ToString() }); }
+    }
+
+    private void RecordState(string point, object? detail)
     {
         if (disposed || context.StatusWindow.IsDisposed) return;
         var window = context.StatusWindow;

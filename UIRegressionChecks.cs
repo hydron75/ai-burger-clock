@@ -40,13 +40,19 @@ internal static class UIRegressionChecks
         await WaitUntilAsync(() => Task.FromResult(!monitor.IsRefreshing && monitor.NextRefreshUtc.HasValue));
         // The popup may auto-hide while this async test yields. Reopen it through
         // the normal tray path before PerformClick, which requires a selectable button.
-        context.StatusWindow.Hide();
-        context.ShowWindow();
         var refreshButton = context.StatusWindow.Controls.OfType<Button>().Single(b => b.Text == "Refresh");
+        int refreshClicks = diagnostics.RefreshClicks;
+        context.StatusWindow.Hide();
+        Check(!context.StatusWindow.Visible && !refreshButton.CanSelect,
+            "Hidden popup makes Refresh unselectable even when enabled");
+        refreshButton.PerformClick();
+        Check(diagnostics.RefreshClicks == refreshClicks, "Hidden Refresh PerformClick never emits an actual Click");
+        context.ShowWindow();
         Check(context.StatusWindow.Visible && refreshButton.Enabled && refreshButton.CanSelect,
             "Reopening the status window makes Refresh actionable");
         int requests = handler.RequestCount;
         refreshButton.PerformClick();
+        Check(diagnostics.RefreshClicks == refreshClicks + 1, "Reopened Refresh emits exactly one actual Click");
         await WaitUntilAsync(() => Task.FromResult(handler.RequestCount > requests && !monitor.IsRefreshing && monitor.NextRefreshUtc.HasValue));
         Check(true, "Main Refresh button triggers asynchronous provider update");
         requests = handler.RequestCount;

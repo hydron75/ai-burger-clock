@@ -71,6 +71,19 @@ internal static class AccountQuotaUiChecks
             }
             diagnostics.Record("quota.wait-end", new { label, elapsedMs = elapsed.Elapsed.TotalMilliseconds, detail = detail?.Invoke() });
         }
+        void ClickQuotaButton(string label)
+        {
+            // Async checks yield to the real popup's Deactivate/auto-hide policy.
+            // Use the same reopening path as a user; do not force visibility or disable auto-hide.
+            context.ShowWindow();
+            diagnostics.Record("quota.toggle-before-click", new { label });
+            Check(context.StatusWindow.Visible && context.StatusWindow.QuotaButton.Enabled && context.StatusWindow.QuotaButton.CanSelect,
+                label + ": quota toggle is actionable after normal reopening");
+            int clicks = diagnostics.QuotaClicks;
+            context.StatusWindow.QuotaButton.PerformClick();
+            diagnostics.Record("quota.toggle-after-click", new { label });
+            Check(diagnostics.QuotaClicks == clicks + 1, label + ": exactly one actual quota Click");
+        }
         var monitor = context.QuotaMonitor!;
         Label[] QuotaLabels() => context.StatusWindow.QuotaView.Controls.OfType<Panel>()
             .SelectMany(box => box.Controls.OfType<Label>()).ToArray();
@@ -85,7 +98,15 @@ internal static class AccountQuotaUiChecks
         var titleBounds = title.Bounds;
         var statusBoxes = context.StatusWindow.Controls.OfType<Panel>()
             .Where(panel => panel != context.StatusWindow.QuotaView).ToArray();
+        int hiddenQuotaClicks = diagnostics.QuotaClicks;
+        string hiddenQuotaText = context.StatusWindow.QuotaButton.Text;
+        context.StatusWindow.Hide();
+        Check(!context.StatusWindow.Visible && !context.StatusWindow.QuotaButton.CanSelect,
+            "Hidden popup makes the quota toggle unselectable");
         context.StatusWindow.QuotaButton.PerformClick();
+        Check(diagnostics.QuotaClicks == hiddenQuotaClicks && context.StatusWindow.QuotaButton.Text == hiddenQuotaText,
+            "Hidden quota PerformClick emits no Click and preserves the selected mode");
+        ClickQuotaButton("Show initial quota view");
         Check(context.StatusWindow.QuotaView.Visible, "Quota toggle shows ChatGPT Work/Codex and Claude without enlarging the popup");
         context.StatusWindow.UpdateQuotas(monitor.Snapshot().Where(s => s.Provider != QuotaProvider.Gemini).ToArray(), clock());
         var labels = QuotaLabels();
@@ -207,11 +228,19 @@ internal static class AccountQuotaUiChecks
         SmokeTest.RenderAndCheckLayout(context.StatusWindow, "account-quotas-gemini-previous.png", reportDirectory);
         client.FailGemini = false;
 
+        await Wait(() => !context.ProviderMonitor!.IsRefreshing && monitor.Snapshot().All(s => !s.IsRefreshing),
+            "providers idle before manual Refresh");
+        context.ShowWindow();
+        var refreshButton = context.StatusWindow.Controls.OfType<Button>().Single(b => b.Text == "Refresh");
+        Check(context.StatusWindow.Visible && refreshButton.Enabled && refreshButton.CanSelect,
+            "Quota Refresh is actionable after normal reopening and provider completion");
         var callsBeforeRefresh = Enum.GetValues<QuotaProvider>().ToDictionary(provider => provider, client.Calls);
         int before = client.Calls(QuotaProvider.Claude);
+        int refreshClicks = diagnostics.RefreshClicks;
         diagnostics.Record("quota.refresh-before-click", new { callsBeforeRefresh });
-        context.StatusWindow.Controls.OfType<Button>().Single(b => b.Text == "Refresh").PerformClick();
+        refreshButton.PerformClick();
         diagnostics.Record("quota.refresh-after-click");
+        Check(diagnostics.RefreshClicks == refreshClicks + 1, "Quota Refresh emits exactly one actual Click before waiting for results");
         await Wait(() => client.Calls(QuotaProvider.Claude) > before && monitor.Snapshot().All(s => !s.IsRefreshing), "manual Refresh",
             () => new { claudeBefore = before, claudeNow = client.Calls(QuotaProvider.Claude), claudeAdvanced = client.Calls(QuotaProvider.Claude) > before, allIdle = monitor.Snapshot().All(s => !s.IsRefreshing) });
         Check(monitor.Snapshot().All(s => !s.IsPrevious) &&
@@ -244,7 +273,7 @@ internal static class AccountQuotaUiChecks
         SmokeTest.RenderAndCheckLayout(context.StatusWindow, "account-quotas-exhausted.png", reportDirectory);
         context.RefreshStatus(false);
         diagnostics.Record("quota.status-toggle-before-click");
-        context.StatusWindow.QuotaButton.PerformClick();
+        ClickQuotaButton("Restore official status view");
         diagnostics.Record("quota.status-toggle-before-check");
         Check(!context.StatusWindow.QuotaView.Visible && context.StatusWindow.Controls.OfType<Panel>().Count(p => p.Visible) == 3,
             "Status toggle restores all three official status rows including Gemini");
@@ -290,7 +319,7 @@ internal static class AccountQuotaUiChecks
         }
         finally { CultureInfo.CurrentCulture = culture; }
 
-        context.StatusWindow.QuotaButton.PerformClick();
+        ClickQuotaButton("Show extra quota rows");
         var extraWindows = Enumerable.Range(0, 12).Select(index => new QuotaWindow("extra-" + index, "주간 · 모델 " + index,
             index, clock().AddDays(1))).ToArray();
         context.StatusWindow.UpdateQuotas([new QuotaState(QuotaProvider.Claude, new QuotaReading(QuotaProvider.Claude, extraWindows))], clock());
@@ -304,7 +333,7 @@ internal static class AccountQuotaUiChecks
         diagnostics.Phase = "quota.synthetic-10s";
         diagnostics.Record("quota.synthetic-10s-start");
         await CheckResponsiveRefreshAsync(context, client, clock, setClock, Check, condition => Wait(condition));
-        context.StatusWindow.QuotaButton.PerformClick();
+        ClickQuotaButton("Restore status after delayed Gemini response");
         context.RefreshStatus(false);
     }
 
