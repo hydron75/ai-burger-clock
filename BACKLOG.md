@@ -1,13 +1,23 @@
 # 다음 개선 항목
 
-## Gemini / Antigravity 한도 표시 (PR #30·Windows 재검증 완료, Mac 대기)
+## Gemini / Antigravity 한도 표시 (PR #30 main 병합·미배포)
 
-- 기록일: 2026-10-09 KST. `feature/gemini-agy-quotas`에 최신 main `e9504bc`를 통합해 PR #30 Windows 재검증을 완료했다. **미배포**이며 배포 EXE는 2.2.4 그대로다. 초기 구현·검증과 이번 통합 뒤 결과는 [구현·검증 기록](GEMINI_ANTIGRAVITY_QUOTAS.md)에서 구분한다.
+- 기록일: 2026-10-09 KST. Windows 재검증과 Mac 확인 뒤 사용자 승인으로 [PR #30](https://github.com/hydron75/ai-burger-clock/pull/30)의 Draft·병합 보류를 해제하고 main에 병합했다(검증 HEAD `6a12acb98dcaf5769dbfb5977288afa49ae424f8`, 병합 `4695a55dc00dd90e95a93aa9ba6f80200fb23a0c`). **미배포**이며 배포 EXE는 2.2.4 그대로다. 초기 구현·검증과 main 통합 뒤 결과는 [구현·검증 기록](GEMINI_ANTIGRAVITY_QUOTAS.md)에서 구분한다.
 - 공식 `agy` CLI **1.3.1 이상, 2.0 미만**의 `-p /usage --output-format json`에서 `Gemini Models` 그룹의 5시간·주간 잔여율과 리셋을 읽는다. 1.3.1 미만·2.x·해석할 수 없는 버전은 거부하며 Gemini Apps 전체 한도·Claude/GPT 그룹·크레딧은 제외한다.
 - 사용자 hooks·MCP 설정 격리 제한을 사용자가 수용한 조건으로 자동 조회에 연결했다. 버전 사전 확인, 자동 업데이트 차단, 입력 닫기, 제한시간, 0턴·0토큰 검증을 적용한다. 완전한 설정 격리·모든 실행의 절대 비소비·서버 데이터 신선도 보장은 아니다.
 - Windows는 한도 보기 전환·기존 창 크기를 유지하며 Provider별 박스와 한도 영역 내부 스크롤을 사용한다. 제목 바깥 기준선·클릭되지 않는 박스의 hover 없음은 UI 계획 결정 9/10을 따른다.
-- SDK 10.0.401, main·통합 후 모두 경고 0·오류 0. Windows self-test **251,182 → 251,377건(+195)**, 공통 **250,875 → 251,070**, Windows 전용 **307 그대로**. smoke **255 → 278건**, 두 종료 코드 0. 합성 10초 Gemini 대기 중 화면·트레이 메뉴·매초 카운트다운이 계속 응답했다. 이 PC agy **1.3.2**는 버전 확인만 했으며 이번 계정 조회는 미수행이다.
-- 공통 원본 변경이므로 **Mac 담당의 동일 PR HEAD `Mac/build.sh`·native `--smoke-test` 결과 전에는 병합하지 않는다.** 실제 네트워크 전체 단절·재연결, 재부팅·절전 실기 검사와 Mac 검증은 미수행이다.
+- SDK 10.0.401, main·통합 후 모두 경고 0·오류 0. Windows self-test **251,182 → 251,377건(+195)**, 공통 **250,875 → 251,070**, Windows 전용 **307 그대로**, self-test 종료 코드 0. 진단만 추가한 #30 20회, 검사 전제 보완 후 #30 20회, 변경하지 않은 main 20회 모두 smoke 실패 0회·종료 코드 0이다. 보완 후 smoke는 **main 255 / #30 293 PASS**이며 합성 10초 Gemini 대기 중 화면·트레이 메뉴·매초 카운트다운이 계속 응답했다. [Windows 재진단 기록](https://github.com/hydron75/ai-burger-clock/pull/30#issuecomment-6072308296).
+- [Mac 확인](https://github.com/hydron75/ai-burger-clock/pull/30#issuecomment-6071703373): `2c7478a`에서 공통 251,070건, `Mac/build.sh` 경고 0·오류 0, native smoke 종료 코드 0, agy 1.3.2 실제 조회를 확인했다. 이후 `18528ac`·`6a12acb`는 Windows smoke만 변경해 공통 원본·Mac 실행 코드는 그대로이며 사용자가 Mac 확인 완료를 근거로 병합을 승인했다. Windows의 실제 네트워크 전체 단절·재연결, 재부팅·절전 실기와 이번 재진단의 실제 agy 계정 조회는 미수행이다.
+
+## 관찰: Windows smoke의 뜻밖의 한도 모드 (원인 미확정)
+
+- 기록일: 2026-10-09 KST. 원인은 미확정으로 남긴다. 사용자 승인으로 #30 병합 보류는 해제했지만, 보완 후 실패 0회가 초기 오류의 원인 확정이나 해결 보장은 아니다.
+- 증상·발생 횟수: 초기 smoke에서 예정된 한도 전환 전에 상태 하단의 `최근 조회 시도:` Label 검사(`UIRegressionChecks.RunAsync`)가 **2회 실패**했다. 오류는 두 번 모두 `UI integration: UI labels attempted time explicitly`, 종료 코드 1 / PASS 74개다. 두 번째 기록은 `toggle=상태 보기`와 한도 안내 문구를 보여 **뜻밖의 한도 모드가 확인된 1회**이며, 첫 번째는 모드가 기록되지 않았다. [초기 오류 원문·별도 반복 결과](https://github.com/hydron75/ai-burger-clock/pull/30#issuecomment-6071780940).
+- 두 초기 실패는 합성 10초 Gemini 조회 시작 전이다. 실제 agy·계정은 호출하지 않는 smoke이며, 실패 순간 일반 가짜 조회가 진행 중이었는지는 당시 기록이 없어 확정하지 않는다. 단순 창 숨김만으로 한도 모드 전환을 설명하지 않는다.
+- 별도 10회 반복에서 나온 Refresh 대기 실패 1회와 상태 전환 실패 1회는 위 초기 오류와 구분한다. 숨긴 창의 `PerformClick()`이 실제 Click을 발생시키지 않는 검사 전제 누락을 조건 재현으로 확인하고, 정상 `ShowWindow()`·버튼 선택 가능 여부·실제 Click 증가를 검사하도록 보완했다. 기존 5초 대기 / 25ms poll과 초기 Label 검사는 유지했다. 과거 자연 발생 당시 창 숨김 여부는 미기록이며 초기 모드를 강제로 되돌리는 처리는 넣지 않았다.
+- 추가한 진단은 [SmokeDiagnostics.cs](SmokeDiagnostics.cs)·[SmokeTest.cs](SmokeTest.cs)·[UIRegressionChecks.cs](UIRegressionChecks.cs)·[AccountQuotaUiChecks.cs](AccountQuotaUiChecks.cs)에 계속 둔다. 실패 검사 직전과 실패 시 창 표시·포커스·선택 모드, 버튼 Visible/Enabled/CanSelect, 실제 Click 횟수·한도 Click 스택, Provider별 공식/한도 조회와 가짜 조회의 진행 목록·경과 시간, 타이머 진입/종료를 표준 오류의 `DIAG:` JSON으로 남긴다. 제품 실행 코드와 공통 원본은 이번 진단·보완에서 변경하지 않았다.
+- 보존 위치: 로컬 `artifacts/pr30-smoke-diagnostics-20261009/{diagnostic,fixed-pr30,main,probe-refresh,probe-toggle}/`의 `results.csv`, 실행별 `smoke.txt`·`smoke-errors.txt`·PNG. 진단만 추가한 #30 20회·보완 후 #30 20회·main 20회는 모두 자연 발생 실패 0회다. 두 `probe-*`는 숨김 조건을 의도적으로 넣은 별도 재현이므로 자연 발생 실패 횟수에 포함하지 않는다. 초기 실패 원문은 위 PR 코멘트에 남겼으며 이 새 진단 폴더에서 발생한 오류로 해석하지 않는다.
+- 재발 시 새 실행 폴더에 stdout/stderr·PNG와 실제 ExitCode를 함께 보존한다. `--report-directory`는 PNG 저장 옵션이므로 표준 오류도 `smoke-errors.txt`로 리디렉션해야 진단이 남는다. 해당 파일의 `ui.status-footer-before-check`·`ui.check-failed`·`quota.click`(스택)·`window.visible-changed`·`window.deactivated`·`query.begin/end`·`smoke.failure`를 확인해 의도하지 않은 전환과 클릭 무동작·진행 중 조회를 구분한다. `quota.text-changed`는 핸들러 중간 상태일 수 있어 실제 Click 완료 뒤 기록과 비교한다. 모드 초기화나 검사 삭제로 실패를 숨기지 않는다.
 
 ## Windows 2.2.4에 반영
 
@@ -15,7 +25,7 @@
 - **2.2.4 배포본에 반영:** Provider별 한도 박스(#38), 메모 잘림 안내(#39), 상세 Tooltip의 빈 선택 항목 숨기기(#37). 한도↔상태 전환·창 크기는 유지한다.
 - **2.2.4 배포본에 반영:** 상태·한도 본문과 기록·피드백·통계 문구의 공통화, 공통 검사 일괄 실행, StatusTicker 적용과 크기 제한 Windows 경고 로그. 이번 릴리스 준비에서는 공통 원본을 다시 수정하지 않았다.
 - **배포 완료:** 정상 종료·WAL/SHM 부재 확인 → 2.2.3 EXE·dist·소스·DB 백업 → `build.ps1 -Publish` → 최종 dist self-test 251,182건(+403), smoke 255 PASS·종료 코드 0 → 새 2.2.4 실행. 자동 시작 등록은 전후 동일하며 새 트레이·상태 창 정상은 사용자 확인.
-- 시간표·공휴일·계정 조회 주기·DB schema 2·자동 시작 경로는 유지한다. Gemini/agy 한도·한도 회복 알림은 현재 main에 구현되어 있지 않으며 이번 배포본에 포함하지 않는다.
+- 시간표·공휴일·계정 조회 주기·DB schema 2·자동 시작 경로는 유지한다. Gemini/agy 한도는 2.2.4 이후 PR #30으로 main에 병합했지만 **2.2.4 배포본에는 포함하지 않는다.** 한도 회복 알림은 미구현이다.
 - 7b(기록·공휴일 흐름)·7c(수명 주기) 공통화는 [결정 13 / 4-4절](MACOS_UI_PLAN.md#4-4-7b7c-재판단-2026-10-09-7a-완료-뒤)에 따라 보류한다. 이번 PR은 버전·Windows 통합 검사·기록만 변경한다.
 
 ## macOS 팝오버 UI와 공통 표시 로직
@@ -135,7 +145,7 @@
 
 - 기록일: 2026-09-26
 - 문서 갱신일: 2026-10-04 KST. 당시 앱 버전은 2.2.3이며 공개 조사 일정은 변경하지 않았다. 현재 Windows 배포는 위 2.2.4 기록과 구분한다.
-- 상태: **Gemini 개인 Apps 한도** 구현은 보류. 별도 제품인 Antigravity Gemini 모델 한도는 위 개발 PR에서 구현했으며 Mac 검증·병합·배포는 대기 중이다. Claude 공식 CLI 경로는 위 기능으로 추가하되 null 응답·신선도·공식 지원 안정화는 추적 대상이다. 브라우저 확장/화면 추출 방식은 구현하지 않는다.
+- 상태: **Gemini 개인 Apps 한도** 구현은 보류. 별도 제품인 Antigravity Gemini 모델 한도는 Mac 확인 뒤 PR #30으로 main에 병합했으며 **미배포**다. Claude 공식 CLI 경로는 위 기능으로 추가하되 null 응답·신선도·공식 지원 안정화는 추적 대상이다. 브라우저 확장/화면 추출 방식은 구현하지 않는다.
 - Gemini 개인 Apps 한도의 공식 독립 조회 경로는 조사한 공개 자료에서 확인하지 못했다. 그런 경로가 절대 없다는 뜻은 아니다.
 - Claude Code statusline의 수동적 데이터와 interactive `/usage`, Gemini CLI·Code Assist·Antigravity·API 과금 한도를 개인 Gemini Apps 한도와 혼동하지 않는다.
 - 공식 API·CLI JSON 명령·로컬 앱 인터페이스 등 새로운 조회 방식 또는 중요한 지원 범위 변화가 생기는지 이 대화에 연결된 모니터링으로 정기 확인한다.
