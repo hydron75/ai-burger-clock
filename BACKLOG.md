@@ -12,16 +12,18 @@
   - 방향: 셸 프로필을 읽지 않는 원칙을 유지한 채 사용자가 CLI 폴더를 앱 설정으로 지정한다. 절대 경로·`.`/`..` 거부 규칙은 `MacCliPaths`와 같게 둔다.
   - 정할 것: 저장 위치(DB metadata 등), 설정 UI(Mac 메뉴), Windows와의 관계(Windows는 해당 문제가 없어 Mac 전용).
 
-## 공식 상태 응답 수신·범위 판정 분리 — PR #48, 미배포
+## Windows 2.4.1 준비에 반영: 공식 상태 응답 수신·범위 판정 분리
 
 - 2026-10-10 KST. ChatGPT 상태가 계속 STALE로 보이는 원인 중 하나였던, 정상 HTTP 응답의 범위 미확인을 수신 실패로 처리하던 흐름을 분리한다. 수신 성공은 확인 시각만 갱신하며 상태 정상/서버 데이터 최신성을 보증하지 않는다.
 - OpenAI `summary.json`에 `components.json`의 누락 구성 요소를 보완한다. 같은 ID의 상충 관측은 모두 평가해 정상 값이 확인된 장애를 지우지 못하게 한다. Codex Web/API/CLI·VS Code extension을 포함한 기존 관련 범위이며 Atom/RSS 대조는 이번 범위에 없다. [출처·관련 목록·판정 기준](PROVIDER_SOURCES.md).
 - 범위 미확인 사건만 있으면 FULL에서 UNKNOWN / CHECK를 유지한다. 확인된 관련 장애가 있으면 기존 HOLD/STOP 우선이며 미확인 사건은 별도 상세로 남긴다. 수신 실패는 확인 시각을 갱신하지 않고 15분 뒤 STALE가 된다.
 - 카드 마지막 확인, 상세의 수신 실패/판정 실패·마지막 판정 상태와 시각·확인된 사건/미확인 사건 구분을 추가한다. 지난 장애 제목은 수신 실패/STALE 카드의 현재 장애로 남기지 않는다. Windows 카드에 확인 시각 한 줄을 추가해 창 높이는 518→569 DIP, 폭 374 DIP이며 한도 전환·박스 내용은 유지한다.
 - SQLite schema 2를 유지하고 AppMetadata에 Provider별 최대 8KiB의 진단 한 건만 저장한다. 캐시 시각이 일치하는 유효한 메타만 읽고 레거시 데이터는 읽기 결과에서만 안전하게 분리한다. 계정 한도·인증 값과는 별개다.
-- Windows 최신 빌드 경고 0·오류 0, self-test 251,547건(main 251,451 대비 +96, 공통 251,240 + Windows 307), 종료 코드 0. Mac Tooltip 관찰 보완 검사 8건을 더해 직전 #48의 251,539건보다 +8이며 smoke 394 PASS·종료 코드 0, 합성 PNG 20개는 직전 #48과 동일하다. 초기 실제 공개 상태 조회는 세 Provider 응답 수신 성공, ChatGPT는 범위 미확인 사건으로 CHECK, Claude·Gemini는 관련 범위 정상이다. 조회 성공은 세 Provider 모두 GO라는 뜻이 아니다.
+- Windows 최신 빌드 경고 0·오류 0, self-test 251,547건(기존 배포 2.4.0의 251,451건 대비 +96, 공통 251,240 + Windows 307), 종료 코드 0. Mac Tooltip 관찰 보완 검사 8건을 더해 직전 #48의 251,539건보다 +8이며 smoke 394 PASS·종료 코드 0, 합성 PNG 20개는 직전 #48과 동일하다. 초기 실제 공개 상태 조회는 세 Provider 응답 수신 성공, ChatGPT는 범위 미확인 사건으로 CHECK, Claude·Gemini는 관련 범위 정상이다. 조회 성공은 세 Provider 모두 GO라는 뜻이 아니다.
 - Mac Tooltip 관찰 세 가지를 공통 문구에 반영했다: 과거 판정 시각이 없으면 `(시각 미상)`, 현재 판정과 같은 판정 실패 문장은 한 번만 표시, 과거 판정 시각이 응답 수신 시각과 같으면 그 시각을 반복하지 않는다. 판정·조회·저장 동작은 그대로다.
-- Mac 원본·버전과 기존 Windows 2.4.0 배포 EXE는 변경하지 않는다. Mac은 초기 #48 `4e809af`의 빌드·공통 251,232건·native smoke를 확인했으며 실제 hover 등 미수행 항목은 [Mac 코멘트](https://github.com/hydron75/ai-burger-clock/pull/48#issuecomment-6095636250)에 구분했다. 위 Tooltip 후속 수정의 Mac 재확인 전에는 병합하지 않고 push 뒤 추가 push도 멈춘다. 긴 실제 운영·네트워크 전체 단절·Mac 실제 클릭/hover는 미수행이다.
+- **#48 양쪽 확인·main 병합 완료, Windows 2.4.1 준비에 반영·미배포.** Mac 최종 HEAD `8c141c6`에서 공통 251,240건·빌드 경고 0·오류 0·native smoke 종료 코드 0과 Tooltip 관찰 세 가지 보완을 확인했다([최종 Mac 코멘트](https://github.com/hydron75/ai-burger-clock/pull/48#issuecomment-6095764419)). 사용자 승인으로 Draft를 해제·병합하고 main `b5461ec`로 fast-forward했다. 실제 Mac 클릭/hover·장시간 운영·전체 네트워크 단절은 미수행으로 유지한다.
+- 2.4.1 준비: SDK 10.0.401, 빌드 경고 0·오류 0, 실제 기존 dist 2.4.0과 후보 self-test **251,451 → 251,547건(+96)**, 공통 **251,144 → 251,240**, Windows **307 그대로**, 실제 ExitCode 모두 0. smoke **5회 모두 394 PASS·ExitCode 0, 실패 0/5회**, 합성 PNG 20개는 #48 최신 Windows 검증과 동일. 실제 공개 상태 probe는 응답 수신 모두 성공·ChatGPT CHECK·Claude/Gemini 관련 범위 정상이다. [준비 검증·Git 기준점·EXE 비교·교체/복원 계획](MAINTENANCE_2_4_1.md).
+- 새 준비 PR은 **Windows만 변경 + 기록 문서**다. 버전 외 제품·검사 C#와 Mac 파일은 바꾸지 않았으며 배포 EXE는 2.4.0 그대로다. 검사 뒤 같은 배포 앱을 다시 실행했다. 새 PR 병합·release 백업·publish·EXE 교체·최종 단일 EXE 검사는 **사용자 승인 대기**다. 원인 미확정 smoke 진단과 요금제/CLI 경로 등 보류 후보는 유지한다.
 
 ## Windows 2.4.0에 반영: 계정 사용량 막대·Provider 상세
 
