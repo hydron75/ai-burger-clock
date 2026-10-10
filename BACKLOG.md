@@ -3,8 +3,8 @@
 ## 배포 전: 계정 사용량 막대·Provider 상세 공통화
 
 - 2026-10-10 KST. 사용한 비율·간략 리셋 시간·Provider별 하나의 상세 문구를 공통 모델로 정리하고 Windows 네이티브 막대·흰색 고정 폭 팝업에 연결했다. [범위·Windows 검증·화면·Mac 반영 요청](QUOTA_USAGE_UI.md).
-- Windows build 경고 0·오류 0, self-test 251,430건(공통 251,123 + Windows 307), 최종 smoke 387 PASS·종료 코드 0. 초기 smoke의 오래된 개별 상세 문자열 검사 실패와 보완도 기록에 남겼다.
-- **Mac 검증 전 병합 보류, 미배포.** Mac 코드·버전·배포 2.3.0 EXE는 변경하지 않았다. Mac 제목·사용률 막대·Provider 상세 연결은 Mac 담당 후속 요청이다. 조회 주기·잔여량 기준 경고·DB는 그대로다.
+- Mac 최초 확인 뒤 앞의 0 단위 생략·사용 기준 조회 안내를 보완했다. Windows 재검증: 경고 0·오류 0, self-test 251,447건(공통 251,140 + Windows 307, 보완 전보다 +17), smoke 387 PASS·종료 코드 0. 초기 smoke의 오래된 개별 상세 문자열 검사 실패와 보완도 기록에 남겼다.
+- **Mac 재확인 전 병합 보류, 미배포.** 이번 push 뒤 Mac이 같은 #45 브랜치에 native smoke 기대값 커밋을 추가·검증할 때까지 Windows 추가 push는 하지 않는다. Windows 담당은 Mac 코드·버전·배포 2.3.0 EXE를 변경하지 않았다. Mac 제목·사용률 막대·Provider 상세 연결은 Mac 담당 후속 요청이다. 조회 주기·주의/위험 판정·DB는 그대로다.
 
 ## Windows 2.3.0에 반영
 
