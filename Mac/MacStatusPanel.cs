@@ -14,8 +14,8 @@ internal sealed class MacStatusPanel : IDisposable
     private const int ContentWidth = PanelWidth - Inset * 2;
     private const int CardPadding = 8;
     // Quota area grows with its boxes up to this height; only extra model-scoped rows scroll.
-    // 300pt holds the three standard boxes (ChatGPT, Claude, Gemini: about 270pt) without scrolling.
-    private const int MaximumQuotaHeight = 300;
+    // 340pt holds the three standard boxes (ChatGPT, Claude, Gemini: about 326pt with usage bars).
+    private const int MaximumQuotaHeight = 340;
     // On a short screen the quota area gives up height first, down to about one box.
     private const int MinimumQuotaHeight = 90;
     // Room kept for the popover arrow and the gap below the menu bar.
@@ -46,7 +46,8 @@ internal sealed class MacStatusPanel : IDisposable
     private string shownStorageError = "";
 
     private sealed record Card(CardView View, NSTextField Heading, NSTextField Official, NSTextField Reason, NSMenu Menu);
-    private sealed record QuotaViews(CardView Box, NSTextField Heading, NSTextField? Scope, Dictionary<string, NSTextField> Rows, NSTextField Metadata);
+    private sealed record QuotaViews(CardView Box, NSTextField Heading, NSTextField? Scope,
+        Dictionary<string, NSTextField> Rows, Dictionary<string, UsageBarView> Bars, NSTextField Metadata);
 
     internal MacStatusPanel(Action requestRefresh, Action showStatistics, Action<bool> changeHoliday,
         Action<bool> changeAutoStart, Action<ProviderKind> openPage,
@@ -76,7 +77,7 @@ internal sealed class MacStatusPanel : IDisposable
         }
         root.SetCustomSpacing(10, cards[ProviderKind.Gemini].View);
 
-        quotaTitle = Add(Line("개인 계정 잔여 한도", 13, bold: true));
+        quotaTitle = Add(Line(QuotaPanelModel.AccessibleName, 13, bold: true));
         root.SetCustomSpacing(6, quotaTitle);
         quotaStack = Stack(vertical: true, spacing: 6);
         var document = new FlippedView { TranslatesAutoresizingMaskIntoConstraints = false };
@@ -237,10 +238,21 @@ internal sealed class MacStatusPanel : IDisposable
                 var (box, lines) = Box(press: null);
                 var heading = QuotaLine(lines, 12, bold: true);
                 var scope = section.Scope is null ? null : QuotaLine(lines, 11);
-                var rows = section.Rows.ToDictionary(row => row.WindowId, _ => QuotaLine(lines, 11));
+                // One usage bar under each row that has a value; a waiting or failed row has none.
+                var rows = new Dictionary<string, NSTextField>();
+                var bars = new Dictionary<string, UsageBarView>();
+                foreach (QuotaLine row in section.Rows)
+                {
+                    rows[row.WindowId] = QuotaLine(lines, 11);
+                    if (row.UsedPercent is null) continue;
+                    var bar = new UsageBarView(ContentWidth - CardPadding * 2);
+                    lines.AddArrangedSubview(bar);
+                    lines.SetCustomSpacing(3, bar);
+                    bars[row.WindowId] = bar;
+                }
                 var metadata = QuotaLine(lines, 10);
                 quotaStack.AddArrangedSubview(box);
-                quotas[section.Provider] = new(box, heading, scope, rows, metadata);
+                quotas[section.Provider] = new(box, heading, scope, rows, bars, metadata);
             }
             // Box count or rows changed: refit so no gap is left above the check times.
             FitContent();
@@ -248,10 +260,23 @@ internal sealed class MacStatusPanel : IDisposable
         foreach (QuotaSectionText section in sections)
         {
             QuotaViews views = quotas[section.Provider];
-            Apply(views.Heading, section.Heading);
-            if (views.Scope is not null && section.Scope is not null) Apply(views.Scope, section.Scope);
-            foreach (QuotaLine row in section.Rows) Apply(views.Rows[row.WindowId], row);
-            Apply(views.Metadata, section.Metadata);
+            // One Provider detail for the whole box: the box, its lines and its bars share it.
+            string detail = section.Detail;
+            SetTip(views.Box, detail);
+            Apply(views.Heading, section.Heading, detail);
+            if (views.Scope is not null && section.Scope is not null) Apply(views.Scope, section.Scope, detail);
+            foreach (QuotaLine row in section.Rows)
+            {
+                Apply(views.Rows[row.WindowId], row, detail);
+                if (views.Bars.TryGetValue(row.WindowId, out UsageBarView? bar) && row.UsedPercent is { } used)
+                {
+                    // Previous and elapsed values are shown muted, never in the provider color.
+                    bar.Set(used, row.Tone == PanelTone.Muted ? MacControls.Color(PanelTone.Muted)
+                        : MacControls.QuotaBarColor(section.Provider));
+                    SetTip(bar, detail);
+                }
+            }
+            Apply(views.Metadata, section.Metadata, detail);
         }
     }
 
@@ -262,11 +287,11 @@ internal sealed class MacStatusPanel : IDisposable
         return line;
     }
 
-    private static void Apply(NSTextField field, QuotaLine line)
+    private static void Apply(NSTextField field, QuotaLine line, string detail)
     {
         SetText(field, line.Text);
         SetColor(field, MacControls.Color(line.Tone));
-        SetTip(field, line.Detail);
+        SetTip(field, detail);
     }
 
     internal void SetHoliday(bool enabled, bool ready)
@@ -489,9 +514,55 @@ internal sealed class MacStatusPanel : IDisposable
         public override bool IsFlipped => true;
     }
 
+    // Read-only usage bar under a quota row: a faint track and a fill of the used fraction. The row's
+    // text already carries the value, so the bar is hidden from accessibility to avoid a second reading.
+    internal sealed class UsageBarView : NSView
+    {
+        internal const int BarHeight = 5;
+        private readonly nfloat width;
+
+        internal UsageBarView(nfloat width)
+        {
+            this.width = width;
+            TranslatesAutoresizingMaskIntoConstraints = false;
+            WidthAnchor.ConstraintEqualTo(width).Active = true;
+            HeightAnchor.ConstraintEqualTo(BarHeight).Active = true;
+            AccessibilityElement = false;
+        }
+
+        internal double Fraction { get; private set; }
+        internal NSColor FillColor { get; private set; } = NSColor.SecondaryLabel;
+
+        // 0% is empty and 100% is full; any other value keeps a visible fill of at least 2pt.
+        internal nfloat FilledWidth => Fraction <= 0 ? 0 : Fraction >= 1 ? width
+            : (nfloat)Math.Min(width, Math.Max(2, Math.Round(width * Fraction)));
+
+        internal void Set(double usedPercent, NSColor color)
+        {
+            double fraction = double.IsFinite(usedPercent) ? Math.Clamp(usedPercent, 0, 100) / 100 : 0;
+            if (fraction == Fraction && FillColor.Equals(color)) return;
+            Fraction = fraction;
+            FillColor = color;
+            NeedsDisplay = true;
+        }
+
+        public override void DrawRect(CGRect dirtyRect)
+        {
+            NSBezierPath track = NSBezierPath.FromRoundedRect(Bounds, Bounds.Height / 2, Bounds.Height / 2);
+            MacControls.QuotaBarTrack.SetFill();
+            track.Fill();
+            if (FilledWidth <= 0) return;
+            NSGraphicsContext.GlobalSaveGraphicsState();
+            track.AddClip();
+            FillColor.SetFill();
+            NSGraphics.RectFill(new CGRect(0, 0, FilledWidth, Bounds.Height));
+            NSGraphicsContext.GlobalRestoreGraphicsState();
+        }
+    }
+
     // ---- Native smoke checks (no user data, network or settings) ----
 
-    internal sealed record Layout(CGSize Size, nfloat TitleX, nfloat BoxTextX, nfloat UsableHeight);
+    internal sealed record Layout(CGSize Size, nfloat TitleX, nfloat BoxTextX, nfloat UsableHeight, nfloat BoxTextWidth);
 
     internal Layout Verify(ScheduleSnapshot snapshot, IReadOnlyList<ProviderStatus> states, IReadOnlyList<QuotaState> quotaStates)
     {
@@ -528,9 +599,34 @@ internal sealed class MacStatusPanel : IDisposable
             QuotaViews views = quotas[section.Provider];
             if (views.Heading.StringValue != section.Heading.Text || views.Metadata.StringValue != section.Metadata.Text ||
                 (views.Scope?.StringValue ?? "") != (section.Scope?.Text ?? "") ||
-                section.Rows.Any(row => views.Rows[row.WindowId].StringValue != row.Text ||
-                    views.Rows[row.WindowId].ToolTip != row.Detail))
+                section.Rows.Any(row => views.Rows[row.WindowId].StringValue != row.Text))
                 throw new InvalidOperationException($"{section.Provider} quota lines differ from the shared panel model.");
+            // One Provider detail per box: the box, every line and every bar carry the same shared text.
+            NSView[] tipped = new NSView?[] { views.Box, views.Heading, views.Scope, views.Metadata }
+                .OfType<NSView>().Concat(views.Rows.Values).Concat(views.Bars.Values).ToArray();
+            if (section.Detail.Length == 0 || tipped.Any(view => view.ToolTip != section.Detail))
+                throw new InvalidOperationException($"{section.Provider} quota box does not show the single shared Provider detail.");
+            // A usage bar per row with a value (none for a waiting or failed row), drawn from the model's
+            // used percentage; previous/elapsed (Muted) values use the muted color, never the provider color.
+            foreach (QuotaLine row in section.Rows)
+            {
+                bool hasBar = views.Bars.TryGetValue(row.WindowId, out UsageBarView? bar);
+                if (row.UsedPercent is not { } used)
+                {
+                    if (hasBar) throw new InvalidOperationException($"{section.Provider} row without a value has a usage bar.");
+                    continue;
+                }
+                NSColor expectedColor = row.Tone == PanelTone.Muted ? MacControls.Color(PanelTone.Muted)
+                    : MacControls.QuotaBarColor(section.Provider);
+                if (!hasBar || Math.Abs(bar!.Fraction - Math.Clamp(used, 0, 100) / 100) > 1e-9 ||
+                    !bar.FillColor.Equals(expectedColor) || bar.GestureRecognizers.Length != 0 || bar.Menu is not null ||
+                    bar.AccessibilityElement)
+                    throw new InvalidOperationException($"{section.Provider} usage bar for {row.WindowId} is wrong.");
+                // 0% is empty, 100% is full, anything between shows a visible fill.
+                nfloat filled = bar.FilledWidth;
+                bool ok = used <= 0 ? filled == 0 : used >= 100 ? filled == bar.Frame.Width : filled >= 2 && filled <= bar.Frame.Width;
+                if (!ok) throw new InvalidOperationException($"{section.Provider} usage bar fill {filled}pt does not match {used}%.");
+            }
             // Read-only: no click, hover, cursor or record menu on a quota box.
             if (views.Box.IsInteractive || views.Box.GestureRecognizers.Length != 0 || views.Box.Menu is not null)
                 throw new InvalidOperationException($"{section.Provider} quota box must not be clickable.");
@@ -544,6 +640,18 @@ internal sealed class MacStatusPanel : IDisposable
         NSView[] boxed = cards.Values.SelectMany(card => new NSView[] { card.Heading, card.Official, card.Reason })
             .Concat(quotas.Values.SelectMany(q => new NSView?[] { q.Heading, q.Scope, q.Metadata }.OfType<NSView>().Concat(q.Rows.Values)))
             .ToArray();
+        // A label's frame sits a couple of points left of where its text starts (its alignment rect), so
+        // a bar must start at its row's alignment-rect x, i.e. exactly where that row's text starts, and
+        // span the text width.
+        foreach (QuotaViews q in quotas.Values)
+            foreach (var (windowId, bar) in q.Bars)
+            {
+                NSTextField rowField = q.Rows[windowId];
+                nfloat textStart = rowField.GetAlignmentRectForFrame(rowField.Frame).X;
+                if (Math.Abs(bar.Frame.X - textStart) > 0.5 || Math.Abs(bar.Frame.Width - (ContentWidth - CardPadding * 2)) > 0.5)
+                    throw new InvalidOperationException(
+                        $"A usage bar does not line up with its row text (bar x {bar.Frame.X}, text x {textStart}, width {bar.Frame.Width}).");
+            }
         nfloat boxX = X(cards[ProviderKind.OpenAI].Heading);
         if (boxed.Any(view => Math.Abs(X(view) - boxX) > 0.5) || Math.Abs(boxX - titleX - CardPadding) > 0.5)
             throw new InvalidOperationException("Card and quota box text do not start at the same x: " +
@@ -570,7 +678,7 @@ internal sealed class MacStatusPanel : IDisposable
                 if (frame.IntersectsWith(rows[j].Frame))
                     throw new InvalidOperationException("Popover rows overlap.");
         }
-        return new(size, titleX, boxX, availableHeight);
+        return new(size, titleX, boxX, availableHeight, ContentWidth - CardPadding * 2);
     }
 
     // Smoke: the visible quota area height (shrinks and scrolls on a short screen).
@@ -581,6 +689,10 @@ internal sealed class MacStatusPanel : IDisposable
     internal bool PressCard(ProviderKind provider) => cards[provider].View.AccessibilityPerformPress();
 
     internal string QuotaRowText(QuotaProvider provider, string windowId) => quotas[provider].Rows[windowId].StringValue;
+
+    // Smoke: how many usage bars are drawn, and the visible fill of one of them.
+    internal int QuotaBarCount => quotas.Values.Sum(views => views.Bars.Count);
+    internal nfloat QuotaBarFill(QuotaProvider provider, string windowId) => quotas[provider].Bars[windowId].FilledWidth;
 
     public void Dispose()
     {
