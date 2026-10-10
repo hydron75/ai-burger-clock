@@ -581,6 +581,7 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
                 : "popover activation not checked (macOS did not grant activation without a user click)";
             // Readable tone text on the opaque background whatever the desktop behind it, in both appearances.
             double weakest = double.MaxValue;
+            double barWeakest = double.MaxValue;
             foreach (NSString name in new[] { NSAppearance.NameAqua, NSAppearance.NameDarkAqua })
             {
                 NSAppearance appearance = NSAppearance.GetAppearance(name)
@@ -598,6 +599,14 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
                         if (contrast < 4.5)
                             throw new InvalidOperationException($"{tone} text contrast {contrast:0.00}:1 on the {surface} is below 4.5:1 in {name}.");
                     }
+                }
+                // Usage-bar fills are graphical objects: provider colors keep at least 3:1 on the panel background.
+                foreach (QuotaProvider provider in Enum.GetValues<QuotaProvider>())
+                {
+                    double barContrast = MacControls.Contrast(MacControls.QuotaBarColor(provider), () => MacControls.PanelBackground, appearance);
+                    barWeakest = Math.Min(barWeakest, barContrast);
+                    if (barContrast < 3.0)
+                        throw new InvalidOperationException($"{provider} usage bar color contrast {barContrast:0.00}:1 is below 3:1 in {name}.");
                 }
             }
             panel.Close();
@@ -669,6 +678,28 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
             panel.Update(Schedule(now.AddMinutes(1)), healthy, quotas, false, now.AddMinutes(5), "");
             if (!panel.QuotaRowText(QuotaProvider.Codex, "session").Contains("약 14분 후 리셋", StringComparison.Ordinal))
                 throw new InvalidOperationException("Injected quota countdown did not advance.");
+            // Bars follow the model's used percentage: 0% empty, 100% full, small values still visible.
+            if (panel.QuotaBarFill(QuotaProvider.Gemini, "gemini-5h") != 0 ||
+                panel.QuotaBarFill(QuotaProvider.Codex, "session") != layout.BoxTextWidth ||
+                panel.QuotaBarFill(QuotaProvider.Gemini, "gemini-weekly") < 2 || panel.QuotaBarCount != 7)
+                throw new InvalidOperationException("Usage bars do not show the used percentages (0% empty, 100% full, 7 bars).");
+            // Previous and elapsed values draw muted bars (Verify checks the color per row); a waiting or
+            // failed reading has no bar at all.
+            QuotaState[] edgeStates =
+            [
+                quota with { IsPrevious = true, Error = "조회 실패 예시" },
+                new(QuotaProvider.Claude, new(QuotaProvider.Claude,
+                    [new("session", "세션 (5시간)", 88, now.AddMinutes(-4), 300),
+                     new("weekly_all", "주간 전체", 63, null, 10080)]),
+                    LastSuccessfulCheckUtc: now, NextCheckUtc: now.AddMinutes(5)),
+                new(QuotaProvider.Gemini, null, Error: "조회 실패 예시"),
+            ];
+            panel.Update(Schedule(now), healthy, edgeStates, false, now.AddMinutes(5), "");
+            panel.Verify(Schedule(now), healthy, edgeStates);
+            if (panel.QuotaBarCount != 4)
+                throw new InvalidOperationException("Previous/elapsed rows must keep their bars and a failed reading must have none.");
+            panel.Update(Schedule(now), healthy, quotas, false, now.AddMinutes(5), "");
+            panel.Verify(Schedule(now), healthy, quotas);
             panel.Close();
             string displayResult = VerifyDisplayDecisions();
             ShowStatistics();
@@ -685,7 +716,7 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
             await statisticsWindow.RefreshAsync();
             if (!statisticsWindow.Window.IsVisible)
                 throw new InvalidOperationException("Statistics window did not reopen from the menu-bar action.");
-            Console.WriteLine($"PASS: bundle version, menu-tracking countdown timer, 20pt menu icon white/dark disc + color glyph light/dark 1x-2x pixels (glyph contrast min {iconContrast:0.0}:1), left/right/control-click routing, right-click menu, popover open/close/reopen, shared panel text/record menu/quota lines, {activationResult}, tone contrast >= 4.5:1 light+dark (min {weakest:0.0}:1), card text x = quota box text x ({layout.BoxTextX:0}pt; titles {layout.TitleX:0}pt), whole-card click/quota boxes read-only, three quota boxes incl. Gemini, popover {layout.Size.Width:0}x{layout.Size.Height:0}pt (this screen usable {layout.UsableHeight:0}pt; 1280x800 {standard.Height:0}pt not cut off, quota area {standardQuota:0}pt; 1024x640 {small.Height:0}pt with quota area {smallQuota:0}pt scrolling), 1,000-char note limit, temporary SQLite, four events/notes via shared factory, {displayResult}, statistics (shared text, explanation fits, Mac empty-state hint), injected quota countdown; no account/network/settings changes.");
+            Console.WriteLine($"PASS: bundle version, menu-tracking countdown timer, 20pt menu icon white/dark disc + color glyph light/dark 1x-2x pixels (glyph contrast min {iconContrast:0.0}:1), left/right/control-click routing, right-click menu, popover open/close/reopen, shared panel text/record menu/quota lines, {activationResult}, tone contrast >= 4.5:1 light+dark (min {weakest:0.0}:1), card text x = quota box text x ({layout.BoxTextX:0}pt; titles {layout.TitleX:0}pt), whole-card click/quota boxes read-only, shared quota title, usage bars (0% empty/100% full, provider colors >= 3:1 light+dark min {barWeakest:0.0}:1, muted when previous/elapsed, none without a value), one shared Provider detail per quota box, three quota boxes incl. Gemini, popover {layout.Size.Width:0}x{layout.Size.Height:0}pt (this screen usable {layout.UsableHeight:0}pt; 1280x800 {standard.Height:0}pt not cut off, quota area {standardQuota:0}pt; 1024x640 {small.Height:0}pt with quota area {smallQuota:0}pt scrolling), 1,000-char note limit, temporary SQLite, four events/notes via shared factory, {displayResult}, statistics (shared text, explanation fits, Mac empty-state hint), injected quota countdown; no account/network/settings changes.");
             ExitCode = 0;
         }
         catch (Exception error)

@@ -69,6 +69,23 @@ internal static class MacControls
         _ => NSColor.Label
     };
 
+    // Usage-bar fills use the same provider colors as Windows (ChatGPT #10A37F, Claude #D97757,
+    // Gemini #4285F4). Each keeps at least 3:1 against PanelBackground in both appearances
+    // (smoke-checked, graphical-object contrast); previous/elapsed values use the Muted tone instead.
+    internal static NSColor QuotaBarColor(QuotaProvider provider) => provider switch
+    {
+        QuotaProvider.Codex => ProviderGreen,
+        QuotaProvider.Claude => ProviderOrange,
+        _ => ProviderBlue
+    };
+
+    private static readonly NSColor ProviderGreen = NSColor.FromSrgb(16 / 255f, 163 / 255f, 127 / 255f, 1);
+    private static readonly NSColor ProviderOrange = NSColor.FromSrgb(217 / 255f, 119 / 255f, 87 / 255f, 1);
+    private static readonly NSColor ProviderBlue = NSColor.FromSrgb(66 / 255f, 133 / 255f, 244 / 255f, 1);
+
+    // The unfilled part of a usage bar: a faint label-colored track that follows light/dark.
+    internal static NSColor QuotaBarTrack => NSColor.Label.ColorWithAlphaComponent(0.14f);
+
     private static readonly Dictionary<string, NSColor> named = [];
 
     private static NSColor Named(string name)
