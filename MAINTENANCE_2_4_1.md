@@ -1,8 +1,10 @@
-# AI Burger Clock 2.4.1 — Windows 공식 상태 판정 배포 준비
+# AI Burger Clock 2.4.1 — Windows 공식 상태 판정 배포 기록
 
-기록일: **2026-10-10 KST**. 상태: **#48 main 병합·2.4.1 후보 검증 완료, 새 준비 PR 병합·배포 교체 승인 대기**.
+기록일: **2026-10-10 KST**. 상태: **#49 승인·main 병합·Windows 2.4.1 배포·최종 확인 완료**.
 
-사용자 승인에 따라 Mac 확인이 끝난 #48의 Draft를 해제하고 HEAD `8c141c6`를 지정해 병합했다. main에서 `git pull --ff-only` 후 `b5461ec`를 기준으로 새 브랜치 `feature/windows-release-2-4-1`을 만들었다. 이번 준비에서는 **버전·기록 문서·합성 PNG만 변경**했다. `build.ps1 -Publish`, release 백업, EXE 교체는 아직 하지 않았으며 현재 `dist/win-x64/AI Burger Clock.exe`는 **2.4.0**이다.
+Mac 확인이 끝난 #48을 병합한 main `b5461ec`에서 `feature/windows-release-2-4-1`을 만들고, 버전·기록·합성 PNG만 바꾼 준비 PR [#49](https://github.com/hydron75/ai-burger-clock/pull/49)를 검증했다. 사용자가 #49 병합·교체를 승인한 뒤 Draft를 해제하고 승인 HEAD `3ab1854`를 지정해 병합했다. main에서 `git pull --ff-only` 후 **깨끗한 병합 main `0d69a64`를 최종 EXE 소스**로 사용했다.
+
+**정상 종료 → 프로세스·WAL/SHM 부재 확인 → 2.4.0 백업·해시 검증 → `build.ps1 -Publish` → 최종 단일 EXE 검사 → 새 2.4.1 일반 실행**을 완료했다. 최종 FileVersion **2.4.1.0**, self-test **251,547건·ExitCode 0**, smoke **394 PASS·ExitCode 0**이다. 같은 자동 시작 경로가 새 EXE를 가리킨다. 공개 상태 probe에서 ChatGPT는 **범위 미확인 UNKNOWN / CHECK이며 STALE가 아님**을 확인했고, 실제 트레이·상태 창·ChatGPT 카드 정상은 **사용자 확인**이다. 문제·복원 없이 새 배포본을 실행한 상태로 유지한다.
 
 ## 버전과 변경 범위
 
@@ -22,7 +24,7 @@ Version **2.4.1**, AssemblyVersion·FileVersion **2.4.1.0**이다. Windows 11 x6
 
 공개 구성 요소 관련 목록·출처·판정 기준은 [PROVIDER_SOURCES](PROVIDER_SOURCES.md)에 있다. **Atom/RSS 대조·공개 위젯·HTML scraping·비공개 endpoint는 추가하지 않았다.** 계정 한도 CLI·조회 정책·시간표·공휴일·트레이 알림 규칙·기록·통계·자동 시작은 이번에 추가 변경하지 않는다.
 
-#48의 공통 C#는 Windows 및 [Mac 최종 확인](https://github.com/hydron75/ai-burger-clock/pull/48#issuecomment-6095764419)을 거쳐 병합됐다. Mac은 HEAD `8c141c6`에서 SDK 10.0.401 / Xcode 27.0, 공통 251,240건, 빌드 경고 0·오류 0, native smoke 종료 코드 0을 기록했다. 이번 준비 PR의 범위는 **Windows만 변경 + 기록 문서**이며 공통 원본 27개·Mac/·MACOS_PORT.md·Mac 버전·AGENTS.md는 고치지 않는다. 위 Mac 결과는 이번 Windows 준비에서 새로 실행한 검사로 세지 않는다.
+#48의 공통 C#는 Windows 및 [Mac 최종 확인](https://github.com/hydron75/ai-burger-clock/pull/48#issuecomment-6095764419)을 거쳐 병합됐다. Mac은 HEAD `8c141c6`에서 SDK 10.0.401 / Xcode 27.0, 공통 251,240건, 빌드 경고 0·오류 0, native smoke 종료 코드 0을 기록했다. #49와 이번 배포 기록의 범위는 **Windows만 변경 + 기록 문서**이며 공통 원본 27개·Mac/·MACOS_PORT.md·Mac 버전·AGENTS.md는 고치지 않았다. 위 Mac 결과는 이번 Windows 배포에서 새로 실행한 검사로 세지 않는다.
 
 ## 변경 파일
 
@@ -30,6 +32,7 @@ Version **2.4.1**, AssemblyVersion·FileVersion **2.4.1.0**이다. Windows 11 x6
 
 - AiBurgerClock.csproj: Version / AssemblyVersion / FileVersion을 함께 변경.
 - README.md·CODE_GUIDE.md·BACKLOG.md: 2.4.1 준비 상태·검사·사용법·기록 연결. 기존 2.4.0 실제 배포 기록과 보류 후보 유지.
+- 배포 뒤 이 문서와 위 세 문서의 준비/승인 대기 표시를 실제 결과로 갱신. PROVIDER_SOURCES.md의 미배포 설명도 Windows 2.4.1 반영 완료로 갱신. 제품·검사 C#는 추가 변경하지 않음.
 
 신규:
 
@@ -38,7 +41,7 @@ Version **2.4.1**, AssemblyVersion·FileVersion **2.4.1.0**이다. Windows 11 x6
 
 소스 지도는 루트·Properties **72개(기능 38 + 검사·진단 33 + 명찰 1)**, Mac 호스트 7개, 공통 검사 입구 1개로 총 80개다. 이번 준비가 C# 파일이나 직접 패키지 의존성을 추가한 것은 아니다.
 
-## 빌드와 자체 검사
+## 배포 준비: 빌드와 자체 검사
 
 .NET SDK **10.0.401**. 실제 검증한 코드 HEAD는 `3d230ed0cbb30be9c1e9dcbec389a831a0c03682`이다. `build.ps1`을 실행해 **경고 0 / 오류 0**, Windows 자체 검사 **251,547 assertions / 실제 ExitCode 0**을 확인했다. 기존 dist 2.4.0도 `--self-test`를 실행해 **251,451 assertions / 실제 ExitCode 0**을 확인했다. 두 결과 모두 `Start-Process -Wait -PassThru`의 실제 ExitCode로 확인했으며 `$LASTEXITCODE`로 대신하지 않았다.
 
@@ -55,7 +58,7 @@ Version **2.4.1**, AssemblyVersion·FileVersion **2.4.1.0**이다. Windows 11 x6
 
 감소한 그룹은 없다. 증가분은 #48에서 이미 추가한 검사이며 이번 버전 변경으로 늘어난 것은 아니다. Windows 307건은 자동 시작 229 + 트레이 픽셀/표시 이름 44 + Windows CLI 경로 3 + 경고 로그 31이다. 공통 251,240건은 Windows SelfTest가 SharedTestSuite를 한 번 실행한 결과이며 이번에 Shared.Tests를 별도로 실행하지 않았다.
 
-## smoke 5회와 합성 화면
+## 배포 준비: smoke 5회와 합성 화면
 
 기존 2.4.0 앱은 조작 도구에 종료 메뉴가 노출되지 않아 사용자가 정상 종료했다. 실제 프로세스 부재를 확인한 뒤 후보 Release EXE의 `--smoke-test --report-directory`를 **5회 순차 실행**했다. 임시 DB·가짜 HTTP/CLI·실제 WinForms 메시지 루프를 사용했고 `--verify-autostart`는 실행하지 않았다. 실패 제외·숨긴 재시도·대기 시간 증가 없이 회차별 stdout/stderr·PNG와 결과를 보존했다.
 
@@ -81,7 +84,7 @@ Version **2.4.1**, AssemblyVersion·FileVersion **2.4.1.0**이다. Windows 11 x6
 
 ![기존 사용량 막대와 Provider별 박스 — 합성 데이터](docs/reviews/windows-release-2.4.1-20261010/account-quotas-two-providers.png)
 
-## 실제 공개 상태 조회
+## 배포 준비: 실제 공개 상태 조회
 
 후보의 `--check-providers`를 **2026-10-10 17:46 KST**에 실행해 **실제 ExitCode 0**을 확인했다. 계정 한도·CLI·사용자 DB가 아닌 공개 공식 상태만 조회했다.
 
@@ -104,35 +107,44 @@ Version **2.4.1**, AssemblyVersion·FileVersion **2.4.1.0**이다. Windows 11 x6
 | #48 최종 HEAD / Mac 최종 확인 | `8c141c620316cd81c109fd1a747b4351a347566a` |
 | #48 main 병합 / 준비 브랜치 출발점 | `b5461ec66664cb616ae017a469da7cbf973ccaf5` |
 | 버전 변경 / 실제 검증한 코드 HEAD | `3d230ed0cbb30be9c1e9dcbec389a831a0c03682` |
-| 새 준비 PR 병합 / 최종 배포 EXE 소스 | **미수행·미정**. 승인 뒤 병합한 깨끗한 main 전체 해시를 기록할 예정 |
-| 검증 뒤 변경 | 이 문서·README·CODE_GUIDE·BACKLOG·합성 PNG만 추가. 실제 검증한 EXE 소스 해시를 문서 커밋 해시로 바꾸지 않음 |
+| #49 승인·병합 대상 HEAD | `3ab1854dc9cd9c308916f1f68b1580f5aa434ad7` |
+| #49 main 병합 / 최종 배포 EXE 소스 | **`0d69a64f5cb337be57add9be1036fca923330d4f`** |
+| 최종 EXE 생성 뒤 변경 | 배포 결과를 적는 Markdown 5개만 변경. 이 후속 문서 커밋을 EXE 소스로 적거나 다시 publish하지 않음 |
 
-| 항목 | 검증한 2.4.1 bin 후보 | 현재 배포 2.4.0 |
+| 항목 | 최종 배포 2.4.1 | 교체된 기존 2.4.0 |
 |---|---|---|
-| 경로 | bin/Release/net10.0-windows/win-x64/AI Burger Clock.exe | dist/win-x64/AI Burger Clock.exe |
+| 경로 | dist/win-x64/AI Burger Clock.exe | 백업의 replaced-2.4.0.exe |
 | FileVersion | `2.4.1.0` | `2.4.0.0` |
-| ProductVersion | `2.4.1+3d230ed0cbb30be9c1e9dcbec389a831a0c03682` | `2.4.0+296f52492de8e0529df853b2e06a7640887ccc03` |
-| 크기 | 163,328 bytes | 3,339,499 bytes |
-| SHA-256 | `DC4C303210FFABE0FBB96C1F00C9B40EB93DAEBEA7691DC68EDF7B457B4290B4` | `DBA33333B2BD41DD87C223D0F9305672F31E8E51296B7E0998F7539515347500` |
+| ProductVersion | `2.4.1+0d69a64f5cb337be57add9be1036fca923330d4f` | `2.4.0+296f52492de8e0529df853b2e06a7640887ccc03` |
+| 크기 | **3,392,747 bytes** | 3,339,499 bytes |
+| SHA-256 | **`E610CD39DB17EBDC48EC7A6E0349B2A2B2993DEBE4DE555E41F6E1C10FE104D1`** | `DBA33333B2BD41DD87C223D0F9305672F31E8E51296B7E0998F7539515347500` |
 
-bin 후보는 폴더 전체가 필요한 apphost이며 **최종 단일 EXE가 아니다.** 후보를 dist로 복사하지 않았다. 최종 2.4.1 단일 EXE의 소스 커밋·크기·SHA-256과 실제 백업 경로/해시는 승인 뒤 생성·검증해 기록한다. 현재는 미정이며 준비 후보 해시로 대신하지 않는다.
+최종 EXE의 절대 경로는 `C:/Users/mc_bl/.codex/.chatgpt-projects/g-p-6aa5eb198fd88191b7382af0eb114af4/AiBurgerClock/dist/win-x64/AI Burger Clock.exe`다. 준비 때의 bin 후보는 163,328 bytes·SHA-256 `DC4C303210FFABE0FBB96C1F00C9B40EB93DAEBEA7691DC68EDF7B457B4290B4`인 apphost이며 **최종 단일 EXE가 아니다.** 이를 dist로 복사하지 않고 병합 main에서 publish했다.
 
-## 승인 뒤 백업·교체 계획
+## 실제 백업·교체와 최종 검증
 
-아래는 **아직 실행하지 않은 계획**이다. 준비 때 정상 종료한 사실로 교체 시점의 종료/WAL 확인을 대신하지 않는다.
+사용자가 승인한 교체 계획을 아래 순서로 실행했다. 준비 때 종료한 사실로 교체 시점의 종료/WAL 확인을 대신하지 않았다.
 
-1. 사용자가 새 준비 PR 병합·교체를 승인하면 승인 HEAD를 병합하고 main에서 `git pull --ff-only` 한다. 깨끗한 작업 트리와 병합 main 전체 해시를 기록한다.
-2. **기존 2.4.0 앱 정상 종료 → 실제 프로세스 부재 → 사용자 DB의 활성 WAL 없음 확인.** `%LOCALAPPDATA%/AIBurgerClock`의 burgerclock.db-wal·shm이 남으면 삭제하거나 DB 본체만 복사하지 않고 교체를 보류한다.
-3. **새 백업 폴더 `../backups/release-2.4.1-<교체일 YYYYMMDD>/`**에 다음을 보관한다. 실제 교체일을 쓰고 기존 백업을 덮어쓰지 않는다. 아직 이 release 백업을 만들지 않았다.
-   - `dist-2.4.0.zip`: 교체 직전 dist 전체.
-   - `replaced-2.4.0.exe`: 기존 EXE. 위 2.4.0 버전·SHA-256과 대조.
-   - `source-2.4.0-296f524.zip`: 실제 기존 EXE 소스 커밋의 git archive.
-   - `burgerclock.db`: 정상 종료 직후 DB 복사. 내용 조회 없이 원본/복사본 해시 확인.
-   - 교체 전 manifest: KST 시각·프로세스 부재·WAL/SHM 상태·원본/백업 해시·자동 시작 종류/값. 백업·개인 DB·EXE는 GitHub에 올리지 않음.
-4. 승인된 **병합 main에서 `build.ps1 -Publish`**를 실행해 기존 `dist/win-x64/AI Burger Clock.exe` 경로에 새 단일 EXE를 만든다. 실패하면 아래 복원 절차를 적용한다.
-5. 최종 dist의 FileVersion **2.4.1.0**·ProductVersion **2.4.1+실제 병합 main 해시**·크기·SHA-256과 self-test·smoke 실제 ExitCode 0을 확인한다. 공개 상태 probe와 확인 시각·범위 미확인 표시도 확인한다. 당시 범위 미확인 CHECK를 억지로 GO로 바꾸지 않는다.
-6. 자동 시작 등록을 **읽기 전용**으로 전후 비교한다. 이번에 확인한 HKCU Run `AI Burger Clock`은 `String`, 명령은 **같은 절대 dist EXE 경로 + `--autostart`**다. StartupApproved/Run은 `Binary`, `020000000000000000000000`이다. 같은 경로의 파일 버전·해시가 2.4.1인지 확인하고 등록 종류/명령/바이트는 유지한다. bin 후보나 백업 경로로 재등록하거나 체크박스를 조작하지 않는다.
-7. 새 dist를 `--autostart`로 일반 실행해 프로세스 경로·응답·버전·트레이·상태 창·확인 시각·한도 막대/상세를 확인한다. 화면 조작이 불가능하면 사용자 정상 여부를 별도 근거로 기록하며 실제 계정 값이나 캡처를 요구하지 않는다. `published-2.4.1.exe` 보관본·교체 후 manifest를 남기고 이 문서의 미정 항목을 실제 값으로 갱신한다.
+1. **18:10:13 KST**: #49 Draft를 해제하고 승인 HEAD를 지정해 병합했다. main에서 `git pull --ff-only` 후 `0d69a64`와 깨끗한 작업 트리를 확인했다.
+2. 기존 2.4.0 앱은 조작 도구에 종료 메뉴가 노출되지 않아 **사용자가 트레이에서 정상 종료**했다. **18:13:29 KST**와 백업 직전에 실제 앱 프로세스 0개, DB 존재, burgerclock.db-wal·shm 부재를 확인했다. 강제 종료·WAL 삭제·DB 내용 조회는 하지 않았다.
+3. **18:17:38 KST**: 새 폴더 **`../backups/release-2.4.1-20261010/`**에 기존 dist·EXE·실제 2.4.0 소스·닫힌 DB를 보관했다. 원본/복사본 해시 및 ZIP 안 EXE 해시가 일치했고, 백업 중 프로세스·WAL 부재와 DB 해시 불변을 다시 확인했다. 기존 백업은 덮어쓰지 않았다.
+4. 승인된 **병합 main에서 `build.ps1 -Publish`**를 실행했다. SDK **10.0.401**, `dotnet build -warnaserror` **경고 0·오류 0**, publish 성공이다. 최종 dist의 **self-test 251,547건(공통 251,240 + Windows 307), 실제 ExitCode 0**을 확인했다. 준비 대비 증감 0, 기존 2.4.0 대비 +96이다.
+5. 같은 최종 dist의 `--smoke-test --report-directory`를 **별도 1회** 실행해 **394 PASS / FAIL 0 / 실제 ExitCode 0 / 32.71초**를 확인했다. 준비 5회와 별도 결과다. 상태·통계·공휴일·한도·막대/상세·메모·트레이 요청과 범위 미확인 CHECK/확인 시각이 통과했다. 합성 Gemini 지연 **10.03초**, heartbeat **49회**, 트레이·상태 카운트다운 각각 **12종**, BalloonTipShown **19회**다. 실제 배너 노출과 혼동하지 않는다. 합성 범위 미확인 PNG도 직접 열어 확인했다.
+6. **18:20:02 KST**: 최종 dist의 `--check-providers`를 실행해 **실제 ExitCode 0**을 확인했다. ChatGPT는 summary + components **응답 수신 성공**, 범위 미확인 사건은 별도 필드에 남고 확인된 장애 필드는 비어 있으며 **UNKNOWN / FULL에서 CHECK, STALE가 아님**이다. Claude·Gemini는 **관련 범위 OPERATIONAL / FULL에서 GO**다. 공개 HTTP 상태만 조회했으며 계정 한도·CLI probe나 사용자 DB 조회는 하지 않았다. 수신 성공은 서비스 정상·서버 데이터 최신성 보증이 아니다.
+7. 자동 시작을 **읽기 전용**으로 전후·일반 실행 뒤 비교했다. HKCU Run `AI Burger Clock`은 `String`, 명령은 **같은 절대 dist EXE 경로를 큰따옴표로 감싼 값 + `--autostart`**다. StartupApproved/Run은 `Binary`, `020000000000000000000000`으로 모두 동일하다. 그 경로의 파일은 최종 2.4.1 버전·해시와 일치한다. 등록 변경·`--verify-autostart`·체크박스 조작은 하지 않았다.
+8. **18:20:02 KST**: 새 dist를 `--autostart`로 일반 실행했다. **18:22:25 KST** 최종 확인에서 앱 한 개·최종 dist 경로·`Responding=True`·동일 버전/해시를 확인했다. 조작 도구에는 실제 트레이·창이 노출되지 않아 사용자에게 최종 화면 확인을 요청했고, **트레이·상태 창·ChatGPT가 STALE 아닌 판정 기준대로 표시되는지 정상으로 확인**받았다. 실제 계정 값·캡처는 받거나 게시하지 않았다.
+
+백업의 절대 경로는 `C:/Users/mc_bl/.codex/.chatgpt-projects/g-p-6aa5eb198fd88191b7382af0eb114af4/backups/release-2.4.1-20261010/`다.
+
+| 보관 파일 | SHA-256 / 확인 |
+|---|---|
+| replaced-2.4.0.exe | `DBA33333B2BD41DD87C223D0F9305672F31E8E51296B7E0998F7539515347500` — 교체 전 원본 및 dist ZIP 안 EXE와 일치 |
+| dist-2.4.0.zip | `ED1BC3509D1FC4E730CAE40133C389886DB87ED03DEB13519163031EEB1C220D` |
+| source-2.4.0-296f524.zip | `C0DDD8813EF0110A9D38F63949C1572596E8F088D9E9A24F1A6BB41FEFD93DA3` — 기존 EXE 소스의 git archive |
+| burgerclock.db | `189FD5EB2368A644A076BF276138081666E49B2C08C7B28D9137B08B05EC2964` — 종료 직후 원본/복사본 일치, 내용 조회 없음 |
+| published-2.4.1.exe | `E610CD39DB17EBDC48EC7A6E0349B2A2B2993DEBE4DE555E41F6E1C10FE104D1` — 최종 dist와 일치 |
+
+교체 전·검증 뒤·일반 실행 뒤 manifest와 공개 상태 probe manifest도 같은 백업에 보관했다. **DB·EXE·manifest·원본 로그는 GitHub에 올리지 않는다.** 최종 로컬 증거는 ignored `artifacts/release-2.4.1-deployment-20261010/`의 publish-build.txt·publish.txt, final-self-test.txt·errors, final-smoke/smoke.txt·smoke-errors.txt·PNG, final-providers.txt·errors, backup-before.json·validation.json·final-public-probe.json·normal-launch.json·completion.json이다. 정상 실행 전까지 사용자 DB 해시 불변과 WAL 부재를 확인했지만, 일반 실행의 정상 조회가 캐시를 갱신할 수 있으므로 **전체 배포 과정에서 DB가 무변경이었다고 주장하지 않는다.**
 
 ## 2.4.0으로 되돌리기
 
@@ -144,11 +156,9 @@ bin 후보는 폴더 전체가 필요한 apphost이며 **최종 단일 EXE가 �
 
 ## 이번에 수행하지 않은 항목과 종료 상태
 
-- 새 준비 PR 병합·release 백업·교체 직전 WAL 검사·publish·최종 단일 EXE 검사·2.4.1 배포·복원 시험: **미수행, 사용자 승인 대기**.
-- 후보의 실제 계정 한도 probe·실계정 화면 확인·장시간 자동 조회·실제 배너 노출·재부팅/재로그인 자동 시작·절전 복귀·전체 네트워크 단절/재연결·실제 다중 모니터/DPI 전환: **미수행**. 이전 버전·합성 검사 결과를 새 실기 확인으로 옮겨 적지 않음.
-- 이번 준비의 Mac 빌드/native smoke·별도 Shared.Tests: **미수행**. 이번 PR은 공통 C#와 Mac 파일을 바꾸지 않았고 #48의 기존 Mac 확인은 별도 기록.
+- #49 병합·release 백업·교체 직전 WAL 검사·publish·최종 단일 EXE 검사·2.4.1 배포·자동 시작 경로 비교·트레이/상태 창/ChatGPT 카드 사용자 확인: **완료**. 실제 2.4.0 복원 시험은 **미수행**, 복원도 적용하지 않음.
+- 새 2.4.1의 별도 실제 계정 한도 probe·실계정 한도 화면 확인·장시간 자동 조회·실제 배너 노출·재부팅/재로그인 자동 시작·절전 복귀·전체 네트워크 단절/재연결·실제 다중 모니터/DPI 전환: **미수행**. 이전 버전·합성 검사 결과를 새 실기 확인으로 옮겨 적지 않음.
+- 이번 Windows 배포의 Mac 빌드/native smoke·별도 Shared.Tests: **미수행**. 이번 PR과 배포 기록은 공통 C#와 Mac 파일을 바꾸지 않았고 #48의 기존 Mac 확인은 별도 기록.
 - Atom/RSS 대조·서버 데이터 원래 갱신 시각·신선도 입증: **미수행**. 응답 수신 성공과 구분함.
 
-검사 뒤 **기존 2.4.0 dist를 `--autostart`로 다시 실행**했고 실제 dist 경로·`Responding=True`·동일 버전/해시를 확인했다. Run·StartupApproved 종류/값도 그대로다. 강제 종료·등록 변경·EXE 교체는 하지 않았다. 일반 실행의 정상 조회는 캐시를 갱신할 수 있으므로 사용자 DB가 전체 과정에서 무변경이었다고 주장하지 않는다.
-
-**준비 검증은 완료했으며 여기서 멈춘다. 새 준비 PR 병합과 2.4.1 배포 교체는 사용자의 후속 승인 뒤 진행한다.**
+**현재 실행 중인 앱은 최종 2.4.1 dist다.** Run·StartupApproved 종류/값은 그대로이며 강제 종료·등록 변경·DB 복원은 하지 않았다. 후속 문서 커밋과 최종 EXE 소스 `0d69a64`를 구분하고, 배포 EXE·백업·실제 계정 값은 공개 저장소에 올리지 않는다.

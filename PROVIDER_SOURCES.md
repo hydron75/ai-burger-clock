@@ -1,6 +1,6 @@
 # Official provider sources (verified 2026-09-19; OpenAI follow-ups 2026-09-22 / 2026-10-10)
 
-Only public HTTPS JSON feeds are read. No keys, authentication, HTML scraping, cookies, or AI traffic inspection. The application sends five requests per refresh (OpenAI summary and full component catalog, Claude summary, Google catalog and history), or six when OpenAI summary omits incidents. A shared HttpClient, cancellation and bounded 4 MiB response reads are used. A linked timeout covers response-body reads as well as headers. The 2026-10-10 source changes are not yet in the deployed Windows 2.4.0 EXE. Atom/RSS comparison is out of scope for this change.
+Only public HTTPS JSON feeds are read. No keys, authentication, HTML scraping, cookies, or AI traffic inspection. The application sends five requests per refresh (OpenAI summary and full component catalog, Claude summary, Google catalog and history), or six when OpenAI summary omits incidents. A shared HttpClient, cancellation and bounded 4 MiB response reads are used. A linked timeout covers response-body reads as well as headers. The 2026-10-10 source changes are included in Windows 2.4.1, published from merged main `0d69a64`; see [the deployment record](MAINTENANCE_2_4_1.md). Atom/RSS comparison is out of scope for this change.
 
 ## OpenAI and Claude
 
