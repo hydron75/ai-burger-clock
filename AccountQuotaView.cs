@@ -3,8 +3,14 @@ namespace AiBurgerClock;
 // Uses the existing popup's middle area; extra model-scoped windows can scroll.
 internal sealed class AccountQuotaView : Panel
 {
-    private readonly ToolTip details = new() { AutoPopDelay = 30000, OwnerDraw = true };
+    private readonly QuotaDetailPopup details = new();
+    private readonly System.Windows.Forms.Timer detailDelay = new() { Interval = SystemInformation.MouseHoverTime };
+    private readonly System.Windows.Forms.Timer detailLifetime = new() { Interval = 30000 };
+    private readonly System.Windows.Forms.Timer detailLeaveDelay = new() { Interval = SystemInformation.MouseHoverTime };
+    private readonly System.Windows.Forms.Timer detailPointerMonitor = new() { Interval = 100 };
     internal const int DetailWidth = 320; // Whole tooltip width at 96 DPI, including padding.
+    internal const string UsageTitle = "개인 계정 사용량";
+    internal const string UsageCaption = "색 막대 = 사용한 비율 · 시각은 KST\n마우스 올리기: 상세 · Refresh: 다시 조회";
     private const int DetailPadding = 8;
     private readonly Font headingFont = new("Segoe UI", 9F, FontStyle.Bold);
     private readonly Font rowFont = new("Segoe UI", 8.5F);
@@ -12,6 +18,10 @@ internal sealed class AccountQuotaView : Panel
     private readonly Dictionary<QuotaProvider, Label> headings = new();
     private readonly Dictionary<QuotaProvider, Label> metadata = new();
     private readonly Dictionary<(QuotaProvider, string), Label> rows = new();
+    private readonly Dictionary<(QuotaProvider, string), QuotaBalanceBar> bars = new();
+    private readonly Dictionary<Control, QuotaProvider> detailOwners = new();
+    private readonly Dictionary<QuotaProvider, string> providerDetails = new();
+    private QuotaProvider? pendingDetail;
     private string layoutKey = "";
     private bool sizingBoxes;
 
@@ -20,24 +30,34 @@ internal sealed class AccountQuotaView : Panel
         Name = "AccountQuotaView";
         AutoScroll = true;
         BackColor = Color.FromArgb(248, 249, 250);
-        AccessibleName = QuotaPanelModel.AccessibleName;
-        details.Popup += (_, e) =>
+        AccessibleName = UsageTitle;
+        detailDelay.Tick += (_, _) =>
         {
-            if (e.AssociatedControl is not { } control) return;
-            using var graphics = control.CreateGraphics();
-            e.ToolTipSize = MeasureDetail(graphics, details.GetToolTip(control) ?? "", control.DeviceDpi,
-                Screen.FromControl(control).WorkingArea.Width);
+            detailDelay.Stop();
+            if (pendingDetail is { } provider && ProviderAt(Cursor.Position) == provider)
+                ShowDetail(provider, Cursor.Position);
+            else HideDetail();
         };
-        details.Draw += (_, e) => DrawDetail(e, e.AssociatedControl?.DeviceDpi ?? DeviceDpi, details.ForeColor);
+        detailPointerMonitor.Tick += (_, _) => CheckDetailPointer(Cursor.Position);
+        detailLifetime.Tick += (_, _) => HideDetail();
+        detailLeaveDelay.Tick += (_, _) => FinishDetailLeave(Cursor.Position);
+        details.MouseLeave += (_, _) => DeferDetailLeave();
+        details.MouseEnter += (_, _) => detailLeaveDelay.Stop();
+        details.Scroll += (_, _) => { detailLifetime.Stop(); detailLifetime.Start(); };
+        VisibleChanged += (_, _) => { if (!Visible) HideDetail(); };
+        Scroll += (_, _) => HideDetail();
     }
 
-    internal ToolTip Details => details;
+    internal QuotaDetailPopup Details => details;
+    internal string DetailFor(Control control) => detailOwners.TryGetValue(control, out var provider)
+        ? providerDetails.GetValueOrDefault(provider, "") : "";
     internal static Font DetailFont => SystemFonts.MessageBoxFont ?? SystemFonts.DefaultFont;
 
-    internal static Size MeasureDetail(Graphics graphics, string text, int dpi, int workingAreaWidth)
+    internal static Size MeasureDetail(Graphics graphics, string text, int dpi, int workingAreaWidth, int? contentWidth = null)
     {
         int padding = ScaleDetail(DetailPadding, dpi);
         int width = Math.Min(ScaleDetail(DetailWidth, dpi), Math.Max(2 * padding + 1, workingAreaWidth - 2 * padding));
+        width = Math.Min(width, contentWidth ?? width);
         using var format = DetailFormat();
         // GDI+ also wraps words without spaces, such as long CLI paths or URLs.
         var content = graphics.MeasureString(text, DetailFont,
@@ -45,15 +65,15 @@ internal sealed class AccountQuotaView : Panel
         return new Size(width, (int)Math.Ceiling(content.Height) + 2 * padding);
     }
 
-    internal static void DrawDetail(DrawToolTipEventArgs e, int dpi, Color foreColor)
+    internal static void DrawDetail(Graphics graphics, Rectangle bounds, string text, int dpi)
     {
-        e.DrawBackground();
-        e.DrawBorder();
+        graphics.Clear(Color.White);
+        using var border = new Pen(Color.FromArgb(200, 200, 200));
+        graphics.DrawRectangle(border, bounds.X, bounds.Y, bounds.Width - 1, bounds.Height - 1);
         int padding = ScaleDetail(DetailPadding, dpi);
-        var content = Rectangle.Inflate(e.Bounds, -padding, -padding);
+        var content = Rectangle.Inflate(bounds, -padding, -padding);
         using var format = DetailFormat();
-        using var brush = new SolidBrush(foreColor);
-        e.Graphics.DrawString(e.ToolTipText, DetailFont, brush, content, format);
+        graphics.DrawString(text, DetailFont, Brushes.Black, content, format);
     }
 
     internal static StringFormat DetailFormat() => new(StringFormat.GenericTypographic)
@@ -64,18 +84,133 @@ internal sealed class AccountQuotaView : Panel
 
     private static int ScaleDetail(int value, int dpi) => Math.Max(1, (int)Math.Round(value * dpi / 96.0));
 
+    // This compact visual treatment is Windows-only. Shared text remains available to accessibility.
+    internal static string CompactReset(DateTimeOffset? reset, DateTimeOffset now, int? windowMinutes = null)
+    {
+        if (reset is null) return "리셋 미제공";
+        var remaining = reset.Value - now;
+        if (remaining <= TimeSpan.Zero) return "갱신 대기";
+        if (remaining.TotalMinutes < 1) return "곧 리셋 예정";
+        // Keep weekly windows in days/hours even below one day; session windows stay in
+        // hours/minutes. Round up only the smallest displayed unit, carrying across boundaries.
+        bool daysAndHours = windowMinutes == 10080 || (windowMinutes != 300 && remaining.TotalDays >= 1);
+        if (daysAndHours)
+        {
+            long hours = (long)Math.Ceiling(remaining.TotalHours);
+            return $"약 {hours / 24}일 {hours % 24}시간 후 리셋";
+        }
+        long minutes = (long)Math.Ceiling(remaining.TotalMinutes);
+        return $"약 {minutes / 60}시간 {minutes % 60}분 후 리셋";
+    }
+
+    private static string ProviderDetail(QuotaState state, QuotaSectionText section, DateTimeOffset now)
+    {
+        var notes = section.Heading.Detail.Split('\n').Where(line => !string.IsNullOrWhiteSpace(line)).ToArray();
+        string note = string.Join('\n', notes);
+        string scope = section.Scope is { } value && !note.Contains(value.Detail, StringComparison.Ordinal)
+            ? value.Detail + "\n" : "";
+        var resetLines = state.Reading?.Windows.Select(window =>
+            $"{window.Label}: {(window.ResetsAtUtc is { } reset ? AgentSchedule.ToKst(reset).ToString("yyyy-MM-dd HH:mm:ss") + " KST" : "제공되지 않음")}" +
+            (window.ResetsAtUtc <= now ? " · 예정 시각 경과, 새 조회 필요" : "")) ?? [];
+        string resets = state.Reading is null ? "" : "리셋·한도 복원 예정\n" + string.Join('\n', resetLines) +
+            "\n실제 복원 여부는 새 조회로 확인합니다.\n\n";
+        return notes[0] + "\n" + scope + resets + string.Join('\n', notes.Skip(1));
+    }
+
+    private void BindDetail(Control control, QuotaProvider provider)
+    {
+        detailOwners[control] = provider;
+        control.MouseMove += (_, _) =>
+        {
+            detailLeaveDelay.Stop();
+            if (details.Visible && pendingDetail == provider)
+            {
+                // A scrollable detail must not chase the pointer while it approaches the scrollbar.
+                if (!details.VerticalScroll.Visible) ShowDetail(provider, Cursor.Position);
+            }
+            else if (pendingDetail != provider)
+            {
+                HideDetail();
+                pendingDetail = provider;
+                detailDelay.Start();
+                detailPointerMonitor.Start();
+            }
+        };
+        control.MouseLeave += (_, _) => DeferDetailLeave();
+    }
+
+    private void DeferDetailLeave()
+    {
+        if (!IsHandleCreated || IsDisposed) return;
+        BeginInvoke((Action)(() =>
+        {
+            if (!IsDisposed) CheckDetailPointer(Cursor.Position);
+        }));
+    }
+
+    // MouseLeave can be missed by child controls or a non-activating popup. Check independently
+    // while a hover is pending/visible; never extend the lifetime or repeatedly reset the leave grace.
+    internal void CheckDetailPointer(Point screenPoint)
+    {
+        if (pendingDetail is null) return;
+        if (!Visible || FindForm() is not { Visible: true }) { HideDetail(); return; }
+        if (ProviderAt(screenPoint) == pendingDetail || details.CanInteractAt(screenPoint))
+        {
+            detailLeaveDelay.Stop();
+            return;
+        }
+        // Let the pointer cross the small gap to a scrollable popup, but do not leave it pinned.
+        if (details.Visible && details.VerticalScroll.Visible)
+        {
+            if (!detailLeaveDelay.Enabled) detailLeaveDelay.Start();
+        }
+        else HideDetail();
+    }
+
+    internal void FinishDetailLeave(Point screenPoint)
+    {
+        detailLeaveDelay.Stop();
+        if (ProviderAt(screenPoint) != pendingDetail && !details.CanInteractAt(screenPoint)) HideDetail();
+    }
+
+    private QuotaProvider? ProviderAt(Point screenPoint)
+    {
+        if (!Visible || !RectangleToScreen(ClientRectangle).Contains(screenPoint)) return null;
+        return Controls.OfType<Panel>().Where(box => box.RectangleToScreen(box.ClientRectangle).Contains(screenPoint))
+            .Select(box => (QuotaProvider?)detailOwners[box]).FirstOrDefault();
+    }
+
+    internal void ShowDetail(QuotaProvider provider, Point screenPoint)
+    {
+        if (!providerDetails.TryGetValue(provider, out var text) || text.Length == 0 || FindForm() is not { } owner) return;
+        pendingDetail = provider;
+        details.Display(owner, text, screenPoint, DeviceDpi);
+        if (!detailLifetime.Enabled) detailLifetime.Start();
+        detailPointerMonitor.Start();
+    }
+
+    internal void HideDetail()
+    {
+        detailDelay.Stop();
+        detailLifetime.Stop();
+        detailLeaveDelay.Stop();
+        detailPointerMonitor.Stop();
+        pendingDetail = null;
+        details.Hide();
+    }
+
     public void UpdateQuotas(IReadOnlyList<QuotaState> states, DateTimeOffset now)
     {
         var sections = QuotaPanelModel.Sections(states, now);
         string key = DeviceDpi + "|" + string.Join('|', sections.Select(s => s.Provider + ":" + (s.Scope is not null) + ":" + string.Join(',', s.Rows.Select(row => row.WindowId))));
         if (key != layoutKey)
         {
+            HideDetail();
             layoutKey = key;
             AutoScrollPosition = Point.Empty;
             SuspendLayout();
-            details.RemoveAll();
             foreach (Control child in Controls.Cast<Control>().ToArray()) child.Dispose();
-            headings.Clear(); metadata.Clear(); rows.Clear();
+            headings.Clear(); metadata.Clear(); rows.Clear(); bars.Clear(); detailOwners.Clear(); providerDetails.Clear();
             int y = 0;
             foreach (var section in sections)
             {
@@ -90,6 +225,7 @@ internal sealed class AccountQuotaView : Panel
                     AccessibleName = section.Heading.Text
                 };
                 Controls.Add(box);
+                BindDetail(box, section.Provider);
                 int rowY = 4;
                 headings[section.Provider] = AddRow(box, rowY, headingFont); rowY += 20;
                 if (section.Scope is { } scopeText)
@@ -97,7 +233,17 @@ internal sealed class AccountQuotaView : Panel
                     var scope = AddRow(box, rowY, rowFont); rowY += 20;
                     ApplyLine(scope, scopeText);
                 }
-                foreach (var line in section.Rows) { rows[(section.Provider, line.WindowId)] = AddRow(box, rowY, rowFont); rowY += 20; }
+                foreach (var line in section.Rows)
+                {
+                    rows[(section.Provider, line.WindowId)] = AddRow(box, rowY, rowFont); rowY += 20;
+                    if (line.WindowId.Length == 0) continue;
+                    var bar = new QuotaBalanceBar { Location = new Point(Scale(8), Scale(rowY)),
+                        Size = new Size(box.Width - Scale(16), Scale(6)), Name = section.Provider + "-" + line.WindowId + "BalanceBar" };
+                    box.Controls.Add(bar);
+                    BindDetail(bar, section.Provider);
+                    bars[(section.Provider, line.WindowId)] = bar;
+                    rowY += 14;
+                }
                 metadata[section.Provider] = AddRow(box, rowY, metaFont); rowY += 20;
                 box.Height = Scale(rowY);
                 y += rowY + 6;
@@ -108,11 +254,30 @@ internal sealed class AccountQuotaView : Panel
         }
         foreach (var section in sections)
         {
+            var state = states.Single(state => state.Provider == section.Provider);
+            providerDetails[section.Provider] = ProviderDetail(state, section, now);
             headings[section.Provider].Parent!.AccessibleName = section.Heading.Text;
+            headings[section.Provider].Parent!.AccessibleDescription = providerDetails[section.Provider];
             ApplyLine(headings[section.Provider], section.Heading);
             ApplyLine(metadata[section.Provider], section.Metadata);
-            foreach (var line in section.Rows) ApplyLine(rows[(section.Provider, line.WindowId)], line);
+            foreach (var line in section.Rows)
+            {
+                var label = rows[(section.Provider, line.WindowId)];
+                ApplyLine(label, line);
+                if (state.Reading?.Windows.SingleOrDefault(window => window.Id == line.WindowId) is not { } window) continue;
+                // The requested used-percent presentation is Windows-only; shared remaining-based
+                // polling and caution/danger decisions are unchanged.
+                string used = window.UsedPercent.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture);
+                bool previous = state.IsPrevious || window.ResetsAtUtc <= now;
+                label.Text = $"{window.Label}  {used}% 사용{(previous ? " (이전)" : "")} · {CompactReset(window.ResetsAtUtc, now, window.WindowMinutes)}";
+                bars[(section.Provider, line.WindowId)].UpdateBalance(section.Provider, window.UsedPercent, line.Tone,
+                    section.Heading.Text + " · " + label.Text, line.Detail);
+            }
         }
+        if (details.Visible && pendingDetail is { } shown && ProviderAt(Cursor.Position) == shown)
+            ShowDetail(shown, details.VerticalScroll.Visible ? details.AnchorPoint : Cursor.Position);
+        else if (details.Visible && pendingDetail is { } scrolling && details.CanInteractAt(Cursor.Position))
+            ShowDetail(scrolling, details.AnchorPoint);
     }
 
     // Text and tone come from the shared model; the Windows palette stays local.
@@ -127,7 +292,7 @@ internal sealed class AccountQuotaView : Panel
             PanelTone.Muted => Color.DimGray,
             _ => SystemColors.ControlText
         };
-        Detail(label, line.Detail);
+        label.AccessibleDescription = line.Detail;
     }
 
     internal static string ResetCountdown(DateTimeOffset? reset, DateTimeOffset now) =>
@@ -149,8 +314,8 @@ internal sealed class AccountQuotaView : Panel
             foreach (var box in Controls.OfType<Panel>())
             {
                 box.Width = ClientSize.Width;
-                foreach (var label in box.Controls.OfType<Label>())
-                    label.Width = Math.Max(0, box.ClientSize.Width - Scale(16));
+                foreach (Control child in box.Controls)
+                    child.Width = Math.Max(0, box.ClientSize.Width - Scale(16));
             }
         }
         finally { sizingBoxes = false; }
@@ -167,20 +332,15 @@ internal sealed class AccountQuotaView : Panel
             Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right
         };
         box.Controls.Add(label);
+        BindDetail(label, detailOwners[box]);
         return label;
     }
 
     private int Scale(int value) => (int)Math.Round(value * DeviceDpi / 96.0);
 
-    private void Detail(Control control, string text)
-    {
-        control.AccessibleDescription = text;
-        if (details.GetToolTip(control) != text) details.SetToolTip(control, text);
-    }
-
     protected override void Dispose(bool disposing)
     {
-        if (disposing) details.Dispose();
+        if (disposing) { detailDelay.Dispose(); detailLifetime.Dispose(); detailLeaveDelay.Dispose(); detailPointerMonitor.Dispose(); details.Dispose(); }
         base.Dispose(disposing);
         if (disposing) { headingFont.Dispose(); rowFont.Dispose(); metaFont.Dispose(); }
     }

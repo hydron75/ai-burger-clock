@@ -113,11 +113,14 @@ internal static class AccountQuotaUiChecks
         var boxes = context.StatusWindow.QuotaView.Controls.OfType<Panel>().ToArray();
         Check(boxes.Length == 2 && boxes[0].Name == "CodexQuotaBox" && boxes[1].Name == "ClaudeQuotaBox",
             "Each account quota has its own Provider box in the original order");
-        Check(title.Text == QuotaPanelModel.AccessibleName && title.Bounds == titleBounds,
-            "Quota section title uses the original outside status-title baseline");
+        Check(title.Text == AccountQuotaView.UsageTitle && title.Bounds == titleBounds &&
+            context.StatusWindow.QuotaView.AccessibleName == AccountQuotaView.UsageTitle &&
+            context.StatusWindow.Controls.OfType<Label>().Any(label => label.Text == AccountQuotaView.UsageCaption),
+            "Usage title, accessibility and caption agree without moving the original outside baseline");
         Check(boxes.All(box => box.BackColor == statusBoxes[0].BackColor && box.BorderStyle == statusBoxes[0].BorderStyle &&
-            box.Width == statusBoxes[0].Width) && context.StatusWindow.QuotaView.BackColor == context.StatusWindow.BackColor,
-            "Quota Provider boxes match white status cards with the same width and background gap");
+            box.Width == context.StatusWindow.QuotaView.ClientSize.Width) &&
+            context.StatusWindow.QuotaView.Width == statusBoxes[0].Width && context.StatusWindow.QuotaView.BackColor == context.StatusWindow.BackColor,
+            "Quota Provider cards retain white status styling within the original width, allowing for the vertical scrollbar");
         Check(boxes.All(box => box.Left == 0 && box.Controls.OfType<Label>().All(label =>
             label.Left == statusBoxes[0].Controls.OfType<Label>().First().Left)),
             "Quota and status card text starts at the same inner x position");
@@ -145,15 +148,28 @@ internal static class AccountQuotaUiChecks
             "ChatGPT quota heading has Work/Codex on a separate line above its limits");
         Check(chatGptHeading.ForeColor == SystemColors.ControlText && scope.ForeColor == Color.DimGray,
             "Shared Normal and Muted quota tones retain Windows heading and scope colors");
-        Check(labels.Single(l => l.Text.StartsWith("5시간  82%", StringComparison.Ordinal)).ForeColor == Color.FromArgb(25, 115, 75) &&
-            labels.Single(l => l.Text.StartsWith("주간  8%", StringComparison.Ordinal)).ForeColor == Color.DarkOrange,
-            "Shared Good and Caution quota tones retain Windows remaining-balance colors");
-        Check(boxes.All(box => box.Bottom <= context.StatusWindow.QuotaView.ClientSize.Height &&
-            box.Controls.OfType<Label>().All(label => label.Bottom <= box.Height)) &&
-            !context.StatusWindow.QuotaView.VerticalScroll.Visible,
-            "Standard Codex two-window and Claude three-window quotas fit the existing panel without scrolling");
-        Check(labels.Any(l => l.Text.Contains("100%")) && labels.Any(l => l.Text.Contains("55%")) && labels.Any(l => l.Text.Contains("99%")),
-            "UI converts consumed percentages into remaining percentages and retains model-scoped windows");
+        Check(labels.Single(l => l.Text.StartsWith("5시간  18% 사용", StringComparison.Ordinal)).ForeColor == Color.FromArgb(25, 115, 75) &&
+            labels.Single(l => l.Text.StartsWith("주간  92% 사용", StringComparison.Ordinal)).ForeColor == Color.DarkOrange &&
+            labels.Any(l => l.Text == "5시간  18% 사용 · 약 2시간 0분 후 리셋") &&
+            labels.Any(l => l.Text == "주간  92% 사용 · 약 2일 0시간 후 리셋"),
+            "Used percentages keep shared tones while session and weekly rows use their own two-unit countdowns");
+        Check(boxes.All(box => box.Controls.Cast<Control>().All(child => child.Bottom <= box.Height)) &&
+            context.StatusWindow.QuotaView.VerticalScroll.Visible && !context.StatusWindow.QuotaView.HorizontalScroll.Visible,
+            "Balance bars expand Provider cards inside the unchanged quota-only vertical viewport");
+        int Scale(int value) => (int)Math.Round(value * context.StatusWindow.QuotaView.DeviceDpi / 96.0);
+        foreach (var box in boxes)
+            Check(box.Controls.OfType<QuotaBalanceBar>().All(bar => bar.Left == Scale(8) && bar.Width == box.ClientSize.Width - Scale(16)),
+                "Balance bars align with their Provider card's text padding: " + box.Name);
+        Check(Box(QuotaProvider.Codex).Controls.OfType<QuotaBalanceBar>().Select(bar => bar.UsedPercent).SequenceEqual(new[] { 18.0, 92.0 }) &&
+            Box(QuotaProvider.Claude).Controls.OfType<QuotaBalanceBar>().Select(bar => bar.UsedPercent).SequenceEqual(new[] { 0.0, 45.0, 1.0 }),
+            "Usage bars show the consumed percentages, not the remaining fraction");
+        Check(boxes.SelectMany(box => box.Controls.OfType<QuotaBalanceBar>()).All(bar =>
+            bar.FillColor == QuotaBalanceBar.ProviderColor(bar.Parent == Box(QuotaProvider.Codex) ? QuotaProvider.Codex : QuotaProvider.Claude)),
+            "Fresh usage bars retain the chosen ChatGPT green and Claude orange service colors");
+        Check(ProviderLabels(QuotaProvider.Claude).Any(l => l.Text.StartsWith("5시간  0% 사용", StringComparison.Ordinal)) &&
+            ProviderLabels(QuotaProvider.Claude).Any(l => l.Text.StartsWith("주간  45% 사용", StringComparison.Ordinal)) &&
+            ProviderLabels(QuotaProvider.Claude).Any(l => l.Text.StartsWith("주간 · Fable  1% 사용", StringComparison.Ordinal)),
+            "Windows displays used percentages including inactive and model-scoped windows");
         Check(labels.Any(l => l.AccessibleDescription?.Contains("잔여 0%는 15분") == true),
             "Quota tooltip explains exhausted 15m polling separately from the 5m reset band");
         Check(labels.All(l => l.Height >= TextRenderer.MeasureText(l.Text, l.Font).Height), "Quota rows accommodate DPI-scaled text height");
@@ -177,11 +193,15 @@ internal static class AccountQuotaUiChecks
             "Gemini quota box has no hover effect");
         Check(ProviderLabels(QuotaProvider.Gemini).Any(l => l.Text == "Gemini") &&
             ProviderLabels(QuotaProvider.Gemini).Any(l => l.Text == QuotaPanelModel.GeminiScope) &&
-            ProviderLabels(QuotaProvider.Gemini).Any(l => l.Text.StartsWith("5시간  98%", StringComparison.Ordinal)) &&
-            ProviderLabels(QuotaProvider.Gemini).Any(l => l.Text.StartsWith("주간  99.7%", StringComparison.Ordinal)),
-            "Gemini shows only Antigravity Gemini-model scope and two percentage windows from the shared model");
+            ProviderLabels(QuotaProvider.Gemini).Any(l => l.Text.StartsWith("5시간  2% 사용", StringComparison.Ordinal)) &&
+            ProviderLabels(QuotaProvider.Gemini).Any(l => l.Text.StartsWith("주간  0.3% 사용", StringComparison.Ordinal)),
+            "Gemini shows only Antigravity Gemini-model scope and two used-percentage windows");
         Check(ProviderLabels(QuotaProvider.Gemini).Any(l => l.AccessibleDescription?.Contains("Gemini Apps 웹·모바일의 전체 한도가 아니며", StringComparison.Ordinal) == true),
             "Gemini scope details do not imply Gemini Apps or third-party model quotas");
+        Check(geminiBox.Controls.OfType<QuotaBalanceBar>().Count() == 2 &&
+            geminiBox.Controls.OfType<QuotaBalanceBar>().All(bar => bar.FillColor == QuotaBalanceBar.ProviderColor(QuotaProvider.Gemini)) &&
+            Math.Abs(geminiBox.Controls.OfType<QuotaBalanceBar>().First().UsedPercent - 2.01) < 1e-9,
+            "Gemini blue bars retain precise consumed fractions from the verified reading");
         Check(context.StatusWindow.ClientSize == size && context.StatusWindow.QuotaView.VerticalScroll.Visible &&
             !context.StatusWindow.QuotaView.HorizontalScroll.Visible && boxes.All(box =>
                 box.Controls.OfType<Label>().All(label => label.Bottom <= box.Height)),
@@ -203,6 +223,7 @@ internal static class AccountQuotaUiChecks
         context.StatusWindow.UpdateQuotas(monitor.Snapshot(), clock());
         SmokeTest.RenderAndCheckLayout(context.StatusWindow, "account-quotas-gemini.png", reportDirectory);
         context.StatusWindow.QuotaView.AutoScrollPosition = Point.Empty;
+        await QuotaToolTipUiChecks.CheckGeminiAsync(context.StatusWindow.QuotaView, reportDirectory, Check);
 
         client.FailClaude = true;
         await monitor.RefreshOnceAsync(QuotaProvider.Claude);
@@ -211,8 +232,11 @@ internal static class AccountQuotaUiChecks
             !monitor.Snapshot().Single(s => s.Provider == QuotaProvider.Codex).IsPrevious, "One failed account keeps its previous values without downgrading the other account");
         Check(QuotaLabels().Any(l => l.Text.Contains("Claude · 이전 조회값")),
             "Failed refresh explicitly labels the old quota instead of inventing zero or full balance");
-        Check(QuotaLabels().Single(l => l.Text.StartsWith("5시간  100% (이전)", StringComparison.Ordinal)).ForeColor == Color.DimGray,
+        Check(QuotaLabels().Single(l => l.Text.StartsWith("5시간  0% 사용 (이전)", StringComparison.Ordinal)).ForeColor == Color.DimGray,
             "Previous quota values keep the Windows muted color");
+        Check(Box(QuotaProvider.Claude).Controls.OfType<QuotaBalanceBar>().All(bar => bar.FillColor == Color.Gray) &&
+            Box(QuotaProvider.Claude).Controls.OfType<QuotaBalanceBar>().First().UsedPercent == 0,
+            "Previous balance bars become gray without inventing or discarding the last observed values");
         SmokeTest.RenderAndCheckLayout(context.StatusWindow, "account-quotas-previous.png", reportDirectory);
         client.FailClaude = false;
         await monitor.RefreshOnceAsync(QuotaProvider.Claude);
@@ -256,18 +280,24 @@ internal static class AccountQuotaUiChecks
         var expired = new QuotaState(QuotaProvider.Codex, new(QuotaProvider.Codex,
             [new("expired", "5시간", 97, clock().AddSeconds(-1), 300)]), LastSuccessfulCheckUtc: clock());
         context.StatusWindow.UpdateQuotas([expired], clock());
-        Check(QuotaLabels().Any(l => l.Text.Contains("3% (이전)") && l.Text.Contains("갱신 대기")),
-            "Elapsed reset countdown preserves observed balance until a new result arrives");
-        Check(QuotaLabels().Single(l => l.Text.Contains("3% (이전)")).ForeColor == Color.DimGray,
+        Check(QuotaLabels().Any(l => l.Text.Contains("97% 사용 (이전)") && l.Text.Contains("갱신 대기")),
+            "Elapsed reset countdown preserves observed usage until a new result arrives");
+        Check(QuotaLabels().Single(l => l.Text.Contains("97% 사용 (이전)")).ForeColor == Color.DimGray,
             "Elapsed reset quota rows use the shared Muted tone with the Windows palette");
+        Check(Box(QuotaProvider.Codex).Controls.OfType<QuotaBalanceBar>().Single() is { UsedPercent: 97, FillColor: var expiredColor } &&
+            expiredColor == Color.Gray && context.StatusWindow.QuotaView.DetailFor(Box(QuotaProvider.Codex)).Contains("예정 시각 경과", StringComparison.Ordinal),
+            "Elapsed reset keeps the observed 97% used bar and states that recovery requires a fresh reading");
         var exhausted = new QuotaState(QuotaProvider.Claude, new(QuotaProvider.Claude,
             [new("weekly", "주간", 100, clock().AddDays(1), 10080)]),
             LastSuccessfulCheckUtc: clock(), NextCheckUtc: clock().AddMinutes(15));
         context.StatusWindow.UpdateQuotas([exhausted], clock());
-        Check(QuotaLabels().Any(l => l.Text.Contains("주간  0% 남음")),
-            "Exhausted quota remains zero instead of inventing credit-based recovery");
-        Check(QuotaLabels().Single(l => l.Text.StartsWith("주간  0% 남음", StringComparison.Ordinal)).ForeColor == Color.Firebrick,
+        Check(QuotaLabels().Any(l => l.Text.Contains("주간  100% 사용")),
+            "Exhausted quota shows 100% used instead of inventing credit-based recovery");
+        Check(QuotaLabels().Single(l => l.Text.StartsWith("주간  100% 사용", StringComparison.Ordinal)).ForeColor == Color.Firebrick,
             "Exhausted quota rows retain the Windows Danger color");
+        var exhaustedBar = Box(QuotaProvider.Claude).Controls.OfType<QuotaBalanceBar>().Single();
+        Check(exhaustedBar.FilledWidth == exhaustedBar.ClientSize.Width,
+            "An exhausted usage bar is completely filled at 100% used");
         string nextExhaustedCheck = AgentSchedule.ToKst(exhausted.NextCheckUtc!.Value).ToString("MM-dd HH:mm");
         Check(QuotaLabels().Any(l => l.Text.Contains("다음 " + nextExhaustedCheck)),
             "Quota metadata displays the exhausted provider's next 15m check");
@@ -303,6 +333,8 @@ internal static class AccountQuotaUiChecks
         Check(QuotaLabels().Any(l => l.Text == "Gemini") && QuotaLabels().Any(l => l.Text == QuotaPanelModel.GeminiScope) &&
             QuotaLabels().Single(l => l.Text == "한도 조회 대기 · agy CLI 로그인 필요").ForeColor == Color.DimGray,
             "Missing Gemini reading uses the agy login placeholder without inventing a balance");
+        Check(!Box(QuotaProvider.Gemini).Controls.OfType<QuotaBalanceBar>().Any(),
+            "Missing or unavailable quota readings do not create guessed balance bars");
         context.StatusWindow.UpdateQuotas([new QuotaState(QuotaProvider.Gemini, Error: "한도 응답 형식을 확인하지 못했습니다.")], clock());
         Check(QuotaLabels().Any(l => l.Text == "한도 응답 형식을 확인하지 못했습니다.") &&
             QuotaLabels().All(l => !l.Text.Contains("%", StringComparison.Ordinal)),
@@ -315,8 +347,8 @@ internal static class AccountQuotaUiChecks
             context.StatusWindow.UpdateQuotas([new QuotaState(QuotaProvider.Claude,
                 new QuotaReading(QuotaProvider.Claude, [new QuotaWindow("culture", "주간", 12.34, null)]))], clock());
             var cultureRow = QuotaLabels().Single(l => l.Text.StartsWith("주간  ", StringComparison.Ordinal));
-            Check(cultureRow.Text.Contains("87.7%") && cultureRow.AccessibleDescription?.Contains("사용 12.3% / 잔여 87.7%") == true,
-                "Windows quota row and tooltip use the shared invariant percentage format in de-DE");
+            Check(cultureRow.Text.Contains("12.3% 사용") && cultureRow.AccessibleDescription?.Contains("사용 12.3% / 잔여 87.7%") == true,
+                "Windows used-percentage row and precise accessibility data keep invariant formatting in de-DE");
         }
         finally { CultureInfo.CurrentCulture = culture; }
 
@@ -328,8 +360,8 @@ internal static class AccountQuotaUiChecks
             context.StatusWindow.ClientSize == size,
             "Extra model-scoped quota rows scroll vertically without enlarging the popup");
         context.StatusWindow.UpdateQuotas(monitor.Snapshot().Where(s => s.Provider != QuotaProvider.Gemini).ToArray(), clock());
-        Check(!context.StatusWindow.QuotaView.VerticalScroll.Visible && !context.StatusWindow.QuotaView.HorizontalScroll.Visible,
-            "Returning to the original two-provider quotas removes both scrollbars");
+        Check(context.StatusWindow.QuotaView.VerticalScroll.Visible && !context.StatusWindow.QuotaView.HorizontalScroll.Visible,
+            "Returning to two Providers retains only the vertical scrolling required by their balance bars");
         context.RefreshStatus(false);
         diagnostics.Phase = "quota.synthetic-10s";
         diagnostics.Record("quota.synthetic-10s-start");
