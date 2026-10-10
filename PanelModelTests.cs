@@ -137,7 +137,7 @@ internal static class PanelModelTests
         same(degraded.Official, "Official: 성능 저하 · 마지막 확인 06-16 14:00 KST", "degraded official line");
         same(degraded.Reason, "Codex 성능 저하", "reason line");
         same(degraded.Detail, "클릭: 공식 상태 페이지 열기 · 우클릭: 사용 경험 기록\n현재 판정: Codex 성능 저하\n최근 조회 시도: 06-16 14:00:10 KST\n" +
-            "마지막 확인(응답 수신): 06-16 14:00:10 KST\n마지막 확인 당시 상태: 정상\n" +
+            "마지막 확인(응답 수신): 06-16 14:00:10 KST\n마지막 확인 당시 상태: 정상 (시각 미상)\n" +
             "관련: Codex\n확인된 사건: Elevated errors\n확인된 사건 ID: inc-1\nhttps://status.openai.com",
             "full card detail");
 
@@ -155,7 +155,7 @@ internal static class PanelModelTests
             "마지막 확인(응답 수신): 06-16 14:00:10 KST\n관련: Claude API\nhttps://status.claude.com", "partial optional fields");
         var lastKnownOnly = StatusPanelModel.Card(ProviderStatus.Unknown(ProviderKind.OpenAI) with
             { Status = OfficialStatus.Stale, LastKnownStatus = OfficialStatus.Degraded }, AgentState.FullThrottle);
-        check(lastKnownOnly.Detail.EndsWith("\n마지막 확인 당시 상태: 성능 저하", StringComparison.Ordinal) &&
+        check(lastKnownOnly.Detail.EndsWith("\n마지막 확인 당시 상태: 성능 저하 (시각 미상)", StringComparison.Ordinal) &&
             !lastKnownOnly.Detail.Contains("관련:", StringComparison.Ordinal), "last known status alone");
 
         // All diagnostic examples below are synthetic, not a copy of an account or live incident.
@@ -182,6 +182,34 @@ internal static class PanelModelTests
             !uncertain.Detail.Contains("\n확인된 사건:", StringComparison.Ordinal),
             "unscoped incident is neither an HTTP failure nor a confirmed current incident");
 
+        var unknownHistoryTime = StatusPanelModel.Card(uncertainStatus with { LastKnownStatusUtc = null }, AgentState.FullThrottle);
+        same(unknownHistoryTime.Detail.Split('\n').Single(line => line.StartsWith("마지막 확인 당시 상태:", StringComparison.Ordinal)),
+            "마지막 확인 당시 상태: 정상 (시각 미상)", "legacy assessed state identifies its missing timestamp");
+        var repeatedAssessment = StatusPanelModel.Card(uncertainStatus with { AssessmentIssue = uncertainStatus.Reason },
+            AgentState.FullThrottle);
+        check(repeatedAssessment.Detail.Contains("현재 판정: " + uncertainStatus.Reason, StringComparison.Ordinal),
+            "duplicated assessment reason keeps the current judgment");
+        check(!repeatedAssessment.Detail.Contains("최근 판정 실패 이유:", StringComparison.Ordinal) &&
+            repeatedAssessment.Detail.Split('\n').Count(line => line.Contains(uncertainStatus.Reason, StringComparison.Ordinal)) == 1,
+            "identical current judgment and assessment reason appear only once");
+        check(uncertain.Detail.Contains("현재 판정: " + uncertainStatus.Reason, StringComparison.Ordinal) &&
+            uncertain.Detail.Contains("최근 판정 실패 이유: " + uncertainStatus.AssessmentIssue, StringComparison.Ordinal),
+            "different current judgment and assessment reason remain separate");
+        var sameHistoryTime = StatusPanelModel.Card(uncertainStatus with { LastKnownStatusUtc = uncertainStatus.LastSuccessfulCheckUtc },
+            AgentState.FullThrottle);
+        same(sameHistoryTime.Detail.Split('\n').Single(line => line.StartsWith("마지막 확인 당시 상태:", StringComparison.Ordinal)),
+            "마지막 확인 당시 상태: 정상", "assessed time equal to receipt time is not repeated");
+        check(sameHistoryTime.Detail.Contains("마지막 확인(응답 수신): 06-16 14:00:10 KST", StringComparison.Ordinal),
+            "deduplicated assessed time keeps the full receipt timestamp");
+        var sameInstant = StatusPanelModel.Card(uncertainStatus with
+            { LastKnownStatusUtc = uncertainStatus.LastSuccessfulCheckUtc!.Value.ToOffset(TimeSpan.FromHours(9)) }, AgentState.FullThrottle);
+        same(sameInstant.Detail.Split('\n').Single(line => line.StartsWith("마지막 확인 당시 상태:", StringComparison.Ordinal)),
+            "마지막 확인 당시 상태: 정상", "timestamp equality compares the instant regardless of offset");
+        var differentHistoryTime = StatusPanelModel.Card(uncertainStatus with
+            { LastKnownStatusUtc = uncertainStatus.LastSuccessfulCheckUtc!.Value.AddSeconds(-1) }, AgentState.FullThrottle);
+        same(differentHistoryTime.Detail.Split('\n').Single(line => line.StartsWith("마지막 확인 당시 상태:", StringComparison.Ordinal)),
+            "마지막 확인 당시 상태: 정상 · 06-16 14:00:09 KST", "a different assessed second retains its own timestamp");
+
         var receiveFailure = StatusPanelModel.Card(new ProviderStatus(ProviderKind.OpenAI, OfficialStatus.Stale,
             At("2026-06-16T05:20:10Z"), At("2026-06-16T04:55:00Z"), "합성 응답 시간 초과",
             Source: "https://status.openai.com", LastKnownStatus: OfficialStatus.PartialOutage)
@@ -190,7 +218,7 @@ internal static class PanelModelTests
             "failed receipt preserves the older last check on the card");
         same(receiveFailure.Detail, "클릭: 공식 상태 페이지 열기 · 우클릭: 사용 경험 기록\n현재 판정: 합성 응답 시간 초과\n최근 조회 시도: 06-16 14:20:10 KST\n" +
             "마지막 확인(응답 수신): 06-16 13:55:00 KST\n최근 응답 수신 실패 이유: 합성 응답 시간 초과\n" +
-            "마지막 확인 당시 상태: 일부 장애 · 06-16 13:55:00 KST\nhttps://status.openai.com",
+            "마지막 확인 당시 상태: 일부 장애\nhttps://status.openai.com",
             "receipt failure exposes old outage as historical rather than a current incident");
         same(receiveFailure.Reason, "합성 응답 시간 초과", "failure reason remains the original card reason");
 

@@ -179,11 +179,12 @@ internal static class UIRegressionChecks
         var detailLabel = panels[0].Controls.OfType<Label>().Single(l => l.Font.Bold);
         string receivedDetail = statusDetails.GetToolTip(detailLabel) ?? "";
         Check(receivedDetail.Contains("범위 미확인 사건: Synthetic reporting delay", StringComparison.Ordinal) &&
-            receivedDetail.Contains("최근 판정 실패 이유:", StringComparison.Ordinal) &&
+            receivedDetail.Contains("현재 판정: " + receivedUnknown.Reason, StringComparison.Ordinal) &&
+            !receivedDetail.Contains("최근 판정 실패 이유:", StringComparison.Ordinal) &&
             receivedDetail.Contains("마지막 확인 당시 상태: 정상", StringComparison.Ordinal) &&
             !receivedDetail.Contains("\n확인된 사건:", StringComparison.Ordinal) &&
             !receivedDetail.Contains("최근 응답 수신 실패 이유:", StringComparison.Ordinal),
-            "Native status tooltip separates uncertain incident, assessment failure and historical state");
+            "Native status tooltip keeps uncertain incident and historical state without repeating the assessment reason");
         Check(panels[0].Controls.OfType<Label>().Any(l => l.Text.Contains("\n마지막 확인 ", StringComparison.Ordinal) && !l.AutoEllipsis),
             "Card check timestamp has its own visible line without ellipsis");
         SmokeTest.RenderAndCheckLayout(context.StatusWindow, "provider-unscoped.png", reportDirectory);

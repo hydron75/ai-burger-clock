@@ -88,10 +88,17 @@ internal static class StatusPanelModel
         }
         if (status.CheckedAtUtc != DateTimeOffset.MinValue && status.CheckedAtUtc != status.LastSuccessfulCheckUtc)
             Optional("최근 응답 수신 실패 이유: ", status.Reason);
-        Optional("최근 판정 실패 이유: ", status.AssessmentIssue);
+        if (!string.Equals(status.Reason, status.AssessmentIssue, StringComparison.Ordinal))
+            Optional("최근 판정 실패 이유: ", status.AssessmentIssue);
         if (status.LastKnownStatus is { } known)
+        {
+            string knownTime = status.LastKnownStatusUtc is { } knownAt
+                ? knownAt == status.LastSuccessfulCheckUtc ? "" :
+                    " · " + AgentSchedule.ToKst(knownAt).ToString("MM-dd HH:mm:ss") + " KST"
+                : " (시각 미상)";
             lines.Add("마지막 확인 당시 상태: " + RecommendationPolicy.OfficialLabel(known) +
-                (status.LastKnownStatusUtc is { } knownAt ? " · " + AgentSchedule.ToKst(knownAt).ToString("MM-dd HH:mm:ss") + " KST" : ""));
+                knownTime);
+        }
         Optional("관련: ", status.RelevantComponent);
         Optional("확인된 사건: ", status.IncidentTitle);
         Optional("확인된 사건 ID: ", status.IncidentId);
