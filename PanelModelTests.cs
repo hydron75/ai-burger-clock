@@ -32,7 +32,7 @@ internal static class PanelModelTests
     }
 
     private static readonly string QuotaPolicyNote =
-        "기본 6시간 · 잔여 0% 초과~10% 미만 1시간 · 잔여 0%는 15분 · 리셋 전후 15분은 5분 · 실패 시 15분부터 재시도\n공식 CLI 응답 수신 시각이며 서버 데이터 생성 시각을 보장하지 않습니다.";
+        "기본 6시간 · 사용 90% 초과~100% 미만은 1시간 · 사용 100%는 15분 · 리셋 전후 15분은 5분 · 실패 시 15분부터 재시도\n공식 CLI 응답 수신 시각이며 서버 데이터 생성 시각을 보장하지 않습니다.";
 
     private static DateTimeOffset At(string utc) => DateTimeOffset.Parse(utc, CultureInfo.InvariantCulture);
 
@@ -221,7 +221,7 @@ internal static class PanelModelTests
         var claudeSection = QuotaPanelModel.Section(claude, now);
         check(claudeSection.Scope is null, "Claude has no scope line");
         same(claudeSection.Heading.Text, "Claude", "fresh Claude heading");
-        same(claudeSection.Rows[0].Text, "세션  100% 사용 · 약 0시간 10분 후 리셋", "exhausted row");
+        same(claudeSection.Rows[0].Text, "세션  100% 사용 · 약 10분 후 리셋", "exhausted row");
         check(claudeSection.Rows[0].Tone == PanelTone.Danger, "exhausted tone");
         same(claudeSection.Rows[1].Text, "주간 전체  12.3% 사용 (이전) · 갱신 대기", "elapsed reset is shown as previous");
         check(claudeSection.Rows[1].Tone == PanelTone.Muted, "elapsed reset tone");

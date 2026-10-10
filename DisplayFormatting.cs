@@ -29,14 +29,14 @@ internal static class DisplayFormatting
         var remaining = reset.Value - now;
         if (remaining <= TimeSpan.Zero) return "갱신 대기";
         if (remaining.TotalMinutes < 1) return "곧 리셋 예정";
-        // Keep the window's units even below an hour/day. Unknown windows remain adaptive.
+        // The window selects the rounding unit; omit a zero leading unit after rounding/carry.
         bool daysAndHours = windowMinutes == 10080 || (windowMinutes != 300 && remaining.TotalDays >= 1);
         if (daysAndHours)
         {
             long hours = (long)Math.Ceiling(remaining.TotalHours);
-            return $"약 {hours / 24}일 {hours % 24}시간 후 리셋";
+            return hours < 24 ? $"약 {hours}시간 후 리셋" : $"약 {hours / 24}일 {hours % 24}시간 후 리셋";
         }
         long minutes = (long)Math.Ceiling(remaining.TotalMinutes);
-        return $"약 {minutes / 60}시간 {minutes % 60}분 후 리셋";
+        return minutes < 60 ? $"약 {minutes}분 후 리셋" : $"약 {minutes / 60}시간 {minutes % 60}분 후 리셋";
     }
 }

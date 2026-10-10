@@ -170,7 +170,7 @@ internal static class AccountQuotaUiChecks
             ProviderLabels(QuotaProvider.Claude).Any(l => l.Text.StartsWith("주간  45% 사용", StringComparison.Ordinal)) &&
             ProviderLabels(QuotaProvider.Claude).Any(l => l.Text.StartsWith("주간 · Fable  1% 사용", StringComparison.Ordinal)),
             "Windows displays used percentages including inactive and model-scoped windows");
-        Check(labels.Any(l => l.AccessibleDescription?.Contains("잔여 0%는 15분") == true),
+        Check(labels.Any(l => l.AccessibleDescription?.Contains("사용 100%는 15분") == true),
             "Quota tooltip explains exhausted 15m polling separately from the 5m reset band");
         Check(labels.All(l => l.Height >= TextRenderer.MeasureText(l.Text, l.Font).Height), "Quota rows accommodate DPI-scaled text height");
         Check(context.StatusWindow.ClientSize == size && context.CurrentAppearance == appearance, "Quota values never change tray health or original window dimensions");

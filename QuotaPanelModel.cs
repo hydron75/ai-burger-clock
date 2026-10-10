@@ -95,7 +95,7 @@ internal static class QuotaPanelModel
         lines.Add("최근 시도: " + Stamp(state.CheckedAtUtc, "MM-dd HH:mm:ss"));
         if (!string.IsNullOrWhiteSpace(state.Error)) lines.Add(state.Error);
         if (!string.IsNullOrWhiteSpace(state.CacheError)) lines.Add(state.CacheError);
-        lines.Add("기본 6시간 · 잔여 0% 초과~10% 미만 1시간 · 잔여 0%는 15분 · 리셋 전후 15분은 5분 · 실패 시 15분부터 재시도");
+        lines.Add("기본 6시간 · 사용 90% 초과~100% 미만은 1시간 · 사용 100%는 15분 · 리셋 전후 15분은 5분 · 실패 시 15분부터 재시도");
         lines.Add("공식 CLI 응답 수신 시각이며 서버 데이터 생성 시각을 보장하지 않습니다.");
         return string.Join('\n', lines);
     }
