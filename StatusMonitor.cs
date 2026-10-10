@@ -56,13 +56,26 @@ internal sealed class StatusMonitor : IDisposable
 
     internal static ProviderStatus WithFreshness(ProviderStatus state, DateTimeOffset now)
     {
+        // A pre-upgrade assessed cache supplies an evidenced timestamp; do not infer one
+        // for an already uncertain/stale cache whose receipt time may be much newer.
+        if (state.Status is not (OfficialStatus.Unknown or OfficialStatus.Stale) && state.LastKnownStatusUtc is null &&
+            (state.LastKnownStatus is null || state.LastKnownStatus == state.Status))
+            state = state with { LastKnownStatus = state.Status, LastKnownStatusUtc = state.LastSuccessfulCheckUtc };
         if (state.Status == OfficialStatus.Stale) return state;
         if (state.LastSuccessfulCheckUtc is { } success && now - success >= StaleAfter)
             return state with
             {
                 Status = OfficialStatus.Stale,
-                LastKnownStatus = state.LastKnownStatus ?? state.Status,
-                Reason = "상태 확인 성공 후 15분 이상 경과 · " + state.Reason
+                LastKnownStatus = state.LastKnownStatus ??
+                    (state.Status == OfficialStatus.Unknown ? null : state.Status),
+                LastKnownStatusUtc = state.LastKnownStatusUtc ??
+                    (state.Status == OfficialStatus.Unknown ? null : state.LastSuccessfulCheckUtc),
+                // A cached outage is history, not evidence that the outage is still active.
+                RelevantComponent = "",
+                IncidentId = "",
+                IncidentTitle = "",
+                Reason = "공식 응답 수신 성공 후 15분 이상 경과" +
+                    (state.CheckedAtUtc == state.LastSuccessfulCheckUtc ? "" : " · " + state.Reason)
             };
         return state;
     }
@@ -140,15 +153,14 @@ internal sealed class StatusMonitor : IDisposable
             timeout.CancelAfter(RequestTimeout);
             var fetched = await client.FetchAsync(provider, timeout.Token).ConfigureAwait(false);
             var now = utcNow();
-            result = fetched.Status is OfficialStatus.Unknown or OfficialStatus.Stale
-                ? Failure(previous, now, fetched.Reason) with
-                {
-                    Source = fetched.Source,
-                    RelevantComponent = fetched.RelevantComponent,
-                    IncidentId = fetched.IncidentId,
-                    IncidentTitle = fetched.IncidentTitle
-                }
-                : fetched with { CheckedAtUtc = now, LastSuccessfulCheckUtc = now, LastKnownStatus = fetched.Status };
+            bool assessed = fetched.Status is not (OfficialStatus.Unknown or OfficialStatus.Stale);
+            result = fetched with
+            {
+                CheckedAtUtc = now,
+                LastSuccessfulCheckUtc = now,
+                LastKnownStatus = assessed ? fetched.Status : previous.LastKnownStatus,
+                LastKnownStatusUtc = assessed ? now : previous.LastKnownStatusUtc
+            };
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested) { throw; }
         catch (OperationCanceledException)
@@ -183,6 +195,9 @@ internal sealed class StatusMonitor : IDisposable
             RelevantComponent = "",
             IncidentId = "",
             IncidentTitle = "",
+            AssessmentIssue = "",
+            UncertainIncidentId = "",
+            UncertainIncidentTitle = "",
             LastKnownStatus = previous.LastKnownStatus ??
                 (previous.Status is OfficialStatus.Unknown or OfficialStatus.Stale ? null : previous.Status)
         }, now);

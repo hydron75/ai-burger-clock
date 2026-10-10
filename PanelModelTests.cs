@@ -126,36 +126,125 @@ internal static class PanelModelTests
             check(card.Provider == provider && card.Recommendation == recommendation, "card identity " + context);
             same(card.Heading, ProviderNames.Provider(provider) + "   " + RecommendationPolicy.Label(recommendation), "heading " + context);
             check(card.HeadingTone == expectedTones[recommendation], "heading tone " + context);
-            same(card.Official, "Official: " + RecommendationPolicy.OfficialLabel(official), "official line " + context);
+            same(card.Official, "Official: " + RecommendationPolicy.OfficialLabel(official) + " · 마지막 확인 없음", "official line " + context);
         }
 
         var degraded = StatusPanelModel.Card(new ProviderStatus(ProviderKind.OpenAI, OfficialStatus.Degraded,
-            At("2026-06-16T05:00:10Z"), At("2026-06-16T04:55:00Z"), "Codex 성능 저하", "Codex", "inc-1", "Elevated errors",
+            At("2026-06-16T05:00:10Z"), At("2026-06-16T05:00:10Z"), "Codex 성능 저하", "Codex", "inc-1", "Elevated errors",
             "https://status.openai.com", OfficialStatus.Operational), AgentState.FullThrottle);
         same(degraded.Heading, "ChatGPT   HOLD", "degraded ChatGPT heading");
         check(degraded.HeadingTone == PanelTone.Caution, "HOLD tone");
-        same(degraded.Official, "Official: 성능 저하", "degraded official line");
+        same(degraded.Official, "Official: 성능 저하 · 마지막 확인 06-16 14:00 KST", "degraded official line");
         same(degraded.Reason, "Codex 성능 저하", "reason line");
-        same(degraded.Detail, "클릭: 공식 상태 페이지 열기 · 우클릭: 사용 경험 기록\nCodex 성능 저하\n최근 조회 시도: 06-16 14:00:10 KST\n" +
-            "마지막 상태 확인 성공: 06-16 13:55:00 KST\n관련: Codex\n사건: Elevated errors\n사건 ID: inc-1\n마지막 알려진 상태: Operational\nhttps://status.openai.com",
+        same(degraded.Detail, "클릭: 공식 상태 페이지 열기 · 우클릭: 사용 경험 기록\n현재 판정: Codex 성능 저하\n최근 조회 시도: 06-16 14:00:10 KST\n" +
+            "마지막 확인(응답 수신): 06-16 14:00:10 KST\n마지막 확인 당시 상태: 정상 (시각 미상)\n" +
+            "관련: Codex\n확인된 사건: Elevated errors\n확인된 사건 ID: inc-1\nhttps://status.openai.com",
             "full card detail");
 
         var unknown = StatusPanelModel.Card(ProviderStatus.Unknown(ProviderKind.Gemini), AgentState.BurgerTime);
         same(unknown.Heading, "Gemini   BURGER + CHECK", "unchecked heading during BURGER TIME");
-        same(unknown.Official, "Official: UNKNOWN · 확인 불가", "unchecked official line");
-        same(unknown.Detail, "클릭: 공식 상태 페이지 열기 · 우클릭: 사용 경험 기록\n아직 확인하지 않음\n최근 조회 시도: 없음\n" +
-            "마지막 상태 확인 성공: 없음", "unchecked card detail has no empty optional fields");
+        same(unknown.Official, "Official: UNKNOWN · 확인 불가 · 마지막 확인 없음", "unchecked official line");
+        same(unknown.Detail, "클릭: 공식 상태 페이지 열기 · 우클릭: 사용 경험 기록\n현재 판정: 아직 확인하지 않음\n최근 조회 시도: 없음\n" +
+            "마지막 확인(응답 수신): 없음", "unchecked card detail has no empty optional fields");
 
         // Only the supplied optional fields appear; blank values never leave a bare label.
         var partial = StatusPanelModel.Card(new ProviderStatus(ProviderKind.Claude, OfficialStatus.Operational,
             At("2026-06-16T05:00:10Z"), At("2026-06-16T05:00:10Z"), "관련 서비스 정상", "Claude API", "", "  ",
             "https://status.claude.com"), AgentState.FullThrottle);
-        same(partial.Detail, "클릭: 공식 상태 페이지 열기 · 우클릭: 사용 경험 기록\n관련 서비스 정상\n최근 조회 시도: 06-16 14:00:10 KST\n" +
-            "마지막 상태 확인 성공: 06-16 14:00:10 KST\n관련: Claude API\nhttps://status.claude.com", "partial optional fields");
+        same(partial.Detail, "클릭: 공식 상태 페이지 열기 · 우클릭: 사용 경험 기록\n현재 판정: 관련 서비스 정상\n최근 조회 시도: 06-16 14:00:10 KST\n" +
+            "마지막 확인(응답 수신): 06-16 14:00:10 KST\n관련: Claude API\nhttps://status.claude.com", "partial optional fields");
         var lastKnownOnly = StatusPanelModel.Card(ProviderStatus.Unknown(ProviderKind.OpenAI) with
             { Status = OfficialStatus.Stale, LastKnownStatus = OfficialStatus.Degraded }, AgentState.FullThrottle);
-        check(lastKnownOnly.Detail.EndsWith("\n마지막 알려진 상태: Degraded", StringComparison.Ordinal) &&
+        check(lastKnownOnly.Detail.EndsWith("\n마지막 확인 당시 상태: 성능 저하 (시각 미상)", StringComparison.Ordinal) &&
             !lastKnownOnly.Detail.Contains("관련:", StringComparison.Ordinal), "last known status alone");
+
+        // All diagnostic examples below are synthetic, not a copy of an account or live incident.
+        var uncertainStatus = new ProviderStatus(ProviderKind.OpenAI, OfficialStatus.Unknown,
+            At("2026-06-16T05:00:10Z"), At("2026-06-16T05:00:10Z"), "범위 미확인 사건 있음", "ChatGPT, Codex",
+            Source: "https://status.openai.com", LastKnownStatus: OfficialStatus.Operational)
+        {
+            AssessmentIssue = "합성 사건의 영향 범위를 확인할 수 없음",
+            UncertainIncidentTitle = "Synthetic unscoped incident",
+            UncertainIncidentId = "synthetic-unscoped",
+            LastKnownStatusUtc = At("2026-06-16T04:55:00Z")
+        };
+        var uncertain = StatusPanelModel.Card(uncertainStatus, AgentState.FullThrottle);
+        check(uncertain.Recommendation == Recommendation.Check && uncertain.HeadingTone == PanelTone.Muted,
+            "received but unscoped response is CHECK rather than an asserted outage");
+        same(uncertain.Official, "Official: UNKNOWN · 확인 불가 · 마지막 확인 06-16 14:00 KST",
+            "accepted unscoped response advances the displayed last check");
+        same(uncertain.Detail, "클릭: 공식 상태 페이지 열기 · 우클릭: 사용 경험 기록\n현재 판정: 범위 미확인 사건 있음\n최근 조회 시도: 06-16 14:00:10 KST\n" +
+            "마지막 확인(응답 수신): 06-16 14:00:10 KST\n최근 판정 실패 이유: 합성 사건의 영향 범위를 확인할 수 없음\n" +
+            "마지막 확인 당시 상태: 정상 · 06-16 13:55:00 KST\n관련: ChatGPT, Codex\n범위 미확인 사건: Synthetic unscoped incident\n" +
+            "범위 미확인 사건 ID: synthetic-unscoped\nhttps://status.openai.com",
+            "unscoped diagnostics separate received response, historical assessed state and uncertain incident");
+        check(!uncertain.Detail.Contains("최근 응답 수신 실패 이유:", StringComparison.Ordinal) &&
+            !uncertain.Detail.Contains("\n확인된 사건:", StringComparison.Ordinal),
+            "unscoped incident is neither an HTTP failure nor a confirmed current incident");
+
+        var unknownHistoryTime = StatusPanelModel.Card(uncertainStatus with { LastKnownStatusUtc = null }, AgentState.FullThrottle);
+        same(unknownHistoryTime.Detail.Split('\n').Single(line => line.StartsWith("마지막 확인 당시 상태:", StringComparison.Ordinal)),
+            "마지막 확인 당시 상태: 정상 (시각 미상)", "legacy assessed state identifies its missing timestamp");
+        var repeatedAssessment = StatusPanelModel.Card(uncertainStatus with { AssessmentIssue = uncertainStatus.Reason },
+            AgentState.FullThrottle);
+        check(repeatedAssessment.Detail.Contains("현재 판정: " + uncertainStatus.Reason, StringComparison.Ordinal),
+            "duplicated assessment reason keeps the current judgment");
+        check(!repeatedAssessment.Detail.Contains("최근 판정 실패 이유:", StringComparison.Ordinal) &&
+            repeatedAssessment.Detail.Split('\n').Count(line => line.Contains(uncertainStatus.Reason, StringComparison.Ordinal)) == 1,
+            "identical current judgment and assessment reason appear only once");
+        check(uncertain.Detail.Contains("현재 판정: " + uncertainStatus.Reason, StringComparison.Ordinal) &&
+            uncertain.Detail.Contains("최근 판정 실패 이유: " + uncertainStatus.AssessmentIssue, StringComparison.Ordinal),
+            "different current judgment and assessment reason remain separate");
+        var sameHistoryTime = StatusPanelModel.Card(uncertainStatus with { LastKnownStatusUtc = uncertainStatus.LastSuccessfulCheckUtc },
+            AgentState.FullThrottle);
+        same(sameHistoryTime.Detail.Split('\n').Single(line => line.StartsWith("마지막 확인 당시 상태:", StringComparison.Ordinal)),
+            "마지막 확인 당시 상태: 정상", "assessed time equal to receipt time is not repeated");
+        check(sameHistoryTime.Detail.Contains("마지막 확인(응답 수신): 06-16 14:00:10 KST", StringComparison.Ordinal),
+            "deduplicated assessed time keeps the full receipt timestamp");
+        var sameInstant = StatusPanelModel.Card(uncertainStatus with
+            { LastKnownStatusUtc = uncertainStatus.LastSuccessfulCheckUtc!.Value.ToOffset(TimeSpan.FromHours(9)) }, AgentState.FullThrottle);
+        same(sameInstant.Detail.Split('\n').Single(line => line.StartsWith("마지막 확인 당시 상태:", StringComparison.Ordinal)),
+            "마지막 확인 당시 상태: 정상", "timestamp equality compares the instant regardless of offset");
+        var differentHistoryTime = StatusPanelModel.Card(uncertainStatus with
+            { LastKnownStatusUtc = uncertainStatus.LastSuccessfulCheckUtc!.Value.AddSeconds(-1) }, AgentState.FullThrottle);
+        same(differentHistoryTime.Detail.Split('\n').Single(line => line.StartsWith("마지막 확인 당시 상태:", StringComparison.Ordinal)),
+            "마지막 확인 당시 상태: 정상 · 06-16 14:00:09 KST", "a different assessed second retains its own timestamp");
+
+        var receiveFailure = StatusPanelModel.Card(new ProviderStatus(ProviderKind.OpenAI, OfficialStatus.Stale,
+            At("2026-06-16T05:20:10Z"), At("2026-06-16T04:55:00Z"), "합성 응답 시간 초과",
+            Source: "https://status.openai.com", LastKnownStatus: OfficialStatus.PartialOutage)
+            { LastKnownStatusUtc = At("2026-06-16T04:55:00Z") }, AgentState.FullThrottle);
+        same(receiveFailure.Official, "Official: STALE · 오래된 정보 · 마지막 확인 06-16 13:55 KST",
+            "failed receipt preserves the older last check on the card");
+        same(receiveFailure.Detail, "클릭: 공식 상태 페이지 열기 · 우클릭: 사용 경험 기록\n현재 판정: 합성 응답 시간 초과\n최근 조회 시도: 06-16 14:20:10 KST\n" +
+            "마지막 확인(응답 수신): 06-16 13:55:00 KST\n최근 응답 수신 실패 이유: 합성 응답 시간 초과\n" +
+            "마지막 확인 당시 상태: 일부 장애\nhttps://status.openai.com",
+            "receipt failure exposes old outage as historical rather than a current incident");
+        same(receiveFailure.Reason, "합성 응답 시간 초과", "failure reason remains the original card reason");
+
+        var noHistory = StatusPanelModel.Card(uncertainStatus with { LastKnownStatus = null, LastKnownStatusUtc = null },
+            AgentState.FullThrottle);
+        check(!noHistory.Detail.Contains("마지막 확인 당시 상태:", StringComparison.Ordinal) &&
+            noHistory.Detail.Contains("범위 미확인 사건: Synthetic unscoped incident", StringComparison.Ordinal),
+            "uncertain first response does not invent a historical assessed state");
+        var whitespace = StatusPanelModel.Card(uncertainStatus with
+            { AssessmentIssue = "  ", UncertainIncidentTitle = "  ", UncertainIncidentId = "  " }, AgentState.FullThrottle);
+        check(!whitespace.Detail.Contains("최근 판정 실패 이유:", StringComparison.Ordinal) &&
+            !whitespace.Detail.Contains("\n범위 미확인 사건:", StringComparison.Ordinal) &&
+            !whitespace.Detail.Contains("\n범위 미확인 사건 ID:", StringComparison.Ordinal),
+            "blank diagnostic fields never leave a bare optional label");
+
+        var confirmedAndUncertain = StatusPanelModel.Card(uncertainStatus with
+        {
+            Status = OfficialStatus.PartialOutage,
+            Reason = "합성 Codex 장애",
+            IncidentTitle = "Synthetic Codex outage",
+            IncidentId = "synthetic-codex"
+        }, AgentState.FullThrottle);
+        check(confirmedAndUncertain.Recommendation == Recommendation.Stop &&
+            confirmedAndUncertain.Detail.Contains("\n확인된 사건: Synthetic Codex outage\n확인된 사건 ID: synthetic-codex", StringComparison.Ordinal) &&
+            confirmedAndUncertain.Detail.Contains("\n범위 미확인 사건: Synthetic unscoped incident", StringComparison.Ordinal),
+            "confirmed outage and separate unscoped incident remain distinguishable");
 
         var states = new[] { ProviderStatus.Unknown(ProviderKind.Gemini), ProviderStatus.Unknown(ProviderKind.OpenAI) };
         var cards = StatusPanelModel.Cards(states, AgentState.FullThrottle);

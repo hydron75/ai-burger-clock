@@ -77,7 +77,9 @@ internal static class HolidayStorageTests
         Check(old.UserNote == "기존 기록 'quoted'", "Unicode and quoted legacy note retained");
         Check(await migrated.GetHolidayAdjustmentAsync(), "v1 upgrade with no setting defaults to ON");
         ProviderStatus cached = (await migrated.ReadLatestStatusesAsync()).Single();
-        Check(cached.Status == OfficialStatus.Stale && cached.LastKnownStatus == OfficialStatus.Degraded && cached.IncidentId == "legacy-incident", "reopened cache preserves stale incident state");
+        Check(cached.Status == OfficialStatus.Stale && cached.LastKnownStatus == OfficialStatus.Degraded &&
+            cached.IncidentId.Length == 0 && cached.UncertainIncidentId == "legacy-incident" && cached.LastKnownStatusUtc is null,
+            "reopened legacy cache preserves historical outage without asserting a confirmed current incident or inventing its time");
 
         string backup = Directory.EnumerateFiles(directory, "legacy.pre-schema2-*.db").Single();
         Check(Scalar(backup, "PRAGMA user_version;") == 1, "pre-migration backup remains schema 1");

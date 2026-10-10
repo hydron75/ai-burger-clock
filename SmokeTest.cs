@@ -141,6 +141,14 @@ internal static class SmokeTest
                     throw new InvalidOperationException($"Label text clipped: {label.Text}, required {required}, available {label.Size}");
             }
         }
+        // The new two-line timestamp must be fully readable, including UNKNOWN/STALE.
+        foreach (Label label in window.Controls.OfType<Panel>().SelectMany(panel => panel.Controls.OfType<Label>())
+            .Where(label => label.Text.StartsWith("Official: ", StringComparison.Ordinal)))
+        {
+            Size required = TextRenderer.MeasureText(label.Text, label.Font);
+            if (required.Width > label.Width || required.Height > label.Height)
+                throw new InvalidOperationException($"Provider status/check time clipped: {label.Text}, required {required}, available {label.Size}");
+        }
         if (reportDirectory is null)
             return;
         Directory.CreateDirectory(reportDirectory);

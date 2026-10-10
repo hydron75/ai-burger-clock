@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text;
 using System.Text.Json;
 using Microsoft.Data.Sqlite;
 
@@ -10,6 +11,8 @@ internal sealed class UsageStore(string? databasePath = null)
 {
     internal const int SchemaVersion = 2;
     internal const string HolidaySettingKey = "UsFederalHolidaysEnabled";
+    internal const string ProviderDiagnosticsPrefix = "ProviderStatusDiagnostics.v1.";
+    internal const int MaximumProviderDiagnosticsBytes = 8 * 1024;
     private const int MaximumQuotaCacheCharacters = 512 * 1024;
     private readonly SemaphoreSlim gate = new(1, 1);
     private Exception? schemaInitializationFailure;
@@ -222,6 +225,7 @@ internal sealed class UsageStore(string? databasePath = null)
                 command.CommandText = "INSERT INTO ProviderStatusHistory(" + columns + ") VALUES(" + values + ");";
                 command.ExecuteNonQuery();
             }
+            SaveProviderDiagnostics(connection, transaction, status);
             cancellationToken.ThrowIfCancellationRequested();
             transaction.Commit();
             return true;
@@ -252,8 +256,113 @@ internal sealed class UsageStore(string? databasePath = null)
                 }
                 catch (FormatException) { }
             }
-            return rows;
+            reader.Close();
+            return rows.Select(status => ReadProviderDiagnostics(connection, status)).ToArray();
         }, cancellationToken);
+
+    // Auxiliary diagnostics do not alter the schema or grow with the polling history.
+    // They are committed with the cache row and applied only to that exact receipt.
+    private static void SaveProviderDiagnostics(SqliteConnection connection, SqliteTransaction transaction, ProviderStatus status)
+    {
+        using var data = new MemoryStream();
+        using (var writer = new Utf8JsonWriter(data))
+        {
+            writer.WriteStartObject();
+            writer.WriteNumber("Version", 1);
+            writer.WriteString(nameof(ProviderStatus.CheckedAtUtc), Utc(status.CheckedAtUtc));
+            writer.WriteString(nameof(ProviderStatus.AssessmentIssue), status.AssessmentIssue);
+            writer.WriteString(nameof(ProviderStatus.UncertainIncidentId), status.UncertainIncidentId);
+            writer.WriteString(nameof(ProviderStatus.UncertainIncidentTitle), status.UncertainIncidentTitle);
+            if (status.LastKnownStatusUtc is { } known)
+                writer.WriteString(nameof(ProviderStatus.LastKnownStatusUtc), Utc(known));
+            else writer.WriteNull(nameof(ProviderStatus.LastKnownStatusUtc));
+            writer.WriteEndObject();
+        }
+        using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.Parameters.AddWithValue("$key", ProviderDiagnosticsPrefix + status.Provider);
+        if (data.Length > MaximumProviderDiagnosticsBytes)
+        {
+            // The core cache is still useful. Never retain diagnostics from an earlier receipt.
+            command.CommandText = "DELETE FROM AppMetadata WHERE Key=$key;";
+        }
+        else
+        {
+            command.CommandText = "INSERT INTO AppMetadata(Key,Value) VALUES($key,$value) ON CONFLICT(Key) DO UPDATE SET Value=excluded.Value;";
+            command.Parameters.AddWithValue("$value", Encoding.UTF8.GetString(data.GetBuffer(), 0, checked((int)data.Length)));
+        }
+        command.ExecuteNonQuery();
+    }
+
+    private static ProviderStatus ReadProviderDiagnostics(SqliteConnection connection, ProviderStatus status)
+    {
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT Value FROM AppMetadata WHERE Key=$key AND length(CAST(Value AS BLOB)) <= $maximum;";
+        command.Parameters.AddWithValue("$key", ProviderDiagnosticsPrefix + status.Provider);
+        command.Parameters.AddWithValue("$maximum", MaximumProviderDiagnosticsBytes);
+        if (command.ExecuteScalar() is string json)
+        {
+            try
+            {
+                using var document = JsonDocument.Parse(json);
+                var root = document.RootElement;
+                if (root.ValueKind == JsonValueKind.Object && root.TryGetProperty("Version", out var version) &&
+                    version.ValueKind == JsonValueKind.Number && version.TryGetInt32(out int number) && number == 1 &&
+                    DiagnosticString(root, nameof(ProviderStatus.CheckedAtUtc), out string checkedText) &&
+                    DiagnosticUtc(checkedText, out var checkedAt) && checkedAt == status.CheckedAtUtc &&
+                    DiagnosticString(root, nameof(ProviderStatus.AssessmentIssue), out string issue) &&
+                    DiagnosticString(root, nameof(ProviderStatus.UncertainIncidentId), out string incidentId) &&
+                    DiagnosticString(root, nameof(ProviderStatus.UncertainIncidentTitle), out string incidentTitle) &&
+                    root.TryGetProperty(nameof(ProviderStatus.LastKnownStatusUtc), out var knownElement))
+                {
+                    DateTimeOffset? known = null;
+                    if (knownElement.ValueKind != JsonValueKind.Null)
+                    {
+                        if (knownElement.ValueKind != JsonValueKind.String ||
+                            !DiagnosticUtc(knownElement.GetString()!, out var knownAt) || knownAt > checkedAt ||
+                            status.LastKnownStatus is null or OfficialStatus.Unknown or OfficialStatus.Stale)
+                            return LegacyProviderDiagnostics(status);
+                        known = knownAt;
+                    }
+                    return status with
+                    {
+                        AssessmentIssue = issue,
+                        UncertainIncidentId = incidentId,
+                        UncertainIncidentTitle = incidentTitle,
+                        LastKnownStatusUtc = known
+                    };
+                }
+            }
+            catch (JsonException) { /* A malformed auxiliary entry does not invalidate the core cache. */ }
+        }
+        return LegacyProviderDiagnostics(status);
+    }
+
+    private static ProviderStatus LegacyProviderDiagnostics(ProviderStatus status) =>
+        (status.Status is OfficialStatus.Unknown or OfficialStatus.Stale) &&
+            (status.IncidentId.Length > 0 || status.IncidentTitle.Length > 0)
+            ? status with
+            {
+                IncidentId = "",
+                IncidentTitle = "",
+                Reason = "이전 사건의 현재 상태·범위를 확인할 수 없음",
+                UncertainIncidentId = status.IncidentId,
+                UncertainIncidentTitle = status.IncidentTitle
+            }
+            : status;
+
+    private static bool DiagnosticString(JsonElement root, string name, out string value)
+    {
+        value = "";
+        if (!root.TryGetProperty(name, out var item) || item.ValueKind != JsonValueKind.String) return false;
+        value = item.GetString()!;
+        return true;
+    }
+
+    private static bool DiagnosticUtc(string text, out DateTimeOffset value) =>
+        DateTimeOffset.TryParseExact(text, "yyyy-MM-dd'T'HH:mm:ss.fffffff'Z'", CultureInfo.InvariantCulture,
+            DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out value) &&
+        value.Year is >= 1970 and <= 9000;
 
     private async Task<T> ExecuteAsync<T>(Func<SqliteConnection, T> operation, CancellationToken cancellationToken)
     {

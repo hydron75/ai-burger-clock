@@ -39,7 +39,7 @@ internal sealed class StatusWindow : Form
         AutoScaleDimensions = new SizeF(96F, 96F);
         AutoScaleMode = AutoScaleMode.Dpi;
         Text = "AI Burger Clock";
-        ClientSize = new Size(374, 518);
+        ClientSize = new Size(374, 569);
         FormBorderStyle = FormBorderStyle.FixedSingle;
         MaximizeBox = false;
         MinimizeBox = false;
@@ -56,10 +56,10 @@ internal sealed class StatusWindow : Form
         int index = 0;
         foreach (var provider in Enum.GetValues<ProviderKind>())
         {
-            var panel = new Panel { Location = new Point(16, 146 + index++ * 72), Size = new Size(342, 66), BackColor = Color.White };
+            var panel = new Panel { Location = new Point(16, 146 + index++ * 89), Size = new Size(342, 83), BackColor = Color.White };
             var heading = new Label { Location = new Point(8, 4), Size = new Size(326, 20), Font = OwnedFont(10F, FontStyle.Bold) };
-            var official = new Label { Location = new Point(8, 25), Size = new Size(326, 17), Font = OwnedFont(8.5F), AutoEllipsis = true };
-            var reason = new Label { Location = new Point(8, 44), Size = new Size(326, 17), Font = OwnedFont(8.5F), AutoEllipsis = true, ForeColor = Color.DimGray };
+            var official = new Label { Location = new Point(8, 25), Size = new Size(326, 34), Font = OwnedFont(8.5F) };
+            var reason = new Label { Location = new Point(8, 61), Size = new Size(326, 17), Font = OwnedFont(8.5F), AutoEllipsis = true, ForeColor = Color.DimGray };
             var menu = CreateRecordingMenu(provider, (p, e, note) => RecordRequested?.Invoke(p, e, note));
             recordingMenus.Add(menu);
             panel.ContextMenuStrip = menu;
@@ -76,14 +76,14 @@ internal sealed class StatusWindow : Form
         }
         quotaView = new AccountQuotaView { Location = new Point(16, 146), Size = new Size(342, 214), Visible = false };
         Controls.Add(quotaView);
-        checkedLabel = AddLabel(StatusPanelModel.WaitingCaption, 17, 366, 342, 35, 8.5F);
-        refreshButton = new Button { Text = "Refresh", Location = new Point(16, 407), Size = new Size(106, 28) };
+        checkedLabel = AddLabel(StatusPanelModel.WaitingCaption, 17, 417, 342, 35, 8.5F);
+        refreshButton = new Button { Text = "Refresh", Location = new Point(16, 458), Size = new Size(106, 28) };
         refreshButton.Click += (_, _) => RefreshRequested?.Invoke(this, EventArgs.Empty);
-        var statisticsButton = new Button { Text = "Statistics", Location = new Point(130, 407), Size = new Size(106, 28) };
+        var statisticsButton = new Button { Text = "Statistics", Location = new Point(130, 458), Size = new Size(106, 28) };
         statisticsButton.Click += (_, _) => StatisticsRequested?.Invoke(this, EventArgs.Empty);
         Controls.Add(refreshButton);
         Controls.Add(statisticsButton);
-        quotaButton = new Button { Text = QuotaPanelModel.ShowQuotas, Location = new Point(244, 407), Size = new Size(114, 28) };
+        quotaButton = new Button { Text = QuotaPanelModel.ShowQuotas, Location = new Point(244, 458), Size = new Size(114, 28) };
         quotaButton.Click += (_, _) =>
         {
             quotaView.Visible = !quotaView.Visible;
@@ -94,15 +94,15 @@ internal sealed class StatusWindow : Form
         };
         Controls.Add(quotaButton);
         details.SetToolTip(quotaButton, QuotaPanelModel.ToggleDetail);
-        feedbackLabel = AddLabel(DefaultFeedback, 17, 442, 342, 19, 8.5F);
+        feedbackLabel = AddLabel(DefaultFeedback, 17, 493, 342, 19, 8.5F);
         feedbackLabel.AutoEllipsis = true;
-        autoStartCheckBox = new CheckBox { AutoSize = true, Text = "Windows 시작 시 자동 실행", Location = new Point(17, 466) };
+        autoStartCheckBox = new CheckBox { AutoSize = true, Text = "Windows 시작 시 자동 실행", Location = new Point(17, 517) };
         autoStartCheckBox.CheckedChanged += (_, _) =>
         {
             if (!updatingAutoStart) AutoStartChanged?.Invoke(this, EventArgs.Empty);
         };
         Controls.Add(autoStartCheckBox);
-        holidayCheckBox = new CheckBox { AutoSize = true, Text = StatusPanelModel.HolidayOption, Location = new Point(17, 492), Enabled = false };
+        holidayCheckBox = new CheckBox { AutoSize = true, Text = StatusPanelModel.HolidayOption, Location = new Point(17, 543), Enabled = false };
         holidayCheckBox.CheckedChanged += (_, _) =>
         {
             if (!updatingHoliday) HolidayAdjustmentChanged?.Invoke(this, EventArgs.Empty);
@@ -216,7 +216,8 @@ internal sealed class StatusWindow : Form
                 PanelTone.Caution => Color.FromArgb(160, 99, 20),
                 _ => Color.DimGray
             };
-            row.Official.Text = card.Official;
+            // Only layout differs: put the shared check caption on its own visible line.
+            row.Official.Text = card.Official.Replace(" · 마지막 확인 ", "\n마지막 확인 ", StringComparison.Ordinal);
             row.Reason.Text = card.Reason;
             foreach (var label in new[] { row.Heading, row.Official, row.Reason }) SetDetail(label, card.Detail);
         }

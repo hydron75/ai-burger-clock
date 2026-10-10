@@ -65,7 +65,8 @@ internal static class StatusPanelModel
             recommendation,
             ProviderNames.Provider(status.Provider) + "   " + RecommendationPolicy.Label(recommendation),
             Tone(recommendation),
-            "Official: " + RecommendationPolicy.OfficialLabel(status.Status),
+            "Official: " + RecommendationPolicy.OfficialLabel(status.Status) + " · 마지막 확인 " +
+                (status.LastSuccessfulCheckUtc is { } checkedAt ? AgentSchedule.ToKst(checkedAt).ToString("MM-dd HH:mm") + " KST" : "없음"),
             status.Reason,
             Detail(status, attempted, success));
     }
@@ -77,18 +78,32 @@ internal static class StatusPanelModel
         var lines = new List<string>
         {
             "클릭: 공식 상태 페이지 열기 · 우클릭: 사용 경험 기록",
-            status.Reason,
+            "현재 판정: " + status.Reason,
             "최근 조회 시도: " + attempted,
-            "마지막 상태 확인 성공: " + success
+            "마지막 확인(응답 수신): " + success
         };
         void Optional(string label, string? value)
         {
             if (!string.IsNullOrWhiteSpace(value)) lines.Add(label + value);
         }
+        if (status.CheckedAtUtc != DateTimeOffset.MinValue && status.CheckedAtUtc != status.LastSuccessfulCheckUtc)
+            Optional("최근 응답 수신 실패 이유: ", status.Reason);
+        if (!string.Equals(status.Reason, status.AssessmentIssue, StringComparison.Ordinal))
+            Optional("최근 판정 실패 이유: ", status.AssessmentIssue);
+        if (status.LastKnownStatus is { } known)
+        {
+            string knownTime = status.LastKnownStatusUtc is { } knownAt
+                ? knownAt == status.LastSuccessfulCheckUtc ? "" :
+                    " · " + AgentSchedule.ToKst(knownAt).ToString("MM-dd HH:mm:ss") + " KST"
+                : " (시각 미상)";
+            lines.Add("마지막 확인 당시 상태: " + RecommendationPolicy.OfficialLabel(known) +
+                knownTime);
+        }
         Optional("관련: ", status.RelevantComponent);
-        Optional("사건: ", status.IncidentTitle);
-        Optional("사건 ID: ", status.IncidentId);
-        Optional("마지막 알려진 상태: ", status.LastKnownStatus?.ToString());
+        Optional("확인된 사건: ", status.IncidentTitle);
+        Optional("확인된 사건 ID: ", status.IncidentId);
+        Optional("범위 미확인 사건: ", status.UncertainIncidentTitle);
+        Optional("범위 미확인 사건 ID: ", status.UncertainIncidentId);
         Optional("", status.Source);
         return string.Join("\n", lines);
     }

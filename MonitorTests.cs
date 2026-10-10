@@ -12,6 +12,7 @@ internal sealed class TestStatusHttpHandler : HttpMessageHandler
     public bool FailOpenAi { get; set; }
     public bool MalformedOpenAi { get; set; }
     public string? OpenAiJson { get; set; }
+    public string? OpenAiComponentsJson { get; set; }
     public bool Block { get; set; }
     public int RequestCount;
 
@@ -30,14 +31,20 @@ internal sealed class TestStatusHttpHandler : HttpMessageHandler
             OfficialStatus.MajorOutage => "major_outage",
             _ => "operational"
         };
+        var defaultComponents = new[]
+        {
+            new { id = "test-component", name = openai ? "ChatGPT Work" : "claude.ai", status = openai ? status : "operational" }
+        };
         string json = url.EndsWith("products.json", StringComparison.Ordinal)
             ? """{"products":[{"id":"test-gemini","title":"Gemini"}]}"""
-            : url.EndsWith("incidents.json", StringComparison.Ordinal) ? "[]"
+            : url == ProviderStatusClient.OpenAiComponentsUrl ? OpenAiComponentsJson ?? System.Text.Json.JsonSerializer.Serialize(new { components = defaultComponents })
+            : url == ProviderStatusClient.OpenAiIncidentsUrl ? """{"incidents":[]}"""
+            : url == ProviderStatusClient.GoogleIncidentsUrl ? "[]"
             : openai && OpenAiJson is not null ? OpenAiJson
             : openai && MalformedOpenAi ? "{bad"
             : System.Text.Json.JsonSerializer.Serialize(new
             {
-                components = new[] { new { id = "test-component", name = openai ? "ChatGPT Work" : "claude.ai", status = openai ? status : "operational" } },
+                components = defaultComponents,
                 incidents = Array.Empty<object>(),
                 status = new { indicator = "none" }
             });
@@ -101,9 +108,45 @@ internal static class MonitorTests
         using var http = new HttpClient(handler) { Timeout = TimeSpan.FromMilliseconds(120) };
         using var monitor = new StatusMonitor(new ProviderStatusClient(http), utcNow: () => now);
         Check(monitor.Snapshot().All(s => s.Status == OfficialStatus.Unknown), "No data starts unknown");
+        var oldOutage = StatusMonitor.WithFreshness(new ProviderStatus(ProviderKind.OpenAI, OfficialStatus.PartialOutage,
+            now.AddMinutes(-15), now.AddMinutes(-15), "Synthetic past incident", "CLI", "synthetic-old", "Synthetic past incident"), now);
+        Check(oldOutage.Status == OfficialStatus.Stale && oldOutage.IncidentId.Length == 0 && oldOutage.IncidentTitle.Length == 0 &&
+            !oldOutage.Reason.Contains("Synthetic past incident", StringComparison.Ordinal),
+            "Aging cached outage no longer asserts a current incident on the card");
+        Check(oldOutage.LastKnownStatus == OfficialStatus.PartialOutage && oldOutage.LastKnownStatusUtc == now.AddMinutes(-15),
+            "Aging cached outage preserves the historical assessed status and time");
+        // Synthetic legacy caches have no auxiliary timestamp. Only a current, assessable
+        // cache row itself proves that its successful receipt was also an assessed status.
+        var legacyOperational = new ProviderStatus(ProviderKind.OpenAI, OfficialStatus.Operational,
+            now.AddMinutes(-5), now.AddMinutes(-5), "Synthetic healthy cache", LastKnownStatus: OfficialStatus.Operational);
+        var freshLegacy = StatusMonitor.WithFreshness(legacyOperational, now);
+        Check(freshLegacy.Status == OfficialStatus.Operational && freshLegacy.LastKnownStatus == OfficialStatus.Operational &&
+            freshLegacy.LastKnownStatusUtc == now.AddMinutes(-5),
+            "recent assessed legacy cache supplies its evidenced last-known status timestamp");
+        var legacyOutage = legacyOperational with
+            { Status = OfficialStatus.PartialOutage, LastKnownStatus = OfficialStatus.PartialOutage };
+        Check(StatusMonitor.WithFreshness(legacyOutage, now).LastKnownStatusUtc == now.AddMinutes(-5),
+            "recent legacy outage supplies its own assessed timestamp before a later failed or ambiguous receipt");
+        var legacyUnknown = legacyOperational with { Status = OfficialStatus.Unknown };
+        Check(StatusMonitor.WithFreshness(legacyUnknown, now).LastKnownStatusUtc is null,
+            "legacy UNKNOWN receipt does not prove when its historical assessed status was confirmed");
+        var legacyStale = legacyOutage with
+        {
+            Status = OfficialStatus.Stale,
+            CheckedAtUtc = now.AddMinutes(-20),
+            LastSuccessfulCheckUtc = now.AddMinutes(-20)
+        };
+        Check(StatusMonitor.WithFreshness(legacyStale, now).LastKnownStatusUtc is null,
+            "legacy STALE receipt never invents a timestamp for its historical assessed state");
+        var olderConfirmed = legacyOperational with { LastKnownStatusUtc = now.AddMinutes(-10) };
+        Check(StatusMonitor.WithFreshness(olderConfirmed, now).LastKnownStatusUtc == now.AddMinutes(-10),
+            "an existing historical status timestamp is not overwritten by cache receipt time");
+        var conflictingKnown = legacyOperational with { LastKnownStatus = OfficialStatus.PartialOutage };
+        Check(StatusMonitor.WithFreshness(conflictingKnown, now).LastKnownStatusUtc is null,
+            "a receipt cannot date a different historical status when no confirmation timestamp exists");
         await monitor.RefreshOnceAsync();
         Check(monitor.Snapshot().All(s => s.Status == OfficialStatus.Operational), "All providers fetched independently");
-        Check(handler.RequestCount == 4, "One refresh makes four official feed requests");
+        Check(handler.RequestCount == 5, "One refresh makes five official feed requests including the complete OpenAI component catalog");
         handler.OpenAiStatus = OfficialStatus.PartialOutage;
         await monitor.RefreshOnceAsync();
         Check(monitor.Snapshot().Single(s => s.Provider == ProviderKind.OpenAI).Status == OfficialStatus.PartialOutage, "OpenAI partial outage");
@@ -114,28 +157,62 @@ internal static class MonitorTests
         var failed = monitor.Snapshot().Single(s => s.Provider == ProviderKind.OpenAI);
         Check(failed.Status == OfficialStatus.Unknown && failed.LastKnownStatus == OfficialStatus.PartialOutage, "Failure is not falsely green, preserves last known");
         Check(failed.LastSuccessfulCheckUtc == now.AddMinutes(-5), "Failure does not advance successful retrieval");
+        Check(failed.LastKnownStatusUtc == now.AddMinutes(-5) && failed.AssessmentIssue.Length == 0,
+            "transport failure preserves the last assessable status time and is not an assessment issue");
         now = now.AddMinutes(10);
         Check(monitor.Snapshot().Single(s => s.Provider == ProviderKind.OpenAI).Status == OfficialStatus.Stale, "STALE exactly at 15 minutes");
         handler.FailOpenAi = false;
         handler.OpenAiStatus = OfficialStatus.Operational;
         await monitor.RefreshOnceAsync();
         Check(monitor.Snapshot().All(s => s.Status == OfficialStatus.Operational), "Recovery clears stale");
-        handler.OpenAiJson = """{"components":[{"id":"chat","name":"ChatGPT","status":"operational"}],"status":{"indicator":"minor"},"incidents":[{"id":"scope-unknown","name":"Elevated error rates","status":"investigating","impact":"minor"}]}""";
+        var lastConfirmed = now;
+        now = now.AddMinutes(5);
+        handler.OpenAiJson = """{"components":[{"id":"chat","name":"ChatGPT","status":"operational"}],"status":{"indicator":"none"},"incidents":[{"id":"scope-unknown","name":"Delayed administrative metric processing","status":"monitoring","impact":"minor"}]}""";
         await monitor.RefreshOnceAsync();
         var ambiguous = monitor.Snapshot().Single(s => s.Provider == ProviderKind.OpenAI);
-        Check(ambiguous.Status == OfficialStatus.Unknown && ambiguous.IncidentId == "scope-unknown" && ambiguous.IncidentTitle == "Elevated error rates", "Ambiguous current incident metadata survives monitor");
-        Check(ambiguous.LastSuccessfulCheckUtc == now, "Ambiguous response does not advance last successful check");
-        now = now.AddMinutes(16);
-        Check(monitor.Snapshot().Single(s => s.Provider == ProviderKind.OpenAI) is { Status: OfficialStatus.Stale, IncidentId: "scope-unknown" }, "STALE preserves current unknown incident metadata");
+        Check(ambiguous.Status == OfficialStatus.Unknown && ambiguous.UncertainIncidentId == "scope-unknown" &&
+            ambiguous.UncertainIncidentTitle == "Delayed administrative metric processing" && ambiguous.IncidentId.Length == 0 && ambiguous.IncidentTitle.Length == 0,
+            "ambiguous current incident is separate from confirmed outage metadata in the monitor");
+        Check(ambiguous.LastSuccessfulCheckUtc == now, "a complete ambiguous response advances the successful receipt time");
+        Check(ambiguous.AssessmentIssue.Length > 0 && RecommendationPolicy.Calculate(AgentState.FullThrottle, ambiguous.Status) == Recommendation.Check,
+            "receipt success with an uncertain incident has an assessment explanation and CHECK, not GO or STOP");
+        Check(ambiguous.LastKnownStatus == OfficialStatus.Operational && ambiguous.LastKnownStatusUtc == lastConfirmed,
+            "an ambiguous response preserves the last assessable status and its separate timestamp");
+        foreach (int elapsedMinutes in new[] { 5, 5, 6 })
+        {
+            now = now.AddMinutes(elapsedMinutes);
+            await monitor.RefreshOnceAsync();
+            var received = monitor.Snapshot().Single(s => s.Provider == ProviderKind.OpenAI);
+            Check(received.Status == OfficialStatus.Unknown && received.LastSuccessfulCheckUtc == now &&
+                received.LastKnownStatusUtc == lastConfirmed && received.UncertainIncidentId == "scope-unknown",
+                "repeated successful unknown-scope responses remain fresh CHECK beyond fifteen minutes");
+        }
         handler.FailOpenAi = true;
+        now = now.AddMinutes(1);
         await monitor.RefreshOnceAsync();
-        Check(monitor.Snapshot().Single(s => s.Provider == ProviderKind.OpenAI).IncidentId.Length == 0, "Transport failure never presents prior incident as freshly observed");
+        var transportFailure = monitor.Snapshot().Single(s => s.Provider == ProviderKind.OpenAI);
+        Check(transportFailure.IncidentId.Length == 0 && transportFailure.UncertainIncidentId.Length == 0 &&
+            transportFailure.UncertainIncidentTitle.Length == 0, "transport failure never presents prior confirmed or uncertain incidents as freshly observed");
+        Check(transportFailure.LastSuccessfulCheckUtc == now.AddMinutes(-1) && transportFailure.AssessmentIssue.Length == 0 &&
+            transportFailure.LastKnownStatus == OfficialStatus.Operational && transportFailure.LastKnownStatusUtc == lastConfirmed,
+            "transport failure after successful CHECK does not advance receipt or lose the assessable baseline");
         handler.FailOpenAi = false;
         handler.OpenAiJson = null;
         await monitor.RefreshOnceAsync();
+        handler.OpenAiComponentsJson = "{malformed-catalog";
+        now = now.AddMinutes(16);
+        await monitor.RefreshOnceAsync();
+        var invalidCatalog = monitor.Snapshot().Single(s => s.Provider == ProviderKind.OpenAI);
+        Check(invalidCatalog.Status == OfficialStatus.Unknown && invalidCatalog.LastSuccessfulCheckUtc == now && invalidCatalog.AssessmentIssue.Length > 0,
+            "a malformed full catalog is a fresh receipt but cannot certify healthy components");
+        handler.OpenAiComponentsJson = null;
         handler.MalformedOpenAi = true;
+        now = now.AddMinutes(16);
         await monitor.RefreshOnceAsync();
         Check(monitor.Snapshot().Single(s => s.Provider == ProviderKind.OpenAI).Status == OfficialStatus.Unknown, "Malformed response is isolated UNKNOWN");
+        var malformed = monitor.Snapshot().Single(s => s.Provider == ProviderKind.OpenAI);
+        Check(malformed.LastSuccessfulCheckUtc == now && malformed.AssessmentIssue.Length > 0,
+            "malformed JSON does not masquerade as a failed HTTP receipt or STALE");
         handler.Offline = true;
         await monitor.RefreshOnceAsync();
         Check(monitor.Snapshot().All(s => s.Status == OfficialStatus.Unknown), "No Internet leaves monitor functional");
@@ -152,7 +229,7 @@ internal static class MonitorTests
         using var pollingHttp = new HttpClient(pollingHandler);
         using var polling = new StatusMonitor(new ProviderStatusClient(pollingHttp), pollInterval: TimeSpan.FromMilliseconds(100));
         polling.Start();
-        await WaitUntilAsync(() => pollingHandler.RequestCount >= 8);
+        await WaitUntilAsync(() => pollingHandler.RequestCount >= 10);
         Check(polling.NextRefreshUtc.HasValue && !polling.IsRefreshing, "Automatic polling and next refresh");
         int before = pollingHandler.RequestCount;
         polling.RequestRefresh();
@@ -171,9 +248,9 @@ internal static class MonitorTests
         using var faulty = new StatusMonitor(new ProviderStatusClient(faultyHttp), pollInterval: TimeSpan.FromMilliseconds(100));
         faulty.Changed += () => throw new InvalidOperationException("Synthetic subscriber failure");
         faulty.Start();
-        await WaitUntilAsync(() => faultyHandler.RequestCount >= 8);
+        await WaitUntilAsync(() => faultyHandler.RequestCount >= 10);
         await faulty.StopAsync();
-        Check(faultyHandler.RequestCount >= 8, "Subscriber failure does not stop polling or shutdown");
+        Check(faultyHandler.RequestCount >= 10, "Subscriber failure does not stop polling or shutdown");
 
         // No scheduled poll within the test: only the queued request can start a second pass.
         var queuedHandler = new TestStatusHttpHandler { Block = true };
@@ -183,9 +260,9 @@ internal static class MonitorTests
         await WaitUntilAsync(() => queuedHandler.RequestCount >= 4);
         queued.RequestRefresh(queueWhileRefreshing: true);
         queuedHandler.Block = false;
-        await WaitUntilAsync(() => queuedHandler.RequestCount >= 8);
+        await WaitUntilAsync(() => queuedHandler.RequestCount >= 10);
         await queued.StopAsync();
-        Check(queuedHandler.RequestCount >= 8, "Refresh requested during an active poll runs right after it");
+        Check(queuedHandler.RequestCount >= 10, "Refresh requested during an active poll runs right after it");
 
         var blockedHandler = new TestStatusHttpHandler { Block = true };
         using var blockedHttp = new HttpClient(blockedHandler);

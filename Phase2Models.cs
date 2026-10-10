@@ -17,6 +17,14 @@ internal sealed record ProviderStatus(
     string Source = "",
     OfficialStatus? LastKnownStatus = null)
 {
+    // Receiving a complete HTTP response and being able to assess its scope are separate.
+    // IncidentId/Title describe confirmed relevant incidents only; uncertain ones never
+    // become a fabricated outage or a recorded usage-event incident.
+    public string AssessmentIssue { get; init; } = "";
+    public string UncertainIncidentId { get; init; } = "";
+    public string UncertainIncidentTitle { get; init; } = "";
+    public DateTimeOffset? LastKnownStatusUtc { get; init; }
+
     public static ProviderStatus Unknown(ProviderKind provider, string reason = "아직 확인하지 않음") =>
         new(provider, OfficialStatus.Unknown, DateTimeOffset.MinValue, null, reason);
 }
