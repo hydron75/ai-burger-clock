@@ -267,8 +267,8 @@ internal static class PanelModelTests
         same(geminiSection.Scope!.Text, "Antigravity · Gemini 모델", "Gemini quota scope is explicit");
         check(geminiSection.Scope.Tone == PanelTone.Muted && geminiSection.Scope.Detail.Contains("Gemini Apps") &&
             geminiSection.Scope.Detail.Contains("Claude/GPT"), "Gemini scope does not imply web Apps or third-party subscription limits");
-        same(geminiSection.Rows[0].Text, "5시간  2% 사용 · 약 2시간 0분 후 리셋", "Gemini five-hour countdown");
-        same(geminiSection.Rows[1].Text, "주간  0.3% 사용 · 약 6일 0시간 후 리셋", "Gemini weekly fraction is not the rounded TSV value");
+        same(geminiSection.Rows[0].Text, "5시간  2% 사용 · 약 2시간 후 리셋", "Gemini five-hour countdown");
+        same(geminiSection.Rows[1].Text, "주간  0.3% 사용 · 약 6일 후 리셋", "Gemini weekly fraction is not the rounded TSV value");
         check(geminiSection.Rows.All(row => row.Tone == PanelTone.Good), "Gemini uses existing quota tones");
         check(geminiSection.Rows[0].Detail.Contains("Gemini (Antigravity)") &&
             geminiSection.Rows[0].Detail.Contains("서버 데이터 생성 시각을 보장하지 않습니다"), "Gemini details preserve freshness qualification");

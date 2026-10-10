@@ -150,8 +150,8 @@ internal static class AccountQuotaUiChecks
             "Shared Normal and Muted quota tones retain Windows heading and scope colors");
         Check(labels.Single(l => l.Text.StartsWith("5시간  18% 사용", StringComparison.Ordinal)).ForeColor == Color.FromArgb(25, 115, 75) &&
             labels.Single(l => l.Text.StartsWith("주간  92% 사용", StringComparison.Ordinal)).ForeColor == Color.DarkOrange &&
-            labels.Any(l => l.Text == "5시간  18% 사용 · 약 2시간 0분 후 리셋") &&
-            labels.Any(l => l.Text == "주간  92% 사용 · 약 2일 0시간 후 리셋"),
+            labels.Any(l => l.Text == "5시간  18% 사용 · 약 2시간 후 리셋") &&
+            labels.Any(l => l.Text == "주간  92% 사용 · 약 2일 후 리셋"),
             "Used percentages keep shared tones while session and weekly rows use their own two-unit countdowns");
         Check(boxes.All(box => box.Controls.Cast<Control>().All(child => child.Bottom <= box.Height)) &&
             context.StatusWindow.QuotaView.VerticalScroll.Visible && !context.StatusWindow.QuotaView.HorizontalScroll.Visible,

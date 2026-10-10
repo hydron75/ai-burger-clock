@@ -19,31 +19,35 @@ internal static class QuotaPresentationTests
         Check(Reset(now) == "갱신 대기", "elapsed reset never assumes recovery");
         Check(Reset(now.AddSeconds(59)) == "곧 리셋 예정", "sub-minute reset");
         Check(Reset(now.AddMinutes(59), 300) == "약 59분 후 리셋", "session below one hour");
-        Check(Reset(now.AddHours(1), 300) == "약 1시간 0분 후 리셋", "session hour boundary");
+        Check(Reset(now.AddHours(1), 300) == "약 1시간 후 리셋", "session hour boundary");
         Check(Reset(now.AddHours(2).AddMinutes(37), 300) == "약 2시간 37분 후 리셋", "session hours/minutes");
-        Check(Reset(now.AddDays(1), 10080) == "약 1일 0시간 후 리셋", "weekly day boundary");
+        Check(Reset(now.AddDays(1), 10080) == "약 1일 후 리셋", "weekly day boundary");
         Check(Reset(now.AddDays(3).AddHours(4), 10080) == "약 3일 4시간 후 리셋", "weekly days/hours");
         Check(Reset(now.AddHours(7), 10080) == "약 7시간 후 리셋", "weekly below one day");
         Check(Reset(now.AddMinutes(25), 10080) == "약 1시간 후 리셋", "weekly short time rounds up");
-        Check(Reset(now.AddMinutes(119).AddSeconds(1), 300) == "약 2시간 0분 후 리셋", "minute carry");
-        Check(Reset(now.AddHours(23).AddSeconds(1), 10080) == "약 1일 0시간 후 리셋", "hour carry");
-        Check(Reset(now.AddHours(25), 300) == "약 25시간 0분 후 리셋", "session window kind wins over duration");
+        Check(Reset(now.AddMinutes(119).AddSeconds(1), 300) == "약 2시간 후 리셋", "minute carry");
+        Check(Reset(now.AddHours(23).AddSeconds(1), 10080) == "약 1일 후 리셋", "hour carry");
+        Check(Reset(now.AddHours(25), 300) == "약 25시간 후 리셋", "session window kind wins over duration");
         Check(Reset(now.AddDays(2).AddHours(3)) == "약 2일 3시간 후 리셋", "unknown window fallback");
 
         Check(Reset(now.AddMinutes(15), 300) == "약 15분 후 리셋", "session omits zero leading hours");
         Check(Reset(now.AddMinutes(1), 300) == "약 1분 후 리셋", "exact minute begins rounded display");
         Check(Reset(now.AddMinutes(1).AddSeconds(1), 300) == "약 2분 후 리셋", "partial minute still rounds up");
-        Check(Reset(now.AddMinutes(59).AddSeconds(30), 300) == "약 1시간 0분 후 리셋", "session carry before exact hour");
+        Check(Reset(now.AddMinutes(59).AddSeconds(30), 300) == "약 1시간 후 리셋", "session carry omits zero trailing minutes");
         Check(Reset(now.AddHours(1).AddSeconds(1), 300) == "약 1시간 1분 후 리셋", "session just after exact hour");
         Check(Reset(now.AddMinutes(59).AddSeconds(30), 10080) == "약 1시간 후 리셋", "weekly hour rounding omits zero days");
         Check(Reset(now.AddHours(1), 10080) == "약 1시간 후 리셋", "weekly exact hour omits zero days");
         Check(Reset(now.AddHours(1).AddSeconds(1), 10080) == "약 2시간 후 리셋", "weekly just after hour rounds up");
-        Check(Reset(now.AddHours(23).AddMinutes(59).AddSeconds(30), 10080) == "약 1일 0시간 후 리셋", "weekly carry before exact day");
+        Check(Reset(now.AddHours(23).AddMinutes(59).AddSeconds(30), 10080) == "약 1일 후 리셋", "weekly carry omits zero trailing hours");
         Check(Reset(now.AddDays(1).AddSeconds(1), 10080) == "약 1일 1시간 후 리셋", "weekly just after exact day");
         Check(Reset(now.AddMinutes(15)) == "약 15분 후 리셋", "unknown short window omits zero hours");
-        Check(Reset(now.AddMinutes(59).AddSeconds(30)) == "약 1시간 0분 후 리셋", "unknown window minute carry");
-        Check(Reset(now.AddHours(23).AddMinutes(59).AddSeconds(30)) == "약 24시간 0분 후 리셋", "unknown window stays minute-based below one day");
-        Check(Reset(now.AddDays(1)) == "약 1일 0시간 후 리셋", "unknown exact day selects day units");
+        Check(Reset(now.AddMinutes(59).AddSeconds(30)) == "약 1시간 후 리셋", "unknown window minute carry");
+        Check(Reset(now.AddHours(23).AddMinutes(59).AddSeconds(30)) == "약 24시간 후 리셋", "unknown window stays minute-based below one day");
+        Check(Reset(now.AddDays(1)) == "약 1일 후 리셋", "unknown exact day selects day units");
+        Check(Reset(now.AddHours(5), 300) == "약 5시간 후 리셋", "session exact five hours omits zero minutes");
+        Check(Reset(now.AddDays(2), 10080) == "약 2일 후 리셋", "weekly exact two days omits zero hours");
+        Check(Reset(now.AddHours(4).AddMinutes(59).AddSeconds(30), 300) == "약 5시간 후 리셋", "session carry to five hours omits zero minutes");
+        Check(Reset(now.AddHours(47).AddMinutes(59).AddSeconds(30), 10080) == "약 2일 후 리셋", "weekly carry to two days omits zero hours");
 
         Check(QuotaPanelModel.AccessibleName == "개인 계정 사용량", "shared usage title");
         foreach (var provider in Enum.GetValues<QuotaProvider>())
