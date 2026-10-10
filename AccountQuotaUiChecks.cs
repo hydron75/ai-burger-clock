@@ -159,6 +159,7 @@ internal static class AccountQuotaUiChecks
         Check(labels.All(l => l.Height >= TextRenderer.MeasureText(l.Text, l.Font).Height), "Quota rows accommodate DPI-scaled text height");
         Check(context.StatusWindow.ClientSize == size && context.CurrentAppearance == appearance, "Quota values never change tray health or original window dimensions");
         SmokeTest.RenderAndCheckLayout(context.StatusWindow, "account-quotas-two-providers.png", reportDirectory);
+        await QuotaToolTipUiChecks.RunAsync(context.StatusWindow.QuotaView, labels, reportDirectory, Check);
 
         context.RefreshStatus(false);
         boxes = context.StatusWindow.QuotaView.Controls.OfType<Panel>().ToArray();

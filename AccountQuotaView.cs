@@ -3,7 +3,9 @@ namespace AiBurgerClock;
 // Uses the existing popup's middle area; extra model-scoped windows can scroll.
 internal sealed class AccountQuotaView : Panel
 {
-    private readonly ToolTip details = new() { AutoPopDelay = 30000 };
+    private readonly ToolTip details = new() { AutoPopDelay = 30000, OwnerDraw = true };
+    internal const int DetailWidth = 320; // Whole tooltip width at 96 DPI, including padding.
+    private const int DetailPadding = 8;
     private readonly Font headingFont = new("Segoe UI", 9F, FontStyle.Bold);
     private readonly Font rowFont = new("Segoe UI", 8.5F);
     private readonly Font metaFont = new("Segoe UI", 8F);
@@ -19,7 +21,48 @@ internal sealed class AccountQuotaView : Panel
         AutoScroll = true;
         BackColor = Color.FromArgb(248, 249, 250);
         AccessibleName = QuotaPanelModel.AccessibleName;
+        details.Popup += (_, e) =>
+        {
+            if (e.AssociatedControl is not { } control) return;
+            using var graphics = control.CreateGraphics();
+            e.ToolTipSize = MeasureDetail(graphics, details.GetToolTip(control) ?? "", control.DeviceDpi,
+                Screen.FromControl(control).WorkingArea.Width);
+        };
+        details.Draw += (_, e) => DrawDetail(e, e.AssociatedControl?.DeviceDpi ?? DeviceDpi, details.ForeColor);
     }
+
+    internal ToolTip Details => details;
+    internal static Font DetailFont => SystemFonts.MessageBoxFont ?? SystemFonts.DefaultFont;
+
+    internal static Size MeasureDetail(Graphics graphics, string text, int dpi, int workingAreaWidth)
+    {
+        int padding = ScaleDetail(DetailPadding, dpi);
+        int width = Math.Min(ScaleDetail(DetailWidth, dpi), Math.Max(2 * padding + 1, workingAreaWidth - 2 * padding));
+        using var format = DetailFormat();
+        // GDI+ also wraps words without spaces, such as long CLI paths or URLs.
+        var content = graphics.MeasureString(text, DetailFont,
+            new SizeF(width - 2 * padding, int.MaxValue), format);
+        return new Size(width, (int)Math.Ceiling(content.Height) + 2 * padding);
+    }
+
+    internal static void DrawDetail(DrawToolTipEventArgs e, int dpi, Color foreColor)
+    {
+        e.DrawBackground();
+        e.DrawBorder();
+        int padding = ScaleDetail(DetailPadding, dpi);
+        var content = Rectangle.Inflate(e.Bounds, -padding, -padding);
+        using var format = DetailFormat();
+        using var brush = new SolidBrush(foreColor);
+        e.Graphics.DrawString(e.ToolTipText, DetailFont, brush, content, format);
+    }
+
+    internal static StringFormat DetailFormat() => new(StringFormat.GenericTypographic)
+    {
+        FormatFlags = StringFormatFlags.MeasureTrailingSpaces,
+        Trimming = StringTrimming.None
+    };
+
+    private static int ScaleDetail(int value, int dpi) => Math.Max(1, (int)Math.Round(value * dpi / 96.0));
 
     public void UpdateQuotas(IReadOnlyList<QuotaState> states, DateTimeOffset now)
     {
