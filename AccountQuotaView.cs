@@ -9,13 +9,12 @@ internal sealed class AccountQuotaView : Panel
     private readonly System.Windows.Forms.Timer detailLeaveDelay = new() { Interval = SystemInformation.MouseHoverTime };
     private readonly System.Windows.Forms.Timer detailPointerMonitor = new() { Interval = 100 };
     internal const int DetailWidth = 320; // Whole tooltip width at 96 DPI, including padding.
-    internal const string UsageTitle = "개인 계정 사용량";
-    internal const string UsageCaption = "색 막대 = 사용한 비율 · 시각은 KST\n마우스 올리기: 상세 · Refresh: 다시 조회";
     private const int DetailPadding = 8;
     private readonly Font headingFont = new("Segoe UI", 9F, FontStyle.Bold);
     private readonly Font rowFont = new("Segoe UI", 8.5F);
     private readonly Font metaFont = new("Segoe UI", 8F);
     private readonly Dictionary<QuotaProvider, Label> headings = new();
+    private readonly Dictionary<QuotaProvider, Label> scopes = new();
     private readonly Dictionary<QuotaProvider, Label> metadata = new();
     private readonly Dictionary<(QuotaProvider, string), Label> rows = new();
     private readonly Dictionary<(QuotaProvider, string), QuotaBalanceBar> bars = new();
@@ -30,7 +29,7 @@ internal sealed class AccountQuotaView : Panel
         Name = "AccountQuotaView";
         AutoScroll = true;
         BackColor = Color.FromArgb(248, 249, 250);
-        AccessibleName = UsageTitle;
+        AccessibleName = QuotaPanelModel.AccessibleName;
         detailDelay.Tick += (_, _) =>
         {
             detailDelay.Stop();
@@ -83,39 +82,6 @@ internal sealed class AccountQuotaView : Panel
     };
 
     private static int ScaleDetail(int value, int dpi) => Math.Max(1, (int)Math.Round(value * dpi / 96.0));
-
-    // This compact visual treatment is Windows-only. Shared text remains available to accessibility.
-    internal static string CompactReset(DateTimeOffset? reset, DateTimeOffset now, int? windowMinutes = null)
-    {
-        if (reset is null) return "리셋 미제공";
-        var remaining = reset.Value - now;
-        if (remaining <= TimeSpan.Zero) return "갱신 대기";
-        if (remaining.TotalMinutes < 1) return "곧 리셋 예정";
-        // Keep weekly windows in days/hours even below one day; session windows stay in
-        // hours/minutes. Round up only the smallest displayed unit, carrying across boundaries.
-        bool daysAndHours = windowMinutes == 10080 || (windowMinutes != 300 && remaining.TotalDays >= 1);
-        if (daysAndHours)
-        {
-            long hours = (long)Math.Ceiling(remaining.TotalHours);
-            return $"약 {hours / 24}일 {hours % 24}시간 후 리셋";
-        }
-        long minutes = (long)Math.Ceiling(remaining.TotalMinutes);
-        return $"약 {minutes / 60}시간 {minutes % 60}분 후 리셋";
-    }
-
-    private static string ProviderDetail(QuotaState state, QuotaSectionText section, DateTimeOffset now)
-    {
-        var notes = section.Heading.Detail.Split('\n').Where(line => !string.IsNullOrWhiteSpace(line)).ToArray();
-        string note = string.Join('\n', notes);
-        string scope = section.Scope is { } value && !note.Contains(value.Detail, StringComparison.Ordinal)
-            ? value.Detail + "\n" : "";
-        var resetLines = state.Reading?.Windows.Select(window =>
-            $"{window.Label}: {(window.ResetsAtUtc is { } reset ? AgentSchedule.ToKst(reset).ToString("yyyy-MM-dd HH:mm:ss") + " KST" : "제공되지 않음")}" +
-            (window.ResetsAtUtc <= now ? " · 예정 시각 경과, 새 조회 필요" : "")) ?? [];
-        string resets = state.Reading is null ? "" : "리셋·한도 복원 예정\n" + string.Join('\n', resetLines) +
-            "\n실제 복원 여부는 새 조회로 확인합니다.\n\n";
-        return notes[0] + "\n" + scope + resets + string.Join('\n', notes.Skip(1));
-    }
 
     private void BindDetail(Control control, QuotaProvider provider)
     {
@@ -210,7 +176,7 @@ internal sealed class AccountQuotaView : Panel
             AutoScrollPosition = Point.Empty;
             SuspendLayout();
             foreach (Control child in Controls.Cast<Control>().ToArray()) child.Dispose();
-            headings.Clear(); metadata.Clear(); rows.Clear(); bars.Clear(); detailOwners.Clear(); providerDetails.Clear();
+            headings.Clear(); scopes.Clear(); metadata.Clear(); rows.Clear(); bars.Clear(); detailOwners.Clear(); providerDetails.Clear();
             int y = 0;
             foreach (var section in sections)
             {
@@ -230,8 +196,7 @@ internal sealed class AccountQuotaView : Panel
                 headings[section.Provider] = AddRow(box, rowY, headingFont); rowY += 20;
                 if (section.Scope is { } scopeText)
                 {
-                    var scope = AddRow(box, rowY, rowFont); rowY += 20;
-                    ApplyLine(scope, scopeText);
+                    scopes[section.Provider] = AddRow(box, rowY, rowFont); rowY += 20;
                 }
                 foreach (var line in section.Rows)
                 {
@@ -254,23 +219,18 @@ internal sealed class AccountQuotaView : Panel
         }
         foreach (var section in sections)
         {
-            var state = states.Single(state => state.Provider == section.Provider);
-            providerDetails[section.Provider] = ProviderDetail(state, section, now);
+            providerDetails[section.Provider] = section.Detail;
             headings[section.Provider].Parent!.AccessibleName = section.Heading.Text;
             headings[section.Provider].Parent!.AccessibleDescription = providerDetails[section.Provider];
             ApplyLine(headings[section.Provider], section.Heading);
+            if (section.Scope is { } scope) ApplyLine(scopes[section.Provider], scope);
             ApplyLine(metadata[section.Provider], section.Metadata);
             foreach (var line in section.Rows)
             {
                 var label = rows[(section.Provider, line.WindowId)];
                 ApplyLine(label, line);
-                if (state.Reading?.Windows.SingleOrDefault(window => window.Id == line.WindowId) is not { } window) continue;
-                // The requested used-percent presentation is Windows-only; shared remaining-based
-                // polling and caution/danger decisions are unchanged.
-                string used = window.UsedPercent.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture);
-                bool previous = state.IsPrevious || window.ResetsAtUtc <= now;
-                label.Text = $"{window.Label}  {used}% 사용{(previous ? " (이전)" : "")} · {CompactReset(window.ResetsAtUtc, now, window.WindowMinutes)}";
-                bars[(section.Provider, line.WindowId)].UpdateBalance(section.Provider, window.UsedPercent, line.Tone,
+                if (line.UsedPercent is not { } used) continue;
+                bars[(section.Provider, line.WindowId)].UpdateBalance(section.Provider, used, line.Tone,
                     section.Heading.Text + " · " + label.Text, line.Detail);
             }
         }

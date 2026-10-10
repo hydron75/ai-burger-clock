@@ -2,7 +2,7 @@ using System.Drawing.Imaging;
 
 namespace AiBurgerClock;
 
-// Windows-only pointer anchoring, rendering and compact usage presentation; synthetic data only.
+// Windows-only pointer anchoring and rendering; shared quota wording is checked by portable tests.
 internal static class QuotaToolTipUiChecks
 {
     internal static async Task RunAsync(AccountQuotaView view, Label[] labels, string? reportDirectory,
@@ -45,22 +45,6 @@ internal static class QuotaToolTipUiChecks
         graphics.MeasureString(token, AccountQuotaView.DetailFont, new SizeF(304, tokenSize.Height - 16), format,
             out int fitted, out int lines);
         check(fitted == token.Length && lines > 1, "Unbroken paths wrap without losing characters");
-
-        var now = new DateTimeOffset(2026, 10, 10, 12, 0, 0, TimeSpan.Zero);
-        check(AccountQuotaView.CompactReset(null, now) == "리셋 미제공", "Missing reset is explicit, not guessed");
-        check(AccountQuotaView.CompactReset(now, now) == "갱신 대기", "Elapsed reset does not claim restored balance");
-        check(AccountQuotaView.CompactReset(now.AddSeconds(59), now) == "곧 리셋 예정", "Sub-minute reset is compact without a running seconds counter");
-        check(AccountQuotaView.CompactReset(now.AddMinutes(59), now, 300) == "약 0시간 59분 후 리셋", "Session countdown keeps hours and minutes below one hour");
-        check(AccountQuotaView.CompactReset(now.AddHours(1), now, 300) == "약 1시간 0분 후 리셋", "Session hour boundary keeps a zero-minute component");
-        check(AccountQuotaView.CompactReset(now.AddHours(2).AddMinutes(37), now, 300) == "약 2시간 37분 후 리셋", "Session countdown includes both hours and minutes");
-        check(AccountQuotaView.CompactReset(now.AddDays(1), now, 10080) == "약 1일 0시간 후 리셋", "Weekly day boundary keeps a zero-hour component");
-        check(AccountQuotaView.CompactReset(now.AddDays(3).AddHours(4), now, 10080) == "약 3일 4시간 후 리셋", "Weekly countdown includes both days and hours");
-        check(AccountQuotaView.CompactReset(now.AddHours(7), now, 10080) == "약 0일 7시간 후 리셋", "Weekly countdown stays in days and hours below one day");
-        check(AccountQuotaView.CompactReset(now.AddMinutes(25), now, 10080) == "약 0일 1시간 후 리셋", "Short weekly countdown rounds up the displayed hour instead of claiming zero");
-        check(AccountQuotaView.CompactReset(now.AddMinutes(119).AddSeconds(1), now, 300) == "약 2시간 0분 후 리셋", "Rounded session minute carries cleanly into the next hour");
-        check(AccountQuotaView.CompactReset(now.AddHours(23).AddSeconds(1), now, 10080) == "약 1일 0시간 후 리셋", "Rounded weekly hour carries cleanly into the next day");
-        check(AccountQuotaView.CompactReset(now.AddHours(25), now, 300) == "약 25시간 0분 후 리셋", "Session formatting follows the window kind, not the remaining duration");
-        check(AccountQuotaView.CompactReset(now.AddDays(2).AddHours(3), now) == "약 2일 3시간 후 리셋", "Unknown window duration retains automatic day/hour formatting for long resets");
 
         using var testBar = new QuotaBalanceBar { Size = new Size(200, 6) };
         foreach (var (used, expected) in new[] { (0.0, 0), (100.0, 200), (25.0, 50), (-5.0, 0), (150.0, 200), (double.NaN, 0) })
@@ -166,8 +150,9 @@ internal static class QuotaToolTipUiChecks
                 new SizeF(expected.Width - 2 * padding, expected.Height - 2 * padding), format, out int fitted, out _);
             check(fitted == text.Length, "Complete Provider detail fits the wrapped popup: " + provider);
             check(box.Controls.OfType<Label>().Where(label => label.Text.Contains('%')).All(label =>
-                label.AccessibleDescription?.Contains("리셋:", StringComparison.Ordinal) == true),
-                "Screen-reader row descriptions retain their original precise reset data: " + provider);
+                label.AccessibleDescription == text) && text.Contains("리셋·한도 복원 예정", StringComparison.Ordinal) &&
+                text.Contains(" KST", StringComparison.Ordinal),
+                "Screen-reader rows share the Provider detail with precise reset data: " + provider);
             if (reportDirectory is not null)
             {
                 Directory.CreateDirectory(reportDirectory);

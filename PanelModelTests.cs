@@ -2,8 +2,7 @@ using System.Globalization;
 
 namespace AiBurgerClock;
 
-// Golden checks for the shared panel text. Expected strings are the Windows 2.2.3
-// StatusWindow/AccountQuotaView output for the same inputs; no UI, network or user data.
+// Golden checks for shared panel text; no UI, network or user data.
 internal static class PanelModelTests
 {
     internal static int Run()
@@ -181,7 +180,7 @@ internal static class PanelModelTests
         var now = At("2026-10-03T06:00:00Z"); // 15:00 KST
         same(QuotaPanelModel.ShowQuotas, "한도 보기", "toggle to quotas");
         same(QuotaPanelModel.ShowStatus, "상태 보기", "toggle back to status");
-        same(QuotaPanelModel.Caption, "잔여량 = 100 − 사용률 · 시각은 KST\n마우스 올리기: 상세 · Refresh: 다시 조회", "quota caption");
+        same(QuotaPanelModel.Caption, "색 막대 = 사용한 비율 · 시각은 KST\n마우스 올리기: 상세 · Refresh: 다시 조회", "quota caption");
 
         var codex = new QuotaState(QuotaProvider.Codex,
             new QuotaReading(QuotaProvider.Codex,
@@ -191,19 +190,21 @@ internal static class PanelModelTests
             ]),
             CheckedAtUtc: At("2026-10-03T05:55:00Z"), LastSuccessfulCheckUtc: At("2026-10-03T05:55:00Z"),
             NextCheckUtc: At("2026-10-03T11:55:00Z"));
-        string codexNote = "ChatGPT (Work/Codex) · 모든 시각 KST\n마지막 성공: 10-03 14:55\n다음 조회: 10-03 20:55\n최근 시도: 10-03 14:55:00\n\n\n" + QuotaPolicyNote;
+        string codexNote = "ChatGPT (Work/Codex) · 모든 시각 KST\n" + QuotaPanelModel.CodexScopeDetail +
+            "\n리셋·한도 복원 예정\n5시간: 2026-10-03 16:30:00 KST\n주간: 2026-10-06 19:00:00 KST\n실제 복원 여부는 새 조회로 확인합니다.\n\n" +
+            "마지막 성공: 10-03 14:55\n다음 조회: 10-03 20:55\n최근 시도: 10-03 14:55:00\n" + QuotaPolicyNote;
         var section = QuotaPanelModel.Section(codex, now);
         check(section.Provider == QuotaProvider.Codex, "section provider");
         same(section.Heading.Text, "ChatGPT", "fresh Codex heading");
         check(section.Heading.Tone == PanelTone.Normal, "heading tone");
         same(section.Heading.Detail, codexNote, "Codex note");
         check(section.Scope is { Text: "Work/Codex", Tone: PanelTone.Muted } &&
-            section.Scope.Detail == "ChatGPT 계정의 Work/Codex 한도입니다. 일반 채팅의 모든 모델 한도를 뜻하지 않습니다.", "Codex scope line");
+            section.Scope.Detail == codexNote, "Codex scope line shares the Provider detail");
         check(section.Rows.Select(r => r.WindowId).SequenceEqual(["primary", "secondary"]), "one row per quota window in order");
-        same(section.Rows[0].Text, "5시간  55% 남음 · 01:30:00", "fresh row");
+        same(section.Rows[0].Text, "5시간  45% 사용 · 약 1시간 30분 후 리셋", "fresh row");
         check(section.Rows[0].Tone == PanelTone.Good, "plenty remaining tone");
-        same(section.Rows[0].Detail, "5시간\n사용 45% / 잔여 55%\n리셋: 2026-10-03 16:30:00 KST\n" + codexNote, "fresh row detail");
-        same(section.Rows[1].Text, "주간  7.5% 남음 · 3일 04:00", "low weekly row");
+        same(section.Rows[0].Detail, codexNote, "fresh row shares Provider detail");
+        same(section.Rows[1].Text, "주간  92.5% 사용 · 약 3일 4시간 후 리셋", "low weekly row");
         check(section.Rows[1].Tone == PanelTone.Caution, "under 10% tone");
         same(section.Metadata.Text, "성공 10-03 14:55 · 다음 10-03 20:55", "metadata line");
         check(section.Metadata.Tone == PanelTone.Muted && section.Metadata.Detail == codexNote, "metadata tone and detail");
@@ -220,20 +221,21 @@ internal static class PanelModelTests
         var claudeSection = QuotaPanelModel.Section(claude, now);
         check(claudeSection.Scope is null, "Claude has no scope line");
         same(claudeSection.Heading.Text, "Claude", "fresh Claude heading");
-        same(claudeSection.Rows[0].Text, "세션  0% 남음 · 00:10:00", "exhausted row");
+        same(claudeSection.Rows[0].Text, "세션  100% 사용 · 약 0시간 10분 후 리셋", "exhausted row");
         check(claudeSection.Rows[0].Tone == PanelTone.Danger, "exhausted tone");
-        same(claudeSection.Rows[1].Text, "주간 전체  87.7% (이전) · 갱신 대기", "elapsed reset is shown as previous");
+        same(claudeSection.Rows[1].Text, "주간 전체  12.3% 사용 (이전) · 갱신 대기", "elapsed reset is shown as previous");
         check(claudeSection.Rows[1].Tone == PanelTone.Muted, "elapsed reset tone");
-        string claudeNote = "Claude · 모든 시각 KST\n마지막 성공: 10-03 14:00\n다음 조회: 10-03 15:05\n최근 시도: —\n\n캐시 저장 실패\n" + QuotaPolicyNote;
-        same(claudeSection.Rows[1].Detail, "주간 전체\n사용 12.3% / 잔여 87.7%\n리셋: 2026-10-03 14:59:00 KST\n리셋 예정 시각 경과 · 새 조회로 회복 확인 필요\n" + claudeNote,
-            "elapsed row detail");
-        same(claudeSection.Rows[2].Text, "주간 Opus  50% 남음 · 리셋 미제공", "missing reset row");
-        same(claudeSection.Rows[2].Detail, "주간 Opus\n사용 50% / 잔여 50%\n리셋: 제공되지 않음\n" + claudeNote, "missing reset detail");
+        string claudeNote = "Claude · 모든 시각 KST\n리셋·한도 복원 예정\n세션: 2026-10-03 15:10:00 KST\n" +
+            "주간 전체: 2026-10-03 14:59:00 KST · 예정 시각 경과, 새 조회 필요\n주간 Opus: 제공되지 않음\n실제 복원 여부는 새 조회로 확인합니다.\n\n" +
+            "마지막 성공: 10-03 14:00\n다음 조회: 10-03 15:05\n최근 시도: —\n캐시 저장 실패\n" + QuotaPolicyNote;
+        same(claudeSection.Rows[1].Detail, claudeNote, "elapsed row shares qualified Provider detail");
+        same(claudeSection.Rows[2].Text, "주간 Opus  50% 사용 · 리셋 미제공", "missing reset row");
+        same(claudeSection.Rows[2].Detail, claudeNote, "missing reset shares Provider detail");
         check(claudeSection.Metadata.Tone == PanelTone.Danger, "cache error highlights metadata");
 
         var previous = QuotaPanelModel.Section(claude with { IsPrevious = true, CacheError = "" }, now);
         same(previous.Heading.Text, "Claude · 이전 조회값", "previous values heading");
-        same(previous.Rows[2].Text, "주간 Opus  50% (이전) · 리셋 미제공", "previous row");
+        same(previous.Rows[2].Text, "주간 Opus  50% 사용 (이전) · 리셋 미제공", "previous row");
         check(previous.Rows.All(r => r.Tone == PanelTone.Muted), "previous rows are muted");
         same(QuotaPanelModel.Section(claude with { IsPrevious = true, IsRefreshing = true }, now).Heading.Text, "Claude · 확인 중",
             "refreshing takes precedence over previous");
@@ -265,8 +267,8 @@ internal static class PanelModelTests
         same(geminiSection.Scope!.Text, "Antigravity · Gemini 모델", "Gemini quota scope is explicit");
         check(geminiSection.Scope.Tone == PanelTone.Muted && geminiSection.Scope.Detail.Contains("Gemini Apps") &&
             geminiSection.Scope.Detail.Contains("Claude/GPT"), "Gemini scope does not imply web Apps or third-party subscription limits");
-        same(geminiSection.Rows[0].Text, "5시간  98% 남음 · 02:00:00", "Gemini five-hour countdown");
-        same(geminiSection.Rows[1].Text, "주간  99.7% 남음 · 6일 00:00", "Gemini weekly fraction is not the rounded TSV value");
+        same(geminiSection.Rows[0].Text, "5시간  2% 사용 · 약 2시간 0분 후 리셋", "Gemini five-hour countdown");
+        same(geminiSection.Rows[1].Text, "주간  0.3% 사용 · 약 6일 0시간 후 리셋", "Gemini weekly fraction is not the rounded TSV value");
         check(geminiSection.Rows.All(row => row.Tone == PanelTone.Good), "Gemini uses existing quota tones");
         check(geminiSection.Rows[0].Detail.Contains("Gemini (Antigravity)") &&
             geminiSection.Rows[0].Detail.Contains("서버 데이터 생성 시각을 보장하지 않습니다"), "Gemini details preserve freshness qualification");
@@ -297,7 +299,7 @@ internal static class PanelModelTests
             var now = At("2026-10-03T06:00:00Z");
             var row = QuotaPanelModel.Section(new QuotaState(QuotaProvider.Claude,
                 new QuotaReading(QuotaProvider.Claude, [new QuotaWindow("w", "주간", 12.34, null)])), now).Rows[0];
-            check(row.Text.StartsWith("주간  87.7%", StringComparison.Ordinal) && row.Detail.Contains("사용 12.3% / 잔여 87.7%", StringComparison.Ordinal),
+            check(row.Text.StartsWith("주간  12.3% 사용", StringComparison.Ordinal) && row.UsedPercent == 12.34,
                 "percent text uses a dot in every culture");
         }
     }

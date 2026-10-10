@@ -113,9 +113,9 @@ internal static class AccountQuotaUiChecks
         var boxes = context.StatusWindow.QuotaView.Controls.OfType<Panel>().ToArray();
         Check(boxes.Length == 2 && boxes[0].Name == "CodexQuotaBox" && boxes[1].Name == "ClaudeQuotaBox",
             "Each account quota has its own Provider box in the original order");
-        Check(title.Text == AccountQuotaView.UsageTitle && title.Bounds == titleBounds &&
-            context.StatusWindow.QuotaView.AccessibleName == AccountQuotaView.UsageTitle &&
-            context.StatusWindow.Controls.OfType<Label>().Any(label => label.Text == AccountQuotaView.UsageCaption),
+        Check(title.Text == QuotaPanelModel.AccessibleName && title.Bounds == titleBounds &&
+            context.StatusWindow.QuotaView.AccessibleName == QuotaPanelModel.AccessibleName &&
+            context.StatusWindow.Controls.OfType<Label>().Any(label => label.Text == QuotaPanelModel.Caption),
             "Usage title, accessibility and caption agree without moving the original outside baseline");
         Check(boxes.All(box => box.BackColor == statusBoxes[0].BackColor && box.BorderStyle == statusBoxes[0].BorderStyle &&
             box.Width == context.StatusWindow.QuotaView.ClientSize.Width) &&
@@ -208,6 +208,14 @@ internal static class AccountQuotaUiChecks
             "Three Provider boxes scroll only inside the existing quota viewport without enlarging the popup");
         Check(labels.All(l => l.Height >= TextRenderer.MeasureText(l.Text, l.Font).Height),
             "All three Provider boxes accommodate DPI-scaled text height");
+        foreach (var section in QuotaPanelModel.Sections(monitor.Snapshot(), clock()))
+        {
+            var providerLabels = ProviderLabels(section.Provider);
+            Check(providerLabels.All(label => label.AccessibleDescription == section.Detail) &&
+                section.Rows.All(row => providerLabels.Any(label => label.Text == row.Text)) &&
+                Box(section.Provider).Controls.OfType<QuotaBalanceBar>().All(bar => bar.AccessibleDescription == section.Detail),
+                "Windows rows, bars and accessibility use the shared Provider presentation: " + section.Provider);
+        }
         SmokeTest.RenderAndCheckLayout(context.StatusWindow, "account-quotas.png", reportDirectory);
         context.StatusWindow.QuotaView.ScrollControlIntoView(geminiBox);
         var geminiMetadata = ProviderLabels(QuotaProvider.Gemini).Single(l => l.Text.StartsWith("성공 ", StringComparison.Ordinal));
@@ -237,6 +245,9 @@ internal static class AccountQuotaUiChecks
         Check(Box(QuotaProvider.Claude).Controls.OfType<QuotaBalanceBar>().All(bar => bar.FillColor == Color.Gray) &&
             Box(QuotaProvider.Claude).Controls.OfType<QuotaBalanceBar>().First().UsedPercent == 0,
             "Previous balance bars become gray without inventing or discarding the last observed values");
+        Check(ProviderLabels(QuotaProvider.Claude).All(label => label.AccessibleDescription ==
+            QuotaPanelModel.Section(monitor.Snapshot().Single(state => state.Provider == QuotaProvider.Claude), clock()).Detail),
+            "Provider accessibility detail refreshes with errors without retaining the previous success note");
         SmokeTest.RenderAndCheckLayout(context.StatusWindow, "account-quotas-previous.png", reportDirectory);
         client.FailClaude = false;
         await monitor.RefreshOnceAsync(QuotaProvider.Claude);
@@ -347,8 +358,9 @@ internal static class AccountQuotaUiChecks
             context.StatusWindow.UpdateQuotas([new QuotaState(QuotaProvider.Claude,
                 new QuotaReading(QuotaProvider.Claude, [new QuotaWindow("culture", "주간", 12.34, null)]))], clock());
             var cultureRow = QuotaLabels().Single(l => l.Text.StartsWith("주간  ", StringComparison.Ordinal));
-            Check(cultureRow.Text.Contains("12.3% 사용") && cultureRow.AccessibleDescription?.Contains("사용 12.3% / 잔여 87.7%") == true,
-                "Windows used-percentage row and precise accessibility data keep invariant formatting in de-DE");
+            Check(cultureRow.Text.Contains("12.3% 사용") && cultureRow.AccessibleDescription ==
+                context.StatusWindow.QuotaView.DetailFor(Box(QuotaProvider.Claude)),
+                "Windows used-percentage row keeps invariant formatting and shared Provider accessibility detail in de-DE");
         }
         finally { CultureInfo.CurrentCulture = culture; }
 

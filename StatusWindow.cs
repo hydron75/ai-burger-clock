@@ -88,7 +88,7 @@ internal sealed class StatusWindow : Form
         {
             quotaView.Visible = !quotaView.Visible;
             foreach (var panel in statusPanels) panel.Visible = !quotaView.Visible;
-            titleLabel.Text = quotaView.Visible ? AccountQuotaView.UsageTitle : StatusPanelModel.Title;
+            titleLabel.Text = quotaView.Visible ? QuotaPanelModel.AccessibleName : StatusPanelModel.Title;
             quotaButton.Text = quotaView.Visible ? QuotaPanelModel.ShowStatus : QuotaPanelModel.ShowQuotas;
             SetQuotaCaption();
         };
@@ -245,7 +245,7 @@ internal sealed class StatusWindow : Form
 
     private void SetQuotaCaption()
     {
-        checkedLabel.Text = quotaButton.Text == QuotaPanelModel.ShowStatus ? AccountQuotaView.UsageCaption : statusCaption;
+        checkedLabel.Text = quotaButton.Text == QuotaPanelModel.ShowStatus ? QuotaPanelModel.Caption : statusCaption;
     }
 
     // A modal message owned by this window deactivates it; keep it visible meanwhile.
