@@ -18,7 +18,8 @@ internal static class LiveStatusProbe
             {
                 var status = await client.FetchAsync(provider, stop.Token);
                 Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(status));
-                if (status.Status == OfficialStatus.Unknown) Interlocked.Increment(ref failures);
+                // Exit code reports receipt failure, not a claim that every service is GO.
+                if (status.LastSuccessfulCheckUtc is null) Interlocked.Increment(ref failures);
             }
             catch (Exception error)
             {

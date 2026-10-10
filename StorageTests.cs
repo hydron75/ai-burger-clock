@@ -155,7 +155,167 @@ internal static class StorageTests
         Check(readable.Count == 1 && skipped == 2, "unreadable usage rows are skipped and counted");
         Check((await store.ReadUsageAsync(null)).Count == 1, "usage read continues past unreadable rows");
         Check((await store.ReadLatestStatusesAsync()).Count == 0, "unreadable cached status row is skipped");
-        return assertions + await HolidayStorageTests.RunAsync(tempDirectory);
+        return assertions + await ProviderDiagnosticsTestsAsync(directory, now) + await HolidayStorageTests.RunAsync(tempDirectory);
+    }
+
+    private static async Task<int> ProviderDiagnosticsTestsAsync(string directory, DateTimeOffset now)
+    {
+        int assertions = 0;
+        void Check(bool condition, string description)
+        {
+            assertions++;
+            if (!condition) throw new InvalidOperationException("Provider diagnostics storage test failed: " + description);
+        }
+        string path = Path.Combine(directory, "provider-diagnostics.db");
+        var store = new UsageStore(path);
+        var reopened = new UsageStore(path);
+        var schedule = AgentSchedule.GetSnapshot(now);
+        var fixture = new ProviderStatus(ProviderKind.OpenAI, OfficialStatus.Unknown, now, now, "Synthetic uncertain scope",
+            Source: "fixture://official", LastKnownStatus: OfficialStatus.PartialOutage)
+        {
+            AssessmentIssue = "합성 범위 판정 실패 · 따옴표 \"와 한글",
+            UncertainIncidentId = "synthetic-unscoped",
+            UncertainIncidentTitle = "Synthetic administrative metric delay",
+            LastKnownStatusUtc = now.AddMinutes(-20)
+        };
+        foreach (var provider in Enum.GetValues<ProviderKind>())
+        {
+            var state = fixture with { Provider = provider };
+            await store.SaveProviderAsync(state, schedule, Recommendation.Check);
+            Check((await reopened.ReadLatestStatusesAsync()).Single(row => row.Provider == provider) == state,
+                "all diagnostic properties and Unicode survive restart for " + provider);
+        }
+        const string diagnosticCount = "SELECT COUNT(*) FROM AppMetadata WHERE Key LIKE 'ProviderStatusDiagnostics.v1.%';";
+        Check(Scalar(path, diagnosticCount) == 3, "exactly one bounded diagnostic entry per provider");
+        for (int poll = 1; poll <= 5; poll++)
+            await store.SaveProviderAsync(fixture with { CheckedAtUtc = now.AddMinutes(poll), LastSuccessfulCheckUtc = now.AddMinutes(poll) },
+                schedule, Recommendation.Check);
+        Check(Scalar(path, diagnosticCount) == 3, "repeated polls overwrite diagnostic entries without growth");
+        Check(Scalar(path, "SELECT MAX(length(CAST(Value AS BLOB))) FROM AppMetadata WHERE Key LIKE 'ProviderStatusDiagnostics.v1.%';") <=
+            UsageStore.MaximumProviderDiagnosticsBytes, "diagnostic entries fit within the eight-KiB byte limit");
+
+        var recovery = fixture with
+        {
+            Status = OfficialStatus.Operational,
+            CheckedAtUtc = now.AddMinutes(6),
+            LastSuccessfulCheckUtc = now.AddMinutes(6),
+            Reason = "Synthetic recovery",
+            LastKnownStatus = OfficialStatus.Operational,
+            LastKnownStatusUtc = now.AddMinutes(6),
+            AssessmentIssue = "",
+            UncertainIncidentId = "",
+            UncertainIncidentTitle = ""
+        };
+        await store.SaveProviderAsync(recovery, schedule, Recommendation.Go);
+        Check((await reopened.ReadLatestStatusesAsync()).Single(row => row.Provider == ProviderKind.OpenAI) == recovery,
+            "recovery replaces prior uncertainty rather than restoring it after restart");
+
+        await store.SaveProviderAsync(fixture, schedule, Recommendation.Check);
+        string validJson = DiagnosticsValue(path, ProviderKind.OpenAI);
+        string Stamp(DateTimeOffset value) => value.UtcDateTime.ToString("yyyy-MM-dd'T'HH:mm:ss.fffffff'Z'", System.Globalization.CultureInfo.InvariantCulture);
+        Execute(path, "UPDATE ProviderStatusCache SET CheckedAtUtc='" + Stamp(now.AddMinutes(1)) + "' WHERE Provider='OpenAI';");
+        var outdated = (await reopened.ReadLatestStatusesAsync()).Single(row => row.Provider == ProviderKind.OpenAI);
+        Check(outdated.Status == OfficialStatus.Unknown && outdated.AssessmentIssue.Length == 0 && outdated.UncertainIncidentId.Length == 0 &&
+            outdated.LastKnownStatusUtc is null && outdated.LastSuccessfulCheckUtc == now,
+            "an older app's new cache receipt cannot restore mismatched auxiliary diagnostics");
+        Check(DiagnosticsValue(path, ProviderKind.OpenAI) == validJson, "ignoring outdated diagnostics does not rewrite the database");
+        await store.SaveProviderAsync(fixture, schedule, Recommendation.Check);
+
+        foreach (string invalidJson in new[]
+        {
+            "{broken", "[]", "{}",
+            validJson.Replace("\"Version\":1", "\"Version\":\"1\"", StringComparison.Ordinal),
+            validJson.Replace("\"Version\":1", "\"Version\":2", StringComparison.Ordinal),
+            validJson.Replace(Stamp(now), "not-a-time", StringComparison.Ordinal),
+            validJson.Replace(Stamp(now.AddMinutes(-20)), "not-a-time", StringComparison.Ordinal),
+            validJson.Replace(Stamp(now.AddMinutes(-20)), Stamp(now.AddMinutes(1)), StringComparison.Ordinal),
+            validJson.Replace("\"AssessmentIssue\":", "\"AssessmentIssue\":9,\"Other\":", StringComparison.Ordinal)
+        })
+        {
+            SetDiagnosticsValue(path, ProviderKind.OpenAI, invalidJson);
+            var readable = (await reopened.ReadLatestStatusesAsync()).Single(row => row.Provider == ProviderKind.OpenAI);
+            Check(readable.Status == fixture.Status && readable.LastSuccessfulCheckUtc == now && readable.LastKnownStatus == fixture.LastKnownStatus &&
+                readable.AssessmentIssue.Length == 0 && readable.UncertainIncidentTitle.Length == 0 && readable.LastKnownStatusUtc is null,
+                "malformed, unsupported, mistyped or invalid-time diagnostics do not invalidate the core status cache");
+        }
+        string oversizedJson = validJson[..^1] + ",\"Padding\":\"" + new string('한', UsageStore.MaximumProviderDiagnosticsBytes / 3 + 1) + "\"}";
+        SetDiagnosticsValue(path, ProviderKind.OpenAI, oversizedJson);
+        var oversizedRead = (await reopened.ReadLatestStatusesAsync()).Single(row => row.Provider == ProviderKind.OpenAI);
+        Check(oversizedRead.AssessmentIssue.Length == 0 && oversizedRead.LastKnownStatusUtc is null && oversizedRead.LastSuccessfulCheckUtc == now,
+            "a multibyte auxiliary entry over eight KiB is safely ignored by byte size");
+        await store.SaveProviderAsync(fixture with { AssessmentIssue = new string('한', UsageStore.MaximumProviderDiagnosticsBytes) },
+            schedule, Recommendation.Check);
+        Check(Scalar(path, diagnosticCount) == 2 &&
+            (await reopened.ReadLatestStatusesAsync()).Single(row => row.Provider == ProviderKind.OpenAI).LastSuccessfulCheckUtc == now,
+            "oversized new diagnostics remove the old auxiliary entry while retaining the core receipt");
+        Check((await reopened.ReadLatestStatusesAsync()).Where(row => row.Provider != ProviderKind.OpenAI).All(row =>
+            row.AssessmentIssue == fixture.AssessmentIssue && row.LastKnownStatusUtc == fixture.LastKnownStatusUtc),
+            "invalid diagnostics for one provider leave the other provider caches intact");
+
+        var legacy = fixture with
+        {
+            IncidentId = "legacy-uncertain",
+            IncidentTitle = "Synthetic legacy incident",
+            AssessmentIssue = "",
+            UncertainIncidentId = "",
+            UncertainIncidentTitle = "",
+            LastKnownStatusUtc = null
+        };
+        await store.SaveProviderAsync(legacy, schedule, Recommendation.Check);
+        Execute(path, "DELETE FROM AppMetadata WHERE Key='ProviderStatusDiagnostics.v1.OpenAI';");
+        var oldCache = (await reopened.ReadLatestStatusesAsync()).Single(row => row.Provider == ProviderKind.OpenAI);
+        Check(oldCache.IncidentId.Length == 0 && oldCache.IncidentTitle.Length == 0 &&
+            oldCache.UncertainIncidentId == legacy.IncidentId && oldCache.UncertainIncidentTitle == legacy.IncidentTitle,
+            "a legacy UNKNOWN incident is read as uncertain, never as a current confirmed outage");
+        Check(oldCache.LastKnownStatus == fixture.LastKnownStatus && oldCache.LastKnownStatusUtc is null,
+            "a legacy cached last-known status never invents a confirmation timestamp");
+        Check(Scalar(path, "SELECT COUNT(*) FROM ProviderStatusCache WHERE Provider='OpenAI' AND IncidentId='legacy-uncertain';") == 1,
+            "legacy incident presentation adaptation does not rewrite the cache row");
+        await store.SaveProviderAsync(legacy with { Status = OfficialStatus.Stale }, schedule, Recommendation.Check);
+        Execute(path, "DELETE FROM AppMetadata WHERE Key='ProviderStatusDiagnostics.v1.OpenAI';");
+        Check((await reopened.ReadLatestStatusesAsync()).Single(row => row.Provider == ProviderKind.OpenAI) is
+            { Status: OfficialStatus.Stale, IncidentId: "", UncertainIncidentId: "legacy-uncertain", LastKnownStatusUtc: null },
+            "the same non-destructive compatibility rule applies to legacy STALE caches");
+        Check((await reopened.ReadLatestStatusesAsync()).Single(row => row.Provider == ProviderKind.OpenAI).Reason ==
+            "이전 사건의 현재 상태·범위를 확인할 수 없음",
+            "legacy stale card reason does not retain the previous incident as a current outage");
+
+        var beforeFailure = (await reopened.ReadLatestStatusesAsync()).Single(row => row.Provider == ProviderKind.OpenAI);
+        long historyBefore = Scalar(path, "SELECT COUNT(*) FROM ProviderStatusHistory;");
+        Execute(path, "CREATE TRIGGER RejectSyntheticDiagnostics BEFORE INSERT ON AppMetadata " +
+            "WHEN NEW.Key LIKE 'ProviderStatusDiagnostics.v1.%' BEGIN SELECT RAISE(ABORT,'Synthetic diagnostic save failure'); END;");
+        bool rejected = false;
+        try { await store.SaveProviderAsync(recovery, schedule, Recommendation.Go); }
+        catch (SqliteException) { rejected = true; }
+        Execute(path, "DROP TRIGGER RejectSyntheticDiagnostics;");
+        Check(rejected && (await reopened.ReadLatestStatusesAsync()).Single(row => row.Provider == ProviderKind.OpenAI) == beforeFailure &&
+            Scalar(path, "SELECT COUNT(*) FROM ProviderStatusHistory;") == historyBefore && Scalar(path, diagnosticCount) == 2,
+            "a diagnostic write failure rolls back both the status cache and history in the same transaction");
+        Check(Scalar(path, "PRAGMA user_version;") == 2 &&
+            Scalar(path, "SELECT COUNT(*) FROM pragma_table_info('ProviderStatusCache');") == 12,
+            "diagnostics require neither a schema version bump nor status-table columns");
+        return assertions;
+    }
+
+    private static string DiagnosticsValue(string path, ProviderKind provider)
+    {
+        using SqliteConnection connection = new(new SqliteConnectionStringBuilder { DataSource = path, Pooling = false }.ToString());
+        connection.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT Value FROM AppMetadata WHERE Key=$key;";
+        command.Parameters.AddWithValue("$key", UsageStore.ProviderDiagnosticsPrefix + provider);
+        return command.ExecuteScalar() as string ?? "";
+    }
+
+    private static void SetDiagnosticsValue(string path, ProviderKind provider, string value)
+    {
+        using SqliteConnection connection = new(new SqliteConnectionStringBuilder { DataSource = path, Pooling = false }.ToString());
+        connection.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = "INSERT INTO AppMetadata(Key,Value) VALUES($key,$value) ON CONFLICT(Key) DO UPDATE SET Value=excluded.Value;";
+        command.Parameters.AddWithValue("$key", UsageStore.ProviderDiagnosticsPrefix + provider);
+        command.Parameters.AddWithValue("$value", value);
+        command.ExecuteNonQuery();
     }
 
     private static void Execute(string path, string sql)

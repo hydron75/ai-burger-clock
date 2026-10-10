@@ -12,6 +12,16 @@
   - 방향: 셸 프로필을 읽지 않는 원칙을 유지한 채 사용자가 CLI 폴더를 앱 설정으로 지정한다. 절대 경로·`.`/`..` 거부 규칙은 `MacCliPaths`와 같게 둔다.
   - 정할 것: 저장 위치(DB metadata 등), 설정 UI(Mac 메뉴), Windows와의 관계(Windows는 해당 문제가 없어 Mac 전용).
 
+## 공식 상태 응답 수신·범위 판정 분리 — PR 준비, 미배포
+
+- 2026-10-10 KST. ChatGPT 상태가 계속 STALE로 보이는 원인 중 하나였던, 정상 HTTP 응답의 범위 미확인을 수신 실패로 처리하던 흐름을 분리한다. 수신 성공은 확인 시각만 갱신하며 상태 정상/서버 데이터 최신성을 보증하지 않는다.
+- OpenAI `summary.json`에 `components.json`의 누락 구성 요소를 보완한다. 같은 ID의 상충 관측은 모두 평가해 정상 값이 확인된 장애를 지우지 못하게 한다. Codex Web/API/CLI·VS Code extension을 포함한 기존 관련 범위이며 Atom/RSS 대조는 이번 범위에 없다. [출처·관련 목록·판정 기준](PROVIDER_SOURCES.md).
+- 범위 미확인 사건만 있으면 FULL에서 UNKNOWN / CHECK를 유지한다. 확인된 관련 장애가 있으면 기존 HOLD/STOP 우선이며 미확인 사건은 별도 상세로 남긴다. 수신 실패는 확인 시각을 갱신하지 않고 15분 뒤 STALE가 된다.
+- 카드 마지막 확인, 상세의 수신 실패/판정 실패·마지막 판정 상태와 시각·확인된 사건/미확인 사건 구분을 추가한다. 지난 장애 제목은 수신 실패/STALE 카드의 현재 장애로 남기지 않는다. Windows 카드에 확인 시각 한 줄을 추가해 창 높이는 518→569 DIP, 폭 374 DIP이며 한도 전환·박스 내용은 유지한다.
+- SQLite schema 2를 유지하고 AppMetadata에 Provider별 최대 8KiB의 진단 한 건만 저장한다. 캐시 시각이 일치하는 유효한 메타만 읽고 레거시 데이터는 읽기 결과에서만 안전하게 분리한다. 계정 한도·인증 값과는 별개다.
+- Windows 최종 빌드 경고 0·오류 0, self-test 251,539건(main 251,451 대비 +88, 공통 251,232 + Windows 307), 종료 코드 0. 실제 공개 상태 조회는 세 Provider 응답 수신 성공, ChatGPT는 범위 미확인 사건으로 CHECK, Claude·Gemini는 관련 범위 정상이다. 조회 성공은 세 Provider 모두 GO라는 뜻이 아니다.
+- Mac 원본·버전과 기존 Windows 2.4.0 배포 EXE는 변경하지 않는다. Mac `Mac/build.sh`·native smoke와 새 카드 문구/시각·범위 미확인 상세·Codex 장애 판정 확인 전에는 병합하지 않는다. 긴 실제 운영·네트워크 전체 단절·Mac 실기는 미수행이다.
+
 ## Windows 2.4.0에 반영: 계정 사용량 막대·Provider 상세
 
 - 2026-10-10 KST. 사용한 비율·간략 리셋 시간·Provider별 하나의 상세 문구를 공통 모델로 정리하고 Windows 네이티브 막대·흰색 고정 폭 팝업에 연결했다. [범위·Windows 검증·화면·Mac 반영 요청](QUOTA_USAGE_UI.md).

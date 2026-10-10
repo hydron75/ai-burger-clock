@@ -12,6 +12,7 @@ internal sealed class ProviderStatusClient(HttpClient client, Func<DateTimeOffse
     private readonly Func<DateTimeOffset> clock = utcNow ?? (() => DateTimeOffset.UtcNow);
 
     internal const string OpenAiSummaryUrl = "https://status.openai.com/api/v2/summary.json";
+    internal const string OpenAiComponentsUrl = "https://status.openai.com/api/v2/components.json";
     internal const string OpenAiIncidentsUrl = "https://status.openai.com/api/v2/incidents.json";
     internal const string ClaudeSummaryUrl = "https://status.claude.com/api/v2/summary.json";
     internal const string GoogleProductsUrl = "https://www.google.com/appsstatus/dashboard/products.json";
@@ -61,7 +62,8 @@ internal sealed class ProviderStatusClient(HttpClient client, Func<DateTimeOffse
             var incidents = GetJsonAsync(GoogleIncidentsUrl, token);
             await Task.WhenAll(catalog, incidents).ConfigureAwait(false);
             token.ThrowIfCancellationRequested();
-            return ParseGoogle(catalog.Result, incidents.Result, clock());
+            var google = ParseGoogle(catalog.Result, incidents.Result, clock());
+            return google with { LastSuccessfulCheckUtc = google.CheckedAtUtc };
         }
 
         var url = provider switch
@@ -70,11 +72,23 @@ internal sealed class ProviderStatusClient(HttpClient client, Func<DateTimeOffse
             ProviderKind.Claude => ClaudeSummaryUrl,
             _ => throw new ArgumentOutOfRangeException(nameof(provider))
         };
-        var json = await GetJsonAsync(url, token).ConfigureAwait(false);
+        string json;
+        string source = url;
+        bool needsHistory = false;
+        if (provider == ProviderKind.OpenAI)
+        {
+            var summary = GetJsonAsync(url, token);
+            var catalog = GetJsonAsync(OpenAiComponentsUrl, token);
+            await Task.WhenAll(summary, catalog).ConfigureAwait(false);
+            needsHistory = NeedsIncidentHistory(summary.Result);
+            source += " + " + OpenAiComponentsUrl;
+            json = MergeOpenAiComponents(summary.Result, catalog.Result) ?? "{}";
+        }
+        else json = await GetJsonAsync(url, token).ConfigureAwait(false);
         bool supplemented = false;
         // OpenAI sometimes omits incidents entirely from summary. Validate a separate official
         // history feed in that case; absence is not evidence of an incident-free service.
-        if (provider == ProviderKind.OpenAI && NeedsIncidentHistory(json))
+        if (needsHistory)
         {
             var history = await GetJsonAsync(OpenAiIncidentsUrl, token).ConfigureAwait(false);
             json = SupplementIncidents(json, history);
@@ -82,7 +96,49 @@ internal sealed class ProviderStatusClient(HttpClient client, Func<DateTimeOffse
         }
         token.ThrowIfCancellationRequested();
         var result = ParseStatuspage(provider, json, clock());
-        return supplemented ? result with { Source = url + " + " + OpenAiIncidentsUrl } : result;
+        // A complete successful HTTP exchange is fresh even when the received data
+        // cannot establish an incident's scope. UNKNOWN remains CHECK, never GO.
+        return result with
+        {
+            Source = source + (supplemented ? " + " + OpenAiIncidentsUrl : ""),
+            LastSuccessfulCheckUtc = result.CheckedAtUtc
+        };
+    }
+
+    private static string? MergeOpenAiComponents(string summary, string catalog)
+    {
+        try
+        {
+            using var page = JsonDocument.Parse(summary);
+            using var full = JsonDocument.Parse(catalog);
+            if (!Array(page.RootElement, "components", out var original) ||
+                !Array(full.RootElement, "components", out var complete) || complete.GetArrayLength() == 0)
+                return null;
+            var items = new Dictionary<string, List<JsonElement>>(StringComparer.OrdinalIgnoreCase);
+            foreach (var item in original.EnumerateArray().Concat(complete.EnumerateArray()))
+            {
+                var id = Text(item, "id");
+                if (id.Length == 0 || Text(item, "name").Length == 0) return null;
+                if (!items.TryGetValue(id, out var observations)) items[id] = observations = [];
+                // Neither response has a guaranteed newer component timestamp. When they
+                // disagree, evaluate both: a healthy observation cannot erase a known outage.
+                if (!observations.Any(previous => Text(previous, "name") == Text(item, "name") &&
+                    Text(previous, "status") == Text(item, "status"))) observations.Add(item);
+            }
+            using var data = new MemoryStream();
+            using (var writer = new Utf8JsonWriter(data))
+            {
+                writer.WriteStartObject();
+                foreach (var property in page.RootElement.EnumerateObject())
+                    if (property.Name != "components") property.WriteTo(writer);
+                writer.WriteStartArray("components");
+                foreach (var item in items.Values.SelectMany(observations => observations)) item.WriteTo(writer);
+                writer.WriteEndArray();
+                writer.WriteEndObject();
+            }
+            return Encoding.UTF8.GetString(data.ToArray());
+        }
+        catch (JsonException) { return null; }
     }
 
     private static bool NeedsIncidentHistory(string json)
@@ -243,7 +299,7 @@ internal sealed class ProviderStatusClient(HttpClient client, Func<DateTimeOffse
                 else problems.Add(new(impact, scope, Text(item, "id"), title));
             }
 
-            if (problems.Count > 0) return FromProblems(provider, now, source, problems);
+            if (problems.Count > 0) return WithUncertainIncidents(FromProblems(provider, now, source, problems), uncertainDetails);
             if (uncertain) return Unknown(provider, now, source, "일부 상태 또는 incident 범위를 확인할 수 없음", uncertainDetails);
             // Overall roll-up deliberately does NOT override verified relevant component health.
             var reason = Text(overall, "indicator") == "none" ? "관련 서비스 정상" : "관련 서비스 정상 · 전체 공지는 범위 외";
@@ -399,11 +455,17 @@ internal sealed class ProviderStatusClient(HttpClient client, Func<DateTimeOffse
 
     private static ProviderStatus Unknown(ProviderKind provider, DateTimeOffset now, string source, string reason,
         List<Problem>? details = null) =>
-        new(provider, OfficialStatus.Unknown, now, null, reason,
+        WithUncertainIncidents(new(provider, OfficialStatus.Unknown, now, null, reason,
             Clean(string.Join(", ", (details ?? []).Select(p => p.Component).Where(value => value.Length > 0).Distinct().Order(StringComparer.Ordinal)), 500),
-            Clean(string.Join(",", (details ?? []).Select(p => p.IncidentId).Where(value => value.Length > 0).Distinct().Order(StringComparer.Ordinal)), 500),
-            Clean(string.Join(" | ", (details ?? []).Select(p => p.Title).Where(value => value.Length > 0).Distinct().Order(StringComparer.Ordinal)), 500),
-            source);
+            Source: source) { AssessmentIssue = reason }, details ?? []);
+
+    private static ProviderStatus WithUncertainIncidents(ProviderStatus status, List<Problem> details) =>
+        details.Count == 0 ? status : status with
+        {
+            AssessmentIssue = "일부 상태 또는 incident 범위를 확인할 수 없음",
+            UncertainIncidentId = Clean(string.Join(",", details.Select(p => p.IncidentId).Where(value => value.Length > 0).Distinct().Order(StringComparer.Ordinal)), 500),
+            UncertainIncidentTitle = Clean(string.Join(" | ", details.Select(p => p.Title).Where(value => value.Length > 0).Distinct().Order(StringComparer.Ordinal)), 500)
+        };
 
     private static string Text(JsonElement element, string property) =>
         element.ValueKind == JsonValueKind.Object && element.TryGetProperty(property, out var value) && value.ValueKind == JsonValueKind.String

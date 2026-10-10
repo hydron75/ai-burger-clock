@@ -118,7 +118,7 @@ Windows 시간대 이름 `Eastern Standard Time`, `Pacific Standard Time`을 사
 
 | Provider | 이 코드가 읽는 정보 |
 |---|---|
-| OpenAI | 공식 summary. incident 목록이 생략되어 있으면 공식 incident history도 추가 확인 |
+| OpenAI | 공식 summary + 전체 components 목록의 합집합. incident 목록이 생략되어 있으면 공식 incident history도 추가 확인 |
 | Claude | 공식 summary의 구성 요소와 incident |
 | Gemini | Workspace의 제품 목록과 장애 이력에서 Gemini를 선택 |
 
@@ -137,11 +137,13 @@ Gemini는 Workspace의 Gemini 제품 범위입니다. 모든 Gemini API·Vertex 
 - 세 Provider를 독립적으로 조회합니다. 한 곳의 실패가 다른 두 곳의 실패로 번지지 않습니다.
 - 보통 조회 묶음이 끝난 뒤 약 5분을 기다립니다.
 - 한 Provider의 조회 제한은 15초입니다.
-- 마지막 성공부터 15분 이상 지나면 STALE로 표시합니다.
+- 필수 공식 응답의 마지막 수신 성공부터 15분 이상 지나면 STALE로 표시합니다. JSON·사건 범위를 판정할 수 없는 응답도 수신 성공 시각은 갱신하지만 UNKNOWN / CHECK로 남습니다. 수신 성공은 서버 데이터의 최신성 보장이 아닙니다.
 - 성공한 적이 없으면 오래 기다렸다는 이유만으로 STALE가 되지 않고 UNKNOWN으로 남습니다.
 - 수동 Refresh와 종료 시 취소도 처리합니다.
 - 절전 복귀 시 즉시 재조회를 요청합니다. 이전 조회가 진행 중이면 완료 직후 추가 조회하고, 같은 대기 요청은 합칩니다.
 - 상태 변경을 전달받는 함수 하나가 예외를 내더라도 다른 수신자와 정기 조회가 멈추지 않도록 나눠 처리합니다.
+
+상태 카드에는 마지막 응답 확인 시각을 표시합니다. Tooltip은 최근 수신 실패·판정 실패, 마지막 판정 가능 상태와 그 시각, 확인된 사건·범위 미확인 사건을 구분합니다. 지난 장애 제목은 수신 실패/STALE 카드의 현재 장애로 남기지 않습니다. 진단은 기존 schema 2의 AppMetadata에 Provider별 최대 8KiB 한 건으로 저장하며 캐시 조회 시각이 다르거나 형식이 손상되면 무시합니다. 조회 실패와 범위 미확인은 서로 다른 이유입니다.
 
 통신 창구인 `HttpClient`는 재사용합니다. 매초 새 인터넷 연결을 시도하지 않습니다.
 

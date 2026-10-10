@@ -95,8 +95,10 @@ internal static class ProviderStatusTests
         Expect("Plan title rule is OpenAI-only", Page([Component("claude.ai", "operational")],
             [Incident("Increased error rate for Plus and Pro users.", "minor")]), OfficialStatus.Unknown, ProviderKind.Claude);
         var unscoped = Parse(Page([Component("ChatGPT", "operational")], [Incident("Elevated error rates", "major")]));
-        Check(unscoped.IncidentId == "test-incident" && unscoped.IncidentTitle == "Elevated error rates" && unscoped.RelevantComponent == "", "unscoped unknown retains current incident without invented component");
-        Check(unscoped.LastSuccessfulCheckUtc is null, "unknown scope remains unsuccessful despite metadata retention");
+        Check(unscoped.IncidentId.Length == 0 && unscoped.IncidentTitle.Length == 0 && unscoped.RelevantComponent == "" &&
+            unscoped.UncertainIncidentId == "test-incident" && unscoped.UncertainIncidentTitle == "Elevated error rates",
+            "unscoped incident is separate from confirmed incident metadata without an invented component");
+        Check(unscoped.LastSuccessfulCheckUtc is null, "pure parsing does not certify transport success for an unknown scope");
         foreach (var unknownIncident in new[]
         {
             Incident("ChatGPT interruption", "minor", ["chat"], "new-lifecycle"),
@@ -105,11 +107,26 @@ internal static class ProviderStatusTests
         {
             var unknownIssue = Parse(Page([Component("ChatGPT", "operational", "chat")], [unknownIncident]));
             Check(unknownIssue.Status == OfficialStatus.Unknown && unknownIssue.RelevantComponent == "ChatGPT" &&
-                unknownIssue.IncidentId == "test-incident" && unknownIssue.IncidentTitle == "ChatGPT interruption",
-                "unknown relevant incident lifecycle or impact retains current metadata");
+                unknownIssue.IncidentId.Length == 0 && unknownIssue.IncidentTitle.Length == 0 &&
+                unknownIssue.UncertainIncidentId == "test-incident" && unknownIssue.UncertainIncidentTitle == "ChatGPT interruption",
+                "unknown relevant incident lifecycle or impact uses separate uncertain metadata");
         }
+        var administrative = Parse(Page([Component("ChatGPT", "operational")],
+            [Incident("Delayed administrative metric processing", "minor", status: "monitoring")]));
+        Check(administrative.Status == OfficialStatus.Unknown && administrative.AssessmentIssue.Length > 0 &&
+            administrative.UncertainIncidentTitle == "Delayed administrative metric processing" && administrative.IncidentTitle.Length == 0,
+            "healthy components plus an unlinked generic monitoring incident stay CHECK, not a confirmed outage");
+        var mixed = Parse(Page([Component("ChatGPT", "operational", "chat")],
+            [Incident("ChatGPT interruption", "major", ["chat"]),
+                new { id = "uncertain-test", name = "Delayed administrative metric processing", status = "monitoring", impact = "minor" }]));
+        Check(mixed.Status == OfficialStatus.PartialOutage && mixed.IncidentId == "test-incident" && mixed.IncidentTitle == "ChatGPT interruption",
+            "a confirmed relevant outage keeps its severity and confirmed incident metadata");
+        Check(mixed.UncertainIncidentId == "uncertain-test" && mixed.UncertainIncidentTitle == "Delayed administrative metric processing" &&
+            mixed.AssessmentIssue.Length > 0, "a simultaneous unknown-scope incident is retained separately from a confirmed outage");
         var recovered = Parse(Page([Component("ChatGPT", "operational")]));
-        Check(recovered.IncidentId.Length == 0 && recovered.IncidentTitle.Length == 0, "prior parsed incident metadata never leaks into later response");
+        Check(recovered.IncidentId.Length == 0 && recovered.IncidentTitle.Length == 0 &&
+            recovered.UncertainIncidentId.Length == 0 && recovered.UncertainIncidentTitle.Length == 0,
+            "prior parsed confirmed or uncertain incident metadata never leaks into a later response");
 
         ProviderStatus Google(string history, string catalog = Catalog) => ProviderStatusClient.ParseGoogle(catalog, history, Now);
         void GoogleExpect(string label, string history, OfficialStatus expected) => Check(Google(history).Status == expected, label);
@@ -148,6 +165,11 @@ internal static class ProviderStatusTests
     private static async Task<int> TransportTestsAsync()
     {
         int count = 0;
+        void Check(bool condition, string label)
+        {
+            count++;
+            if (!condition) throw new InvalidOperationException("Provider transport test failed: " + label);
+        }
         async Task AssertThrows<T>(Func<Task> action, string label) where T : Exception
         {
             count++;
@@ -155,6 +177,7 @@ internal static class ProviderStatusTests
             catch (T) { return; }
             throw new InvalidOperationException("Provider transport test failed: " + label);
         }
+        string healthyComponents = JsonSerializer.Serialize(new { components = new[] { Component("Agent", "operational") } });
         string missingIncidents = JsonSerializer.Serialize(new { components = new[] { Component("Agent", "operational") }, status = new { indicator = "none" } });
         foreach (var fixture in new[]
         {
@@ -173,19 +196,125 @@ internal static class ProviderStatusTests
                 requests.Add(address);
                 return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
                 {
-                    Content = new StringContent(address == ProviderStatusClient.OpenAiSummaryUrl ? missingIncidents : fixture.Item1)
+                    Content = new StringContent(address switch
+                    {
+                        ProviderStatusClient.OpenAiSummaryUrl => missingIncidents,
+                        ProviderStatusClient.OpenAiComponentsUrl => healthyComponents,
+                        ProviderStatusClient.OpenAiIncidentsUrl => fixture.Item1,
+                        _ => throw new InvalidOperationException("Unexpected official feed address")
+                    })
                 });
             }));
-            var result = await new ProviderStatusClient(fallbackClient).FetchAsync(ProviderKind.OpenAI, CancellationToken.None);
+            var result = await new ProviderStatusClient(fallbackClient, () => Now).FetchAsync(ProviderKind.OpenAI, CancellationToken.None);
             count++;
-            if (result.Status != fixture.Item2 || !requests.SequenceEqual(new[] { ProviderStatusClient.OpenAiSummaryUrl, ProviderStatusClient.OpenAiIncidentsUrl }))
+            if (result.Status != fixture.Item2 || requests.Count != 3 ||
+                !requests.Order(StringComparer.Ordinal).SequenceEqual(new[]
+                {
+                    ProviderStatusClient.OpenAiSummaryUrl, ProviderStatusClient.OpenAiComponentsUrl, ProviderStatusClient.OpenAiIncidentsUrl
+                }.Order(StringComparer.Ordinal)))
                 throw new InvalidOperationException("Missing incidents must use a validated official history feed");
+            Check(result.LastSuccessfulCheckUtc == Now, "complete fallback response receipt counts as success even when its schema is unknown");
         }
         using (var fallbackClient = new HttpClient(new FakeHandler((request, _) => Task.FromResult(
-            request.RequestUri!.AbsoluteUri == ProviderStatusClient.OpenAiSummaryUrl
-                ? new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(missingIncidents) }
-                : new HttpResponseMessage(HttpStatusCode.ServiceUnavailable)))))
+            request.RequestUri!.AbsoluteUri switch
+            {
+                ProviderStatusClient.OpenAiSummaryUrl => new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(missingIncidents) },
+                ProviderStatusClient.OpenAiComponentsUrl => new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(healthyComponents) },
+                _ => new HttpResponseMessage(HttpStatusCode.ServiceUnavailable)
+            }))))
             await AssertThrows<HttpRequestException>(() => new ProviderStatusClient(fallbackClient).FetchAsync(ProviderKind.OpenAI, CancellationToken.None), "history fallback HTTP failure cannot become healthy");
+        using (var catalogClient = new HttpClient(new FakeHandler((request, _) => Task.FromResult(
+            request.RequestUri!.AbsoluteUri == ProviderStatusClient.OpenAiSummaryUrl
+                ? new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(Page([Component("ChatGPT", "operational")])) }
+                : new HttpResponseMessage(HttpStatusCode.ServiceUnavailable)))))
+            await AssertThrows<HttpRequestException>(() => new ProviderStatusClient(catalogClient).FetchAsync(ProviderKind.OpenAI, CancellationToken.None),
+                "a required full component catalog HTTP failure is a receipt failure, not false GO");
+
+        async Task<ProviderStatus> FetchOpenAiAsync(string summary, string catalog, List<string>? requests = null)
+        {
+            using var fixtureClient = new HttpClient(new FakeHandler((request, _) =>
+            {
+                string address = request.RequestUri!.AbsoluteUri;
+                requests?.Add(address);
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent(address switch
+                    {
+                        ProviderStatusClient.OpenAiSummaryUrl => summary,
+                        ProviderStatusClient.OpenAiComponentsUrl => catalog,
+                        _ => throw new InvalidOperationException("A summary with incidents must not request incident history")
+                    }, Encoding.UTF8, "application/json")
+                });
+            }));
+            return await new ProviderStatusClient(fixtureClient, () => Now).FetchAsync(ProviderKind.OpenAI, CancellationToken.None);
+        }
+
+        foreach (string name in new[] { "Codex Web", "Codex API", "Codex CLI", "Codex VS Code extension" })
+        {
+            var supplemented = await FetchOpenAiAsync(Page([Component("ChatGPT", "operational", "chat")]),
+                JsonSerializer.Serialize(new { components = new[] { Component(name, "partial_outage", "catalog-codex") } }));
+            Check(supplemented.Status == OfficialStatus.PartialOutage && supplemented.RelevantComponent.Contains(name, StringComparison.Ordinal),
+                "missing summary component outage is supplied by the full catalog: " + name);
+            Check(supplemented.LastSuccessfulCheckUtc == Now, "full catalog success timestamp: " + name);
+        }
+        var priority = await FetchOpenAiAsync(Page([Component("Codex CLI", "partial_outage", "codex-cli")]),
+            JsonSerializer.Serialize(new { components = new[] { Component("Codex CLI", "operational", "codex-cli") } }));
+        Check(priority.Status == OfficialStatus.PartialOutage,
+            "catalog operational cannot erase a known summary outage for the same component ID");
+        var catalogOutage = await FetchOpenAiAsync(Page([Component("Codex CLI", "operational", "codex-cli")]),
+            JsonSerializer.Serialize(new { components = new[] { Component("Codex CLI", "partial_outage", "codex-cli") } }));
+        Check(catalogOutage.Status == OfficialStatus.PartialOutage,
+            "summary operational cannot erase a known catalog outage for the same component ID");
+        foreach (bool unknownInSummary in new[] { true, false })
+        {
+            string summaryStatus = unknownInSummary ? "synthetic-new-status" : "operational";
+            string catalogStatus = unknownInSummary ? "operational" : "synthetic-new-status";
+            var disagreement = await FetchOpenAiAsync(Page([Component("Codex CLI", summaryStatus, "codex-cli")]),
+                JsonSerializer.Serialize(new { components = new[] { Component("Codex CLI", catalogStatus, "codex-cli") } }));
+            Check(disagreement.Status == OfficialStatus.Unknown && disagreement.AssessmentIssue.Length > 0 &&
+                disagreement.LastSuccessfulCheckUtc == Now,
+                "unknown component observation cannot be overwritten by operational: summary=" + unknownInSummary);
+        }
+        foreach (bool unknownInSummary in new[] { true, false })
+        {
+            string summaryStatus = unknownInSummary ? "synthetic-new-status" : "partial_outage";
+            string catalogStatus = unknownInSummary ? "partial_outage" : "synthetic-new-status";
+            var disagreement = await FetchOpenAiAsync(Page([Component("Codex CLI", summaryStatus, "codex-cli")]),
+                JsonSerializer.Serialize(new { components = new[] { Component("Codex CLI", catalogStatus, "codex-cli") } }));
+            Check(disagreement.Status == OfficialStatus.PartialOutage && disagreement.AssessmentIssue.Length > 0 &&
+                disagreement.LastSuccessfulCheckUtc == Now,
+                "known outage wins while the conflicting unknown observation remains diagnostic: summary=" + unknownInSummary);
+        }
+        var duplicateHealthy = await FetchOpenAiAsync(Page([Component("Codex CLI", "operational", "codex-cli")]),
+            JsonSerializer.Serialize(new { components = new[] { Component("Codex CLI", "operational", "codex-cli") } }));
+        Check(duplicateHealthy.Status == OfficialStatus.Operational && duplicateHealthy.AssessmentIssue.Length == 0 &&
+            duplicateHealthy.LastSuccessfulCheckUtc == Now, "identical component observations remain a healthy successful receipt");
+        var conflictingOutages = await FetchOpenAiAsync(Page([Component("Codex CLI", "partial_outage", "codex-cli")]),
+            JsonSerializer.Serialize(new { components = new[] { Component("Codex CLI", "major_outage", "codex-cli") } }));
+        Check(conflictingOutages.Status == OfficialStatus.MajorOutage,
+            "different known component severities retain the more severe observed outage");
+        var union = await FetchOpenAiAsync(Page([Component("ChatGPT", "partial_outage", "summary-only")]),
+            JsonSerializer.Serialize(new { components = new[] { Component("Codex CLI", "operational", "catalog-only") } }));
+        Check(union.Status == OfficialStatus.PartialOutage && union.RelevantComponent.Contains("ChatGPT", StringComparison.Ordinal),
+            "summary-only relevant components remain in the catalog union");
+        var directRequests = new List<string>();
+        var direct = await FetchOpenAiAsync(Page([Component("ChatGPT", "operational")]), healthyComponents, directRequests);
+        Check(directRequests.Count == 2 && directRequests.Contains(ProviderStatusClient.OpenAiSummaryUrl) &&
+            directRequests.Contains(ProviderStatusClient.OpenAiComponentsUrl), "normal OpenAI fetch always reads summary and components without incident history");
+        Check(direct.Source.Contains(ProviderStatusClient.OpenAiSummaryUrl, StringComparison.Ordinal) &&
+            direct.Source.Contains(ProviderStatusClient.OpenAiComponentsUrl, StringComparison.Ordinal), "OpenAI source records both public component feeds");
+        foreach (string malformedCatalog in new[]
+        {
+            "{broken", "{}", "{\"components\":null}", "{\"components\":[{\"id\":\"invalid-component\"}]}"
+        })
+        {
+            var unknown = await FetchOpenAiAsync(Page([Component("ChatGPT", "operational")]), malformedCatalog);
+            Check(unknown.Status == OfficialStatus.Unknown && unknown.LastSuccessfulCheckUtc == Now && unknown.AssessmentIssue.Length > 0,
+                "malformed full catalog receipt succeeds but cannot falsely certify GO");
+        }
+        var malformedSummary = await FetchOpenAiAsync("{broken", healthyComponents);
+        Check(malformedSummary.Status == OfficialStatus.Unknown && malformedSummary.LastSuccessfulCheckUtc == Now && malformedSummary.AssessmentIssue.Length > 0,
+            "malformed summary receipt succeeds but its assessment remains CHECK");
         using (var client = new HttpClient(new FakeHandler((request, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
         {
             Content = new StringContent(request.RequestUri!.AbsoluteUri switch
