@@ -646,7 +646,7 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
                 new ProviderStatus(provider, OfficialStatus.Operational, now, now, "관련 서비스 정상")).ToArray();
             panel.Update(Schedule(now), healthy, quotas, false, now.AddMinutes(5), "");
             MacStatusPanel.Layout layout = panel.Verify(Schedule(now), healthy, quotas);
-            if (!panel.QuotaRowText(QuotaProvider.Gemini, "gemini-5h").StartsWith("5시간  0% 사용 · 약 5시간 0분 후 리셋", StringComparison.Ordinal))
+            if (!panel.QuotaRowText(QuotaProvider.Gemini, "gemini-5h").StartsWith("5시간  0% 사용 · 약 5시간 후 리셋", StringComparison.Ordinal))
                 throw new InvalidOperationException("The Gemini quota box did not show its rows.");
             // The whole card opens the official page (VoiceOver press and click share the action).
             int requests = statusPageRequests;
