@@ -1,5 +1,17 @@
 # 다음 개선 항목
 
+## 보류 후보: 한도 박스 요금제 표시와 CLI 설치 경로 지정
+
+- 기록일: 2026-10-10 KST(Mac 담당). 둘 다 **보류**이며 구현하지 않았다. 조사 기록은 [MACOS_PORT 41절](MACOS_PORT.md#41-chatgpt-한도-박스에-주간-행만-표시되는-원인과-요금제-필드-확인). 계정별 값은 공개 저장소 규칙에 따라 적지 않는다.
+- **한도 박스 요금제 표시(보류)**
+  - 사실: 조회 응답에 요금제 필드가 있는 곳은 Codex(`planType`)뿐이다. Claude `/usage`와 agy `/usage`에는 없다. 앱 파서는 아직 `planType`을 읽지 않는다.
+  - 제약: Claude 요금제는 별도 명령(`claude auth status`)이 필요한데 계정 정보를 읽어 "토큰·Keychain·쿠키를 읽지 않는다" 원칙과 충돌할 수 있다. Codex 요금제 문자열의 가능한 값은 한 계정으로 알 수 없어, 표시한다면 받은 문자열을 그대로 쓰는 쪽이 안전하다.
+  - 반영한다면 공통 원본 변경이다: `QuotaReading` 선택 필드, 파서, 캐시 JSON(null 허용이면 기존 값과 호환), `QuotaPanelModel` 제목 줄. Windows `AccountQuotaView`도 따라가야 해서 PR에 Windows 확인 항목이 필요하다. ChatGPT만 표시되는 비대칭이 생긴다.
+- **CLI 설치 경로를 앱 설정으로 지정(보류)**
+  - 문제: Finder·로그인 항목으로 실행한 Mac 앱은 `~/.local/bin`, `/opt/homebrew/bin`, `/usr/local/bin` 밖의 `codex`·`claude`·`agy`를 찾지 못한다([Mac/README](Mac/README.md#설치-경로-제약-중요)). 터미널 실행에서는 드러나지 않는다.
+  - 방향: 셸 프로필을 읽지 않는 원칙을 유지한 채 사용자가 CLI 폴더를 앱 설정으로 지정한다. 절대 경로·`.`/`..` 거부 규칙은 `MacCliPaths`와 같게 둔다.
+  - 정할 것: 저장 위치(DB metadata 등), 설정 UI(Mac 메뉴), Windows와의 관계(Windows는 해당 문제가 없어 Mac 전용).
+
 ## 배포 전: 계정 사용량 막대·Provider 상세 공통화
 
 - 2026-10-10 KST. 사용한 비율·간략 리셋 시간·Provider별 하나의 상세 문구를 공통 모델로 정리하고 Windows 네이티브 막대·흰색 고정 폭 팝업에 연결했다. [범위·Windows 검증·화면·Mac 반영 요청](QUOTA_USAGE_UI.md).
