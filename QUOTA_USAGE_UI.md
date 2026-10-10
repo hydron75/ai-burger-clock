@@ -2,7 +2,7 @@
 
 기록일: 2026-10-10 KST. 범위: **공통 코드 변경**.
 
-Windows 테스트 빌드의 사용량 막대·간략 시간·Provider별 상세 설명을 정리했습니다. Windows 담당은 Mac 소스·버전·MACOS_PORT.md·배포 EXE를 수정하지 않았습니다. Mac 담당의 smoke 기대값 커밋 `5f0c4e5`·`e85a439`를 받았고, [최종 Mac 확인](https://github.com/hydron75/ai-burger-clock/pull/45#issuecomment-6094538599) 뒤 사용자 승인으로 #45를 main에 병합했습니다. 공통 251,144건·Mac 빌드 경고 0/오류 0·native smoke 종료 코드 0은 Mac 담당의 결과입니다. 아래 보류·추가 push 제한 문장은 당시 작업 경과이며 현재 병합 상태와 구분합니다. **Windows 2.4.0은 준비 단계·미배포**이고 후속 준비·검사·교체 계획은 [2.4.0 기록](MAINTENANCE_2_4_0.md)에 있습니다.
+Windows 테스트 빌드의 사용량 막대·간략 시간·Provider별 상세 설명을 정리했습니다. #45 구현 당시 Windows 담당은 Mac 소스·버전·MACOS_PORT.md·배포 EXE를 수정하지 않았습니다. Mac 담당의 smoke 기대값 커밋 `5f0c4e5`·`e85a439`를 받았고, [최종 Mac 확인](https://github.com/hydron75/ai-burger-clock/pull/45#issuecomment-6094538599) 뒤 사용자 승인으로 #45를 main에 병합했습니다. 공통 251,144건·Mac 빌드 경고 0/오류 0·native smoke 종료 코드 0은 Mac 담당의 결과입니다. 아래 보류·추가 push 제한 문장은 당시 작업 경과이며 현재 병합 상태와 구분합니다. 이후 사용자 승인으로 #47을 병합하고 **Windows 2.4.0을 main `296f524`에서 배포**했습니다. 준비/최종 검사·실제 EXE 해시·백업·교체 결과·최종 사용자 화면 확인은 [2.4.0 배포 기록](MAINTENANCE_2_4_0.md)에 있습니다.
 
 ## 공개 기록의 계정 정보 보호
 
