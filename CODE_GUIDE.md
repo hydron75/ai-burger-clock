@@ -1,12 +1,14 @@
 # 소스코드, 쉬운 말로 읽기
 
-이 문서는 **Windows 2.3.0 기준**입니다. 사용자 승인 뒤 #44가 병합된 main `019d3f3`에서 단일 EXE를 만들고 배포했습니다. 준비·최종 검사·EXE 해시·백업·교체·복원은 [2.3.0 기록](MAINTENANCE_2_3_0.md)을 봅니다. 배포 뒤 문서 커밋은 EXE 소스와 구분합니다. Windows 사용법은 [README](README.md), 최신 Mac 버전·검증은 [Mac 안내](Mac/README.md)로 이동하세요. 아래 실행·UI 설명은 Windows 기준이며 Mac의 차이는 12절에 정리했습니다.
+이 문서는 **Windows 2.4.0 준비본 기준**입니다. #46이 병합된 main `69716e4`에서 버전과 기록을 준비하며 PR 병합·배포 교체는 승인 대기입니다. 현재 배포 EXE는 2.3.0이고 교체하지 않았습니다. 준비 검사와 승인 후 백업·교체·복원 계획은 [2.4.0 기록](MAINTENANCE_2_4_0.md), 현재 배포 EXE의 실제 기준점은 [2.3.0 기록](MAINTENANCE_2_3_0.md)을 봅니다. Windows 사용법은 [README](README.md), 최신 Mac 버전·검증은 [Mac 안내](Mac/README.md)로 이동하세요. 아래 실행·UI 설명은 Windows 기준이며 Mac의 차이는 12절에 정리했습니다.
 
-코드를 한 줄씩 번역한 문서는 아닙니다. **각 파일이 무엇을 맡고, 서로 어떻게 연결되는지** 설명합니다. 현재 소스의 루트·Properties C# 68개, Mac 호스트 7개, 공통 검사 입구 1개로 총 76개와 빌드 설정을 다룹니다. `SharedTestSuite.cs`는 루트의 검사 파일에 이미 포함하고, 별도 공통 검사 입구는 `Shared.Tests/Program.cs` 한 개만 셉니다. 컴퓨터가 만든 `bin`·`obj`와 로컬 검증용 `artifacts`는 대상에서 뺍니다.
+코드를 한 줄씩 번역한 문서는 아닙니다. **각 파일이 무엇을 맡고, 서로 어떻게 연결되는지** 설명합니다. 현재 소스의 루트·Properties C# 72개, Mac 호스트 7개, 공통 검사 입구 1개로 총 80개와 빌드 설정을 다룹니다. `SharedTestSuite.cs`는 루트의 검사 파일에 이미 포함하고, 별도 공통 검사 입구는 `Shared.Tests/Program.cs` 한 개만 셉니다. 컴퓨터가 만든 `bin`·`obj`와 로컬 검증용 `artifacts`는 대상에서 뺍니다.
 
 **2.3.0에 반영:** [Gemini/Antigravity 한도](GEMINI_ANTIGRAVITY_QUOTAS.md)는 공식 `agy` 1.3.1 이상·2.0 미만에서 Gemini 모델 그룹만 조회합니다. #30은 Mac 확인 뒤 main에 병합됐으며, 이 PC의 agy 1.3.2 실제 조회와 새 배포본의 Gemini 값 정상 표시도 확인했습니다(후자는 사용자 확인). Windows 준비·최종 검사 결과와 이전 #30 결과는 [2.3.0 배포 기록](MAINTENANCE_2_3_0.md)에서 구분합니다.
 
 공식 조회 방식의 변경을 조사하는 외부 모니터링 현황은 [BACKLOG](BACKLOG.md)에 있습니다. 이 조사는 아래 앱 코드의 계정 한도 조회 루프와 별개이며, 새 SDK가 공개됐다고 앱의 CLI나 의존성을 자동으로 바꾸지는 않습니다.
+
+**2.4.0 준비본에 반영:** #45의 공통 사용률·간략 시간·Provider 상세를 Windows의 막대와 흰색 고정 폭 팝업에 연결합니다. 공통 원본은 #45에서 양쪽 확인 뒤 병합됐으며 이번 버전 준비에서는 C# 동작·검사 코드를 바꾸지 않습니다. #46의 요금제 표시·Mac CLI 설치 경로 지정 후보는 보류 상태로 유지합니다.
 
 ## 1. 작은 안내소라고 생각해 보세요
 
@@ -16,7 +18,7 @@
 - **공지 확인 담당:** OpenAI·Claude·Gemini가 올린 공식 상태를 읽습니다.
 - **안내 담당:** 두 정보를 합쳐 Provider별 GO/HOLD/STOP/CHECK를 보여줍니다.
 - **기록 담당:** 사용자가 “느렸어요”, “잘 끝났어요”라고 남긴 경험을 저장합니다.
-- **잔여량 담당:** 공식 Codex·Claude CLI에 읽기 전용 조회를 부탁해 계정 한도를 보여줍니다. 2.3.0에는 agy의 Antigravity Gemini 모델 한도를 추가했습니다. 인증은 CLI가 맡습니다.
+- **한도 담당:** 공식 Codex·Claude·agy CLI에 읽기 전용 조회를 부탁합니다. 2.4.0 화면은 사용률과 간략 리셋 시간을 표시하며 조회 범위·인증·정책은 유지합니다. 인증은 CLI가 맡습니다.
 
 내가 오류를 기록했다고 공식 상태를 장애로 바꾸지 않습니다. 공식 장애라고 내 경험을 자동으로 Error로 적지도 않습니다.
 
@@ -301,7 +303,7 @@ Windows 내부 승인 형식은 알려진 경우만 해석합니다. 낯선 값�
 
 이름을 눌러 소스를 열 수 있습니다. 역할을 알고 필요한 파일부터 읽으면 됩니다.
 
-### 실제 앱 기능: 36개
+### 실제 앱 기능: 38개
 
 | 파일 | 맡은 일 |
 |---|---|
@@ -311,7 +313,7 @@ Windows 내부 승인 형식은 알려진 경우만 해석합니다. 낯선 값�
 | [MeasurementDialog.cs](MeasurementDialog.cs) | 기록 종류와 선택 메모 입력 |
 | [StatisticsWindow.cs](StatisticsWindow.cs) | Windows 통계 창 |
 | [StatisticsAnalysis.cs](StatisticsAnalysis.cs) | 두 OS가 함께 쓰는 통계 계산, 표본수와 No data |
-| [DisplayFormatting.cs](DisplayFormatting.cs) | 두 UI가 함께 쓰는 카운트다운·UTC offset·리셋 남은 시간 문자열 |
+| [DisplayFormatting.cs](DisplayFormatting.cs) | 두 UI가 함께 쓰는 카운트다운·UTC offset·간략 리셋 시간. 올림·이월 후 앞뒤 0 단위 생략 |
 | [AppPaths.cs](AppPaths.cs) | Windows AppData / Mac Application Support의 앱 전용 경로 |
 | [MacCliPaths.cs](MacCliPaths.cs) | Mac GUI의 제한된 PATH와 표준 설치 폴더에서 절대 CLI 경로 후보 생성 |
 | [AgentSchedule.cs](AgentSchedule.cs) | 미국 업무시간과 다음 전환 계산 |
@@ -325,7 +327,7 @@ Windows 내부 승인 형식은 알려진 경우만 해석합니다. 낯선 값�
 | [WindowsProviderNames.cs](WindowsProviderNames.cs) | Windows 화면·메뉴·기록·통계·Tooltip·알림에서 OpenAI를 ChatGPT로 표시. 저장 식별자와 공식 URL은 유지 |
 | [ProviderNames.cs](ProviderNames.cs) | 두 OS의 공통 제품 표시 이름. 식별자·DB 값과 구분 |
 | [StatusPanelModel.cs](StatusPanelModel.cs) | 시간표·Provider 상태 카드의 공통 본문·톤·상세 Tooltip. 빈 선택 항목 숨김 |
-| [QuotaPanelModel.cs](QuotaPanelModel.cs) | 공통 한도 제목·범위·행·조회 시각·톤·Tooltip. 2.3.0의 Gemini는 Antigravity 범위를 구분하며 UI 박스와 전환은 호스트가 결정 |
+| [QuotaPanelModel.cs](QuotaPanelModel.cs) | 공통 사용량 제목·범위·사용률·간략 시간·조회 시각·톤·Provider별 하나의 상세. UI 색·박스·전환은 호스트가 결정 |
 | [UsageMeasurementFactory.cs](UsageMeasurementFactory.cs) | 기록 메뉴 목록·상태 캡처·메모의 공백/문자 요소 경계 제한 |
 | [FeedbackText.cs](FeedbackText.cs) | 기록·공휴일 피드백과 메모 잘림 안내 문구 |
 | [StatisticsText.cs](StatisticsText.cs) | 통계 본문·기간·탭·표·주의사항의 공통 문구 |
@@ -340,9 +342,11 @@ Windows 내부 승인 형식은 알려진 경우만 해석합니다. 낯선 값�
 | [AccountQuotaClient.cs](AccountQuotaClient.cs) | 표준 경로의 native CLI 실행, 제한시간·출력 크기·취소·응답 검증. 2.3.0의 Gemini는 agy 1.3.1 이상·2.0 미만 사전 확인 후 `/usage`, 기존 hooks·MCP 설정 격리 제한 있음 |
 | [AccountQuotaPolicy.cs](AccountQuotaPolicy.cs) | 6시간·1시간·잔여 0%의 15분·리셋 전후 5분 규칙, 리셋 15분 전 진입, 실패 재시도 상한 계산 |
 | [AccountQuotaMonitor.cs](AccountQuotaMonitor.cs) | Provider별 독립 조회 루프, 마지막 성공값·실패 횟수·다음 조회·재시작 캐시. 2.3.0은 Gemini도 포함 |
-| [AccountQuotaView.cs](AccountQuotaView.cs) | 같은 창의 한도 보기, hover 없는 Provider별 흰 박스와 내부 스크롤. ChatGPT 아래 Work/Codex, 2.3.0의 Gemini 아래 Antigravity 조회 범위 |
+| [AccountQuotaView.cs](AccountQuotaView.cs) | 공통 모델을 그대로 바인딩하는 한도 보기. Provider별 흰 박스·사용률 막대·상세 연결·내부 스크롤과 상태 전환 유지 |
+| [QuotaBalanceBar.cs](QuotaBalanceBar.cs) | Windows 네이티브 사용률 막대. 서비스별 색과 이전/경과 값의 회색, 원본 사용률·접근성 바인딩 |
+| [QuotaDetailPopup.cs](QuotaDetailPopup.cs) | Windows 비활성화 상세 팝업. 흰색·고정 폭·줄바꿈·포인터 근처/화면 경계 보정·긴 상세 세로 스크롤 |
 
-### 검사와 진단: 31개
+### 검사와 진단: 33개
 
 미완성 임시 코드가 아닙니다. **특별한 검사 명령 때만 쓰는 정식 검사 코드**입니다.
 
@@ -357,6 +361,7 @@ Windows 내부 승인 형식은 알려진 경우만 해석합니다. 낯선 값�
 | [StatusTickerTests.cs](StatusTickerTests.cs) | 입력 이유·전환·알림 우선 순서·아이콘 변경·중복 Provider 판정 |
 | [WindowsWarningLogChecks.cs](WindowsWarningLogChecks.cs) | 임시 파일로 경고 크기·회전·Unicode·쓰기 실패 격리 검사 |
 | [PanelModelTests.cs](PanelModelTests.cs) | 공통 상태·한도 본문과 톤, 상세 Tooltip 골든 검사 |
+| [QuotaPresentationTests.cs](QuotaPresentationTests.cs) | 공통 사용률·간략 시간·0 단위 생략·리셋 경계·Provider 상세 74건. 공통 실행 목록에 한 번 등록 |
 | [RecordingTests.cs](RecordingTests.cs) | 공통 기록 캡처·메뉴·메모 제한·피드백 골든 검사 |
 | [StatisticsTextTests.cs](StatisticsTextTests.cs) | 공통 통계 본문·표 제목·기간·주의 문구 골든 검사 |
 | [ProviderStatusTests.cs](ProviderStatusTests.cs) | 정상·장애·잘못된 JSON·통신 실패의 해석 |
@@ -376,7 +381,8 @@ Windows 내부 승인 형식은 알려진 경우만 해석합니다. 낯선 값�
 | [GeminiQuotaTests.cs](GeminiQuotaTests.cs) | 합성 agy 응답의 Gemini 그룹·5시간/주간·잔여율·리셋·잘못된 값 검사 |
 | [GeminiQuotaClientTests.cs](GeminiQuotaClientTests.cs) | 합성 입출력으로 agy 고정 명령·버전·0턴/0토큰·인증 대기·출력 제한 검사. 설치된 CLI는 실행하지 않음 |
 | [AccountQuotaMonitorTests.cs](AccountQuotaMonitorTests.cs) | 실패 격리·조회 합치기·종료·SQLite 캐시·재시작 |
-| [AccountQuotaUiChecks.cs](AccountQuotaUiChecks.cs) | 가짜 한도로 창 전환·퍼센트·실패·Refresh·기존 상태 복귀 |
+| [AccountQuotaUiChecks.cs](AccountQuotaUiChecks.cs) | 가짜 한도로 창 전환·사용률/막대·대표색·실패·공통 상세/접근성·Refresh·기존 상태 복귀 |
+| [QuotaToolTipUiChecks.cs](QuotaToolTipUiChecks.cs) | 실제 WinForms에서 상세 고정 폭·흰색·줄바꿈·포인터 배치·닫힘·DPI·긴 상세 스크롤 검사 |
 | [LiveQuotaProbe.cs](LiveQuotaProbe.cs) | 공식 CLI 실제 계정 조회 결과 중 한도 정보만 출력 |
 | [PortablePlatformTests.cs](PortablePlatformTests.cs) | 데이터 경로·IANA 시간대 경계·표시 형식·Mac CLI 경로 후보 검사 |
 
@@ -436,7 +442,7 @@ Mac의 시간대 ID는 `America/New_York`, `America/Los_Angeles`, `Asia/Seoul`�
 
 Mac은 `~/Library/Application Support/AIBurgerClock`에 별도 DB를 쓰고 `SMAppService.MainApp`으로 로그인 항목을 관리합니다. CLI는 절대 실행 경로와 실행 권한을 확인하고, shell 프로필·Keychain·인증 파일은 읽지 않습니다. 기능 규칙을 함께 써도 **두 컴퓨터의 DB와 로그인은 자동 동기화되지 않습니다.**
 
-Windows 배포 EXE는 2.3.0입니다. #30은 Mac 확인 뒤 main에 병합됐고 #42는 Mac Gemini UI 후속입니다. 이번 #44와 배포 후 기록은 Windows 버전·문서만 바꾸며 공통 원본이나 Mac 버전은 변경하지 않습니다. `MacCliPaths`는 GUI 앱의 PATH와 `~/.local/bin`, `/opt/homebrew/bin`, `/usr/local/bin`에서 실행 가능한 공식 명령을 찾으며 앱이 인증 파일을 직접 읽지는 않습니다. 현재 Mac 빌드·아이콘·실기 검증은 [Mac 안내](Mac/README.md)·[Mac 기록](MACOS_PORT.md)에서 관리합니다. 기존 Mac 결과를 이번 Windows 배포에서 다시 실행한 검사로 적지 않습니다.
+Windows 배포 EXE는 아직 2.3.0입니다. #45는 공통 표시 계약·Windows UI, #46은 Mac 0.4.0 UI 후속으로 main에 병합됐습니다. 이번 2.4.0 준비 PR은 Windows 버전·문서만 바꾸며 공통 원본이나 Mac 버전은 변경하지 않습니다. `MacCliPaths`는 GUI 앱의 PATH와 `~/.local/bin`, `/opt/homebrew/bin`, `/usr/local/bin`에서 실행 가능한 공식 명령을 찾으며 앱이 인증 파일을 직접 읽지는 않습니다. 현재 Mac 빌드·아이콘·실기 검증은 [Mac 안내](Mac/README.md)·[Mac 기록](MACOS_PORT.md)에서 관리합니다. 기존 Mac 결과를 이번 Windows 준비에서 다시 실행한 검사로 적지 않습니다.
 
 Mac의 상태 UI는 `MacStatusPanel`과 `MacControls`를 쓰는 팝오버입니다. Windows는 `StatusWindow` 안에서 ‘한도 보기 ↔ 상태 보기’로 카드 영역을 전환합니다. 한도 박스·제목 기준선·클릭되는 카드만 hover라는 규칙은 [결정 9](MACOS_UI_PLAN.md)에 따르며, Mac 한도 항상 표시와 Windows 전환 방식의 차이는 결정 10에 남깁니다. 두 호스트의 실제 창 배치·픽셀 검사는 각각의 native smoke가 맡습니다.
 
@@ -473,9 +479,9 @@ $result.ExitCode
 
 검사는 가짜 현재 시각을 전달하므로 Windows 시스템 시계를 바꾸지 않습니다. UI 검사에서 공식 페이지 열기는 실제 브라우저 대신 주소를 받는 함수로 확인합니다.
 
-검사 통과와 실제 재부팅 성공, 사용자 화면의 알림 노출은 다른 증거입니다. 최신 준비·최종 배포 EXE·사용자 화면 확인은 [2.3.0 기록](MAINTENANCE_2_3_0.md), 이전 배포 검증은 [2.2.4 기록](MAINTENANCE_2_2_4.md)·[2.2.3 기록](MAINTENANCE_2_2_3.md)·[2.2.2 기록](MAINTENANCE_2_2_2.md)·[2.2.1 기록](MAINTENANCE_2_2_1.md)을 참고하세요.
+검사 통과와 실제 재부팅 성공, 사용자 화면의 알림 노출은 다른 증거입니다. 최신 준비·사용자 화면 확인·교체 계획은 [2.4.0 기록](MAINTENANCE_2_4_0.md), 현재 배포 EXE는 [2.3.0 기록](MAINTENANCE_2_3_0.md), 이전 배포 검증은 [2.2.4 기록](MAINTENANCE_2_2_4.md)·[2.2.3 기록](MAINTENANCE_2_2_3.md)·[2.2.2 기록](MAINTENANCE_2_2_2.md)·[2.2.1 기록](MAINTENANCE_2_2_1.md)을 참고하세요.
 
-2.3.0 준비 후보에서 `build.ps1` 경고 0·오류 0, Windows self-test **251,377건**(공통 251,070 + Windows 전용 307)·종료 코드 0, **smoke 5회 모두 293건·종료 코드 0**을 확인했습니다. 병합 main의 최종 단일 EXE도 build/publish 경고 0·오류 0, 같은 self-test 수·종료 코드 0, **smoke 293건·종료 코드 0**으로 통과했습니다. 이 PC의 agy 1.3.2 Gemini 단독 조회(8.37초·두 창)는 준비 결과이며, 새 배포본의 트레이·상태 창·Gemini 값 정상 표시는 사용자 확인입니다. 합성 응답성·PNG·실계정 조회·미수행 항목은 [2.3.0 기록](MAINTENANCE_2_3_0.md)에 있습니다. #30의 이전 전후 비교는 [구현 기록](GEMINI_ANTIGRAVITY_QUOTAS.md)과 구분합니다.
+2.4.0 준비 후보에서 `build.ps1` 경고 0·오류 0, Windows self-test **251,451건**(공통 251,144 + Windows 전용 307)·실제 종료 코드 0, **smoke 5회 모두 387건·종료 코드 0**을 확인했습니다. 같은 PC에서 기존 dist 2.3.0 self-test도 직접 실행해 **251,377건·종료 코드 0**, 차이 **+74건**을 확인했습니다. 새 그룹 외에는 검사 수가 같고 공통 조회 주기·파서와 Windows 검사는 유지됩니다. 실제 계정의 막대·간략 리셋·Provider 상세 정상 표시는 **사용자 확인**이며 실제 계정 수치는 게시하지 않습니다. 새 단일 EXE publish·교체·최종 배포 검사는 승인 전이므로 **미수행**입니다. 합성 응답성·PNG·실제 화면 확인은 [2.4.0 기록](MAINTENANCE_2_4_0.md)에, 이전 최종 배포 검사는 [2.3.0 기록](MAINTENANCE_2_3_0.md)에 있습니다.
 
 공통 검사만 실행하려면 OS와 관계없이 다음 명령을 사용합니다. 가짜 응답과 임시 DB만 사용하며 계정·사용자 DB·자동 실행 설정은 건드리지 않습니다. Windows WinForms 검사를 대체하는 것은 아닙니다.
 
