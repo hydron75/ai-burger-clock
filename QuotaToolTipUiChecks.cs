@@ -52,6 +52,7 @@ internal static class QuotaToolTipUiChecks
             testBar.UpdateBalance(QuotaProvider.Claude, used, PanelTone.Good, "test", "test");
             check(testBar.FilledWidth == expected, "Bar fill respects used percent and valid bounds: " + used);
         }
+        QuotaBarUiChecks.Run(check);
 
         await CheckProviderAsync(view, QuotaProvider.Codex, "quota-tooltip-chatgpt.png", reportDirectory, check);
         await CheckProviderAsync(view, QuotaProvider.Claude, "quota-tooltip-claude.png", reportDirectory, check);

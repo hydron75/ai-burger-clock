@@ -38,6 +38,7 @@ internal static class SharedTestSuite
             Report("paths/IANA/formatting/CLI candidates", PortablePlatformTests.Run());
             Report("panel text/tones (Windows golden)", PanelModelTests.Run());
             Report("quota usage/countdown/provider detail (portable)", QuotaPresentationTests.Run());
+            Report("quota snapshot time/usage comparison (portable)", QuotaPacingTests.Run());
             Report("recording/note limit/feedback text (Windows golden)", RecordingTests.Run());
             Report("statistics text (Windows golden)", StatisticsTextTests.Run());
             return total;

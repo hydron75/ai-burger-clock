@@ -155,7 +155,31 @@ internal static class SmokeTest
         using var bitmap = new Bitmap(window.Width, window.Height);
         window.DrawToBitmap(bitmap, new Rectangle(Point.Empty, bitmap.Size));
         bitmap.Save(Path.Combine(reportDirectory, name), System.Drawing.Imaging.ImageFormat.Png);
+        SaveQuotaComparisonLayout(window, Path.Combine(reportDirectory, name + ".layout.json"));
         Console.WriteLine("PASS: Form layout and render " + name);
+    }
+
+    // Synthetic smoke evidence only. These exact rectangles delimit the pixels permitted to change
+    // in a quota-overlay comparison; all other form pixels and all row text must remain identical.
+    internal static void SaveQuotaComparisonLayout(StatusWindow window, string path)
+    {
+        var view = window.QuotaView;
+        Rectangle Bounds(Control control) => new(control.PointToScreen(Point.Empty) - new Size(window.Location), control.Size);
+        var viewport = Bounds(view);
+        var bars = view.Visible ? view.Controls.OfType<Panel>().SelectMany(box => box.Controls.OfType<QuotaBalanceBar>())
+            .Select(bar => Rectangle.Intersect(Bounds(bar), viewport)).Where(bounds => bounds.Width > 0 && bounds.Height > 0).ToArray() : [];
+        var caption = view.Visible ? window.Controls.OfType<Label>().Where(label => label.Text == QuotaPanelModel.Caption)
+            .Select(Bounds).ToArray() : [];
+        var boxes = view.Visible ? view.Controls.OfType<Panel>().Select(box => new
+        {
+            box.Name, Bounds = Bounds(box),
+            Rows = box.Controls.OfType<Label>().Select(label => new { label.Text, Bounds = Bounds(label) }).ToArray(),
+            BarCount = box.Controls.OfType<QuotaBalanceBar>().Count()
+        }).ToArray() : null;
+        var layout = new { window.Width, window.Height, ClientWidth = window.ClientSize.Width,
+            ClientHeight = window.ClientSize.Height, QuotaVisible = view.Visible, Boxes = boxes,
+            AllowedBarRectangles = bars, AllowedCaptionRectangles = caption };
+        File.WriteAllText(path, System.Text.Json.JsonSerializer.Serialize(layout));
     }
 
     private static void VerifyAutoStart(TrayApplicationContext context, string? reportDirectory)

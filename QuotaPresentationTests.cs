@@ -91,6 +91,47 @@ internal static class QuotaPresentationTests
         Check(expired.Rows.Single() is { UsedPercent: 97, Tone: PanelTone.Muted } &&
             expired.Rows.Single().Text == "5시간  97% 사용 (이전) · 갱신 대기" &&
             expired.Detail.Contains("예정 시각 경과, 새 조회 필요", StringComparison.Ordinal), "elapsed value retained, not reset to zero");
+        foreach (var provider in Enum.GetValues<QuotaProvider>())
+        {
+            var state = new QuotaState(provider, new(provider,
+                [new("active", "합성 5시간", 55, now.AddHours(3), 300),
+                 new("weekly", "합성 주간", 10, now.AddHours(126), 10080),
+                 new("inactive", "합성 5시간 미확인", 0, now.AddHours(5), 300)]),
+                CheckedAtUtc: now, LastSuccessfulCheckUtc: now, NextCheckUtc: now.AddHours(6));
+            var fresh = QuotaPanelModel.Section(state, now);
+            var later = QuotaPanelModel.Section(state, now.AddMinutes(17));
+            Check(fresh.Rows[0].ElapsedPercent == 40 && fresh.Rows[1].ElapsedPercent == 25 &&
+                fresh.Rows[2].ElapsedPercent is null, provider + " optional time layer uses only eligible windows");
+            Check(fresh.Rows.Select(row => row.ElapsedPercent).SequenceEqual(later.Rows.Select(row => row.ElapsedPercent)) &&
+                fresh.Rows.Select(row => row.UsedPercent).SequenceEqual(later.Rows.Select(row => row.UsedPercent)),
+                provider + " time and usage stay pinned to the same successful receipt");
+            Check(later.Detail.Contains("마지막 조회 기준, 17분 전", StringComparison.Ordinal) &&
+                fresh.Detail.Contains("마지막 조회 기준, 방금 전", StringComparison.Ordinal), provider + " reference age advances without moving the comparison");
+            Check(later.Detail.Contains("균등 사용 기준보다 15%p 빠름", StringComparison.Ordinal) &&
+                later.Detail.Contains("균등 사용 기준보다 15%p 느림", StringComparison.Ordinal), provider + " detail describes both directions in percentage points");
+            Check(later.Heading.Detail == later.Detail && later.Rows.All(row => row.Detail == later.Detail) &&
+                later.Metadata.Detail == later.Detail && (later.Scope is null || later.Scope.Detail == later.Detail),
+                provider + " comparison remains one shared Provider detail for accessibility");
+            Check(later.Rows.Count == state.Reading!.Windows.Count && !later.Rows[0].Text.Contains("시간 경과", StringComparison.Ordinal) &&
+                later.Rows[0].Tone == fresh.Rows[0].Tone && later.Metadata.Text == fresh.Metadata.Text,
+                provider + " comparison adds no visible row or policy/tone/metadata change");
+            Check(state.NextCheckUtc == now.AddHours(6) && !state.IsRefreshing && state.CheckedAtUtc == now &&
+                state.LastSuccessfulCheckUtc == now, provider + " pure presentation changes no query state or due date");
+            var previous = QuotaPanelModel.Section(state with { IsPrevious = true }, now.AddMinutes(17));
+            Check(previous.Rows.All(row => row.ElapsedPercent is null && row.Tone == PanelTone.Muted) &&
+                !previous.Detail.Contains("%p", StringComparison.Ordinal) && previous.Detail.Contains("마지막 조회 기준, 17분 전", StringComparison.Ordinal),
+                provider + " previous readings retain their age but remove time reference and pace");
+            var inFlight = QuotaPanelModel.Section(state with { IsRefreshing = true, NextCheckUtc = null }, now.AddMinutes(17));
+            Check(inFlight.Rows[0].ElapsedPercent == 40 && inFlight.Rows[0].UsedPercent == 55 &&
+                inFlight.Detail.Contains("마지막 조회 기준, 17분 전", StringComparison.Ordinal), provider + " an in-flight query never mixes a new time with old usage");
+            var afterReset = QuotaPanelModel.Section(state, now.AddHours(3));
+            Check(afterReset.Rows[0].ElapsedPercent is null && afterReset.Rows[0].UsedPercent == 55 &&
+                afterReset.Rows[0].Tone == PanelTone.Muted && afterReset.Rows[1].ElapsedPercent == 25,
+                provider + " only the expired window loses its comparison without assuming recovery");
+            var refreshed = QuotaPanelModel.Section(state with { LastSuccessfulCheckUtc = now.AddHours(1) }, now.AddHours(1));
+            Check(refreshed.Rows[0].ElapsedPercent == 60 && refreshed.Detail.Contains("균등 사용 기준보다 5%p 느림", StringComparison.Ordinal),
+                provider + " a new success updates both the inferred time and detailed comparison");
+        }
         var culture = CultureInfo.CurrentCulture;
         try
         {

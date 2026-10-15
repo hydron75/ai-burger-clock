@@ -504,6 +504,8 @@ internal static class UIRegressionChecks
         using var bitmap = new Bitmap(form.Width, form.Height);
         form.DrawToBitmap(bitmap, new Rectangle(Point.Empty, bitmap.Size));
         bitmap.Save(Path.Combine(directory, name), System.Drawing.Imaging.ImageFormat.Png);
+        if (form is StatusWindow status)
+            SmokeTest.SaveQuotaComparisonLayout(status, Path.Combine(directory, name + ".layout.json"));
     }
 
     private static IEnumerable<Control> Descendants(Control control)

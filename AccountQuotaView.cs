@@ -231,7 +231,7 @@ internal sealed class AccountQuotaView : Panel
                 ApplyLine(label, line);
                 if (line.UsedPercent is not { } used) continue;
                 bars[(section.Provider, line.WindowId)].UpdateBalance(section.Provider, used, line.Tone,
-                    section.Heading.Text + " · " + label.Text, line.Detail);
+                    section.Heading.Text + " · " + label.Text, line.Detail, line.ElapsedPercent);
             }
         }
         if (details.Visible && pendingDetail is { } shown && ProviderAt(Cursor.Position) == shown)
