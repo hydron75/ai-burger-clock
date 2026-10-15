@@ -1,0 +1,443 @@
+{
+  "synthetic_data_only": true,
+  "compared": 20,
+  "passed": true,
+  "images": [
+    {
+      "file": "account-quotas-exhausted.png",
+      "before_size": [
+        774,
+        1209
+      ],
+      "after_size": [
+        774,
+        1209
+      ],
+      "category": "Quota form",
+      "changed_pixels": 4543,
+      "changed_pixels_outside_allowed": 0,
+      "outside_difference_bounds": null,
+      "passed": true,
+      "boxes": [
+        {
+          "name": "ClaudeQuotaBox",
+          "rows": 3,
+          "bars": 1,
+          "height": 156
+        }
+      ]
+    },
+    {
+      "file": "account-quotas-gemini-previous.png",
+      "before_size": [
+        774,
+        1209
+      ],
+      "after_size": [
+        774,
+        1209
+      ],
+      "category": "Quota form",
+      "changed_pixels": 9328,
+      "changed_pixels_outside_allowed": 0,
+      "outside_difference_bounds": null,
+      "passed": true,
+      "boxes": [
+        {
+          "name": "CodexQuotaBox",
+          "rows": 5,
+          "bars": 2,
+          "height": 264
+        },
+        {
+          "name": "ClaudeQuotaBox",
+          "rows": 5,
+          "bars": 3,
+          "height": 292
+        },
+        {
+          "name": "GeminiQuotaBox",
+          "rows": 5,
+          "bars": 2,
+          "height": 264
+        }
+      ]
+    },
+    {
+      "file": "account-quotas-gemini.png",
+      "before_size": [
+        774,
+        1209
+      ],
+      "after_size": [
+        774,
+        1209
+      ],
+      "category": "Quota form",
+      "changed_pixels": 13206,
+      "changed_pixels_outside_allowed": 0,
+      "outside_difference_bounds": null,
+      "passed": true,
+      "boxes": [
+        {
+          "name": "CodexQuotaBox",
+          "rows": 5,
+          "bars": 2,
+          "height": 264
+        },
+        {
+          "name": "ClaudeQuotaBox",
+          "rows": 5,
+          "bars": 3,
+          "height": 292
+        },
+        {
+          "name": "GeminiQuotaBox",
+          "rows": 5,
+          "bars": 2,
+          "height": 264
+        }
+      ]
+    },
+    {
+      "file": "account-quotas-note-truncated.png",
+      "before_size": [
+        774,
+        1209
+      ],
+      "after_size": [
+        774,
+        1209
+      ],
+      "category": "Quota form",
+      "changed_pixels": 7663,
+      "changed_pixels_outside_allowed": 0,
+      "outside_difference_bounds": null,
+      "passed": true,
+      "boxes": [
+        {
+          "name": "CodexQuotaBox",
+          "rows": 5,
+          "bars": 2,
+          "height": 264
+        },
+        {
+          "name": "ClaudeQuotaBox",
+          "rows": 5,
+          "bars": 3,
+          "height": 292
+        },
+        {
+          "name": "GeminiQuotaBox",
+          "rows": 5,
+          "bars": 2,
+          "height": 264
+        }
+      ]
+    },
+    {
+      "file": "account-quotas-previous.png",
+      "before_size": [
+        774,
+        1209
+      ],
+      "after_size": [
+        774,
+        1209
+      ],
+      "category": "Quota form",
+      "changed_pixels": 7844,
+      "changed_pixels_outside_allowed": 0,
+      "outside_difference_bounds": null,
+      "passed": true,
+      "boxes": [
+        {
+          "name": "CodexQuotaBox",
+          "rows": 5,
+          "bars": 2,
+          "height": 264
+        },
+        {
+          "name": "ClaudeQuotaBox",
+          "rows": 5,
+          "bars": 3,
+          "height": 292
+        },
+        {
+          "name": "GeminiQuotaBox",
+          "rows": 5,
+          "bars": 2,
+          "height": 264
+        }
+      ]
+    },
+    {
+      "file": "account-quotas-two-providers.png",
+      "before_size": [
+        774,
+        1209
+      ],
+      "after_size": [
+        774,
+        1209
+      ],
+      "category": "Quota form",
+      "changed_pixels": 7663,
+      "changed_pixels_outside_allowed": 0,
+      "outside_difference_bounds": null,
+      "passed": true,
+      "boxes": [
+        {
+          "name": "CodexQuotaBox",
+          "rows": 5,
+          "bars": 2,
+          "height": 264
+        },
+        {
+          "name": "ClaudeQuotaBox",
+          "rows": 5,
+          "bars": 3,
+          "height": 292
+        }
+      ]
+    },
+    {
+      "file": "account-quotas.png",
+      "before_size": [
+        774,
+        1209
+      ],
+      "after_size": [
+        774,
+        1209
+      ],
+      "category": "Quota form",
+      "changed_pixels": 7663,
+      "changed_pixels_outside_allowed": 0,
+      "outside_difference_bounds": null,
+      "passed": true,
+      "boxes": [
+        {
+          "name": "CodexQuotaBox",
+          "rows": 5,
+          "bars": 2,
+          "height": 264
+        },
+        {
+          "name": "ClaudeQuotaBox",
+          "rows": 5,
+          "bars": 3,
+          "height": 292
+        },
+        {
+          "name": "GeminiQuotaBox",
+          "rows": 5,
+          "bars": 2,
+          "height": 264
+        }
+      ]
+    },
+    {
+      "file": "burger-time.png",
+      "before_size": [
+        774,
+        1209
+      ],
+      "after_size": [
+        774,
+        1209
+      ],
+      "category": "Unchanged image",
+      "changed_pixels": 0,
+      "changed_pixels_outside_allowed": 0,
+      "outside_difference_bounds": null,
+      "passed": true
+    },
+    {
+      "file": "full-throttle.png",
+      "before_size": [
+        774,
+        1209
+      ],
+      "after_size": [
+        774,
+        1209
+      ],
+      "category": "Unchanged image",
+      "changed_pixels": 0,
+      "changed_pixels_outside_allowed": 0,
+      "outside_difference_bounds": null,
+      "passed": true
+    },
+    {
+      "file": "holiday-midweek.png",
+      "before_size": [
+        774,
+        1209
+      ],
+      "after_size": [
+        774,
+        1209
+      ],
+      "category": "Unchanged image",
+      "changed_pixels": 0,
+      "changed_pixels_outside_allowed": 0,
+      "outside_difference_bounds": null,
+      "passed": true
+    },
+    {
+      "file": "holiday-weekend.png",
+      "before_size": [
+        774,
+        1209
+      ],
+      "after_size": [
+        774,
+        1209
+      ],
+      "category": "Unchanged image",
+      "changed_pixels": 0,
+      "changed_pixels_outside_allowed": 0,
+      "outside_difference_bounds": null,
+      "passed": true
+    },
+    {
+      "file": "measurement-dialog.png",
+      "before_size": [
+        746,
+        561
+      ],
+      "after_size": [
+        746,
+        561
+      ],
+      "category": "Unchanged image",
+      "changed_pixels": 0,
+      "changed_pixels_outside_allowed": 0,
+      "outside_difference_bounds": null,
+      "passed": true
+    },
+    {
+      "file": "note-truncated.png",
+      "before_size": [
+        774,
+        1209
+      ],
+      "after_size": [
+        774,
+        1209
+      ],
+      "category": "Unchanged image",
+      "changed_pixels": 0,
+      "changed_pixels_outside_allowed": 0,
+      "outside_difference_bounds": null,
+      "passed": true
+    },
+    {
+      "file": "provider-outage.png",
+      "before_size": [
+        774,
+        1209
+      ],
+      "after_size": [
+        774,
+        1209
+      ],
+      "category": "Unchanged image",
+      "changed_pixels": 0,
+      "changed_pixels_outside_allowed": 0,
+      "outside_difference_bounds": null,
+      "passed": true
+    },
+    {
+      "file": "provider-unscoped.png",
+      "before_size": [
+        774,
+        1209
+      ],
+      "after_size": [
+        774,
+        1209
+      ],
+      "category": "Unchanged image",
+      "changed_pixels": 0,
+      "changed_pixels_outside_allowed": 0,
+      "outside_difference_bounds": null,
+      "passed": true
+    },
+    {
+      "file": "quota-tooltip-chatgpt.png",
+      "before_size": [
+        640,
+        543
+      ],
+      "after_size": [
+        640,
+        799
+      ],
+      "category": "Provider detail",
+      "passed": true,
+      "permitted": "Detail height/content may change; fixed width must not."
+    },
+    {
+      "file": "quota-tooltip-claude.png",
+      "before_size": [
+        640,
+        511
+      ],
+      "after_size": [
+        640,
+        831
+      ],
+      "category": "Provider detail",
+      "passed": true,
+      "permitted": "Detail height/content may change; fixed width must not."
+    },
+    {
+      "file": "quota-tooltip-gemini.png",
+      "before_size": [
+        640,
+        607
+      ],
+      "after_size": [
+        640,
+        862
+      ],
+      "category": "Provider detail",
+      "passed": true,
+      "permitted": "Detail height/content may change; fixed width must not."
+    },
+    {
+      "file": "quota-tooltip-overflow-bottom.png",
+      "before_size": [
+        606,
+        2032
+      ],
+      "after_size": [
+        606,
+        2032
+      ],
+      "category": "Unchanged image",
+      "changed_pixels": 0,
+      "changed_pixels_outside_allowed": 0,
+      "outside_difference_bounds": null,
+      "passed": true
+    },
+    {
+      "file": "statistics.png",
+      "before_size": [
+        1746,
+        1121
+      ],
+      "after_size": [
+        1746,
+        1121
+      ],
+      "category": "Unchanged image",
+      "changed_pixels": 0,
+      "changed_pixels_outside_allowed": 0,
+      "outside_difference_bounds": null,
+      "passed": true
+    }
+  ]
+}
