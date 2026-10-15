@@ -208,10 +208,52 @@ internal static class QuotaToolTipUiChecks
         var now = new DateTimeOffset(2026, 10, 15, 9, 0, 0, TimeSpan.Zero);
         QuotaState[] states = [new(QuotaProvider.Codex, new(QuotaProvider.Codex,
             [new("session", "5시간", 50, now.AddHours(2), 300)]), now, now, now.AddHours(6))];
+        bool updatingFixture = false;
+        bool cleaningFixture = false;
+        host.FormClosing += (_, args) => TraceLifetime("host-closing", args.CloseReason.ToString());
+        host.FormClosed += (_, args) => TraceLifetime("host-closed", args.CloseReason.ToString());
+        host.Disposed += (_, _) => TraceLifetime("host-disposed");
+        view.Disposed += (_, _) => TraceLifetime("view-disposed");
+        view.ControlRemoved += (_, args) => TraceLifetime("control-removed", args.Control?.Name);
+        view.ControlAdded += (_, args) => TraceLifetime("control-added", args.Control?.Name);
         bool ownerWasVisible = owner.Visible;
         host.Show(); // Independent fixture: the real status owner's Deactivate policy must not own its lifetime.
-        view.UpdateQuotas(states, now);
-        Control Box() => view.Controls.OfType<Panel>().Single(box => box.Name == "CodexQuotaBox");
+        UpdateFixture(now);
+        Control Box()
+        {
+            var boxes = view.Controls.OfType<Panel>().Where(box => box.Name == "CodexQuotaBox").ToArray();
+            if (boxes.Length != 1)
+            {
+                TraceLifetime("box-missing", $"matches={boxes.Length}");
+                throw new InvalidOperationException("Tooltip fixture lost CodexQuotaBox; see INFO: tooltip fixture lifetime diagnostics.");
+            }
+            return boxes[0];
+        }
+        void UpdateFixture(DateTimeOffset timestamp)
+        {
+            updatingFixture = true;
+            try { view.UpdateQuotas(states, timestamp); }
+            finally { updatingFixture = false; }
+        }
+        void TraceLifetime(string phase, string? detail = null)
+        {
+            Console.WriteLine("INFO: tooltip fixture lifetime " + System.Text.Json.JsonSerializer.Serialize(new
+            {
+                phase, detail, updatingFixture, cleaningFixture,
+                thread = Environment.CurrentManagedThreadId,
+                context = SynchronizationContext.Current?.GetType().Name,
+                hostDisposed = host.IsDisposed, hostDisposing = host.Disposing, hostVisible = host.Visible,
+                hostHandleCreated = host.IsHandleCreated,
+                viewDisposed = view.IsDisposed, viewDisposing = view.Disposing, viewVisible = view.Visible,
+                viewHandleCreated = view.IsHandleCreated,
+                layoutKey = typeof(AccountQuotaView).GetField("layoutKey", System.Reflection.BindingFlags.Instance |
+                    System.Reflection.BindingFlags.NonPublic)!.GetValue(view),
+                parent = view.Parent?.GetType().Name,
+                controls = view.Controls.Cast<Control>().Select(child => new { child.Name, type = child.GetType().Name, child.IsDisposed }).ToArray()
+            }));
+            if (!updatingFixture && !cleaningFixture && phase is "host-closing" or "view-disposed" or "control-removed" or "box-missing")
+                Console.WriteLine("INFO: tooltip fixture lifetime stack " + Environment.StackTrace);
+        }
         var onMouseMove = typeof(Control).GetMethod("OnMouseMove",
             System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
         void Move(Control control) => onMouseMove.Invoke(control, [new MouseEventArgs(MouseButtons.None, 0, 2, 2, 0)]);
@@ -255,7 +297,7 @@ internal static class QuotaToolTipUiChecks
             Move(Box());
             foreach (Control child in Box().Controls) Move(child);
             view.ShowDetail(QuotaProvider.Codex, pointer);
-            view.UpdateQuotas(states, now.AddMinutes(1));
+            UpdateFixture(now.AddMinutes(1));
             check(!view.Details.Visible, "Dismissed detail stays hidden across child hover/show/model refresh: " + reason);
         }
         try
@@ -268,7 +310,7 @@ internal static class QuotaToolTipUiChecks
             while (lifetime.Elapsed < TimeSpan.FromSeconds(9))
             {
                 Move(Box());
-                view.UpdateQuotas(states, now.AddSeconds(lifetime.Elapsed.TotalSeconds));
+                UpdateFixture(now.AddSeconds(lifetime.Elapsed.TotalSeconds));
                 stayedVisible &= view.Details.Visible;
                 await Task.Delay(100);
             }
@@ -284,7 +326,7 @@ internal static class QuotaToolTipUiChecks
             // Rebuilding the rows while still inside the same Provider must preserve the guard.
             states = [states[0] with { Reading = new(QuotaProvider.Codex,
                 [new("weekly", "주간", 50, now.AddDays(2), 10080)]) }];
-            view.UpdateQuotas(states, now);
+            UpdateFixture(now);
             Hover();
             check(!view.Details.Visible, "Layout rebuild does not rearm a dismissed Provider");
             await Task.Delay(SystemInformation.MouseHoverTime + 150);
@@ -325,7 +367,7 @@ internal static class QuotaToolTipUiChecks
             Input(0x0100, Keys.Escape);
             states = [states[0], new(QuotaProvider.Claude, new(QuotaProvider.Claude,
                 [new("weekly", "주간", 50, now.AddDays(2), 10080)]), now, now, now.AddHours(6))];
-            view.UpdateQuotas(states, now);
+            UpdateFixture(now);
             var other = view.Controls.OfType<Panel>().Single(box => box.Name == "ClaudeQuotaBox");
             view.ScrollControlIntoView(other);
             pointer = other.PointToScreen(new Point(2, 2));
@@ -336,6 +378,7 @@ internal static class QuotaToolTipUiChecks
         }
         finally
         {
+            cleaningFixture = true;
             view.HideDetail(); host.Hide();
             if (ownerWasVisible) owner.Show();
         }
