@@ -39,6 +39,8 @@ internal static class SharedTestSuite
             Report("panel text/tones (Windows golden)", PanelModelTests.Run());
             Report("quota usage/countdown/provider detail (portable)", QuotaPresentationTests.Run());
             Report("quota snapshot time/usage comparison (portable)", QuotaPacingTests.Run());
+            Report("quota recovery notification decisions/text (synthetic)", QuotaRecoveryNotificationTests.Run());
+            Report("quota recovery notification settings (temporary SQLite)", await QuotaRecoverySettingsTests.RunAsync(directory));
             Report("recording/note limit/feedback text (Windows golden)", RecordingTests.Run());
             Report("statistics text (Windows golden)", StatisticsTextTests.Run());
             return total;

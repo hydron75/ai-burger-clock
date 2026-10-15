@@ -2,7 +2,9 @@
 
 이 문서는 **Windows 2.5.1 소스 기준**입니다. #58을 사용자 승인으로 병합하고 깨끗한 main `2897aea54141f9ed55054847a0268f73d4f79eaa`에서 단일 EXE를 만들어 **2.5.1 배포를 완료**했습니다. 실제 EXE·백업·검사와 사용자 확인은 [2.5.1 배포 기록](MAINTENANCE_2_5_1.md)에 있습니다. 배포 뒤 문서 커밋은 EXE 소스가 아니며 다시 publish하지 않습니다. Windows 사용법은 [README](README.md), 최신 Mac 버전·검증은 [Mac 안내](Mac/README.md)로 이동하세요. 아래 실행·UI 설명은 Windows 기준이며 Mac의 차이는 12절에 정리했습니다.
 
-코드를 한 줄씩 번역한 문서는 아닙니다. **각 파일이 무엇을 맡고, 서로 어떻게 연결되는지** 설명합니다. 현재 소스의 루트·Properties C# 76개, Mac 호스트 7개, 공통 검사 입구 1개로 총 84개와 빌드 설정을 다룹니다. `SharedTestSuite.cs`는 루트의 검사 파일에 이미 포함하고, 별도 공통 검사 입구는 `Shared.Tests/Program.cs` 한 개만 셉니다. 컴퓨터가 만든 `bin`·`obj`와 로컬 검증용 `artifacts`는 대상에서 뺍니다.
+코드를 한 줄씩 번역한 문서는 아닙니다. **각 파일이 무엇을 맡고, 서로 어떻게 연결되는지** 설명합니다. 이 개발 브랜치의 루트·Properties C# 80개, Mac 호스트 7개, 공통 검사 입구 1개로 총 88개와 빌드 설정을 다룹니다. `SharedTestSuite.cs`는 루트의 검사 파일에 이미 포함하고, 별도 공통 검사 입구는 `Shared.Tests/Program.cs` 한 개만 셉니다. 컴퓨터가 만든 `bin`·`obj`와 로컬 검증용 `artifacts`는 대상에서 뺍니다.
+
+**Draft 개발·미배포:** 공통 [QuotaRecoveryNotifications.cs](QuotaRecoveryNotifications.cs)는 새 성공 관측의 소진→회복만 판정하고 문구를 만듭니다. `AccountQuotaMonitor.Succeeded`는 캐시/시작/실패와 분리한 성공 응답·Provider별 순번을 전달합니다. Windows는 기본 꺼짐 메뉴와 기존 네이티브 풍선 알림에 연결합니다. 설정은 기존 AppMetadata 한 키이며 schema 2·조회 정책·공식 상태 판정은 그대로입니다. [검사·수명 계약·Mac 확인 요청](QUOTA_RECOVERY_NOTIFICATIONS.md). Mac 코드와 위 2.5.1 배포본은 변경하지 않습니다.
 
 **2.3.0에 반영:** [Gemini/Antigravity 한도](GEMINI_ANTIGRAVITY_QUOTAS.md)는 공식 `agy` 1.3.1 이상·2.0 미만에서 Gemini 모델 그룹만 조회합니다. #30은 Mac 확인 뒤 main에 병합됐으며, 이 PC의 agy 1.3.2 실제 조회와 새 배포본의 Gemini 값 정상 표시도 확인했습니다(후자는 사용자 확인). Windows 준비·최종 검사 결과와 이전 #30 결과는 [2.3.0 배포 기록](MAINTENANCE_2_3_0.md)에서 구분합니다.
 
@@ -315,7 +317,7 @@ Windows 내부 승인 형식은 알려진 경우만 해석합니다. 낯선 값�
 
 이름을 눌러 소스를 열 수 있습니다. 역할을 알고 필요한 파일부터 읽으면 됩니다.
 
-### 실제 앱 기능: 40개
+### 실제 앱 기능: 41개
 
 | 파일 | 맡은 일 |
 |---|---|
@@ -335,6 +337,7 @@ Windows 내부 승인 형식은 알려진 경우만 해석합니다. 낯선 값�
 | [ProviderStatusPages.cs](ProviderStatusPages.cs) | 공식 상태 페이지의 고정 주소와 열기 |
 | [StatusMonitor.cs](StatusMonitor.cs) | 정기 조회, 실패 격리, 오래된 정보 판정 |
 | [RecommendationNotifications.cs](RecommendationNotifications.cs) | 마지막 확정 권고 기억, 중복 알림 방지 |
+| [QuotaRecoveryNotifications.cs](QuotaRecoveryNotifications.cs) | 검증된 성공 관측의 창별 소진→회복 판정·중복 방지와 공통 설정/알림 문구. 조회·네이티브 표시는 호스트가 맡음 |
 | [TrayPresentation.cs](TrayPresentation.cs) | 트레이 문자·색상·짧은 도움말 결정. 두 OS가 함께 쓰는 전환·Provider 알림 문구 |
 | [WindowsProviderNames.cs](WindowsProviderNames.cs) | Windows 화면·메뉴·기록·통계·Tooltip·알림에서 OpenAI를 ChatGPT로 표시. 저장 식별자와 공식 URL은 유지 |
 | [ProviderNames.cs](ProviderNames.cs) | 두 OS의 공통 제품 표시 이름. 식별자·DB 값과 구분 |
@@ -360,7 +363,7 @@ Windows 내부 승인 형식은 알려진 경우만 해석합니다. 낯선 값�
 | [QuotaBarPalette.cs](QuotaBarPalette.cs) | Windows 막대의 실제 합성색 대비로 시간층 농도와 경계선 색을 선택. 고대비 시스템색·경계선 보완 |
 | [QuotaDetailPopup.cs](QuotaDetailPopup.cs) | Windows 비활성화 상세 팝업. 흰색·고정 폭·줄바꿈·포인터 근처/화면 경계 보정·긴 상세 세로 스크롤 |
 
-### 검사와 진단: 35개
+### 검사와 진단: 38개
 
 미완성 임시 코드가 아닙니다. **특별한 검사 명령 때만 쓰는 정식 검사 코드**입니다.
 
@@ -377,6 +380,9 @@ Windows 내부 승인 형식은 알려진 경우만 해석합니다. 낯선 값�
 | [PanelModelTests.cs](PanelModelTests.cs) | 공통 상태·한도 본문과 톤, 상세 Tooltip 골든 검사 |
 | [QuotaPresentationTests.cs](QuotaPresentationTests.cs) | 공통 사용률·간략 시간·Provider 상세와 행별 시간 비교 연결 146건. 공통 실행 목록에 한 번 등록 |
 | [QuotaPacingTests.cs](QuotaPacingTests.cs) | 합성 시각으로 시간 비율 고정·계산 불가·%p 문구·행별 비교·조회 기준 나이 207건 |
+| [QuotaRecoveryNotificationTests.cs](QuotaRecoveryNotificationTests.cs) | 새 성공만의 회복·부분 회복·첫 성공/반복/기간 변경 무알림과 문구 검사 |
+| [QuotaRecoverySettingsTests.cs](QuotaRecoverySettingsTests.cs) | 임시 SQLite에서 기본 OFF·저장·오류·취소와 schema 2 유지 |
+| [QuotaRecoveryUiChecks.cs](QuotaRecoveryUiChecks.cs) | 실제 Windows 메시지 루프의 opt-in 메뉴·합성 성공 응답·네이티브 알림 요청·우선순위/대기열·재시작/종료 검사 |
 | [QuotaBarUiChecks.cs](QuotaBarUiChecks.cs) | 합성 라이트·다크·고대비 팔레트와 96/144/192 DPI의 겹침·경계선 픽셀 83건. Windows smoke에서 호출 |
 | [RecordingTests.cs](RecordingTests.cs) | 공통 기록 캡처·메뉴·메모 제한·피드백 골든 검사 |
 | [StatisticsTextTests.cs](StatisticsTextTests.cs) | 공통 통계 본문·표 제목·기간·주의 문구 골든 검사 |
