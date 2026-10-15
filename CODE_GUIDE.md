@@ -1,6 +1,6 @@
 # 소스코드, 쉬운 말로 읽기
 
-이 문서는 **Windows 2.5.1 후보 소스 기준**입니다. #57이 main `a1d99e5`에 병합된 뒤 Windows 버전·기록만 준비합니다. 배포 EXE는 main `af1c831`에서 만든 **2.5.0 그대로**이며 새 PR 병합·publish·교체는 다음 승인을 기다립니다. [2.5.1 준비·교체 계획](MAINTENANCE_2_5_1.md)과 [현재 2.5.0 배포 기록](MAINTENANCE_2_5_0.md)을 구분합니다. Windows 사용법은 [README](README.md), 최신 Mac 버전·검증은 [Mac 안내](Mac/README.md)로 이동하세요. 아래 실행·UI 설명은 Windows 기준이며 Mac의 차이는 12절에 정리했습니다.
+이 문서는 **Windows 2.5.1 후보 소스 기준**입니다. #57이 main `a1d99e5`에 병합된 뒤 Windows 버전·검사·기록을 준비합니다. 배포 EXE는 main `af1c831`에서 만든 **2.5.0 그대로**이며 새 PR 병합·publish·교체는 다음 승인을 기다립니다. [2.5.1 준비·교체 계획](MAINTENANCE_2_5_1.md)과 [현재 2.5.0 배포 기록](MAINTENANCE_2_5_0.md)을 구분합니다. Windows 사용법은 [README](README.md), 최신 Mac 버전·검증은 [Mac 안내](Mac/README.md)로 이동하세요. 아래 실행·UI 설명은 Windows 기준이며 Mac의 차이는 12절에 정리했습니다.
 
 코드를 한 줄씩 번역한 문서는 아닙니다. **각 파일이 무엇을 맡고, 서로 어떻게 연결되는지** 설명합니다. 현재 소스의 루트·Properties C# 76개, Mac 호스트 7개, 공통 검사 입구 1개로 총 84개와 빌드 설정을 다룹니다. `SharedTestSuite.cs`는 루트의 검사 파일에 이미 포함하고, 별도 공통 검사 입구는 `Shared.Tests/Program.cs` 한 개만 셉니다. 컴퓨터가 만든 `bin`·`obj`와 로컬 검증용 `artifacts`는 대상에서 뺍니다.
 
@@ -16,9 +16,9 @@
 
 **2.5.0 당시 검사:** 빌드 경고 0·오류 0, self-test **251,826건**(공통 251,519 + Windows 307)·ExitCode 0, 준비 smoke **5회 모두 492 PASS·ExitCode 0**, 최종 단일 EXE의 별도 smoke **1회 492 PASS·ExitCode 0**입니다. 실제 시간 비교·Refresh 정상은 사용자 확인이며 [2.5.0 배포 기록](MAINTENANCE_2_5_0.md)에 있습니다. 이번 후보의 새 검사 결과와 구분합니다.
 
-**2.5.1 후보:** #57의 `AccountQuotaView`는 `IMessageFilter`로 클릭/Esc를 처리하고 Provider별 재표시 차단 상태·10초 타이머·부모 창 숨김 구독을 관리합니다. 클릭은 소비하지 않고 처리 중인 Esc만 소비합니다. `QuotaToolTipUiChecks`는 실제 메시지 루프와 합성 포인터로 만료·클릭/Esc·자식 이동·행 재생성·Provider 이동·창 숨김/재열기를 검사합니다. 공통 코드·상세 문구·조회 정책·창 크기·DB는 그대로이며 새 버전 PR은 제품/검사 C#를 다시 바꾸지 않습니다.
+**2.5.1 후보:** #57의 `AccountQuotaView`는 `IMessageFilter`로 클릭/Esc를 처리하고 Provider별 재표시 차단 상태·10초 타이머·부모 창 숨김 구독을 관리합니다. 클릭은 소비하지 않고 처리 중인 Esc만 소비합니다. `QuotaToolTipUiChecks`는 실제 메시지 루프와 합성 포인터로 만료·클릭/Esc·자식 이동·행 재생성·Provider 이동·창 숨김/재열기를 검사합니다. #58 후속에서는 검사 전용 창의 수명 진단·UserClosing 보호·Close 요청 회귀 검사 3건만 추가합니다. 제품 C#·공통 코드·상세 문구·조회 정책·창 크기·DB는 그대로입니다.
 
-이번 후보 검사는 SDK 10.0.402, 빌드 경고 0·오류 0, 기존 dist 2.5.0과 후보 self-test **각 251,826건(공통 251,519 + Windows 307)·ExitCode 0**입니다. smoke는 **3/5회 통과(각 527 PASS), 2/5회 실패**했습니다. 독립 팝업 검사에서 `CodexQuotaBox`를 찾지 못한 원인이 미확정이라 배포 준비는 보류하고 Draft를 유지합니다. 통과 회차의 PNG 20개/layout 14개는 #57과 동일하고 실패 회차는 일부 생성만 확인했습니다. 상세 증거와 진단 제안은 [2.5.1 기록](MAINTENANCE_2_5_1.md)에 있습니다. 현재 실행 중인 앱은 변경하지 않은 기존 2.5.0 배포본입니다.
+이번 최종 후보 검사는 SDK 10.0.402, 빌드 경고 0·오류 0, self-test **251,826건(공통 251,519 + Windows 307)·ExitCode 0**으로 기존 dist 2.5.0 및 초기 후보와 같습니다. 초기 smoke 2/5 실패는 수동 닫기에 취약했던 독립 fixture에서 같은 Box 누락을 재현했습니다. 검사 창만 보호한 뒤 최종 smoke는 **5회 모두 530 PASS·ExitCode 0**, PNG 20개/layout 14개도 매회 #57과 같습니다. 기존 527건에 닫기 버튼/Close 회귀 검사 3건이 늘었고 대기 시간은 그대로입니다. 초기 실패·진단만 추가한 5회·닫기 주입 재현·최종 5회는 [2.5.1 기록](MAINTENANCE_2_5_1.md)에서 구분합니다. 현재 실행 중인 앱은 변경하지 않은 기존 2.5.0 배포본이며 PR은 Draft 승인 대기입니다.
 
 ## 1. 작은 안내소라고 생각해 보세요
 
@@ -398,7 +398,7 @@ Windows 내부 승인 형식은 알려진 경우만 해석합니다. 낯선 값�
 | [GeminiQuotaClientTests.cs](GeminiQuotaClientTests.cs) | 합성 입출력으로 agy 고정 명령·버전·0턴/0토큰·인증 대기·출력 제한 검사. 설치된 CLI는 실행하지 않음 |
 | [AccountQuotaMonitorTests.cs](AccountQuotaMonitorTests.cs) | 실패 격리·조회 합치기·종료·SQLite 캐시·재시작 |
 | [AccountQuotaUiChecks.cs](AccountQuotaUiChecks.cs) | 가짜 한도로 창 전환·사용률/막대·대표색·실패·공통 상세/접근성·Refresh·기존 상태 복귀 |
-| [QuotaToolTipUiChecks.cs](QuotaToolTipUiChecks.cs) | 실제 WinForms에서 상세 모양·배치·DPI·스크롤과 실제 10초 만료·입력 필터·재등장 방지·부모 창 재열기 검사 |
+| [QuotaToolTipUiChecks.cs](QuotaToolTipUiChecks.cs) | 실제 WinForms에서 상세 모양·배치·DPI·스크롤·10초 만료·재등장 방지·창 재열기 검사. 합성 fixture 수명 진단과 수동 닫힘 보호 |
 | [LiveQuotaProbe.cs](LiveQuotaProbe.cs) | 공식 CLI 실제 계정 조회 결과 중 한도 정보만 출력 |
 | [PortablePlatformTests.cs](PortablePlatformTests.cs) | 데이터 경로·IANA 시간대 경계·표시 형식·Mac CLI 경로 후보 검사 |
 
