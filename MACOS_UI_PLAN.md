@@ -414,6 +414,8 @@ internal sealed class StatusTicker
 
 15. 한도 사용량 막대(2026-10-10, #45 후속, Mac 0.4.0): Mac 팝오버의 한도 구간은 공통 제목(`QuotaPanelModel.AccessibleName`)을 쓰고, 값이 있는 행마다 읽기 전용 막대를 둡니다. 막대 색은 Windows와 같은 Provider 대표색이며 라이트·다크 모두 패널 배경 대비 3:1 이상입니다. 이전·경과 값은 회색 톤입니다. 상세 Tooltip은 `QuotaSectionText.Detail` 하나를 Provider 박스 전체에 연결합니다. 결정 9(정렬)·10(한도 항상 표시)은 그대로입니다. 근거와 검증은 [MACOS_PORT 42절](MACOS_PORT.md#42-040-한도-사용량-막대)에 있습니다.
 
+16. 한도 막대의 시간 비교(2026-10-15, #52 후속, Mac 0.5.0): Mac 막대는 공통 `QuotaLine.ElapsedPercent`로 `바탕 → 시간 층 → 사용 층 → 1pt 경계선`을 겹쳐 그립니다. 비교가 없거나 Muted인 행은 지금 모양을 유지합니다. 색은 라이트·다크 각각 패널 배경에서 계산해 시간 층 1.5:1, 경계선 3:1을 만족하고, VoiceOver는 행 문구 뒤에 공통 `ComparisonText`를 붙여 읽습니다. 결정 9·10과 팝오버 높이는 그대로입니다. 기록은 [MACOS_PORT 44절](MACOS_PORT.md#44-050-한도-막대의-시간-층경계선과-voiceover-비교-문구)입니다.
+
 ## 6) 진행 방법 (Mac 새 로컬 챗)
 - Mac에서 저장소 폴더를 열고 `git switch main && git pull`로 최신 main을 받습니다. 기존 Mac 로컬 챗은 없으므로 새 Claude Code 챗을 엽니다.
 - 이 문서와 [AGENTS.md](AGENTS.md), [Mac/README](Mac/README.md)를 먼저 읽고 4) 표의 PR 1부터 순서대로 진행합니다. PR마다 main에서 새 브랜치를 만듭니다.
