@@ -582,6 +582,7 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
             // Readable tone text on the opaque background whatever the desktop behind it, in both appearances.
             double weakest = double.MaxValue;
             double barWeakest = double.MaxValue;
+            double tintWeakest = double.MaxValue, markerWeakest = double.MaxValue;
             foreach (NSString name in new[] { NSAppearance.NameAqua, NSAppearance.NameDarkAqua })
             {
                 NSAppearance appearance = NSAppearance.GetAppearance(name)
@@ -607,6 +608,31 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
                     barWeakest = Math.Min(barWeakest, barContrast);
                     if (barContrast < 3.0)
                         throw new InvalidOperationException($"{provider} usage bar color contrast {barContrast:0.00}:1 is below 3:1 in {name}.");
+                }
+                // Time layer: per appearance, tint <-> track and tint <-> used >= 1.5:1, marker (or its halo)
+                // >= 3:1 on every adjacent face. Checked with NSColor luminance, independent of the palette math.
+                bool darkAppearance = name == NSAppearance.NameDarkAqua;
+                foreach (NSColor fill in new[] { MacControls.QuotaBarColor(QuotaProvider.Codex), MacControls.QuotaBarColor(QuotaProvider.Claude),
+                    MacControls.QuotaBarColor(QuotaProvider.Gemini), MacControls.Color(PanelTone.Muted) })
+                {
+                    MacControls.BarPalette palette = MacControls.BarPaletteFor(fill, darkAppearance);
+                    if (!palette.HasDistinctTint || !palette.MeetsTargets)
+                        throw new InvalidOperationException($"Usage bar palette misses its contrast targets in {name}.");
+                    NSColor track = palette.Track.ToColor(), tint = palette.Elapsed.ToColor(), used = palette.Used.ToColor();
+                    double tintTrack = MacControls.Contrast(tint, () => track, appearance);
+                    double tintUsed = MacControls.Contrast(tint, () => used, appearance);
+                    tintWeakest = Math.Min(tintWeakest, Math.Min(tintTrack, tintUsed));
+                    if (tintTrack < 1.5 || tintUsed < 1.5)
+                        throw new InvalidOperationException($"Time tint contrast {tintTrack:0.00}/{tintUsed:0.00}:1 is below 1.5:1 in {name}.");
+                    foreach (NSColor face in new[] { track, tint, used })
+                    {
+                        NSColor core = palette.Marker.ToColor(), edge = palette.Halo is { } halo ? halo.ToColor() : core;
+                        double markerContrast = Math.Max(MacControls.Contrast(core, () => face, appearance),
+                            MacControls.Contrast(edge, () => face, appearance));
+                        markerWeakest = Math.Min(markerWeakest, markerContrast);
+                        if (markerContrast < 3.0)
+                            throw new InvalidOperationException($"Time marker contrast {markerContrast:0.00}:1 is below 3:1 in {name}.");
+                    }
                 }
             }
             panel.Close();
@@ -700,6 +726,54 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
                 throw new InvalidOperationException("Previous/elapsed rows must keep their bars and a failed reading must have none.");
             panel.Update(Schedule(now), healthy, quotas, false, now.AddMinutes(5), "");
             panel.Verify(Schedule(now), healthy, quotas);
+            // Time layer at the standard fixture: elapsed comes from the shared model (receipt time = now),
+            // the marker sits at width x elapsed, the 5h 0% row has none, and the spoken row carries the comparison.
+            double fixtureElapsed = 100.0 * (300 - 15) / 300;
+            var (codexElapsed, codexLeft, codexMarkerWidth, codexElapsedWidth) = panel.QuotaBarTime(QuotaProvider.Codex, "session");
+            if (codexElapsed is null || Math.Abs(codexElapsed.Value - fixtureElapsed) > 1e-6 ||
+                Math.Abs(codexElapsedWidth - Math.Round(layout.BoxTextWidth * fixtureElapsed / 100)) > 0.01 ||
+                Math.Abs(codexLeft - (codexElapsedWidth - 0.5)) > 0.01 || codexMarkerWidth != 1)
+                throw new InvalidOperationException("Time marker of the 95%-elapsed 5h row is wrong.");
+            if (panel.QuotaBarTime(QuotaProvider.Gemini, "gemini-5h").Elapsed is not null ||
+                panel.QuotaRowSpoken(QuotaProvider.Gemini, "gemini-5h") != panel.QuotaRowText(QuotaProvider.Gemini, "gemini-5h"))
+                throw new InvalidOperationException("The 5h 0% row must hide its time comparison (no marker, plain spoken row).");
+            if (!panel.QuotaRowSpoken(QuotaProvider.Codex, "session").StartsWith(panel.QuotaRowText(QuotaProvider.Codex, "session") + ". 시간 경과 ", StringComparison.Ordinal) ||
+                !panel.QuotaRowSpoken(QuotaProvider.Codex, "session").EndsWith(" 기준", StringComparison.Ordinal))
+                throw new InvalidOperationException("The spoken row does not read row text then comparison then its age.");
+            // End points and hidden states, with explicit times.
+            QuotaState[] timeStates =
+            [
+                new(QuotaProvider.Codex, new(QuotaProvider.Codex,
+                    [new("session", "5시간", 30, now.AddMinutes(300), 300),          // elapsed 0%: marker kept inside at the left end
+                     new("weekly", "주간", 50, now.AddMinutes(1), 10080)]),          // elapsed ~99.99%: marker kept inside at the right end
+                    LastSuccessfulCheckUtc: now, NextCheckUtc: now.AddMinutes(5)),
+                new(QuotaProvider.Claude, new(QuotaProvider.Claude,
+                    [new("session", "세션 (5시간)", 80, now.AddMinutes(-4), 300),    // reset time passed: hidden
+                     new("weekly_all", "주간 전체", 63, null, 10080),                // reset not provided: hidden
+                     new("weekly_scoped", "주간 Fable", 20, now.AddDays(2), null)]), // window length unknown: hidden
+                    LastSuccessfulCheckUtc: now, NextCheckUtc: now.AddMinutes(5)),
+                new(QuotaProvider.Gemini, new(QuotaProvider.Gemini,
+                    [new("gemini-5h", "5시간", 55, now.AddHours(3), 300),            // would compare, but the value is previous
+                     new("gemini-weekly", "주간", 10, now.AddDays(3), 10080)]),
+                    LastSuccessfulCheckUtc: now.AddHours(-1), NextCheckUtc: now.AddMinutes(5), IsPrevious: true),
+            ];
+            panel.Update(Schedule(now), healthy, timeStates, false, now.AddMinutes(5), "");
+            panel.Verify(Schedule(now), healthy, timeStates);
+            var leftEnd = panel.QuotaBarTime(QuotaProvider.Codex, "session");
+            var rightEnd = panel.QuotaBarTime(QuotaProvider.Codex, "weekly");
+            if (leftEnd.Elapsed != 0 || leftEnd.MarkerLeft != 0 || leftEnd.MarkerWidth != 1 || leftEnd.ElapsedWidth != 0 ||
+                rightEnd.Elapsed is not > 99.9 || Math.Abs(rightEnd.MarkerLeft + rightEnd.MarkerWidth - layout.BoxTextWidth) > 0.01)
+                throw new InvalidOperationException("Time marker end points are not kept inside the bar.");
+            foreach (var (provider, windowId) in new[] { (QuotaProvider.Claude, "session"), (QuotaProvider.Claude, "weekly_all"),
+                (QuotaProvider.Claude, "weekly_scoped"), (QuotaProvider.Gemini, "gemini-5h"), (QuotaProvider.Gemini, "gemini-weekly") })
+            {
+                var hidden = panel.QuotaBarTime(provider, windowId);
+                if (hidden.Elapsed is not null || hidden.MarkerWidth != 0 || hidden.ElapsedWidth != 0 ||
+                    panel.QuotaRowSpoken(provider, windowId) != panel.QuotaRowText(provider, windowId))
+                    throw new InvalidOperationException($"{provider} {windowId}: hidden comparison still shows a time layer or spoken suffix.");
+            }
+            panel.Update(Schedule(now), healthy, quotas, false, now.AddMinutes(5), "");
+            panel.Verify(Schedule(now), healthy, quotas);
             panel.Close();
             string displayResult = VerifyDisplayDecisions();
             ShowStatistics();
@@ -716,7 +790,7 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
             await statisticsWindow.RefreshAsync();
             if (!statisticsWindow.Window.IsVisible)
                 throw new InvalidOperationException("Statistics window did not reopen from the menu-bar action.");
-            Console.WriteLine($"PASS: bundle version, menu-tracking countdown timer, 20pt menu icon white/dark disc + color glyph light/dark 1x-2x pixels (glyph contrast min {iconContrast:0.0}:1), left/right/control-click routing, right-click menu, popover open/close/reopen, shared panel text/record menu/quota lines, {activationResult}, tone contrast >= 4.5:1 light+dark (min {weakest:0.0}:1), card text x = quota box text x ({layout.BoxTextX:0}pt; titles {layout.TitleX:0}pt), whole-card click/quota boxes read-only, shared quota title, usage bars (0% empty/100% full, provider colors >= 3:1 light+dark min {barWeakest:0.0}:1, muted when previous/elapsed, none without a value), one shared Provider detail per quota box, three quota boxes incl. Gemini, popover {layout.Size.Width:0}x{layout.Size.Height:0}pt (this screen usable {layout.UsableHeight:0}pt; 1280x800 {standard.Height:0}pt not cut off, quota area {standardQuota:0}pt; 1024x640 {small.Height:0}pt with quota area {smallQuota:0}pt scrolling), 1,000-char note limit, temporary SQLite, four events/notes via shared factory, {displayResult}, statistics (shared text, explanation fits, Mac empty-state hint), injected quota countdown; no account/network/settings changes.");
+            Console.WriteLine($"PASS: bundle version, menu-tracking countdown timer, 20pt menu icon white/dark disc + color glyph light/dark 1x-2x pixels (glyph contrast min {iconContrast:0.0}:1), left/right/control-click routing, right-click menu, popover open/close/reopen, shared panel text/record menu/quota lines, {activationResult}, tone contrast >= 4.5:1 light+dark (min {weakest:0.0}:1), card text x = quota box text x ({layout.BoxTextX:0}pt; titles {layout.TitleX:0}pt), whole-card click/quota boxes read-only, shared quota title, usage bars (0% empty/100% full, provider colors >= 3:1 light+dark min {barWeakest:0.0}:1, muted when previous/elapsed, none without a value), time layer (tint-track/tint-used >= 1.5:1 min {tintWeakest:0.0}:1, marker >= 3:1 min {markerWeakest:0.0}:1 light+dark, marker position/end points, hidden states, spoken row = text + comparison), one shared Provider detail per quota box, three quota boxes incl. Gemini, popover {layout.Size.Width:0}x{layout.Size.Height:0}pt (this screen usable {layout.UsableHeight:0}pt; 1280x800 {standard.Height:0}pt not cut off, quota area {standardQuota:0}pt; 1024x640 {small.Height:0}pt with quota area {smallQuota:0}pt scrolling), 1,000-char note limit, temporary SQLite, four events/notes via shared factory, {displayResult}, statistics (shared text, explanation fits, Mac empty-state hint), injected quota countdown; no account/network/settings changes.");
             ExitCode = 0;
         }
         catch (Exception error)
