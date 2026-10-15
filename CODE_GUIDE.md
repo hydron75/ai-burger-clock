@@ -1,6 +1,6 @@
 # 소스코드, 쉬운 말로 읽기
 
-이 문서는 **Windows 2.5.1 후보 소스 기준**입니다. #57이 main `a1d99e5`에 병합된 뒤 Windows 버전·검사·기록을 준비합니다. 배포 EXE는 main `af1c831`에서 만든 **2.5.0 그대로**이며 새 PR 병합·publish·교체는 다음 승인을 기다립니다. [2.5.1 준비·교체 계획](MAINTENANCE_2_5_1.md)과 [현재 2.5.0 배포 기록](MAINTENANCE_2_5_0.md)을 구분합니다. Windows 사용법은 [README](README.md), 최신 Mac 버전·검증은 [Mac 안내](Mac/README.md)로 이동하세요. 아래 실행·UI 설명은 Windows 기준이며 Mac의 차이는 12절에 정리했습니다.
+이 문서는 **Windows 2.5.1 소스 기준**입니다. #58을 사용자 승인으로 병합하고 깨끗한 main `2897aea54141f9ed55054847a0268f73d4f79eaa`에서 단일 EXE를 만들어 **2.5.1 배포를 완료**했습니다. 실제 EXE·백업·검사와 사용자 확인은 [2.5.1 배포 기록](MAINTENANCE_2_5_1.md)에 있습니다. 배포 뒤 문서 커밋은 EXE 소스가 아니며 다시 publish하지 않습니다. Windows 사용법은 [README](README.md), 최신 Mac 버전·검증은 [Mac 안내](Mac/README.md)로 이동하세요. 아래 실행·UI 설명은 Windows 기준이며 Mac의 차이는 12절에 정리했습니다.
 
 코드를 한 줄씩 번역한 문서는 아닙니다. **각 파일이 무엇을 맡고, 서로 어떻게 연결되는지** 설명합니다. 현재 소스의 루트·Properties C# 76개, Mac 호스트 7개, 공통 검사 입구 1개로 총 84개와 빌드 설정을 다룹니다. `SharedTestSuite.cs`는 루트의 검사 파일에 이미 포함하고, 별도 공통 검사 입구는 `Shared.Tests/Program.cs` 한 개만 셉니다. 컴퓨터가 만든 `bin`·`obj`와 로컬 검증용 `artifacts`는 대상에서 뺍니다.
 
@@ -14,11 +14,11 @@
 
 **2.5.0에 반영·배포 완료:** #52의 `QuotaPacing`은 마지막 성공 조회에 고정한 시간 비율·사용률 차이와 기준 나이를 계산합니다. Windows 막대는 연한 시간층·진한 사용층·최상단 경계선을 그리며, 행/막대 접근성 설명에는 `QuotaLine.ComparisonText`만 직접 연결합니다. Provider Tooltip 파싱·화면 열기 조회·폴링 정책·DB 변경은 없습니다. 공통 원본은 #52의 Windows/Mac 확인 뒤 병합됐고 #54와 후속 기록은 Windows 버전·문서·합성 PNG만 변경합니다. #51 성능 최적화와 근무 시간표 가중치는 보류 후보입니다.
 
-**2.5.0 당시 검사:** 빌드 경고 0·오류 0, self-test **251,826건**(공통 251,519 + Windows 307)·ExitCode 0, 준비 smoke **5회 모두 492 PASS·ExitCode 0**, 최종 단일 EXE의 별도 smoke **1회 492 PASS·ExitCode 0**입니다. 실제 시간 비교·Refresh 정상은 사용자 확인이며 [2.5.0 배포 기록](MAINTENANCE_2_5_0.md)에 있습니다. 이번 후보의 새 검사 결과와 구분합니다.
+**2.5.0 당시 검사:** 빌드 경고 0·오류 0, self-test **251,826건**(공통 251,519 + Windows 307)·ExitCode 0, 준비 smoke **5회 모두 492 PASS·ExitCode 0**, 최종 단일 EXE의 별도 smoke **1회 492 PASS·ExitCode 0**입니다. 실제 시간 비교·Refresh 정상은 사용자 확인이며 [2.5.0 배포 기록](MAINTENANCE_2_5_0.md)에 있습니다. 이번 2.5.1의 새 검사 결과와 구분합니다.
 
-**2.5.1 후보:** #57의 `AccountQuotaView`는 `IMessageFilter`로 클릭/Esc를 처리하고 Provider별 재표시 차단 상태·10초 타이머·부모 창 숨김 구독을 관리합니다. 클릭은 소비하지 않고 처리 중인 Esc만 소비합니다. `QuotaToolTipUiChecks`는 실제 메시지 루프와 합성 포인터로 만료·클릭/Esc·자식 이동·행 재생성·Provider 이동·창 숨김/재열기를 검사합니다. #58 후속에서는 검사 전용 창의 수명 진단·UserClosing 보호·Close 요청 회귀 검사 3건만 추가합니다. 제품 C#·공통 코드·상세 문구·조회 정책·창 크기·DB는 그대로입니다.
+**2.5.1에 반영·배포 완료:** #57의 `AccountQuotaView`는 `IMessageFilter`로 클릭/Esc를 처리하고 Provider별 재표시 차단 상태·10초 타이머·부모 창 숨김 구독을 관리합니다. 클릭은 소비하지 않고 처리 중인 Esc만 소비합니다. `QuotaToolTipUiChecks`는 실제 메시지 루프와 합성 포인터로 만료·클릭/Esc·자식 이동·행 재생성·Provider 이동·창 숨김/재열기를 검사합니다. #58 후속에서는 검사 전용 창의 수명 진단·UserClosing 보호·Close 요청 회귀 검사 3건만 추가했습니다. 제품 C#·공통 코드·상세 문구·조회 정책·창 크기·DB는 그대로입니다.
 
-이번 최종 후보 검사는 SDK 10.0.402, 빌드 경고 0·오류 0, self-test **251,826건(공통 251,519 + Windows 307)·ExitCode 0**으로 기존 dist 2.5.0 및 초기 후보와 같습니다. 초기 smoke 2/5 실패는 수동 닫기에 취약했던 독립 fixture에서 같은 Box 누락을 재현했습니다. 검사 창만 보호한 뒤 최종 smoke는 **5회 모두 530 PASS·ExitCode 0**, PNG 20개/layout 14개도 매회 #57과 같습니다. 기존 527건에 닫기 버튼/Close 회귀 검사 3건이 늘었고 대기 시간은 그대로입니다. 초기 실패·진단만 추가한 5회·닫기 주입 재현·최종 5회는 [2.5.1 기록](MAINTENANCE_2_5_1.md)에서 구분합니다. 현재 실행 중인 앱은 변경하지 않은 기존 2.5.0 배포본이며 PR은 Draft 승인 대기입니다.
+준비 후보와 최종 배포 검사는 모두 SDK 10.0.402, 빌드 경고 0·오류 0, self-test **251,826건(공통 251,519 + Windows 307)·ExitCode 0**으로 기존 dist 2.5.0 및 초기 후보와 같습니다. 초기 smoke 2/5 실패는 수동 닫기에 취약했던 독립 fixture에서 같은 Box 누락을 재현했습니다. 검사 창만 보호한 뒤 준비 smoke는 **5회 모두 530 PASS·ExitCode 0**, PNG 20개/layout 14개도 매회 #57과 같습니다. 기존 527건에 닫기 버튼/Close 회귀 검사 3건이 늘었고 대기 시간은 그대로입니다. 승인 후 병합 main에서 publish한 **최종 단일 EXE의 별도 smoke는 1회 530 PASS·ExitCode 0**입니다. 초기 실패·진단·재현·준비 5회와 최종 배포 1회는 [2.5.1 기록](MAINTENANCE_2_5_1.md)에서 구분합니다. 자동 시작 등록은 그대로이며 현재 2.5.1 배포본이 실행 중입니다. 최종 트레이·상태 창과 10초/클릭/Esc/재등장 방지 정상은 사용자 확인입니다.
 
 ## 1. 작은 안내소라고 생각해 보세요
 
@@ -458,7 +458,7 @@ Mac의 시간대 ID는 `America/New_York`, `America/Los_Angeles`, `Asia/Seoul`�
 
 Mac은 `~/Library/Application Support/AIBurgerClock`에 별도 DB를 쓰고 `SMAppService.MainApp`으로 로그인 항목을 관리합니다. CLI는 절대 실행 경로와 실행 권한을 확인하고, shell 프로필·Keychain·인증 파일은 읽지 않습니다. 기능 규칙을 함께 써도 **두 컴퓨터의 DB와 로그인은 자동 동기화되지 않습니다.**
 
-현재 Windows 배포 EXE는 2.5.0이며 2.5.1은 후보입니다. #52의 공통 시간 비교와 #53·#55·#56의 Mac 후속은 각각의 기록으로 구분합니다. 이번 Windows 버전·기록 PR은 공통 원본이나 Mac 버전을 바꾸지 않습니다. `MacCliPaths`는 GUI 앱의 PATH와 `~/.local/bin`, `/opt/homebrew/bin`, `/usr/local/bin`에서 실행 가능한 공식 명령을 찾으며 앱이 인증 파일을 직접 읽지는 않습니다. 현재 Mac 빌드·아이콘·실기 검증은 [Mac 안내](Mac/README.md)·[Mac 기록](MACOS_PORT.md)에서 관리합니다. 기존 Mac 결과를 이번 Windows 준비에서 새로 실행한 검사로 적지 않습니다.
+현재 Windows 배포 EXE는 2.5.1입니다. #52의 공통 시간 비교와 #53·#55·#56의 Mac 후속은 각각의 기록으로 구분합니다. 이번 Windows 버전·검사·기록 PR은 공통 원본이나 Mac 버전을 바꾸지 않습니다. `MacCliPaths`는 GUI 앱의 PATH와 `~/.local/bin`, `/opt/homebrew/bin`, `/usr/local/bin`에서 실행 가능한 공식 명령을 찾으며 앱이 인증 파일을 직접 읽지는 않습니다. 현재 Mac 빌드·아이콘·실기 검증은 [Mac 안내](Mac/README.md)·[Mac 기록](MACOS_PORT.md)에서 관리합니다. 기존 Mac 결과를 이번 Windows 준비·배포에서 새로 실행한 검사로 적지 않습니다.
 
 Mac의 상태 UI는 `MacStatusPanel`과 `MacControls`를 쓰는 팝오버입니다. Windows는 `StatusWindow` 안에서 ‘한도 보기 ↔ 상태 보기’로 카드 영역을 전환합니다. 한도 박스·제목 기준선·클릭되는 카드만 hover라는 규칙은 [결정 9](MACOS_UI_PLAN.md)에 따르며, Mac 한도 항상 표시와 Windows 전환 방식의 차이는 결정 10에 남깁니다. 두 호스트의 실제 창 배치·픽셀 검사는 각각의 native smoke가 맡습니다.
 
@@ -495,7 +495,7 @@ $result.ExitCode
 
 검사는 가짜 현재 시각을 전달하므로 Windows 시스템 시계를 바꾸지 않습니다. UI 검사에서 공식 페이지 열기는 실제 브라우저 대신 주소를 받는 함수로 확인합니다.
 
-검사 통과와 실제 재부팅 성공, 사용자 화면의 알림 노출은 다른 증거입니다. 최신 후보는 [2.5.1 준비 기록](MAINTENANCE_2_5_1.md), 실제 배포는 [2.5.0 배포 기록](MAINTENANCE_2_5_0.md), 이전 배포 검증은 [2.4.1 기록](MAINTENANCE_2_4_1.md)·[2.4.0 기록](MAINTENANCE_2_4_0.md)·[2.3.0 기록](MAINTENANCE_2_3_0.md)·[2.2.4 기록](MAINTENANCE_2_2_4.md)·[2.2.3 기록](MAINTENANCE_2_2_3.md)·[2.2.2 기록](MAINTENANCE_2_2_2.md)·[2.2.1 기록](MAINTENANCE_2_2_1.md)을 참고하세요.
+검사 통과와 실제 재부팅 성공, 사용자 화면의 알림 노출은 다른 증거입니다. 최신 준비/배포 검사는 [2.5.1 배포 기록](MAINTENANCE_2_5_1.md), 이전 배포 검증은 [2.5.0 기록](MAINTENANCE_2_5_0.md)·[2.4.1 기록](MAINTENANCE_2_4_1.md)·[2.4.0 기록](MAINTENANCE_2_4_0.md)·[2.3.0 기록](MAINTENANCE_2_3_0.md)·[2.2.4 기록](MAINTENANCE_2_2_4.md)·[2.2.3 기록](MAINTENANCE_2_2_3.md)·[2.2.2 기록](MAINTENANCE_2_2_2.md)·[2.2.1 기록](MAINTENANCE_2_2_1.md)을 참고하세요.
 
 2.4.0 준비 후보에서 `build.ps1` 경고 0·오류 0, Windows self-test **251,451건**(공통 251,144 + Windows 전용 307)·실제 종료 코드 0, **smoke 5회 모두 387건·종료 코드 0**을 확인했습니다. 같은 PC에서 기존 dist 2.3.0 self-test도 직접 실행해 **251,377건·종료 코드 0**, 차이 **+74건**을 확인했습니다. 새 그룹 외에는 검사 수가 같고 공통 조회 주기·파서와 Windows 검사는 유지됩니다. 승인 뒤 병합 main `296f524`의 `build.ps1 -Publish`도 경고 0·오류 0, 최종 단일 EXE self-test **251,451건·종료 코드 0**, 별도 smoke **1회 387건·종료 코드 0**입니다. 정상 종료·WAL 확인·기존 2.3.0 백업 뒤 교체했고 자동 시작 등록은 그대로입니다. 최종 배포본의 트레이·상태 창·세 Provider 사용량 막대·상세 정상은 **사용자 확인**이며 실제 계정 값은 게시하지 않습니다. 합성 응답성·PNG·실제 화면 확인과 미수행 항목은 [2.4.0 기록](MAINTENANCE_2_4_0.md)에 구분합니다.
 

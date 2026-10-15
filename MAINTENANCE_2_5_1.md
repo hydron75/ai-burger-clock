@@ -1,8 +1,8 @@
-# AI Burger Clock 2.5.1 — Windows Provider 상세 닫힘 보완 준비
+# AI Burger Clock 2.5.1 — Windows Provider 상세 닫힘 보완 배포
 
-기록일: **2026-10-15 KST**. 상태: **smoke 실패 경로 재현·Windows 검사 보완 / 최종 build·self-test·smoke 5회 통과 / Draft 승인 대기 / 배포 교체 미승인**.
+기록일: **2026-10-15 KST**. 상태: **#58 승인·병합 / 정상 종료·WAL 확인·백업 후 2.5.1 배포 완료 / 최종 단일 EXE self-test·smoke 통과 / 트레이·상태 창·상세 닫힘 정상 사용자 확인**.
 
-#57은 main `a1d99e5a79cbda471a79a87a80a0894da1073990`에 병합된 상태를 확인했다. main에서 `git pull --ff-only` 후 `feature/windows-release-2-5-1`을 만들었다. 처음에는 버전·기록만 올렸고, 후속 사용자 요청으로 smoke 진단·검사 창 수명 보완을 추가했다. 현재 범위는 **Windows만 변경(버전·Windows 검사·기록)**이다. **publish·dist 교체·새 버전 PR 병합은 하지 않는다. 현재 배포 EXE는 2.5.0이다.**
+#57은 main `a1d99e5a79cbda471a79a87a80a0894da1073990`에 병합된 상태를 확인했다. main에서 `git pull --ff-only` 후 `feature/windows-release-2-5-1`을 만들었다. 처음에는 버전·기록만 올렸고, 후속 사용자 요청으로 smoke 진단·검사 창 수명 보완을 추가했다. 범위는 **Windows만 변경(버전·Windows 검사·기록)**이다. 준비 검사 뒤 사용자 승인으로 #58 Draft를 해제·병합하고 main을 fast-forward했다. **깨끗한 병합 main `2897aea54141f9ed55054847a0268f73d4f79eaa`에서 publish한 2.5.1이 현재 배포본**이다. 아래에는 초기 실패·준비 검사와 실제 배포 결과를 구분해 남긴다.
 
 실제 계정 요금제·사용률·리셋 시각·식별자·화면 캡처·CLI 원문·사용자 DB·원본 진단 로그는 게시하지 않는다. 검사와 렌더에는 합성 데이터만 사용한다.
 
@@ -28,11 +28,11 @@ Version **2.5.1**, AssemblyVersion·FileVersion **2.5.1.0**이다. 기존 상세
 
 - `AiBurgerClock.csproj`: Version / AssemblyVersion / FileVersion 함께 변경.
 - `QuotaToolTipUiChecks.cs`: 검사 전용 창 수명 진단, 수동 닫힘 보호와 버튼/Close 회귀 검사 3건(Close 호출 2회).
-- `README.md`, `CODE_GUIDE.md`, `BACKLOG.md`: 준비 상태·새 닫힘 사용법·검사 결과와 교체 계획 연결.
+- `README.md`, `CODE_GUIDE.md`, `BACKLOG.md`: 새 닫힘 사용법·준비/배포 검사 결과와 백업·복원 기록 연결.
 
 신규:
 
-- `MAINTENANCE_2_5_1.md`: 이번 준비 검증·Git 기준점·미승인 교체/복원 계획.
+- `MAINTENANCE_2_5_1.md`: 준비 검증·Git 기준점·실제 EXE·백업·교체 결과와 복원 계획.
 
 소스 파일은 추가하지 않는다. 루트·Properties C# **76개(기능 40 + 검사·진단 35 + 명찰 1)**, Mac 호스트 7개, 공통 검사 입구 1개로 총 **84개**다. 검증용 로컬 스크립트·바이너리·로그는 ignored `artifacts/`에만 둔다.
 
@@ -85,7 +85,7 @@ Release bin의 `--smoke-test --report-directory`를 **정확히 5회 순차 실�
 
 초기 두 회차에는 수명 진단이 없어 각각의 닫기 행동 시점을 소급해 확정할 수는 없다. 다만 **사용자 확인 + 동일한 종료/박스 누락 재현 + 같은 주입의 보완 후 통과**를 근거로 수동 닫기에 취약했던 검사 fixture를 보완했다. 모든 종류의 제품 오류가 없다는 보증으로 확대하지 않는다. #30의 뜻밖의 한도 모드 관찰은 별개로 유지한다.
 
-### 보완 후 최종 검사
+### 보완 후 준비 후보 최종 검사
 
 SDK **10.0.402**, 코드 커밋 **`50bde2f4c3b96562ffa893832f92d276587df5fd`**에서 `build.ps1`을 다시 실행해 **경고 0·오류 0**, self-test **251,826건(공통 251,519 + Windows 307)·실제 ExitCode 0**을 확인했다. 기존 dist 2.5.0 및 보완 전과 출력 전체가 같고 증감은 0이다. 제품/공통 C#와 조회·문구는 바꾸지 않았다.
 
@@ -101,7 +101,7 @@ SDK **10.0.402**, 코드 커밋 **`50bde2f4c3b96562ffa893832f92d276587df5fd`**�
 
 **최종 실패 0/5회**다. 직전 #58의 527 → **530(+3)**은 닫기 버튼 없음·활성 상세 중 Close 보호·상세가 닫힌 상태의 Close 보호 검사다. 실제 `host.Close()` 호출은 회차당 **2회**다. 기존 제품 10초 만료는 **9.98~10.01초**에 관측됐고, 클릭/Esc·재등장 방지·숨김/재열기·다른 Provider 전환·시간층/접근성·기록·Refresh·합성 Gemini 지연 중 응답성 등 기존 검사도 통과했다. 매회 cleanup=true에서 view/host Dispose 기록 2건이 남고 정상 메시지 루프 종료 검사도 통과했다. 실제 OS 종료 시험은 하지 않았다.
 
-**5회 모두 PNG 20/20개·layout JSON 14/14개가 같은 bin 경로의 #57 최종 렌더와 SHA-256 동일**하다. 검사 창만 바뀌었고 제품 화면·막대·문구·배치는 같다. 최종 코드 커밋 이후에는 Markdown 기록만 변경하며 C#·csproj·빌드 결과는 다시 바꾸지 않는다.
+**5회 모두 PNG 20/20개·layout JSON 14/14개가 같은 bin 경로의 #57 최종 렌더와 SHA-256 동일**하다. 검사 창만 바뀌었고 제품 화면·막대·문구·배치는 같다. 이 코드 커밋 뒤 준비 PR에서는 Markdown 기록만 변경했다. 승인 후 병합 main의 실제 publish·단일 EXE 검사는 아래 별도 배포 절에 기록한다.
 
 ## Git 기준점과 실행 파일
 
@@ -113,11 +113,12 @@ SDK **10.0.402**, 코드 커밋 **`50bde2f4c3b96562ffa893832f92d276587df5fd`**�
 | #57 main 병합 / 준비 브랜치 출발점 | `a1d99e5a79cbda471a79a87a80a0894da1073990` |
 | 버전 변경 / 초기 검증 코드 | `12b9103a600e5837add7d8c8181c6fa7650ef403` |
 | 검사 수명 진단 코드 | `42605a90448f706423745ed65c9c189af42764d9` |
-| 검사 보완 / 최종 검증 코드 | `50bde2f4c3b96562ffa893832f92d276587df5fd` |
-| 이번 준비 PR 병합 | **미승인·미수행** |
-| 최종 2.5.1 단일 EXE 소스 | **미정**. 승인 뒤 새 PR을 병합한 main 전체 해시로 확정 |
+| 검사 보완 / 준비 후보 최종 검증 코드 | `50bde2f4c3b96562ffa893832f92d276587df5fd` |
+| #58 승인·병합한 HEAD | `9838b6ea3be26f47b4caf7b5bd62ef8c62232fd3` |
+| #58 main 병합 | `2897aea54141f9ed55054847a0268f73d4f79eaa` |
+| 최종 2.5.1 단일 EXE 소스 | **`2897aea54141f9ed55054847a0268f73d4f79eaa`** — 병합 main, 깨끗한 작업 트리 |
 
-| 항목 | 현재 배포 2.5.0 |
+| 항목 | 교체 전·백업한 2.5.0 |
 |---|---|
 | 경로 | `dist/win-x64/AI Burger Clock.exe` |
 | FileVersion | `2.5.0.0` |
@@ -125,9 +126,9 @@ SDK **10.0.402**, 코드 커밋 **`50bde2f4c3b96562ffa893832f92d276587df5fd`**�
 | 크기 | **3,450,091 bytes** |
 | SHA-256 | `42EBF164BAB599B49D20CCB2E7DADB8A8A5FAE2395094770D00EBC4AF8ACB4E9` |
 
-후보 bin EXE는 주변 DLL이 필요한 apphost다. **배포 단일 EXE가 아니며 dist에 복사하지 않는다.** 최종 EXE의 경로·FileVersion·ProductVersion·크기·SHA-256은 승인 후 실제 publish가 끝나면 별도로 기록한다.
+후보 bin EXE는 주변 DLL이 필요한 apphost다. **배포 단일 EXE가 아니며 dist에 복사하지 않았다.** 다음 표는 준비 당시 결과이며, 실제 배포는 그 아래의 병합 main 단일 EXE다.
 
-| 항목 | 이번 후보 bin apphost |
+| 항목 | 준비 당시 후보 bin apphost |
 |---|---|
 | 경로 | `bin/Release/net10.0-windows/win-x64/AI Burger Clock.exe` |
 | FileVersion | `2.5.1.0` |
@@ -135,7 +136,46 @@ SDK **10.0.402**, 코드 커밋 **`50bde2f4c3b96562ffa893832f92d276587df5fd`**�
 | 크기 | **163,328 bytes** |
 | SHA-256 | `31947D3194A1707BF5648B752DDEB3F5B4F7277F334D6523635E7C5B73D433A7` |
 
-## 교체 계획 — 승인 후에만 실행
+### 최종 배포 단일 EXE
+
+| 항목 | 현재 배포 2.5.1 |
+|---|---|
+| 경로 | `dist/win-x64/AI Burger Clock.exe` |
+| 소스 커밋 | `2897aea54141f9ed55054847a0268f73d4f79eaa` |
+| FileVersion | `2.5.1.0` |
+| ProductVersion | `2.5.1+2897aea54141f9ed55054847a0268f73d4f79eaa` |
+| 크기 | **3,474,667 bytes** |
+| SHA-256 | `0276257DE59E8BDBD95B157BC44A640A4C5664C22DF868EE9CE867DBAA768B72` |
+
+이 배포 결과를 적는 후속 문서 커밋은 **EXE의 소스 커밋이 아니다.** 문서 반영 뒤 다시 publish하지 않는다.
+
+## 실제 백업·교체와 최종 검증
+
+1. 사용자 승인으로 #58의 승인 HEAD `9838b6e`를 지정해 Draft를 해제·병합했다. main에서 `git pull --ff-only`하고 깨끗한 작업 트리의 전체 해시 `2897aea54141f9ed55054847a0268f73d4f79eaa`를 확정했다. 승인 HEAD와 병합 main 사이 제품/검사 C#·csproj·공통 원본 차이는 없다.
+2. 사용자가 기존 2.5.0을 **정상 종료**한 뒤 앱 프로세스 0개와 실제 DB의 `-wal`·`-shm` 부재를 확인했다. sidecar를 삭제하거나 강제 종료하지 않았다.
+3. **2026-10-15 21:30 KST**, 존재하지 않던 **`../backups/release-2.5.1-20261015/`**를 새로 만들었다. 이전 EXE·dist ZIP·실제 이전 EXE 소스의 ZIP·닫힌 DB를 보관했고, 원본/복사본 및 ZIP 안 EXE 해시 일치와 백업 중 프로세스/WAL/SHM 부재를 확인했다. DB 내용과 DB 해시는 공개하지 않는다.
+4. 같은 병합 main에서 `build.ps1 -Publish`를 실행했다. SDK **10.0.402**, **경고 0·오류 0**, publish 성공과 최종 단일 EXE self-test **251,826건(공통 251,519 + Windows 307)·실제 ExitCode 0**을 확인했다. 준비 후보·기존 2.5.0 대비 검사 수 변화는 0이다.
+5. 실제 dist 단일 EXE로 별도 `--smoke-test --report-directory`를 **1회** 실행해 **530 PASS·실패 표시 0·실제 ExitCode 0, 47.29초**를 확인했다. 준비 후보의 최종 5회와 합쳐 세지 않는다. 제품의 실제 10초 만료는 **9.99초**로 관측됐고 클릭/Esc·재등장 방지·기록/Refresh·시간 비교·합성 Gemini 지연 중 응답성과 정상 메시지 루프 종료도 통과했다. BalloonTipShown 이벤트 19건은 네이티브 이벤트 확인이지 실제 배너를 눈으로 확인한 것은 아니다. 임시 DB·가짜 HTTP/CLI이며 `--verify-autostart`는 사용하지 않았다.
+6. 정상 앱 재실행 전까지 실제 DB는 백업 직전과 같은 해시이며 WAL/SHM도 없었다. 이후 일반 실행은 정상 캐시를 갱신할 수 있으므로 **전체 작업 동안 사용자 DB가 불변이었다고 주장하지 않는다.** 새 단일 EXE를 백업의 `published-2.5.1.exe`에도 보관해 dist와 버전·크기·해시 일치를 확인했다.
+7. 자동 시작 등록은 읽기 전용으로 전후 비교했다. HKCU Run `AI Burger Clock`은 **String / 큰따옴표로 감싼 같은 절대 dist 경로 + ` --autostart`**, StartupApproved/Run은 **Binary / `020000000000000000000000`**으로 종류·값이 모두 유지됐다. 등록 경로가 가리키는 실제 EXE가 위 2.5.1 버전·해시와 일치한다. 등록·설정은 쓰지 않았고 실제 재부팅/재로그인 검사는 하지 않았다.
+8. **21:32 KST** 새 dist를 인자 없이 일반 실행해 상태 창을 열고 앱 한 개·정확한 dist 실행 경로·응답/입력 대기 준비를 확인했다. 조작 도구가 실제 창을 제공하지 못해 최종 화면은 사용자에게 확인받았다. **21:35 KST 사용자 확인: 트레이·상태 창 및 상세의 10초 자동 닫힘·클릭/Esc 닫힘·Provider 박스 이탈 전 재등장 방지 모두 정상.** 확인 뒤에도 dist 해시는 같았다. 현재 실행 중인 앱은 **2.5.1 배포본**이다.
+9. 배포 검증에서 복원이 필요한 문제는 없었다. **2.5.0 복원은 적용하지 않았고 복원 시험도 하지 않았다.** Mac·공통 코드와 자동 시작 등록은 변경하지 않았다.
+
+### 실제 로컬 백업
+
+경로는 **`../backups/release-2.5.1-20261015/`**다. ZIP·DB·manifest·원본 로그·바이너리는 로컬에만 보관하고 GitHub에 올리지 않는다.
+
+| 백업 파일 | 크기 | SHA-256 / 확인 |
+|---|---:|---|
+| `replaced-2.5.0.exe` | 3,450,091 bytes | `42EBF164BAB599B49D20CCB2E7DADB8A8A5FAE2395094770D00EBC4AF8ACB4E9` |
+| `dist-2.5.0.zip` | 1,701,098 bytes | `3EBF7A68F9EEB1EC11BF436D547B0F40131242B1C3346BEDD9E7ED48BE55ACB4` |
+| `source-2.5.0-af1c831.zip` | 3,294,160 bytes | `5B77855F5D2352CEC8FEDFCFD912DB6588EF67CFD88AE17EB05A71629FDE7AEB` |
+| `burgerclock.db` | 비공개 | 정상 종료 뒤 원본/복사본 해시 일치 확인. 내용·해시는 공개하지 않음 |
+| `published-2.5.1.exe` | 3,474,667 bytes | `0276257DE59E8BDBD95B157BC44A640A4C5664C22DF868EE9CE867DBAA768B72` |
+
+소스 ZIP은 실제 이전 EXE 소스 `af1c831e70f0a956804255771a434f8103e1f5ea`의 `git archive`이며 csproj의 2.5.0도 확인했다. 문서 커밋 `55e37f5`의 ZIP이 아니다. 백업은 같은 이름의 폴더를 덮어쓰지 않고 새로 만들었다.
+
+## 승인받은 교체 계획 — 위와 같이 실행, 복원 미적용
 
 1. 위 보완·최종 검증 결과를 확인한 뒤 사용자가 새 준비 PR 병합·배포 교체를 승인하면 승인 HEAD를 지정해 병합하고 main에서 `git pull --ff-only`한다. 깨끗한 작업 트리와 병합 main 전체 해시를 **최종 EXE 소스**로 기록한다. 후속 문서 커밋을 EXE 소스로 적지 않는다.
 2. 그때 실행 중인 앱을 **정상 종료**한다. 프로세스 0개와 `%LOCALAPPDATA%/AIBurgerClock/burgerclock.db-wal`·`-shm` 부재를 확인한다. 준비 검사의 종료로 대신하지 않는다. WAL/SHM이 남으면 삭제·강제 덮어쓰기를 하지 않고 원인을 확인한다.
@@ -144,7 +184,7 @@ SDK **10.0.402**, 코드 커밋 **`50bde2f4c3b96562ffa893832f92d276587df5fd`**�
 5. 자동 시작은 등록을 새로 쓰지 않고 **읽기 전용으로 전후 비교**한다. HKCU Run `AI Burger Clock`이 같은 큰따옴표 절대 dist 경로 + `--autostart`인지, 값 종류와 StartupApproved/Run 값이 유지되는지 확인한다. 등록 경로가 가리키는 실제 파일의 버전·해시가 새 2.5.1과 일치해야 한다. `--verify-autostart`·체크박스 조작은 하지 않는다.
 6. 새 dist를 실행해 앱 한 개·실행 경로·응답·트레이·상태 창·한도/시간 비교·상세 10초 만료·클릭/Esc·재등장 방지·Refresh를 확인한다. 실제 화면을 조작 도구가 제공하지 않으면 사용자 확인과 자동 검사를 구분한다. 문제가 생기면 아래 계획으로 복원하고 알린다.
 
-준비 시작과 검사 후 기존 배포본 재실행 뒤의 읽기 전용 확인에서 자동 시작 Run은 **String / 같은 절대 dist 경로 + `--autostart`**, StartupApproved는 **Binary / `020000000000000000000000`**으로 동일하다. 최종 교체 때 다시 확인하며 이번 확인을 재부팅/로그인 시험으로 적지 않는다.
+준비 시작·기존 배포본 재실행 뒤·최종 교체 전후의 읽기 전용 확인에서 자동 시작 Run은 **String / 같은 절대 dist 경로 + `--autostart`**, StartupApproved는 **Binary / `020000000000000000000000`**으로 동일했다. 최종 등록 경로가 가리키는 실제 파일은 새 2.5.1이다. 이 확인을 재부팅/로그인 시험으로 적지 않는다.
 
 ### 2.5.0으로 되돌리기
 
@@ -154,11 +194,13 @@ SDK **10.0.402**, 코드 커밋 **`50bde2f4c3b96562ffa893832f92d276587df5fd`**�
 
 ## 실제 사용자 확인·로컬 증거·미수행
 
-- **#57 테스트 앱의 기존 사용자 확인(2026-10-15 KST):** 10초 자동 닫힘·클릭/Esc·박스를 벗어나기 전 재등장 방지 모두 정상. 이번 2.5.1 후보를 새로 사용자 확인한 것으로 옮겨 적지 않는다.
-- 사용자가 현재 #57 테스트 앱을 정상 종료했고 프로세스 부재를 확인한 뒤 빌드·smoke를 진행했다. 검사 후 변경하지 않은 **2.5.0 dist를 `--autostart`로 다시 실행**했다. 앱 한 개·기존 dist 경로·응답/입력 대기 준비·위 EXE 버전/크기/해시와 자동 시작 등록 불변을 확인했다. 새 2.5.1을 배포하거나 2.5.0으로 복원한 것이 아니다. 일반 실행은 정상 캐시를 갱신할 수 있어 DB 전체 무변경을 주장하지 않는다.
+- **#57 테스트 앱의 기존 사용자 확인(2026-10-15 KST):** 10초 자동 닫힘·클릭/Esc·박스를 벗어나기 전 재등장 방지 모두 정상. 이 과거 확인과 아래 최종 배포본의 새 확인을 구분한다.
+- 준비 단계에서는 사용자가 #57 테스트 앱을 정상 종료했고 프로세스 부재를 확인한 뒤 빌드·smoke를 진행했다. 준비 검사 후 변경하지 않은 **2.5.0 dist를 `--autostart`로 다시 실행**해 앱 한 개·기존 dist 경로·응답/입력 대기 준비·당시 EXE 버전/크기/해시와 자동 시작 등록 불변을 확인했다. 그 단계는 새 2.5.1 배포나 2.5.0 복원이 아니었다.
 - 로컬 검증 증거: ignored `artifacts/release-2.5.1-preparation-20261015/`의 `build.txt`, `candidate-self-test.txt`·errors, `dist-2.5.0-self-test.txt`·errors, `smoke/run-01~05/`의 출력·오류·렌더, `smoke-results.json`, `render-results.json`, `preparation-completion.json`. #57의 초기 실패/보완·실제 10.01초 확인은 #57과 `artifacts/quota-tooltip-dismissal-20261015/`의 별도 과거 기록이다. 원본 로그·스크립트·바이너리·개인 자료는 커밋하지 않는다.
 - 후속 진단/보완 증거는 ignored `artifacts/release-2.5.1-smoke-repair-20261015/`의 `diagnostic-build.txt`·self-test, `diagnostic/run-01~05/`, `close-before.txt`·errors와 `close-after.txt`·errors, `final-build.txt`·self-test, `final/run-01~05/`, `final-smoke-results.json`, `final-render-results.json`, `completion.json`에 별도 보관한다. 정상 정리와 예상치 않은 Dispose는 `INFO: tooltip fixture lifetime`의 cleanup/updating 플래그와 이벤트 순서로 구분한다. 합성 probe 프로젝트·원본 로그는 공개하지 않는다.
-- 후속 최종 검사 뒤 기존 **2.5.0 dist를 다시 실행**했다. 앱 한 개·응답/입력 대기 준비·위 FileVersion/ProductVersion·크기·SHA-256과 Run/StartupApproved 유지가 확인됐다. 현재 실행 중인 앱은 2.5.1 테스트 앱이 아닌 **기존 2.5.0 배포본**이다.
+- 후속 준비 검사 뒤에도 기존 **2.5.0 dist를 다시 실행**하고 버전/해시·자동 시작 등록 유지를 확인했다. 이후 #58 승인·정상 종료·백업·실제 publish와 최종 검증을 거쳐 **현재 실행 중인 앱은 2.5.1 배포본**이다.
+- **최종 2.5.1 배포본의 새 사용자 확인(2026-10-15 21:35 KST):** 트레이·상태 창과 상세의 10초 자동 닫힘·클릭/Esc·박스 이탈 전 재등장 방지 모두 정상. 이는 자동 조작 도구의 화면 관찰이 아니라 사용자가 실제 화면을 확인한 결과다.
+- 실제 배포 증거는 ignored `artifacts/release-2.5.1-deployment-20261015/`의 `backup-before.json`, `publish-build.txt`, `final-self-test.txt`·errors, `final-smoke/smoke.txt`·errors·render, `final-smoke-result.json`, `validation.json`, `completion.json`에 별도로 둔다. 백업의 manifest와 원본 로그·실제 계정 값·DB 내용/해시는 공개하지 않는다.
 - 실제 재부팅/재로그인·절전 복귀·전체 네트워크 단절/재연결·장시간 조회·배너의 시각적 노출·실제 OS 테마/고대비/DPI·다중 모니터·스크린리더 실기는 미수행이다.
-- 이번 준비에서 Mac 빌드/native·별도 Shared.Tests·실제 공개 상태/독립 계정 CLI probe는 수행하지 않는다. 공통/Mac 코드가 그대로인 Windows 버전·기록 PR이므로 Mac 재검증을 요청하지 않는다.
-- **새 준비 PR 병합·배포 백업·publish·EXE 교체·최종 단일 EXE 검사·복원은 미승인·미수행**이다. 기존 배포 EXE와 자동 시작 설정을 유지한다.
+- 이번 준비·배포에서 Mac 빌드/native·별도 Shared.Tests·실제 공개 상태/독립 계정 CLI probe는 수행하지 않았다. 공통/Mac 코드가 그대로인 Windows 버전·검사·기록 PR이므로 Mac 재검증을 요청하지 않았다. 일반 앱 실행에 따른 정상 계정 조회와 별도 probe를 혼동하지 않는다.
+- **#58 병합·배포 백업·publish·EXE 교체·최종 단일 EXE 검사·실제 화면 사용자 확인은 완료**했다. 자동 시작 등록은 그대로다. **실제 2.5.0 복원 시험과 복원 적용은 미수행**이다.
