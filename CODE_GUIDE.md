@@ -331,8 +331,8 @@ Windows 내부 승인 형식은 알려진 경우만 해석합니다. 낯선 값�
 | [WindowsProviderNames.cs](WindowsProviderNames.cs) | Windows 화면·메뉴·기록·통계·Tooltip·알림에서 OpenAI를 ChatGPT로 표시. 저장 식별자와 공식 URL은 유지 |
 | [ProviderNames.cs](ProviderNames.cs) | 두 OS의 공통 제품 표시 이름. 식별자·DB 값과 구분 |
 | [StatusPanelModel.cs](StatusPanelModel.cs) | 시간표·Provider 상태 카드의 공통 본문·톤·상세 Tooltip. 빈 선택 항목 숨김 |
-| [QuotaPanelModel.cs](QuotaPanelModel.cs) | 공통 사용량 제목·범위·사용률·간략 시간·조회 시각·톤·Provider별 하나의 상세. UI 색·박스·전환은 호스트가 결정 |
-| [QuotaPacing.cs](QuotaPacing.cs) | 마지막 성공 조회 시각에 고정된 시간 비율·사용량 차이와 비교 기준 나이. 계산 불가 사유를 분리하며 조회 정책은 바꾸지 않음 |
+| [QuotaPanelModel.cs](QuotaPanelModel.cs) | 공통 사용량 제목·범위·사용률·간략 시간·조회 시각·톤·Provider별 하나의 상세. QuotaLine.ComparisonText는 행별 접근성 비교 문구이며 숨김은 null. UI 색·박스·전환은 호스트가 결정 |
+| [QuotaPacing.cs](QuotaPacing.cs) | 마지막 성공 조회 시각에 고정된 시간 비율·사용량 차이·행별 비교 문구와 기준 나이. 계산 불가 사유를 분리하며 조회 정책은 바꾸지 않음 |
 | [UsageMeasurementFactory.cs](UsageMeasurementFactory.cs) | 기록 메뉴 목록·상태 캡처·메모의 공백/문자 요소 경계 제한 |
 | [FeedbackText.cs](FeedbackText.cs) | 기록·공휴일 피드백과 메모 잘림 안내 문구 |
 | [StatisticsText.cs](StatisticsText.cs) | 통계 본문·기간·탭·표·주의사항의 공통 문구 |
@@ -367,8 +367,8 @@ Windows 내부 승인 형식은 알려진 경우만 해석합니다. 낯선 값�
 | [StatusTickerTests.cs](StatusTickerTests.cs) | 입력 이유·전환·알림 우선 순서·아이콘 변경·중복 Provider 판정 |
 | [WindowsWarningLogChecks.cs](WindowsWarningLogChecks.cs) | 임시 파일로 경고 크기·회전·Unicode·쓰기 실패 격리 검사 |
 | [PanelModelTests.cs](PanelModelTests.cs) | 공통 상태·한도 본문과 톤, 상세 Tooltip 골든 검사 |
-| [QuotaPresentationTests.cs](QuotaPresentationTests.cs) | 공통 사용률·간략 시간·Provider 상세와 시간 비교 연결 107건. 공통 실행 목록에 한 번 등록 |
-| [QuotaPacingTests.cs](QuotaPacingTests.cs) | 합성 시각으로 시간 비율 고정·계산 불가·%p 문구·조회 기준 나이 166건 |
+| [QuotaPresentationTests.cs](QuotaPresentationTests.cs) | 공통 사용률·간략 시간·Provider 상세와 행별 시간 비교 연결 146건. 공통 실행 목록에 한 번 등록 |
+| [QuotaPacingTests.cs](QuotaPacingTests.cs) | 합성 시각으로 시간 비율 고정·계산 불가·%p 문구·행별 비교·조회 기준 나이 207건 |
 | [QuotaBarUiChecks.cs](QuotaBarUiChecks.cs) | 합성 라이트·다크·고대비 팔레트와 96/144/192 DPI의 겹침·경계선 픽셀 83건. Windows smoke에서 호출 |
 | [RecordingTests.cs](RecordingTests.cs) | 공통 기록 캡처·메뉴·메모 제한·피드백 골든 검사 |
 | [StatisticsTextTests.cs](StatisticsTextTests.cs) | 공통 통계 본문·표 제목·기간·주의 문구 골든 검사 |
