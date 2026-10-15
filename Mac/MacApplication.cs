@@ -582,7 +582,7 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
             // Readable tone text on the opaque background whatever the desktop behind it, in both appearances.
             double weakest = double.MaxValue;
             double barWeakest = double.MaxValue;
-            double tintWeakest = double.MaxValue, markerWeakest = double.MaxValue;
+            double tintWeakest = double.MaxValue, markerWeakest = double.MaxValue, darkSeparationWeakest = double.MaxValue;
             foreach (NSString name in new[] { NSAppearance.NameAqua, NSAppearance.NameDarkAqua })
             {
                 NSAppearance appearance = NSAppearance.GetAppearance(name)
@@ -612,6 +612,13 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
                 // Time layer: per appearance, tint <-> track and tint <-> used >= 1.5:1, marker (or its halo)
                 // >= 3:1 on every adjacent face. Checked with NSColor luminance, independent of the palette math.
                 bool darkAppearance = name == NSAppearance.NameDarkAqua;
+                // Gemini: #4285F4 in light mode, the lighter #5091F7 in dark mode (same luminance step as the others).
+                var geminiRgb = MacControls.Resolved(MacControls.QuotaBarColor(QuotaProvider.Gemini), darkAppearance);
+                int[] geminiExpected = darkAppearance ? [0x50, 0x91, 0xF7] : [0x42, 0x85, 0xF4];
+                if (Math.Abs(geminiRgb.RedComponent * 255 - geminiExpected[0]) > 0.6 ||
+                    Math.Abs(geminiRgb.GreenComponent * 255 - geminiExpected[1]) > 0.6 ||
+                    Math.Abs(geminiRgb.BlueComponent * 255 - geminiExpected[2]) > 0.6)
+                    throw new InvalidOperationException($"Gemini bar color is wrong in {name}.");
                 foreach (NSColor fill in new[] { MacControls.QuotaBarColor(QuotaProvider.Codex), MacControls.QuotaBarColor(QuotaProvider.Claude),
                     MacControls.QuotaBarColor(QuotaProvider.Gemini), MacControls.Color(PanelTone.Muted) })
                 {
@@ -624,6 +631,14 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
                     tintWeakest = Math.Min(tintWeakest, Math.Min(tintTrack, tintUsed));
                     if (tintTrack < 1.5 || tintUsed < 1.5)
                         throw new InvalidOperationException($"Time tint contrast {tintTrack:0.00}/{tintUsed:0.00}:1 is below 1.5:1 in {name}.");
+                    // Dark mode: the time tint must also stay clearly apart from the used fill (self target 2.0:1,
+                    // ChatGPT/Claude/Gemini are all at about 2.2-2.3). Gemini was 1.98:1 before its dark fill was lightened.
+                    if (darkAppearance)
+                    {
+                        darkSeparationWeakest = Math.Min(darkSeparationWeakest, tintUsed);
+                        if (tintUsed < 2.0)
+                            throw new InvalidOperationException($"Dark-mode time tint is only {tintUsed:0.00}:1 from the used fill (needs 2.0:1).");
+                    }
                     foreach (NSColor face in new[] { track, tint, used })
                     {
                         NSColor core = palette.Marker.ToColor(), edge = palette.Halo is { } halo ? halo.ToColor() : core;
@@ -790,7 +805,7 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
             await statisticsWindow.RefreshAsync();
             if (!statisticsWindow.Window.IsVisible)
                 throw new InvalidOperationException("Statistics window did not reopen from the menu-bar action.");
-            Console.WriteLine($"PASS: bundle version, menu-tracking countdown timer, 20pt menu icon white/dark disc + color glyph light/dark 1x-2x pixels (glyph contrast min {iconContrast:0.0}:1), left/right/control-click routing, right-click menu, popover open/close/reopen, shared panel text/record menu/quota lines, {activationResult}, tone contrast >= 4.5:1 light+dark (min {weakest:0.0}:1), card text x = quota box text x ({layout.BoxTextX:0}pt; titles {layout.TitleX:0}pt), whole-card click/quota boxes read-only, shared quota title, usage bars (0% empty/100% full, provider colors >= 3:1 light+dark min {barWeakest:0.0}:1, muted when previous/elapsed, none without a value), time layer (tint-track/tint-used >= 1.5:1 min {tintWeakest:0.0}:1, marker >= 3:1 min {markerWeakest:0.0}:1 light+dark, marker position/end points, hidden states, spoken row = text + comparison), one shared Provider detail per quota box, three quota boxes incl. Gemini, popover {layout.Size.Width:0}x{layout.Size.Height:0}pt (this screen usable {layout.UsableHeight:0}pt; 1280x800 {standard.Height:0}pt not cut off, quota area {standardQuota:0}pt; 1024x640 {small.Height:0}pt with quota area {smallQuota:0}pt scrolling), 1,000-char note limit, temporary SQLite, four events/notes via shared factory, {displayResult}, statistics (shared text, explanation fits, Mac empty-state hint), injected quota countdown; no account/network/settings changes.");
+            Console.WriteLine($"PASS: bundle version, menu-tracking countdown timer, 20pt menu icon white/dark disc + color glyph light/dark 1x-2x pixels (glyph contrast min {iconContrast:0.0}:1), left/right/control-click routing, right-click menu, popover open/close/reopen, shared panel text/record menu/quota lines, {activationResult}, tone contrast >= 4.5:1 light+dark (min {weakest:0.0}:1), card text x = quota box text x ({layout.BoxTextX:0}pt; titles {layout.TitleX:0}pt), whole-card click/quota boxes read-only, shared quota title, usage bars (0% empty/100% full, provider colors >= 3:1 light+dark min {barWeakest:0.0}:1, muted when previous/elapsed, none without a value), time layer (tint-track/tint-used >= 1.5:1 min {tintWeakest:0.0}:1, marker >= 3:1 min {markerWeakest:0.0}:1 light+dark, dark tint-used >= 2.0:1 min {darkSeparationWeakest:0.0}:1, marker position/end points, hidden states, spoken row = text + comparison), one shared Provider detail per quota box, three quota boxes incl. Gemini, popover {layout.Size.Width:0}x{layout.Size.Height:0}pt (this screen usable {layout.UsableHeight:0}pt; 1280x800 {standard.Height:0}pt not cut off, quota area {standardQuota:0}pt; 1024x640 {small.Height:0}pt with quota area {smallQuota:0}pt scrolling), 1,000-char note limit, temporary SQLite, four events/notes via shared factory, {displayResult}, statistics (shared text, explanation fits, Mac empty-state hint), injected quota countdown; no account/network/settings changes.");
             ExitCode = 0;
         }
         catch (Exception error)

@@ -72,16 +72,19 @@ internal static class MacControls
     // Usage-bar fills use the same provider colors as Windows (ChatGPT #10A37F, Claude #D97757,
     // Gemini #4285F4). Each keeps at least 3:1 against PanelBackground in both appearances
     // (smoke-checked, graphical-object contrast); previous/elapsed values use the Muted tone instead.
+    // Gemini is the one dark-mode exception: #5091F7 (BarGemini in Assets.xcassets). #4285F4 is
+    // darker than the other providers' fills, which left only 3.0:1 between track and fill in dark mode
+    // and a time tint that read almost like the used fill; #5091F7 gives it the same luminance step
+    // (3.4:1) so its tint is as distinct from the used layer as ChatGPT's and Claude's.
     internal static NSColor QuotaBarColor(QuotaProvider provider) => provider switch
     {
         QuotaProvider.Codex => ProviderGreen,
         QuotaProvider.Claude => ProviderOrange,
-        _ => ProviderBlue
+        _ => Named("BarGemini")
     };
 
     private static readonly NSColor ProviderGreen = NSColor.FromSrgb(16 / 255f, 163 / 255f, 127 / 255f, 1);
     private static readonly NSColor ProviderOrange = NSColor.FromSrgb(217 / 255f, 119 / 255f, 87 / 255f, 1);
-    private static readonly NSColor ProviderBlue = NSColor.FromSrgb(66 / 255f, 133 / 255f, 244 / 255f, 1);
 
     // ---- Usage-bar layers: track -> provider time tint -> used fill -> time marker ----
     // Resolved per appearance from the actual panel background, like the Windows palette: the tint is
