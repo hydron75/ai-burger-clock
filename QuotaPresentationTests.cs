@@ -80,6 +80,9 @@ internal static class QuotaPresentationTests
             var empty = QuotaPanelModel.Section(new(provider), now);
             Check(empty.Rows.Single().UsedPercent is null && !empty.Detail.Contains("리셋·한도 복원 예정", StringComparison.Ordinal),
                 provider + " no reading has no invented bar/reset header");
+            Check(empty.Rows.Single().ComparisonText is null && empty.Heading.ComparisonText is null &&
+                empty.Metadata.ComparisonText is null && empty.Scope?.ComparisonText is null,
+                provider + " placeholder and non-quota lines have no row comparison");
             var noWindows = QuotaPanelModel.Section(state with { Reading = new(provider, []) }, now);
             Check(noWindows.Rows.Count == 0 && !noWindows.Detail.Contains("리셋·한도 복원 예정", StringComparison.Ordinal), provider + " empty windows have no bare header");
             string? scope = provider == QuotaProvider.Codex ? QuotaPanelModel.CodexScopeDetail :
@@ -102,16 +105,27 @@ internal static class QuotaPresentationTests
             var later = QuotaPanelModel.Section(state, now.AddMinutes(17));
             Check(fresh.Rows[0].ElapsedPercent == 40 && fresh.Rows[1].ElapsedPercent == 25 &&
                 fresh.Rows[2].ElapsedPercent is null, provider + " optional time layer uses only eligible windows");
+            Check(fresh.Rows[0].ComparisonText == "시간 경과 40% · 균등 사용 기준보다 15%p 빠름 · 방금 전 기준" &&
+                fresh.Rows[1].ComparisonText == "시간 경과 25% · 균등 사용 기준보다 15%p 느림 · 방금 전 기준" &&
+                fresh.Rows[2].ComparisonText is null, provider + " each quota row exposes only its own comparison or null");
             Check(fresh.Rows.Select(row => row.ElapsedPercent).SequenceEqual(later.Rows.Select(row => row.ElapsedPercent)) &&
                 fresh.Rows.Select(row => row.UsedPercent).SequenceEqual(later.Rows.Select(row => row.UsedPercent)),
                 provider + " time and usage stay pinned to the same successful receipt");
             Check(later.Detail.Contains("마지막 조회 기준, 17분 전", StringComparison.Ordinal) &&
                 fresh.Detail.Contains("마지막 조회 기준, 방금 전", StringComparison.Ordinal), provider + " reference age advances without moving the comparison");
+            Check(later.Rows[0].ComparisonText == "시간 경과 40% · 균등 사용 기준보다 15%p 빠름 · 17분 전 기준" &&
+                later.Rows[1].ComparisonText == "시간 경과 25% · 균등 사용 기준보다 15%p 느림 · 17분 전 기준",
+                provider + " row comparison age advances independently without parsing Provider detail");
             Check(later.Detail.Contains("균등 사용 기준보다 15%p 빠름", StringComparison.Ordinal) &&
                 later.Detail.Contains("균등 사용 기준보다 15%p 느림", StringComparison.Ordinal), provider + " detail describes both directions in percentage points");
             Check(later.Heading.Detail == later.Detail && later.Rows.All(row => row.Detail == later.Detail) &&
                 later.Metadata.Detail == later.Detail && (later.Scope is null || later.Scope.Detail == later.Detail),
-                provider + " comparison remains one shared Provider detail for accessibility");
+                provider + " Provider tooltip remains shared by all lines, separate from row accessibility");
+            Check(later.Heading.ComparisonText is null && later.Metadata.ComparisonText is null &&
+                later.Scope?.ComparisonText is null && later.Rows.All(row =>
+                    row.ComparisonText is null || (!row.ComparisonText.Contains('\n') &&
+                    !row.ComparisonText.Contains("리셋·한도 복원", StringComparison.Ordinal))),
+                provider + " comparison field never duplicates other rows or whole-Provider tooltip");
             Check(later.Rows.Count == state.Reading!.Windows.Count && !later.Rows[0].Text.Contains("시간 경과", StringComparison.Ordinal) &&
                 later.Rows[0].Tone == fresh.Rows[0].Tone && later.Metadata.Text == fresh.Metadata.Text,
                 provider + " comparison adds no visible row or policy/tone/metadata change");
@@ -121,16 +135,33 @@ internal static class QuotaPresentationTests
             Check(previous.Rows.All(row => row.ElapsedPercent is null && row.Tone == PanelTone.Muted) &&
                 !previous.Detail.Contains("%p", StringComparison.Ordinal) && previous.Detail.Contains("마지막 조회 기준, 17분 전", StringComparison.Ordinal),
                 provider + " previous readings retain their age but remove time reference and pace");
+            Check(previous.Rows.All(row => row.ComparisonText is null), provider + " previous values clear every row comparison");
             var inFlight = QuotaPanelModel.Section(state with { IsRefreshing = true, NextCheckUtc = null }, now.AddMinutes(17));
             Check(inFlight.Rows[0].ElapsedPercent == 40 && inFlight.Rows[0].UsedPercent == 55 &&
                 inFlight.Detail.Contains("마지막 조회 기준, 17분 전", StringComparison.Ordinal), provider + " an in-flight query never mixes a new time with old usage");
+            Check(inFlight.Rows.Select(row => row.ComparisonText).SequenceEqual(later.Rows.Select(row => row.ComparisonText)),
+                provider + " in-flight row text retains the last successful comparison");
             var afterReset = QuotaPanelModel.Section(state, now.AddHours(3));
             Check(afterReset.Rows[0].ElapsedPercent is null && afterReset.Rows[0].UsedPercent == 55 &&
                 afterReset.Rows[0].Tone == PanelTone.Muted && afterReset.Rows[1].ElapsedPercent == 25,
                 provider + " only the expired window loses its comparison without assuming recovery");
+            Check(afterReset.Rows[0].ComparisonText is null && afterReset.Rows[1].ComparisonText ==
+                "시간 경과 25% · 균등 사용 기준보다 15%p 느림 · 3시간 전 기준", provider + " expiry clears only that row's comparison text");
             var refreshed = QuotaPanelModel.Section(state with { LastSuccessfulCheckUtc = now.AddHours(1) }, now.AddHours(1));
             Check(refreshed.Rows[0].ElapsedPercent == 60 && refreshed.Detail.Contains("균등 사용 기준보다 5%p 느림", StringComparison.Ordinal),
                 provider + " a new success updates both the inferred time and detailed comparison");
+            Check(refreshed.Rows[0].ComparisonText == "시간 경과 60% · 균등 사용 기준보다 5%p 느림 · 방금 전 기준",
+                provider + " new receipt updates row-specific comparison text");
+            foreach (var unavailable in new[]
+            {
+                state with { LastSuccessfulCheckUtc = null },
+                state with { LastSuccessfulCheckUtc = now.AddTicks(1) },
+                state with { Reading = new(provider, [state.Reading!.Windows[0] with { ResetsAtUtc = null }]) },
+                state with { Reading = new(provider, [state.Reading!.Windows[0] with { WindowMinutes = null }]) },
+                state with { Reading = new(provider, [state.Reading!.Windows[0] with { ResetsAtUtc = now.AddHours(6) }]) }
+            })
+                Check(QuotaPanelModel.Section(unavailable, now).Rows.All(row => row.ComparisonText is null),
+                    provider + " unavailable comparison is null in the shared row contract");
         }
         var culture = CultureInfo.CurrentCulture;
         try

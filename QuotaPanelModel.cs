@@ -3,8 +3,10 @@ using System.Globalization;
 namespace AiBurgerClock;
 
 // WindowId is the quota window's Id, or "" for the placeholder row shown before any reading.
+// ComparisonText is row-specific accessibility text; null when its time comparison is hidden.
+// Detail remains the unchanged, whole-Provider tooltip and must not be parsed by either host.
 internal sealed record QuotaLine(string Text, PanelTone Tone, string Detail, string WindowId = "", double? UsedPercent = null,
-    double? ElapsedPercent = null);
+    double? ElapsedPercent = null, string? ComparisonText = null);
 
 internal sealed record QuotaSectionText(
     QuotaProvider Provider, QuotaLine Heading, QuotaLine? Scope, IReadOnlyList<QuotaLine> Rows, QuotaLine Metadata)
@@ -64,7 +66,8 @@ internal static class QuotaPanelModel
                 string used = window.UsedPercent.ToString("0.#", CultureInfo.InvariantCulture);
                 return new QuotaLine(
                     $"{window.Label}  {used}% 사용{(previous || elapsed ? " (이전)" : "")} · {DisplayFormatting.CompactResetCountdown(window.ResetsAtUtc, now, window.WindowMinutes)}",
-                    Tone(window, previous, now), note, window.Id, window.UsedPercent, paces[index].ElapsedPercent);
+                    Tone(window, previous, now), note, window.Id, window.UsedPercent, paces[index].ElapsedPercent,
+                    QuotaPacing.RowComparison(paces[index], state.LastSuccessfulCheckUtc, now));
             }).ToArray();
         return new(state.Provider, heading, scope, rows, metadata);
     }

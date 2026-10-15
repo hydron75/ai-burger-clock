@@ -46,17 +46,23 @@ internal static class QuotaPacing
         return new(elapsed, difference, detail);
     }
 
-    public static string ReferenceAge(DateTimeOffset successfulAtUtc, DateTimeOffset now)
+    public static string? RowComparison(QuotaPace pace, DateTimeOffset? successfulAtUtc, DateTimeOffset now) =>
+        pace.ElapsedPercent is not null && successfulAtUtc is { } success && success <= now
+            ? pace.Detail + " · " + AgeText(success, now) + " 기준" : null;
+
+    public static string ReferenceAge(DateTimeOffset successfulAtUtc, DateTimeOffset now) =>
+        "마지막 조회 기준, " + AgeText(successfulAtUtc, now);
+
+    private static string AgeText(DateTimeOffset successfulAtUtc, DateTimeOffset now)
     {
-        const string prefix = "마지막 조회 기준, ";
-        if (successfulAtUtc > now) return prefix + "시각 확인 필요";
+        if (successfulAtUtc > now) return "시각 확인 필요";
         TimeSpan age = now - successfulAtUtc;
         // Whole units are rounded down: never claim the receipt is older than it is.
         string Number(int value) => value.ToString(CultureInfo.InvariantCulture);
-        if (age < TimeSpan.FromMinutes(1)) return prefix + "방금 전";
-        if (age < TimeSpan.FromHours(1)) return prefix + Number(age.Minutes) + "분 전";
+        if (age < TimeSpan.FromMinutes(1)) return "방금 전";
+        if (age < TimeSpan.FromHours(1)) return Number(age.Minutes) + "분 전";
         if (age < TimeSpan.FromDays(1))
-            return prefix + Number(age.Hours) + "시간" + (age.Minutes > 0 ? " " + Number(age.Minutes) + "분" : "") + " 전";
-        return prefix + Number(age.Days) + "일" + (age.Hours > 0 ? " " + Number(age.Hours) + "시간" : "") + " 전";
+            return Number(age.Hours) + "시간" + (age.Minutes > 0 ? " " + Number(age.Minutes) + "분" : "") + " 전";
+        return Number(age.Days) + "일" + (age.Hours > 0 ? " " + Number(age.Hours) + "시간" : "") + " 전";
     }
 }

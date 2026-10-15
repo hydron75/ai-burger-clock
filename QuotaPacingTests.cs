@@ -27,6 +27,8 @@ internal static class QuotaPacingTests
             Check(pace.ElapsedPercent is null, label + " no time fill");
             Check(pace.DifferencePercentagePoints is null, label + " no difference");
             Same(pace.Detail, "시간 비교: " + reason, label + " reason");
+            Check(QuotaPacing.RowComparison(pace, DateTimeOffset.UnixEpoch, DateTimeOffset.UnixEpoch) is null,
+                label + " no row comparison text");
         }
 
         DateTimeOffset success = new(2026, 1, 15, 12, 0, 0, TimeSpan.Zero);
@@ -71,6 +73,14 @@ internal static class QuotaPacingTests
 
         // Availability uses now, but the two ratios remain pinned to the same receipt.
         QuotaPace original = QuotaPacing.Calculate(fiveHours, success, false, success);
+        Same(QuotaPacing.RowComparison(original, success, success.AddMinutes(17))!,
+            "시간 경과 40% · 균등 사용 기준보다 15%p 빠름 · 17분 전 기준", "row-specific faster text");
+        Same(QuotaPacing.RowComparison(QuotaPacing.Calculate(fiveHours with { UsedPercent = 40 }, success, false, success), success, success)!,
+            "시간 경과 40% · 균등 사용 기준과 비슷함 · 방금 전 기준", "row-specific equal text");
+        Same(QuotaPacing.RowComparison(QuotaPacing.Calculate(fiveHours with { ResetsAtUtc = success.AddHours(5) }, success, false, success), success, success)!,
+            "시간 경과 0% · 균등 사용 기준보다 55%p 빠름 · 방금 전 기준", "zero elapsed percentage still has row text");
+        Check(QuotaPacing.RowComparison(original, null, success) is null, "row text requires a receipt");
+        Check(QuotaPacing.RowComparison(original, success.AddTicks(1), success) is null, "row text rejects a future receipt");
         Check(QuotaPacing.Calculate(fiveHours, success, false, success.AddHours(2)) == original,
             "local time alone does not move the reference or difference");
         Pace(QuotaPacing.Calculate(fiveHours, success.AddHours(1), false, success.AddHours(1)), 60, -5,
@@ -143,7 +153,11 @@ internal static class QuotaPacingTests
             (TimeSpan.FromDays(1).Add(TimeSpan.FromHours(7)), "1일 7시간 전"),
             (TimeSpan.FromDays(2), "2일 전")
         })
+        {
             Same(QuotaPacing.ReferenceAge(success, success + age), "마지막 조회 기준, " + text, "reference age " + text);
+            Same(QuotaPacing.RowComparison(QuotaPacing.Calculate(weekly, success, false, success + age), success, success + age)!,
+                "시간 경과 25% · 균등 사용 기준보다 15%p 느림 · " + text + " 기준", "row reference age " + text);
+        }
         Same(QuotaPacing.ReferenceAge(success, success.AddTicks(-1)), "마지막 조회 기준, 시각 확인 필요",
             "future age is not misrepresented as just now");
         Same(QuotaPacing.ReferenceAge(success.ToOffset(TimeSpan.FromHours(9)), success.AddHours(2).ToOffset(TimeSpan.FromHours(-5))),
@@ -160,6 +174,8 @@ internal static class QuotaPacingTests
                 Same(QuotaPacing.Calculate(halfway, success, false, success).Detail,
                     "시간 경과 50% · 균등 사용 기준보다 0.3%p 빠름", name + " decimal separator");
                 Same(QuotaPacing.ReferenceAge(success, success.AddMinutes(61)), "마지막 조회 기준, 1시간 1분 전", name + " reference age");
+                Same(QuotaPacing.RowComparison(QuotaPacing.Calculate(halfway, success, false, success), success, success.AddMinutes(17))!,
+                    "시간 경과 50% · 균등 사용 기준보다 0.3%p 빠름 · 17분 전 기준", name + " row comparison");
             }
         }
         finally { CultureInfo.CurrentCulture = originalCulture; }

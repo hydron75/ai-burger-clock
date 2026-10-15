@@ -231,7 +231,7 @@ internal sealed class AccountQuotaView : Panel
                 ApplyLine(label, line);
                 if (line.UsedPercent is not { } used) continue;
                 bars[(section.Provider, line.WindowId)].UpdateBalance(section.Provider, used, line.Tone,
-                    section.Heading.Text + " · " + label.Text, line.Detail, line.ElapsedPercent);
+                    section.Heading.Text + " · " + label.Text, line.ComparisonText ?? "", line.ElapsedPercent);
             }
         }
         if (details.Visible && pendingDetail is { } shown && ProviderAt(Cursor.Position) == shown)
@@ -252,7 +252,9 @@ internal sealed class AccountQuotaView : Panel
             PanelTone.Muted => Color.DimGray,
             _ => SystemColors.ControlText
         };
-        label.AccessibleDescription = line.Detail;
+        // The visible label already supplies usage/reset text. Only this row's comparison belongs
+        // in its screen-reader description; Provider tooltips still use detailOwners/providerDetails.
+        label.AccessibleDescription = line.UsedPercent.HasValue ? line.ComparisonText ?? "" : line.Detail;
     }
 
     internal static string ResetCountdown(DateTimeOffset? reset, DateTimeOffset now) =>

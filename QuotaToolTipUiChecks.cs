@@ -151,9 +151,10 @@ internal static class QuotaToolTipUiChecks
                 new SizeF(expected.Width - 2 * padding, expected.Height - 2 * padding), format, out int fitted, out _);
             check(fitted == text.Length, "Complete Provider detail fits the wrapped popup: " + provider);
             check(box.Controls.OfType<Label>().Where(label => label.Text.Contains('%')).All(label =>
-                label.AccessibleDescription == text) && text.Contains("리셋·한도 복원 예정", StringComparison.Ordinal) &&
+                view.DetailFor(label) == text && label.AccessibleDescription != text) &&
+                box.AccessibleDescription == text && text.Contains("리셋·한도 복원 예정", StringComparison.Ordinal) &&
                 text.Contains(" KST", StringComparison.Ordinal),
-                "Screen-reader rows share the Provider detail with precise reset data: " + provider);
+                "Row accessibility is separate from the unchanged Provider tooltip with precise reset data: " + provider);
             if (reportDirectory is not null)
             {
                 Directory.CreateDirectory(reportDirectory);
