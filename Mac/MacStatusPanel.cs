@@ -42,6 +42,8 @@ internal sealed class MacStatusPanel : IDisposable
     private readonly NSStackView quotaStack;
     private readonly Dictionary<ProviderKind, Card> cards = [];
     private readonly Dictionary<QuotaProvider, QuotaViews> quotas = [];
+    // Row text fields hidden from accessibility because their bar speaks the whole row.
+    private readonly HashSet<NSTextField> spokenByBar = [];
     private string quotaLayoutKey = "";
     private string shownStorageError = "";
 
@@ -232,6 +234,7 @@ internal sealed class MacStatusPanel : IDisposable
                 view.RemoveFromSuperview();
             }
             quotas.Clear();
+            spokenByBar.Clear();
             foreach (QuotaSectionText section in sections)
             {
                 // Same box as a provider card, without click, hover or menu: quotas are read-only.
@@ -243,8 +246,13 @@ internal sealed class MacStatusPanel : IDisposable
                 var bars = new Dictionary<string, UsageBarView>();
                 foreach (QuotaLine row in section.Rows)
                 {
-                    rows[row.WindowId] = QuotaLine(lines, 11);
+                    NSTextField rowField = rows[row.WindowId] = QuotaLine(lines, 11);
                     if (row.UsedPercent is null) continue;
+                    // The bar is this row's single accessibility element (see UsageBarView); hide the text
+                    // field explicitly, once per layout: a standard text field reads as not-an-element
+                    // through the property by default, so the default cannot be relied on.
+                    rowField.AccessibilityElement = false;
+                    spokenByBar.Add(rowField);
                     var bar = new UsageBarView(ContentWidth - CardPadding * 2);
                     lines.AddArrangedSubview(bar);
                     lines.SetCustomSpacing(3, bar);
@@ -270,9 +278,13 @@ internal sealed class MacStatusPanel : IDisposable
                 Apply(views.Rows[row.WindowId], row, detail);
                 if (views.Bars.TryGetValue(row.WindowId, out UsageBarView? bar) && row.UsedPercent is { } used)
                 {
-                    // Previous and elapsed values are shown muted, never in the provider color.
-                    bar.Set(used, row.Tone == PanelTone.Muted ? MacControls.Color(PanelTone.Muted)
-                        : MacControls.QuotaBarColor(section.Provider));
+                    // One element per row: the bar speaks "row text. comparison"; its text field is hidden.
+                    SetSpoken(bar, SpokenRow(row));
+                    // Previous and elapsed values are shown muted, never in the provider color, and
+                    // never with a time comparison (the shared model already gives null for them).
+                    bool muted = row.Tone == PanelTone.Muted;
+                    bar.Set(used, muted ? null : row.ElapsedPercent,
+                        muted ? MacControls.Color(PanelTone.Muted) : MacControls.QuotaBarColor(section.Provider));
                     SetTip(bar, detail);
                 }
             }
@@ -430,6 +442,13 @@ internal sealed class MacStatusPanel : IDisposable
         if (view.ToolTip != tip) view.ToolTip = tip;
     }
 
+    // The row's accessibility label (what VoiceOver reads); assigned only when it changes, because
+    // reassigning every tick would interrupt a reading.
+    private static void SetSpoken(NSView element, string spoken)
+    {
+        if (element.AccessibilityLabel != spoken) element.AccessibilityLabel = spoken;
+    }
+
     // Rounded box drawn per appearance. With a press action it is a provider card: the whole card is a
     // click target with a hover tint and pointing-hand cursor; without one it is a read-only quota box.
     private sealed class CardView : NSView
@@ -514,11 +533,15 @@ internal sealed class MacStatusPanel : IDisposable
         public override bool IsFlipped => true;
     }
 
-    // Read-only usage bar under a quota row: a faint track and a fill of the used fraction. The row's
-    // text already carries the value, so the bar is hidden from accessibility to avoid a second reading.
+    // Read-only usage bar under a quota row. Layers, back to front: track, a faint provider tint up to
+    // the snapshot's elapsed-time position (only when the shared model provides one), the used fill and
+    // a 1pt time marker that is always on top. For VoiceOver the bar is the row's single element: it is
+    // labelled with the row text followed by the comparison (see SpokenRow) while the row's text field
+    // is hidden from accessibility, so the row is announced once rather than as label + value.
     internal sealed class UsageBarView : NSView
     {
         internal const int BarHeight = 5;
+        internal const double MarkerThickness = 1;
         private readonly nfloat width;
 
         internal UsageBarView(nfloat width)
@@ -527,38 +550,79 @@ internal sealed class MacStatusPanel : IDisposable
             TranslatesAutoresizingMaskIntoConstraints = false;
             WidthAnchor.ConstraintEqualTo(width).Active = true;
             HeightAnchor.ConstraintEqualTo(BarHeight).Active = true;
-            AccessibilityElement = false;
+            AccessibilityElement = true;
+            AccessibilityRole = NSAccessibilityRoles.LevelIndicatorRole;
         }
 
         internal double Fraction { get; private set; }
+        // null: no comparison for this row (previous, elapsed, unavailable); the bar keeps its plain look.
+        internal double? ElapsedPercent { get; private set; }
         internal NSColor FillColor { get; private set; } = NSColor.SecondaryLabel;
 
         // 0% is empty and 100% is full; any other value keeps a visible fill of at least 2pt.
         internal nfloat FilledWidth => Fraction <= 0 ? 0 : Fraction >= 1 ? width
             : (nfloat)Math.Min(width, Math.Max(2, Math.Round(width * Fraction)));
 
-        internal void Set(double usedPercent, NSColor color)
+        internal nfloat ElapsedWidth => ElapsedPercent is { } elapsed
+            ? (nfloat)Math.Min(width, Math.Round(width * elapsed / 100, MidpointRounding.AwayFromZero)) : 0;
+
+        // The marker is centered on the elapsed position and kept inside the bar at 0% and 100%.
+        internal nfloat MarkerWidth => ElapsedPercent is null ? 0 : (nfloat)MarkerThickness;
+        internal nfloat MarkerLeft => ElapsedPercent is null ? 0
+            : (nfloat)Math.Clamp(ElapsedWidth - MarkerThickness / 2, 0, width - MarkerThickness);
+
+        internal void Set(double usedPercent, double? elapsedPercent, NSColor color)
         {
             double fraction = double.IsFinite(usedPercent) ? Math.Clamp(usedPercent, 0, 100) / 100 : 0;
-            if (fraction == Fraction && FillColor.Equals(color)) return;
+            double? elapsed = elapsedPercent is { } value && double.IsFinite(value) && value is >= 0 and <= 100 ? value : null;
+            if (fraction == Fraction && elapsed == ElapsedPercent && FillColor.Equals(color)) return;
             Fraction = fraction;
+            ElapsedPercent = elapsed;
             FillColor = color;
             NeedsDisplay = true;
         }
 
         public override void DrawRect(CGRect dirtyRect)
         {
-            NSBezierPath track = NSBezierPath.FromRoundedRect(Bounds, Bounds.Height / 2, Bounds.Height / 2);
-            MacControls.QuotaBarTrack.SetFill();
+            bool dark = MacControls.IsDark(EffectiveAppearance);
+            MacControls.BarPalette palette = MacControls.BarPaletteFor(FillColor, dark);
+            nfloat radius = Bounds.Height / 2;
+            NSBezierPath track = NSBezierPath.FromRoundedRect(Bounds, radius, radius);
+            palette.Track.ToColor().SetFill();
             track.Fill();
-            if (FilledWidth <= 0) return;
             NSGraphicsContext.GlobalSaveGraphicsState();
             track.AddClip();
-            FillColor.SetFill();
-            NSGraphics.RectFill(new CGRect(0, 0, FilledWidth, Bounds.Height));
+            // Tint only when a mixture meets the contrast targets; otherwise the marker and text carry it.
+            if (ElapsedPercent is not null && palette.HasDistinctTint && ElapsedWidth > 0)
+            {
+                palette.Elapsed.ToColor().SetFill();
+                NSGraphics.RectFill(new CGRect(0, 0, ElapsedWidth, Bounds.Height));
+            }
+            if (FilledWidth > 0)
+            {
+                palette.Used.ToColor().SetFill();
+                NSGraphics.RectFill(new CGRect(0, 0, FilledWidth, Bounds.Height));
+            }
+            if (ElapsedPercent is not null)
+            {
+                if (palette.Halo is { } halo)
+                {
+                    halo.ToColor().SetFill();
+                    nfloat left = (nfloat)Math.Max(0, MarkerLeft - 1);
+                    nfloat right = (nfloat)Math.Min(width, MarkerLeft + MarkerWidth + 1);
+                    NSGraphics.RectFill(new CGRect(left, 0, right - left, Bounds.Height));
+                }
+                palette.Marker.ToColor().SetFill();
+                NSGraphics.RectFill(new CGRect(MarkerLeft, 0, MarkerWidth, Bounds.Height));
+            }
             NSGraphicsContext.GlobalRestoreGraphicsState();
         }
     }
+
+    // What VoiceOver reads for a quota row: the row text, then the shared comparison and its age. A
+    // row without a comparison (hidden state) reads just its text, so no stale comparison lingers.
+    internal static string SpokenRow(QuotaLine row) =>
+        row.ComparisonText is { Length: > 0 } comparison ? row.Text + ". " + comparison : row.Text;
 
     // ---- Native smoke checks (no user data, network or settings) ----
 
@@ -601,6 +665,19 @@ internal sealed class MacStatusPanel : IDisposable
                 (views.Scope?.StringValue ?? "") != (section.Scope?.Text ?? "") ||
                 section.Rows.Any(row => views.Rows[row.WindowId].StringValue != row.Text))
                 throw new InvalidOperationException($"{section.Provider} quota lines differ from the shared panel model.");
+            // VoiceOver: one element per row. A row with a bar is spoken by the bar (row text, then the
+            // shared comparison; no comparison, no suffix) and its text field is hidden, so the visible
+            // text is never announced twice; a row without a bar keeps its plain text field untouched.
+            foreach (QuotaLine row in section.Rows)
+            {
+                NSTextField field = views.Rows[row.WindowId];
+                bool hasSpokenBar = views.Bars.TryGetValue(row.WindowId, out UsageBarView? spokenBar);
+                if (hasSpokenBar != spokenByBar.Contains(field) || !string.IsNullOrEmpty(field.AccessibilityLabel))
+                    throw new InvalidOperationException($"{section.Provider} row '{row.WindowId}' text field accessibility is inconsistent " +
+                        $"(hidden {spokenByBar.Contains(field)}, bar {hasSpokenBar}, label '{field.AccessibilityLabel}').");
+                if (hasSpokenBar && (field.AccessibilityElement || spokenBar!.AccessibilityLabel != SpokenRow(row)))
+                    throw new InvalidOperationException($"{section.Provider} row {row.WindowId} is not spoken once as row text + comparison.");
+            }
             // One Provider detail per box: the box, every line and every bar carry the same shared text.
             NSView[] tipped = new NSView?[] { views.Box, views.Heading, views.Scope, views.Metadata }
                 .OfType<NSView>().Concat(views.Rows.Values).Concat(views.Bars.Values).ToArray();
@@ -620,8 +697,32 @@ internal sealed class MacStatusPanel : IDisposable
                     : MacControls.QuotaBarColor(section.Provider);
                 if (!hasBar || Math.Abs(bar!.Fraction - Math.Clamp(used, 0, 100) / 100) > 1e-9 ||
                     !bar.FillColor.Equals(expectedColor) || bar.GestureRecognizers.Length != 0 || bar.Menu is not null ||
-                    bar.AccessibilityElement)
+                    !bar.AccessibilityElement)
                     throw new InvalidOperationException($"{section.Provider} usage bar for {row.WindowId} is wrong.");
+                // Time layer: the shared model's elapsed percentage, hidden (plain bar, no marker) whenever
+                // the row has no comparison or is shown muted (previous / reset elapsed).
+                double? expectedElapsed = row.Tone == PanelTone.Muted ? null : row.ElapsedPercent;
+                if (bar.ElapsedPercent != expectedElapsed)
+                    throw new InvalidOperationException($"{section.Provider} {row.WindowId} bar elapsed {bar.ElapsedPercent} != {expectedElapsed}.");
+                if (expectedElapsed is null)
+                {
+                    if (bar.ElapsedWidth != 0 || bar.MarkerWidth != 0 || row.ComparisonText is not null && row.Tone != PanelTone.Muted)
+                        throw new InvalidOperationException($"{section.Provider} {row.WindowId} draws a time layer without a comparison.");
+                }
+                else
+                {
+                    nfloat barWidth = bar.Frame.Width;
+                    nfloat expectedWidth = (nfloat)Math.Round(barWidth * expectedElapsed.Value / 100, MidpointRounding.AwayFromZero);
+                    nfloat expectedLeft = (nfloat)Math.Clamp(expectedWidth - UsageBarView.MarkerThickness / 2, 0,
+                        barWidth - UsageBarView.MarkerThickness);
+                    if (Math.Abs(bar.ElapsedWidth - expectedWidth) > 0.01 || Math.Abs(bar.MarkerLeft - expectedLeft) > 0.01 ||
+                        bar.MarkerWidth != UsageBarView.MarkerThickness || bar.MarkerLeft < 0 ||
+                        bar.MarkerLeft + bar.MarkerWidth > barWidth + 0.01)
+                        throw new InvalidOperationException($"{section.Provider} {row.WindowId} time marker is misplaced.");
+                    if (expectedElapsed.Value <= 0 && bar.MarkerLeft != 0 ||
+                        expectedElapsed.Value >= 100 && Math.Abs(bar.MarkerLeft + bar.MarkerWidth - barWidth) > 0.01)
+                        throw new InvalidOperationException($"{section.Provider} {row.WindowId} marker is not kept inside at the end points.");
+                }
                 // 0% is empty, 100% is full, anything between shows a visible fill.
                 nfloat filled = bar.FilledWidth;
                 bool ok = used <= 0 ? filled == 0 : used >= 100 ? filled == bar.Frame.Width : filled >= 2 && filled <= bar.Frame.Width;
@@ -689,6 +790,16 @@ internal sealed class MacStatusPanel : IDisposable
     internal bool PressCard(ProviderKind provider) => cards[provider].View.AccessibilityPerformPress();
 
     internal string QuotaRowText(QuotaProvider provider, string windowId) => quotas[provider].Rows[windowId].StringValue;
+
+    // Smoke: spoken value of a row and the time layer of its bar.
+    internal string QuotaRowSpoken(QuotaProvider provider, string windowId) =>
+        quotas[provider].Bars.TryGetValue(windowId, out UsageBarView? bar) ? bar.AccessibilityLabel ?? ""
+            : quotas[provider].Rows[windowId].StringValue;
+    internal (double? Elapsed, nfloat MarkerLeft, nfloat MarkerWidth, nfloat ElapsedWidth) QuotaBarTime(QuotaProvider provider, string windowId)
+    {
+        UsageBarView bar = quotas[provider].Bars[windowId];
+        return (bar.ElapsedPercent, bar.MarkerLeft, bar.MarkerWidth, bar.ElapsedWidth);
+    }
 
     // Smoke: how many usage bars are drawn, and the visible fill of one of them.
     internal int QuotaBarCount => quotas.Values.Sum(views => views.Bars.Count);

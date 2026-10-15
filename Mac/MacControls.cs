@@ -83,8 +83,97 @@ internal static class MacControls
     private static readonly NSColor ProviderOrange = NSColor.FromSrgb(217 / 255f, 119 / 255f, 87 / 255f, 1);
     private static readonly NSColor ProviderBlue = NSColor.FromSrgb(66 / 255f, 133 / 255f, 244 / 255f, 1);
 
-    // The unfilled part of a usage bar: a faint label-colored track that follows light/dark.
-    internal static NSColor QuotaBarTrack => NSColor.Label.ColorWithAlphaComponent(0.14f);
+    // ---- Usage-bar layers: track -> provider time tint -> used fill -> time marker ----
+    // Resolved per appearance from the actual panel background, like the Windows palette: the tint is
+    // the used color mixed into the track at an opacity chosen so that tint<->track and tint<->used
+    // are each at least 1.5:1 (25% is only the preferred start), and the 1pt marker is black or white,
+    // whichever keeps at least 3:1 against every adjacent face (an opposite halo covers the rest).
+    internal readonly record struct Rgb(double R, double G, double B)
+    {
+        internal double Luminance
+        {
+            get
+            {
+                static double Linear(double v) => v <= 0.04045 ? v / 12.92 : Math.Pow((v + 0.055) / 1.055, 2.4);
+                return 0.2126 * Linear(R) + 0.7152 * Linear(G) + 0.0722 * Linear(B);
+            }
+        }
+
+        internal static Rgb White => new(1, 1, 1);
+        internal static Rgb Black => new(0, 0, 0);
+
+        internal static double Contrast(Rgb first, Rgb second)
+        {
+            double a = first.Luminance, b = second.Luminance;
+            return (Math.Max(a, b) + 0.05) / (Math.Min(a, b) + 0.05);
+        }
+
+        // foreground over background at the given opacity, rounded to 8-bit like drawn pixels.
+        internal static Rgb Mix(Rgb foreground, Rgb background, double opacity)
+        {
+            static double Round8(double v) => Math.Round(v * 255) / 255;
+            return new(Round8(foreground.R * opacity + background.R * (1 - opacity)),
+                Round8(foreground.G * opacity + background.G * (1 - opacity)),
+                Round8(foreground.B * opacity + background.B * (1 - opacity)));
+        }
+
+        internal NSColor ToColor() => NSColor.FromSrgb((nfloat)R, (nfloat)G, (nfloat)B, 1);
+    }
+
+    internal sealed record BarPalette(Rgb Track, Rgb Elapsed, Rgb Used, Rgb Marker, Rgb? Halo,
+        bool HasDistinctTint, double? TintOpacity)
+    {
+        internal const double TintContrastTarget = 1.5;
+        internal const double MarkerContrastTarget = 3.0;
+
+        internal static BarPalette Create(Rgb used, Rgb background)
+        {
+            // Light panels use the Windows white-panel track (about 9% black, 232 on white): a darker track
+            // leaves too narrow a band for a tint that is 1.5:1 from both the track and the used color.
+            bool darkBackground = background.Luminance < 0.5;
+            Rgb track = Rgb.Mix(darkBackground ? Rgb.White : Rgb.Black, background, darkBackground ? 0.14 : 0.09);
+            Rgb elapsed = track;
+            double? opacity = null;
+            foreach (int percent in Enumerable.Range(1, 99).OrderBy(value => Math.Abs(value - 25)))
+            {
+                Rgb candidate = Rgb.Mix(used, track, percent / 100.0);
+                if (Rgb.Contrast(track, candidate) < TintContrastTarget || Rgb.Contrast(candidate, used) < TintContrastTarget)
+                    continue;
+                elapsed = candidate;
+                opacity = percent / 100.0;
+                break;
+            }
+            Rgb[] faces = [track, elapsed, used];
+            double black = faces.Min(face => Rgb.Contrast(Rgb.Black, face));
+            double white = faces.Min(face => Rgb.Contrast(Rgb.White, face));
+            Rgb marker = black >= white ? Rgb.Black : Rgb.White;
+            Rgb? halo = Math.Max(black, white) >= MarkerContrastTarget ? null
+                : marker == Rgb.Black ? Rgb.White : Rgb.Black;
+            return new(track, elapsed, used, marker, halo, opacity is not null, opacity);
+        }
+
+        // Smoke: every adjacent pair meets its target (tint omitted only when it cannot).
+        internal bool MeetsTargets =>
+            (!HasDistinctTint || Rgb.Contrast(Track, Elapsed) >= TintContrastTarget && Rgb.Contrast(Elapsed, Used) >= TintContrastTarget) &&
+            new[] { Track, HasDistinctTint ? Elapsed : Track, Used }.All(face =>
+                Rgb.Contrast(Marker, face) >= MarkerContrastTarget ||
+                Halo is { } halo && Rgb.Contrast(halo, face) >= MarkerContrastTarget);
+    }
+
+    private static readonly Dictionary<(Rgb Used, bool Dark), BarPalette> barPalettes = [];
+
+    // Palette for a bar fill color under light or dark appearance (resolved against the panel background).
+    internal static BarPalette BarPaletteFor(NSColor used, bool dark)
+    {
+        Rgb usedRgb = ToRgb(Resolved(used, dark));
+        if (!barPalettes.TryGetValue((usedRgb, dark), out BarPalette? palette))
+            barPalettes[(usedRgb, dark)] = palette = BarPalette.Create(usedRgb, ToRgb(Resolved(PanelBackground, dark)));
+        return palette;
+    }
+
+    private static Rgb ToRgb(NSColor srgb) =>
+        new(Math.Round(srgb.RedComponent * 255) / 255, Math.Round(srgb.GreenComponent * 255) / 255,
+            Math.Round(srgb.BlueComponent * 255) / 255);
 
     private static readonly Dictionary<string, NSColor> named = [];
 
