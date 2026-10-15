@@ -27,6 +27,11 @@ internal sealed class AccountQuotaMonitor : IDisposable
     public event Action? Changed;
     // Unlike Changed, this is emitted exactly once for each accepted live response,
     // never for cached values, refresh starts, failures or cancelled requests.
+    // Invoked synchronously by the refresh task, outside the state lock but while
+    // holding the provider gate. Dispatch UI work asynchronously and return promptly;
+    // slow callbacks delay this provider's next refresh. Never synchronously wait for
+    // StopAsync or shutdown/disposal that awaits it here: shutdown waits for this callback.
+    // RefreshOnceAsync for the same provider is skipped while this callback holds the gate.
     public event Action<QuotaObservation>? Succeeded;
 
     public AccountQuotaMonitor(IAccountQuotaClient client, UsageStore? store = null, Func<DateTimeOffset>? utcNow = null)
