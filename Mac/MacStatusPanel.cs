@@ -42,6 +42,8 @@ internal sealed class MacStatusPanel : IDisposable
     private readonly NSStackView quotaStack;
     private readonly Dictionary<ProviderKind, Card> cards = [];
     private readonly Dictionary<QuotaProvider, QuotaViews> quotas = [];
+    // Row text fields hidden from accessibility because their bar speaks the whole row.
+    private readonly HashSet<NSTextField> spokenByBar = [];
     private string quotaLayoutKey = "";
     private string shownStorageError = "";
 
@@ -232,6 +234,7 @@ internal sealed class MacStatusPanel : IDisposable
                 view.RemoveFromSuperview();
             }
             quotas.Clear();
+            spokenByBar.Clear();
             foreach (QuotaSectionText section in sections)
             {
                 // Same box as a provider card, without click, hover or menu: quotas are read-only.
@@ -243,8 +246,13 @@ internal sealed class MacStatusPanel : IDisposable
                 var bars = new Dictionary<string, UsageBarView>();
                 foreach (QuotaLine row in section.Rows)
                 {
-                    rows[row.WindowId] = QuotaLine(lines, 11);
+                    NSTextField rowField = rows[row.WindowId] = QuotaLine(lines, 11);
                     if (row.UsedPercent is null) continue;
+                    // The bar is this row's single accessibility element (see UsageBarView); hide the text
+                    // field explicitly, once per layout: a standard text field reads as not-an-element
+                    // through the property by default, so the default cannot be relied on.
+                    rowField.AccessibilityElement = false;
+                    spokenByBar.Add(rowField);
                     var bar = new UsageBarView(ContentWidth - CardPadding * 2);
                     lines.AddArrangedSubview(bar);
                     lines.SetCustomSpacing(3, bar);
@@ -268,9 +276,10 @@ internal sealed class MacStatusPanel : IDisposable
             foreach (QuotaLine row in section.Rows)
             {
                 Apply(views.Rows[row.WindowId], row, detail);
-                SetSpoken(views.Rows[row.WindowId], SpokenRow(row));
                 if (views.Bars.TryGetValue(row.WindowId, out UsageBarView? bar) && row.UsedPercent is { } used)
                 {
+                    // One element per row: the bar speaks "row text. comparison"; its text field is hidden.
+                    SetSpoken(bar, SpokenRow(row));
                     // Previous and elapsed values are shown muted, never in the provider color, and
                     // never with a time comparison (the shared model already gives null for them).
                     bool muted = row.Tone == PanelTone.Muted;
@@ -433,10 +442,11 @@ internal sealed class MacStatusPanel : IDisposable
         if (view.ToolTip != tip) view.ToolTip = tip;
     }
 
-    // Set as the row's accessibility label (what VoiceOver reads for the row); assigned only when it changes, because reassigning every tick would interrupt a reading.
-    private static void SetSpoken(NSTextField field, string spoken)
+    // The row's accessibility label (what VoiceOver reads); assigned only when it changes, because
+    // reassigning every tick would interrupt a reading.
+    private static void SetSpoken(NSView element, string spoken)
     {
-        if (field.AccessibilityLabel != spoken) field.AccessibilityLabel = spoken;
+        if (element.AccessibilityLabel != spoken) element.AccessibilityLabel = spoken;
     }
 
     // Rounded box drawn per appearance. With a press action it is a provider card: the whole card is a
@@ -525,8 +535,9 @@ internal sealed class MacStatusPanel : IDisposable
 
     // Read-only usage bar under a quota row. Layers, back to front: track, a faint provider tint up to
     // the snapshot's elapsed-time position (only when the shared model provides one), the used fill and
-    // a 1pt time marker that is always on top. The row's text already carries the value, so the bar is
-    // hidden from accessibility; the row's spoken value carries the comparison (see SpokenRow).
+    // a 1pt time marker that is always on top. For VoiceOver the bar is the row's single element: it is
+    // labelled with the row text followed by the comparison (see SpokenRow) while the row's text field
+    // is hidden from accessibility, so the row is announced once rather than as label + value.
     internal sealed class UsageBarView : NSView
     {
         internal const int BarHeight = 5;
@@ -539,7 +550,8 @@ internal sealed class MacStatusPanel : IDisposable
             TranslatesAutoresizingMaskIntoConstraints = false;
             WidthAnchor.ConstraintEqualTo(width).Active = true;
             HeightAnchor.ConstraintEqualTo(BarHeight).Active = true;
-            AccessibilityElement = false;
+            AccessibilityElement = true;
+            AccessibilityRole = NSAccessibilityRoles.LevelIndicatorRole;
         }
 
         internal double Fraction { get; private set; }
@@ -653,9 +665,19 @@ internal sealed class MacStatusPanel : IDisposable
                 (views.Scope?.StringValue ?? "") != (section.Scope?.Text ?? "") ||
                 section.Rows.Any(row => views.Rows[row.WindowId].StringValue != row.Text))
                 throw new InvalidOperationException($"{section.Provider} quota lines differ from the shared panel model.");
-            // VoiceOver reads the row text followed by the shared comparison; no comparison, no suffix.
-            if (section.Rows.Any(row => views.Rows[row.WindowId].AccessibilityLabel != SpokenRow(row)))
-                throw new InvalidOperationException($"{section.Provider} row spoken value differs from row text + comparison.");
+            // VoiceOver: one element per row. A row with a bar is spoken by the bar (row text, then the
+            // shared comparison; no comparison, no suffix) and its text field is hidden, so the visible
+            // text is never announced twice; a row without a bar keeps its plain text field untouched.
+            foreach (QuotaLine row in section.Rows)
+            {
+                NSTextField field = views.Rows[row.WindowId];
+                bool hasSpokenBar = views.Bars.TryGetValue(row.WindowId, out UsageBarView? spokenBar);
+                if (hasSpokenBar != spokenByBar.Contains(field) || !string.IsNullOrEmpty(field.AccessibilityLabel))
+                    throw new InvalidOperationException($"{section.Provider} row '{row.WindowId}' text field accessibility is inconsistent " +
+                        $"(hidden {spokenByBar.Contains(field)}, bar {hasSpokenBar}, label '{field.AccessibilityLabel}').");
+                if (hasSpokenBar && (field.AccessibilityElement || spokenBar!.AccessibilityLabel != SpokenRow(row)))
+                    throw new InvalidOperationException($"{section.Provider} row {row.WindowId} is not spoken once as row text + comparison.");
+            }
             // One Provider detail per box: the box, every line and every bar carry the same shared text.
             NSView[] tipped = new NSView?[] { views.Box, views.Heading, views.Scope, views.Metadata }
                 .OfType<NSView>().Concat(views.Rows.Values).Concat(views.Bars.Values).ToArray();
@@ -675,7 +697,7 @@ internal sealed class MacStatusPanel : IDisposable
                     : MacControls.QuotaBarColor(section.Provider);
                 if (!hasBar || Math.Abs(bar!.Fraction - Math.Clamp(used, 0, 100) / 100) > 1e-9 ||
                     !bar.FillColor.Equals(expectedColor) || bar.GestureRecognizers.Length != 0 || bar.Menu is not null ||
-                    bar.AccessibilityElement)
+                    !bar.AccessibilityElement)
                     throw new InvalidOperationException($"{section.Provider} usage bar for {row.WindowId} is wrong.");
                 // Time layer: the shared model's elapsed percentage, hidden (plain bar, no marker) whenever
                 // the row has no comparison or is shown muted (previous / reset elapsed).
@@ -771,7 +793,8 @@ internal sealed class MacStatusPanel : IDisposable
 
     // Smoke: spoken value of a row and the time layer of its bar.
     internal string QuotaRowSpoken(QuotaProvider provider, string windowId) =>
-        quotas[provider].Rows[windowId].AccessibilityLabel ?? "";
+        quotas[provider].Bars.TryGetValue(windowId, out UsageBarView? bar) ? bar.AccessibilityLabel ?? ""
+            : quotas[provider].Rows[windowId].StringValue;
     internal (double? Elapsed, nfloat MarkerLeft, nfloat MarkerWidth, nfloat ElapsedWidth) QuotaBarTime(QuotaProvider provider, string windowId)
     {
         UsageBarView bar = quotas[provider].Bars[windowId];
