@@ -22,6 +22,15 @@ namespace AiBurgerClock
         private readonly ToolStripMenuItem countdownMenuItem;
         private readonly ToolStripMenuItem autoStartMenuItem;
         private readonly ToolStripMenuItem holidayMenuItem;
+        private readonly ToolStripMenuItem quotaRecoveryMenuItem;
+        private readonly QuotaRecoveryNotifications quotaRecoveryNotifications = new();
+        private readonly Dictionary<QuotaProvider, (QuotaRecoveryAlert Alert, QuotaObservation Observation)> pendingQuotaAlerts = new();
+        private readonly Func<long> notificationMilliseconds;
+        private long quotaNotificationNotBefore;
+        private bool quotaRecoveryEnabled;
+        private bool quotaRecoverySettingsReady;
+        private bool changingQuotaRecoverySetting;
+        private int quotaNotificationEpoch;
         private Icon? currentIcon;
         private TrayAppearance? currentAppearance;
         private bool disposed;
@@ -43,11 +52,13 @@ namespace AiBurgerClock
 
         internal event Action<AgentState>? TransitionNotificationRequested;
         internal event Action<ProviderKind, Recommendation>? ProviderNotificationRequested;
+        internal event Action<QuotaRecoveryAlert>? QuotaRecoveryNotificationRequested;
 
         // Normal runs use UTC now; the explicit smoke test supplies a clock without changing Windows time.
-        public TrayApplicationContext(bool startedAutomatically, Func<DateTimeOffset>? utcNow = null, bool enableServices = true, UsageStore? usageStore = null, HttpClient? statusHttpClient = null, Action<Uri>? openStatusPage = null, IAccountQuotaClient? accountQuotaClient = null)
+        public TrayApplicationContext(bool startedAutomatically, Func<DateTimeOffset>? utcNow = null, bool enableServices = true, UsageStore? usageStore = null, HttpClient? statusHttpClient = null, Action<Uri>? openStatusPage = null, IAccountQuotaClient? accountQuotaClient = null, Func<long>? notificationMilliseconds = null)
         {
             this.utcNow = utcNow ?? (() => DateTimeOffset.UtcNow);
+            this.notificationMilliseconds = notificationMilliseconds ?? (() => Environment.TickCount64);
             this.openStatusPage = openStatusPage ?? ProviderStatusPages.Open;
             store = usageStore ?? new UsageStore();
             statusTicker = new StatusTicker(WindowsProviderNames.Provider, warn: new WindowsWarningLog().Write);
@@ -67,6 +78,11 @@ namespace AiBurgerClock
             autoStartMenuItem = new ToolStripMenuItem("Windows 시작 시 자동 실행") { CheckOnClick = true };
             holidayMenuItem = new ToolStripMenuItem("미국 연방 공휴일 보정") { CheckOnClick = true, Enabled = false,
                 ToolTipText = "미국 연방 정기 공휴일·대체휴일의 업무 구간 제외 (서비스 품질 보장 아님)" };
+            quotaRecoveryMenuItem = new ToolStripMenuItem(QuotaRecoveryText.MenuLabel)
+            {
+                Enabled = false, ToolTipText = QuotaRecoveryText.MenuDetail
+            };
+            quotaRecoveryMenuItem.Click += async (_, _) => await SetQuotaRecoveryNotificationsAsync(!quotaRecoveryEnabled);
             ToolStripMenuItem exitItem = new ToolStripMenuItem("종료");
 
             showItem.Click += delegate { ShowWindow(); };
@@ -92,6 +108,7 @@ namespace AiBurgerClock
             var statisticsItem = new ToolStripMenuItem("Statistics");
             statisticsItem.Click += (_, _) => ShowStatistics();
             menu.Items.Add(statisticsItem);
+            menu.Items.Add(quotaRecoveryMenuItem);
             menu.Items.Add(autoStartMenuItem);
             menu.Items.Add(holidayMenuItem);
             menu.Items.Add(new ToolStripSeparator());
@@ -127,6 +144,7 @@ namespace AiBurgerClock
                 _ = statusWindow.Handle; // Hidden marshal target; polling never touches WinForms from worker threads.
                 monitor.Changed += OnProviderChanged;
                 quotaMonitor.Changed += OnProviderChanged;
+                quotaMonitor.Succeeded += OnQuotaSucceeded;
                 SystemEvents.PowerModeChanged += OnPowerModeChanged;
                 networkRefresh = new NetworkRefreshScheduler(() => RefreshAll(queueWhileRefreshing: true));
                 NetworkChange.NetworkAvailabilityChanged += OnNetworkAvailabilityChanged;
@@ -152,6 +170,15 @@ namespace AiBurgerClock
                 statusWindow.SetFeedback(FeedbackText.HolidayReadFailed(error.Message), true);
             }
             if (exiting || disposed) return;
+            try { quotaRecoveryEnabled = await store.GetQuotaRecoveryNotificationsEnabledAsync(); }
+            catch
+            {
+                quotaRecoveryEnabled = false;
+                statusWindow.SetFeedback(QuotaRecoveryText.SettingReadFailed, true);
+            }
+            if (exiting || disposed) return;
+            quotaRecoverySettingsReady = true;
+            RefreshQuotaRecoveryMenu();
             holidaySettingsReady = true;
             RefreshHolidayControls();
             RefreshStatus(false); // Initial policy load is not a service recovery or a time transition.
@@ -182,6 +209,7 @@ namespace AiBurgerClock
                     (trayIcon.BalloonTipTitle, trayIcon.BalloonTipText) = FeedbackText.HolidayNotification(enabled, snapshot);
                     trayIcon.BalloonTipIcon = ToolTipIcon.Info;
                     trayIcon.ShowBalloonTip(4000);
+                    DeferQuotaNotifications(4500);
                 }
             }
             catch (Exception error)
@@ -221,6 +249,7 @@ namespace AiBurgerClock
             // Apply the decision in the existing order: schedule UI, transition,
             // icon/tooltip, provider alerts, then provider/quota UI.
             UpdateProviderDisplay(result);
+            ShowPendingQuotaNotification();
             return result;
         }
 
@@ -230,6 +259,7 @@ namespace AiBurgerClock
             (trayIcon.BalloonTipTitle, trayIcon.BalloonTipText) = transition;
             trayIcon.BalloonTipIcon = full ? ToolTipIcon.Info : ToolTipIcon.Warning;
             trayIcon.ShowBalloonTip(6000);
+            DeferQuotaNotifications(6500);
             TransitionNotificationRequested?.Invoke(snapshot.State);
         }
 
@@ -299,6 +329,7 @@ namespace AiBurgerClock
                 (trayIcon.BalloonTipTitle, trayIcon.BalloonTipText) = (alert.Title, alert.Body);
                 trayIcon.BalloonTipIcon = alert.Recovered ? ToolTipIcon.Info : ToolTipIcon.Warning;
                 trayIcon.ShowBalloonTip(6000);
+                DeferQuotaNotifications(6500);
                 ProviderNotificationRequested?.Invoke(alert.Provider, alert.Recommendation);
             }
             statusWindow.UpdateProviders(result.Providers, result.Schedule, monitor?.IsRefreshing ?? false,
@@ -306,6 +337,121 @@ namespace AiBurgerClock
             // Quotas never change official service health, schedule recommendations or tray colors.
             statusWindow.UpdateQuotas(quotaMonitor?.Snapshot() ??
                 Enum.GetValues<QuotaProvider>().Select(p => new QuotaState(p)).ToArray(), utcNow());
+        }
+
+        private void OnQuotaSucceeded(QuotaObservation observation)
+        {
+            if (exiting || disposed || statusWindow.IsDisposed) return;
+            int epoch = Volatile.Read(ref quotaNotificationEpoch);
+            try
+            {
+                // Unlike Changed, success observations must not be coalesced: every accepted
+                // reading is needed to distinguish exhaustion and recovery in the right order.
+                statusWindow.BeginInvoke(() =>
+                {
+                    if (exiting || disposed || epoch != Volatile.Read(ref quotaNotificationEpoch)) return;
+                    // Invalidate at every success, not just at delivery. If a window disappears
+                    // or changes period and later returns, an old queued alert must stay gone.
+                    if (pendingQuotaAlerts.TryGetValue(observation.Provider, out var pending) &&
+                        (observation.CheckedAtUtc < pending.Observation.CheckedAtUtc ||
+                         !RecoveryStillCurrent(pending.Alert, pending.Observation.Reading, observation.Reading, observation.CheckedAtUtc)))
+                        pendingQuotaAlerts.Remove(observation.Provider);
+                    var alert = quotaRecoveryNotifications.Observe(observation,
+                        quotaRecoveryEnabled && quotaRecoverySettingsReady && !changingQuotaRecoverySetting);
+                    if (alert is not null) pendingQuotaAlerts[alert.Provider] = (alert, observation);
+                    // Existing schedule/official alerts always apply before a quota alert.
+                    RefreshStatus(TickReason.ProviderChanged);
+                });
+            }
+            catch (InvalidOperationException) { /* Marshal target was closed during shutdown. */ }
+        }
+
+        private void DeferQuotaNotifications(int milliseconds) =>
+            quotaNotificationNotBefore = Math.Max(quotaNotificationNotBefore, notificationMilliseconds() + milliseconds);
+
+        private void ShowPendingQuotaNotification()
+        {
+            if (exiting || disposed || !quotaRecoveryEnabled || changingQuotaRecoverySetting) return;
+            // At most one pending summary per Provider (three entries), never an unbounded history.
+            foreach (var provider in pendingQuotaAlerts.Keys.OrderBy(provider => provider).ToArray())
+            {
+                var pending = pendingQuotaAlerts[provider];
+                var alert = pending.Alert;
+                var state = quotaMonitor?.Snapshot().FirstOrDefault(state => state.Provider == provider);
+                // A failed later query, disappearance, re-exhaustion or elapsed reset invalidates
+                // a queued summary. Never show a past recovery as a current availability claim.
+                if (state is null || state.IsPrevious || state.Reading is null ||
+                    state.LastSuccessfulCheckUtc < pending.Observation.CheckedAtUtc ||
+                    !RecoveryStillCurrent(alert, pending.Observation.Reading, state.Reading, utcNow()))
+                {
+                    pendingQuotaAlerts.Remove(provider);
+                    continue;
+                }
+                if (notificationMilliseconds() < quotaNotificationNotBefore) continue;
+                pendingQuotaAlerts.Remove(provider);
+                try
+                {
+                    (trayIcon.BalloonTipTitle, trayIcon.BalloonTipText) = (alert.Title, alert.Body);
+                    trayIcon.BalloonTipIcon = ToolTipIcon.Info;
+                    trayIcon.ShowBalloonTip(6000);
+                }
+                catch (Exception error) when (error is System.ComponentModel.Win32Exception or InvalidOperationException)
+                {
+                    statusWindow.SetFeedback(QuotaRecoveryText.DeliveryFailed, true);
+                    // The observation was already consumed. A display failure must not retry
+                    // this same alert on every tick or interrupt quota polling.
+                    DeferQuotaNotifications(6500);
+                    return;
+                }
+                DeferQuotaNotifications(6500);
+                QuotaRecoveryNotificationRequested?.Invoke(alert);
+                return;
+            }
+        }
+
+        private static bool RecoveryStillCurrent(QuotaRecoveryAlert alert, QuotaReading expected,
+            QuotaReading current, DateTimeOffset now) => alert.WindowIds.All(id =>
+                current.Windows.Any(window => window.Id == id && window.UsedPercent < 100 &&
+                    (window.ResetsAtUtc is null || window.ResetsAtUtc > now) &&
+                    expected.Windows.Any(old => old.Id == id && old.WindowMinutes == window.WindowMinutes)));
+
+        internal async Task SetQuotaRecoveryNotificationsAsync(bool enabled)
+        {
+            if (exiting || disposed || !quotaRecoverySettingsReady || changingQuotaRecoverySetting) return;
+            changingQuotaRecoverySetting = true;
+            Interlocked.Increment(ref quotaNotificationEpoch);
+            pendingQuotaAlerts.Clear();
+            quotaRecoveryNotifications.Reset();
+            RefreshQuotaRecoveryMenu();
+            Task save = store.SetQuotaRecoveryNotificationsEnabledAsync(enabled);
+            pendingWrites.Add(save);
+            try
+            {
+                await save;
+                if (exiting || disposed) return;
+                quotaRecoveryEnabled = enabled;
+                statusWindow.SetFeedback(QuotaRecoveryText.Saved(enabled));
+            }
+            catch
+            {
+                if (!disposed) statusWindow.SetFeedback(QuotaRecoveryText.SettingSaveFailed, true);
+            }
+            finally
+            {
+                pendingWrites.Remove(save);
+                // Enabling never replays a recovery observed while disabled or while saving.
+                Interlocked.Increment(ref quotaNotificationEpoch);
+                pendingQuotaAlerts.Clear();
+                quotaRecoveryNotifications.Reset();
+                changingQuotaRecoverySetting = false;
+                if (!disposed) RefreshQuotaRecoveryMenu();
+            }
+        }
+
+        private void RefreshQuotaRecoveryMenu()
+        {
+            quotaRecoveryMenuItem.Checked = quotaRecoveryEnabled;
+            quotaRecoveryMenuItem.Enabled = quotaRecoverySettingsReady && !changingQuotaRecoverySetting && !exiting;
         }
 
         private void OpenStatusPage(ProviderKind provider)
@@ -466,6 +612,8 @@ namespace AiBurgerClock
         {
             if (exiting) return;
             exiting = true;
+            pendingQuotaAlerts.Clear();
+            Interlocked.Increment(ref quotaNotificationEpoch);
             timer.Stop();
             trayIcon.Visible = false;
             statisticsWindow?.Close();
@@ -490,6 +638,8 @@ namespace AiBurgerClock
         internal bool HolidayAdjustmentEnabled => holidayAdjustmentEnabled;
         internal ToolStripMenuItem HolidayMenuItem => holidayMenuItem;
         internal TrayAppearance? CurrentAppearance => currentAppearance;
+        internal bool QuotaRecoveryNotificationsEnabled => quotaRecoveryEnabled;
+        internal ToolStripMenuItem QuotaRecoveryMenuItem => quotaRecoveryMenuItem;
 
         protected override void Dispose(bool disposing)
         {
@@ -503,7 +653,13 @@ namespace AiBurgerClock
                     NetworkChange.NetworkAvailabilityChanged -= OnNetworkAvailabilityChanged;
                 }
                 networkRefresh?.Dispose();
-                if (quotaMonitor is not null) quotaMonitor.Changed -= OnProviderChanged;
+                if (quotaMonitor is not null)
+                {
+                    quotaMonitor.Changed -= OnProviderChanged;
+                    quotaMonitor.Succeeded -= OnQuotaSucceeded;
+                }
+                pendingQuotaAlerts.Clear();
+                Interlocked.Increment(ref quotaNotificationEpoch);
                 quotaMonitor?.Dispose();
                 monitor?.Dispose();
                 ownedHttpClient?.Dispose();

@@ -21,9 +21,18 @@ internal sealed class AccountQuotaMonitor : IDisposable
     private readonly Dictionary<QuotaProvider, SemaphoreSlim> gates = Enum.GetValues<QuotaProvider>().ToDictionary(p => p, _ => new SemaphoreSlim(1, 1));
     private readonly Dictionary<QuotaProvider, DateTimeOffset[]> anchors = Enum.GetValues<QuotaProvider>().ToDictionary(p => p, _ => Array.Empty<DateTimeOffset>());
     private readonly Dictionary<QuotaProvider, int> failures = Enum.GetValues<QuotaProvider>().ToDictionary(p => p, _ => 0);
+    private readonly Dictionary<QuotaProvider, long> sequences = Enum.GetValues<QuotaProvider>().ToDictionary(p => p, _ => 0L);
     private Task? runner;
     private bool disposed;
     public event Action? Changed;
+    // Unlike Changed, this is emitted exactly once for each accepted live response,
+    // never for cached values, refresh starts, failures or cancelled requests.
+    // Invoked synchronously by the refresh task, outside the state lock but while
+    // holding the provider gate. Dispatch UI work asynchronously and return promptly;
+    // slow callbacks delay this provider's next refresh. Never synchronously wait for
+    // StopAsync or shutdown/disposal that awaits it here: shutdown waits for this callback.
+    // RefreshOnceAsync for the same provider is skipped while this callback holds the gate.
+    public event Action<QuotaObservation>? Succeeded;
 
     public AccountQuotaMonitor(IAccountQuotaClient client, UsageStore? store = null, Func<DateTimeOffset>? utcNow = null)
     {
@@ -102,6 +111,7 @@ internal sealed class AccountQuotaMonitor : IDisposable
     {
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, lifetime.Token);
         if (!await gates[provider].WaitAsync(0, linked.Token).ConfigureAwait(false)) return;
+        QuotaObservation? observation = null;
         try
         {
             lock (sync) states[provider] = states[provider] with { IsRefreshing = true, NextCheckUtc = null };
@@ -113,8 +123,12 @@ internal sealed class AccountQuotaMonitor : IDisposable
                 using var timeout = CancellationTokenSource.CreateLinkedTokenSource(linked.Token);
                 timeout.CancelAfter(TimeSpan.FromSeconds(40));
                 var candidate = await client.ReadAsync(provider, timeout.Token).ConfigureAwait(false);
-                UsageStore.ValidateQuotaCache(new(1, candidate, utcNow().ToUniversalTime(), []), provider);
-                reading = candidate;
+                timeout.Token.ThrowIfCancellationRequested();
+                // Own the accepted windows: a client must not be able to mutate a
+                // delivered observation or the monitor snapshot after returning.
+                var snapshot = candidate with { Windows = Array.AsReadOnly(candidate.Windows.ToArray()) };
+                UsageStore.ValidateQuotaCache(new(1, snapshot, utcNow().ToUniversalTime(), []), provider);
+                reading = snapshot;
             }
             catch (OperationCanceledException) when (linked.IsCancellationRequested) { throw; }
             catch (Exception ex)
@@ -134,6 +148,7 @@ internal sealed class AccountQuotaMonitor : IDisposable
             QuotaCache? cache = null;
             lock (sync)
             {
+                linked.Token.ThrowIfCancellationRequested();
                 var old = states[provider];
                 var known = reading ?? old.Reading;
                 // Keep the old reset's +15-minute band even when the server returns the next reset.
@@ -152,7 +167,11 @@ internal sealed class AccountQuotaMonitor : IDisposable
                     Reading = known, CheckedAtUtc = now, LastSuccessfulCheckUtc = reading is not null ? now : old.LastSuccessfulCheckUtc,
                     NextCheckUtc = next, IsPrevious = reading is null, Error = error
                 };
-                if (reading is not null) cache = new(1, reading, now, anchors[provider]);
+                if (reading is not null)
+                {
+                    cache = new(1, reading, now, anchors[provider]);
+                    observation = new(provider, ++sequences[provider], now, reading);
+                }
             }
             if (store is not null && cache is not null)
             {
@@ -168,8 +187,29 @@ internal sealed class AccountQuotaMonitor : IDisposable
         finally
         {
             lock (sync) states[provider] = states[provider] with { IsRefreshing = false };
-            gates[provider].Release();
-            RaiseChanged();
+            try
+            {
+                // Outside the state lock, but before releasing the provider gate:
+                // fast host callbacks see a completed refresh and cannot receive
+                // this provider's later response before the current one.
+                if (observation is not null && !linked.IsCancellationRequested)
+                    RaiseSucceeded(observation);
+            }
+            finally
+            {
+                gates[provider].Release();
+                RaiseChanged();
+            }
+        }
+    }
+
+    private void RaiseSucceeded(QuotaObservation observation)
+    {
+        if (Succeeded is not { } handlers) return;
+        foreach (Action<QuotaObservation> handler in handlers.GetInvocationList().Cast<Action<QuotaObservation>>())
+        {
+            if (lifetime.IsCancellationRequested) return;
+            try { handler(observation); } catch { /* Notification failures cannot stop polling. */ }
         }
     }
 

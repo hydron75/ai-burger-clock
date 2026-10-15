@@ -92,6 +92,8 @@ internal static class SmokeTest
                         await HolidayUiChecks.RunAsync(context, testStore, statusHandler, value => now = value, reportDirectory);
                         diagnostics.Phase = "quota";
                         await AccountQuotaUiChecks.RunAsync(context, quotaClient, () => now, value => now = value, reportDirectory, diagnostics);
+                        diagnostics.Phase = "quota.recovery-notifications";
+                        await QuotaRecoveryUiChecks.RunAsync();
                         if (verifyAutoStart)
                             VerifyAutoStart(context, reportDirectory);
                         Console.WriteLine($"Windows BalloonTipShown events: {balloonEvents} (visual delivery depends on Windows notification settings).");
