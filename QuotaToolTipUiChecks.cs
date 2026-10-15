@@ -305,6 +305,10 @@ internal static class QuotaToolTipUiChecks
             Hover();
             await WaitFor(() => view.Details.Visible, "Real hover delay opens Provider detail");
             check(view.Details.Visible, "Real hover timer opens Provider detail using the controlled pointer");
+            check(!host.ControlBox, "Synthetic tooltip fixture has no user close button");
+            host.Close(); // Reproduce the manual close that previously disposed the Provider mid-await.
+            check(!host.IsDisposed && !view.IsDisposed && host.Visible && Box().Parent == view && view.Details.Visible,
+                "User close request preserves the active tooltip fixture and Provider controls");
             var lifetime = System.Diagnostics.Stopwatch.StartNew();
             bool stayedVisible = true;
             while (lifetime.Elapsed < TimeSpan.FromSeconds(9))
@@ -347,6 +351,9 @@ internal static class QuotaToolTipUiChecks
             check(Input(0x0100, Keys.Escape) && !view.Details.Visible && host.Visible,
                 "Escape reaches the non-focused Provider tooltip and closes only the tooltip");
             CheckSuppressed("Escape");
+            host.Close();
+            check(!host.IsDisposed && host.Visible && Box().Parent == view && !view.Details.Visible,
+                "User close request also preserves an idle fixture without reopening the dismissed tooltip");
             check(!Input(0x0100, Keys.Escape), "Escape is not swallowed when no detail is pending or visible");
             await Reenter();
             check(view.Details.Visible, "Provider can reopen after an Escape dismissal and actual box exit");
@@ -397,6 +404,20 @@ internal static class QuotaToolTipUiChecks
 
     private sealed class DetailTestHost : Form
     {
+        public DetailTestHost()
+        {
+            Text = "AI Burger Clock 자동 검사";
+            ControlBox = false;
+        }
+
         protected override bool ShowWithoutActivation => true;
+
+        protected override void OnFormClosing(FormClosingEventArgs e)
+        {
+            // This synthetic window must outlive awaited checks, even if the user closes it.
+            // Normal using/Dispose cleanup and OS/application shutdown are not cancelled.
+            if (e.CloseReason == CloseReason.UserClosing) e.Cancel = true;
+            base.OnFormClosing(e);
+        }
     }
 }
