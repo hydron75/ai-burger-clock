@@ -57,6 +57,7 @@ internal static class QuotaToolTipUiChecks
         await CheckProviderAsync(view, QuotaProvider.Codex, "quota-tooltip-chatgpt.png", reportDirectory, check);
         await CheckProviderAsync(view, QuotaProvider.Claude, "quota-tooltip-claude.png", reportDirectory, check);
         await CheckOverflowAsync(view, reportDirectory, check);
+        await CheckDismissalAsync(view.FindForm()!, check);
     }
 
     internal static Task CheckGeminiAsync(AccountQuotaView view, string? reportDirectory, Action<bool, string> check) =>
@@ -180,12 +181,12 @@ internal static class QuotaToolTipUiChecks
                 System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.GetValue(view)!;
             var watchdog = (System.Windows.Forms.Timer)typeof(AccountQuotaView).GetField("detailPointerMonitor",
                 System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.GetValue(view)!;
-            check(lifetime.Enabled && lifetime.Interval == 30000 && watchdog.Enabled && watchdog.Interval == 100,
+            check(lifetime.Enabled && lifetime.Interval == 10000 && watchdog.Enabled && watchdog.Interval == 100,
                 "Tooltip lifetime is bounded and the independent pointer watchdog is active: " + provider);
             typeof(System.Windows.Forms.Timer).GetMethod("OnTick",
                 System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.Invoke(lifetime, [EventArgs.Empty]);
-            check(!popup.Visible && !lifetime.Enabled && !watchdog.Enabled,
-                "Tooltip expiry dismisses the detail and stops both timers: " + provider);
+            check(!popup.Visible && !lifetime.Enabled && watchdog.Enabled,
+                "Tooltip expiry stops its lifetime but watches for Provider exit before rearming: " + provider);
             // Show/DrawToBitmap complete synchronously. A screen-coordinate fixture does not move
             // the user's real pointer, so queued MouseLeave may correctly hide the popup afterwards.
             // Drain those messages separately and still ensure the non-activating popup never hides its owner.
@@ -194,5 +195,165 @@ internal static class QuotaToolTipUiChecks
             Console.WriteLine($"INFO: {file} popup bounds={popup.Bounds}, pointer={pointer}, DPI={view.DeviceDpi}.");
         }
         finally { owner.Deactivate -= deactivated; view.Details.Activated -= activated; view.HideDetail(); }
+    }
+
+    // Actual WinForms timers/input filters, but synthetic data/coordinates: no user mouse movement,
+    // account calls, DB, shortened product timeout, or direct invocation of the expiry callback.
+    private static async Task CheckDismissalAsync(Form owner, Action<bool, string> check)
+    {
+        using var host = new DetailTestHost { Bounds = owner.Bounds, ShowInTaskbar = false };
+        Point pointer = Point.Empty;
+        using var view = new AccountQuotaView(() => pointer) { Dock = DockStyle.Fill };
+        host.Controls.Add(view);
+        var now = new DateTimeOffset(2026, 10, 15, 9, 0, 0, TimeSpan.Zero);
+        QuotaState[] states = [new(QuotaProvider.Codex, new(QuotaProvider.Codex,
+            [new("session", "5시간", 50, now.AddHours(2), 300)]), now, now, now.AddHours(6))];
+        bool ownerWasVisible = owner.Visible;
+        host.Show(); // Independent fixture: the real status owner's Deactivate policy must not own its lifetime.
+        view.UpdateQuotas(states, now);
+        Control Box() => view.Controls.OfType<Panel>().Single(box => box.Name == "CodexQuotaBox");
+        var onMouseMove = typeof(Control).GetMethod("OnMouseMove",
+            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
+        void Move(Control control) => onMouseMove.Invoke(control, [new MouseEventArgs(MouseButtons.None, 0, 2, 2, 0)]);
+        void Hover()
+        {
+            pointer = Box().PointToScreen(new Point(2, 2));
+            Move(Box());
+        }
+        void Leave()
+        {
+            pointer = new Point(Math.Min(host.Left, view.Details.Left) - 100,
+                Math.Min(host.Top, view.Details.Top) - 100);
+            view.CheckDetailPointer(pointer);
+            view.FinishDetailLeave(pointer);
+            check(!view.Details.Visible, "Synthetic pointer exit is outside both the Provider and scrollable popup");
+        }
+        bool Input(int message, Keys key = Keys.None)
+        {
+            var input = Message.Create(host.Handle, message, (IntPtr)(int)key, IntPtr.Zero);
+            return Application.FilterMessage(ref input);
+        }
+        async Task WaitFor(Func<bool> condition, string label, int timeout = -1)
+        {
+            int limit = timeout < 0 ? Math.Max(5000, SystemInformation.MouseHoverTime + 2000) : timeout;
+            var elapsed = System.Diagnostics.Stopwatch.StartNew();
+            while (!condition())
+            {
+                if (elapsed.ElapsedMilliseconds >= limit)
+                    throw new TimeoutException($"{label}: hostVisible={host.Visible}, viewVisible={view.Visible}, popupVisible={view.Details.Visible}");
+                await Task.Delay(25);
+            }
+        }
+        async Task Reenter()
+        {
+            Leave();
+            Hover();
+            await WaitFor(() => view.Details.Visible, "Provider detail reopens after leave/reentry");
+        }
+        void CheckSuppressed(string reason)
+        {
+            Move(Box());
+            foreach (Control child in Box().Controls) Move(child);
+            view.ShowDetail(QuotaProvider.Codex, pointer);
+            view.UpdateQuotas(states, now.AddMinutes(1));
+            check(!view.Details.Visible, "Dismissed detail stays hidden across child hover/show/model refresh: " + reason);
+        }
+        try
+        {
+            Hover();
+            await WaitFor(() => view.Details.Visible, "Real hover delay opens Provider detail");
+            check(view.Details.Visible, "Real hover timer opens Provider detail using the controlled pointer");
+            var lifetime = System.Diagnostics.Stopwatch.StartNew();
+            bool stayedVisible = true;
+            while (lifetime.Elapsed < TimeSpan.FromSeconds(9))
+            {
+                Move(Box());
+                view.UpdateQuotas(states, now.AddSeconds(lifetime.Elapsed.TotalSeconds));
+                stayedVisible &= view.Details.Visible;
+                await Task.Delay(100);
+            }
+            check(stayedVisible, "Detail remains visible for nine real seconds despite hover and model refresh");
+            typeof(ScrollableControl).GetMethod("OnScroll", System.Reflection.BindingFlags.Instance |
+                System.Reflection.BindingFlags.NonPublic)!.Invoke(view.Details,
+                [new ScrollEventArgs(ScrollEventType.SmallIncrement, 1, ScrollOrientation.VerticalScroll)]);
+            await WaitFor(() => !view.Details.Visible, "Real ten-second tooltip expiry", 6000);
+            check(lifetime.Elapsed.TotalSeconds is >= 9 and < 15,
+                "Real message-loop timer dismisses detail at ten seconds without restarting on refresh or scroll");
+            Console.WriteLine($"INFO: real tooltip expiry after {lifetime.Elapsed.TotalSeconds:F2}s; product interval=10000ms.");
+            CheckSuppressed("real timeout");
+            // Rebuilding the rows while still inside the same Provider must preserve the guard.
+            states = [states[0] with { Reading = new(QuotaProvider.Codex,
+                [new("weekly", "주간", 50, now.AddDays(2), 10080)]) }];
+            view.UpdateQuotas(states, now);
+            Hover();
+            check(!view.Details.Visible, "Layout rebuild does not rearm a dismissed Provider");
+            await Task.Delay(SystemInformation.MouseHoverTime + 150);
+            check(!view.Details.Visible, "Same-box hover delay cannot resurrect an expired detail");
+            await Reenter();
+            check(view.Details.Visible, "Leaving the Provider and reentering permits a new tooltip");
+
+            foreach (int message in new[] { 0x0201, 0x0204, 0x0207, 0x020B, 0x00A1 })
+            {
+                bool consumed = Input(message);
+                check(!view.Details.Visible && !consumed,
+                    $"Mouse-down 0x{message:X4} dismisses tooltip without consuming the original click");
+                CheckSuppressed("click " + message);
+                await Reenter();
+            }
+            check(!Input(0x0100, Keys.Space) && view.Details.Visible,
+                "Unrelated keys remain available while a tooltip is visible");
+            check(Input(0x0100, Keys.Escape) && !view.Details.Visible && host.Visible,
+                "Escape reaches the non-focused Provider tooltip and closes only the tooltip");
+            CheckSuppressed("Escape");
+            check(!Input(0x0100, Keys.Escape), "Escape is not swallowed when no detail is pending or visible");
+            await Reenter();
+            check(view.Details.Visible, "Provider can reopen after an Escape dismissal and actual box exit");
+            Leave();
+            Hover(); // Cancel before the hover delay has fired.
+            check(Input(0x0100, Keys.Escape), "Escape cancels a pending hover as well as a visible detail");
+            await Task.Delay(SystemInformation.MouseHoverTime + 150);
+            CheckSuppressed("pending hover cancelled");
+            host.Hide();
+            TraceState("host-hidden");
+            host.Show();
+            TraceState("host-reshown");
+            check(host.Visible && view.Visible, "Independent tooltip fixture is visible again after host hide/reopen");
+            Hover();
+            TraceState("hover-after-reshow");
+            await WaitFor(() => view.Details.Visible, "Hidden/reopened owner resets its previous hover session");
+            check(view.Details.Visible, "Owner hide/reopen starts a new hover session without a stale dismissal guard");
+            Input(0x0100, Keys.Escape);
+            states = [states[0], new(QuotaProvider.Claude, new(QuotaProvider.Claude,
+                [new("weekly", "주간", 50, now.AddDays(2), 10080)]), now, now, now.AddHours(6))];
+            view.UpdateQuotas(states, now);
+            var other = view.Controls.OfType<Panel>().Single(box => box.Name == "ClaudeQuotaBox");
+            view.ScrollControlIntoView(other);
+            pointer = other.PointToScreen(new Point(2, 2));
+            Move(other);
+            await WaitFor(() => view.Details.Visible, "Moving directly to another Provider opens its own tooltip");
+            check(view.Details.DetailText.StartsWith("Claude", StringComparison.Ordinal),
+                "Dismissing one Provider does not block a different Provider");
+        }
+        finally
+        {
+            view.HideDetail(); host.Hide();
+            if (ownerWasVisible) owner.Show();
+        }
+
+        void TraceState(string phase)
+        {
+            object? Field(string name) => typeof(AccountQuotaView).GetField(name,
+                System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.GetValue(view);
+            var delay = (System.Windows.Forms.Timer)Field("detailDelay")!;
+            var watchdog = (System.Windows.Forms.Timer)Field("detailPointerMonitor")!;
+            var at = typeof(AccountQuotaView).GetMethod("ProviderAt", System.Reflection.BindingFlags.Instance |
+                System.Reflection.BindingFlags.NonPublic)!.Invoke(view, [pointer]);
+            Console.WriteLine($"INFO: tooltip fixture {phase}: host={host.Visible}, view={view.Visible}, popup={view.Details.Visible}, pending={Field("pendingDetail")}, dismissed={Field("dismissedDetail")}, delay={delay.Enabled}, watchdog={watchdog.Enabled}, filter={Field("filteringDetailInput")}, pointerProvider={at}.");
+        }
+    }
+
+    private sealed class DetailTestHost : Form
+    {
+        protected override bool ShowWithoutActivation => true;
     }
 }

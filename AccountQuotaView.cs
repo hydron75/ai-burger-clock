@@ -1,11 +1,11 @@
 namespace AiBurgerClock;
 
 // Uses the existing popup's middle area; extra model-scoped windows can scroll.
-internal sealed class AccountQuotaView : Panel
+internal sealed class AccountQuotaView : Panel, IMessageFilter
 {
     private readonly QuotaDetailPopup details = new();
     private readonly System.Windows.Forms.Timer detailDelay = new() { Interval = SystemInformation.MouseHoverTime };
-    private readonly System.Windows.Forms.Timer detailLifetime = new() { Interval = 30000 };
+    private readonly System.Windows.Forms.Timer detailLifetime = new() { Interval = 10000 };
     private readonly System.Windows.Forms.Timer detailLeaveDelay = new() { Interval = SystemInformation.MouseHoverTime };
     private readonly System.Windows.Forms.Timer detailPointerMonitor = new() { Interval = 100 };
     internal const int DetailWidth = 320; // Whole tooltip width at 96 DPI, including padding.
@@ -20,12 +20,20 @@ internal sealed class AccountQuotaView : Panel
     private readonly Dictionary<(QuotaProvider, string), QuotaBalanceBar> bars = new();
     private readonly Dictionary<Control, QuotaProvider> detailOwners = new();
     private readonly Dictionary<QuotaProvider, string> providerDetails = new();
+    private readonly Func<Point> pointerPosition;
     private QuotaProvider? pendingDetail;
+    private QuotaProvider? dismissedDetail;
+    private Form? detailOwner;
+    private bool filteringDetailInput;
     private string layoutKey = "";
     private bool sizingBoxes;
 
-    public AccountQuotaView()
+    public AccountQuotaView() : this(() => Cursor.Position) { }
+
+    // A synthetic pointer lets smoke exercise real hover/timer delivery without moving the user's mouse.
+    internal AccountQuotaView(Func<Point> pointerPosition)
     {
+        this.pointerPosition = pointerPosition;
         Name = "AccountQuotaView";
         AutoScroll = true;
         BackColor = Color.FromArgb(248, 249, 250);
@@ -33,17 +41,16 @@ internal sealed class AccountQuotaView : Panel
         detailDelay.Tick += (_, _) =>
         {
             detailDelay.Stop();
-            if (pendingDetail is { } provider && ProviderAt(Cursor.Position) == provider)
-                ShowDetail(provider, Cursor.Position);
+            if (pendingDetail is { } provider && ProviderAt(pointerPosition()) == provider)
+                ShowDetail(provider, pointerPosition());
             else HideDetail();
         };
-        detailPointerMonitor.Tick += (_, _) => CheckDetailPointer(Cursor.Position);
-        detailLifetime.Tick += (_, _) => HideDetail();
-        detailLeaveDelay.Tick += (_, _) => FinishDetailLeave(Cursor.Position);
+        detailPointerMonitor.Tick += (_, _) => CheckDetailPointer(pointerPosition());
+        detailLifetime.Tick += (_, _) => DismissDetail();
+        detailLeaveDelay.Tick += (_, _) => FinishDetailLeave(pointerPosition());
         details.MouseLeave += (_, _) => DeferDetailLeave();
         details.MouseEnter += (_, _) => detailLeaveDelay.Stop();
-        details.Scroll += (_, _) => { detailLifetime.Stop(); detailLifetime.Start(); };
-        VisibleChanged += (_, _) => { if (!Visible) HideDetail(); };
+        VisibleChanged += (_, _) => { if (!Visible) { dismissedDetail = null; HideDetail(); } };
         Scroll += (_, _) => HideDetail();
     }
 
@@ -88,18 +95,20 @@ internal sealed class AccountQuotaView : Panel
         detailOwners[control] = provider;
         control.MouseMove += (_, _) =>
         {
+            CheckDetailPointer(pointerPosition());
+            if (dismissedDetail == provider) return;
             detailLeaveDelay.Stop();
             if (details.Visible && pendingDetail == provider)
             {
                 // A scrollable detail must not chase the pointer while it approaches the scrollbar.
-                if (!details.VerticalScroll.Visible) ShowDetail(provider, Cursor.Position);
+                if (!details.VerticalScroll.Visible) ShowDetail(provider, pointerPosition());
             }
             else if (pendingDetail != provider)
             {
                 HideDetail();
                 pendingDetail = provider;
                 detailDelay.Start();
-                detailPointerMonitor.Start();
+                TrackDetailInput();
             }
         };
         control.MouseLeave += (_, _) => DeferDetailLeave();
@@ -110,7 +119,7 @@ internal sealed class AccountQuotaView : Panel
         if (!IsHandleCreated || IsDisposed) return;
         BeginInvoke((Action)(() =>
         {
-            if (!IsDisposed) CheckDetailPointer(Cursor.Position);
+            if (!IsDisposed) CheckDetailPointer(pointerPosition());
         }));
     }
 
@@ -118,8 +127,18 @@ internal sealed class AccountQuotaView : Panel
     // while a hover is pending/visible; never extend the lifetime or repeatedly reset the leave grace.
     internal void CheckDetailPointer(Point screenPoint)
     {
+        if (!Visible || FindForm() is not { Visible: true })
+        {
+            dismissedDetail = null;
+            HideDetail();
+            return;
+        }
+        if (dismissedDetail is { } dismissed && ProviderAt(screenPoint) != dismissed)
+        {
+            dismissedDetail = null;
+            if (pendingDetail is null) HideDetail();
+        }
         if (pendingDetail is null) return;
-        if (!Visible || FindForm() is not { Visible: true }) { HideDetail(); return; }
         if (ProviderAt(screenPoint) == pendingDetail || details.CanInteractAt(screenPoint))
         {
             detailLeaveDelay.Stop();
@@ -148,11 +167,68 @@ internal sealed class AccountQuotaView : Panel
 
     internal void ShowDetail(QuotaProvider provider, Point screenPoint)
     {
+        if (dismissedDetail == provider) return;
         if (!providerDetails.TryGetValue(provider, out var text) || text.Length == 0 || FindForm() is not { } owner) return;
+        if (pendingDetail != provider) detailLifetime.Stop();
+        dismissedDetail = null;
         pendingDetail = provider;
         details.Display(owner, text, screenPoint, DeviceDpi);
         if (!detailLifetime.Enabled) detailLifetime.Start();
+        TrackDetailInput();
+    }
+
+    private void TrackDetailInput()
+    {
+        var owner = FindForm();
+        if (detailOwner != owner)
+        {
+            if (detailOwner is not null) detailOwner.VisibleChanged -= DetailOwnerVisibilityChanged;
+            detailOwner = owner;
+            if (detailOwner is not null) detailOwner.VisibleChanged += DetailOwnerVisibilityChanged;
+        }
+        if (!filteringDetailInput)
+        {
+            Application.AddMessageFilter(this);
+            filteringDetailInput = true;
+        }
         detailPointerMonitor.Start();
+    }
+
+    private void DetailOwnerVisibilityChanged(object? sender, EventArgs e)
+    {
+        // WinForms does not always raise the child's VisibleChanged when a top-level owner hides.
+        if (detailOwner is { Visible: false }) { dismissedDetail = null; HideDetail(); }
+    }
+
+    private void StopDetailInput()
+    {
+        detailPointerMonitor.Stop();
+        if (filteringDetailInput) Application.RemoveMessageFilter(this);
+        filteringDetailInput = false;
+        if (detailOwner is not null) detailOwner.VisibleChanged -= DetailOwnerVisibilityChanged;
+        detailOwner = null;
+    }
+
+    private void DismissDetail()
+    {
+        dismissedDetail = pendingDetail ?? dismissedDetail;
+        HideDetail();
+    }
+
+    bool IMessageFilter.PreFilterMessage(ref Message message)
+    {
+        if (pendingDetail is null) return false;
+        // Filter the UI thread, not just the unfocused quota panel: Escape belongs to the owner,
+        // and a click may target a label, bar, popup scrollbar, or another owner control.
+        if (message.Msg is 0x0100 or 0x0104 && (Keys)message.WParam.ToInt32() == Keys.Escape)
+        {
+            DismissDetail();
+            return true;
+        }
+        if (message.Msg is 0x0201 or 0x0203 or 0x0204 or 0x0206 or 0x0207 or 0x0209 or 0x020B or 0x020D
+            or 0x00A1 or 0x00A3 or 0x00A4 or 0x00A6 or 0x00A7 or 0x00A9 or 0x00AB or 0x00AD)
+            DismissDetail(); // Do not consume the click; Refresh and other controls must still work.
+        return false;
     }
 
     internal void HideDetail()
@@ -160,9 +236,15 @@ internal sealed class AccountQuotaView : Panel
         detailDelay.Stop();
         detailLifetime.Stop();
         detailLeaveDelay.Stop();
-        detailPointerMonitor.Stop();
         pendingDetail = null;
         details.Hide();
+        // Keep watching a dismissed Provider until the pointer actually leaves its box.
+        // Text/layout refresh and movement among its children must not re-arm the popup.
+        if (dismissedDetail is not null) TrackDetailInput();
+        else
+        {
+            StopDetailInput();
+        }
     }
 
     public void UpdateQuotas(IReadOnlyList<QuotaState> states, DateTimeOffset now)
@@ -234,9 +316,9 @@ internal sealed class AccountQuotaView : Panel
                     section.Heading.Text + " · " + label.Text, line.ComparisonText ?? "", line.ElapsedPercent);
             }
         }
-        if (details.Visible && pendingDetail is { } shown && ProviderAt(Cursor.Position) == shown)
-            ShowDetail(shown, details.VerticalScroll.Visible ? details.AnchorPoint : Cursor.Position);
-        else if (details.Visible && pendingDetail is { } scrolling && details.CanInteractAt(Cursor.Position))
+        if (details.Visible && pendingDetail is { } shown && ProviderAt(pointerPosition()) == shown)
+            ShowDetail(shown, details.VerticalScroll.Visible ? details.AnchorPoint : pointerPosition());
+        else if (details.Visible && pendingDetail is { } scrolling && details.CanInteractAt(pointerPosition()))
             ShowDetail(scrolling, details.AnchorPoint);
     }
 
@@ -302,7 +384,11 @@ internal sealed class AccountQuotaView : Panel
 
     protected override void Dispose(bool disposing)
     {
-        if (disposing) { detailDelay.Dispose(); detailLifetime.Dispose(); detailLeaveDelay.Dispose(); detailPointerMonitor.Dispose(); details.Dispose(); }
+        if (disposing)
+        {
+            StopDetailInput();
+            detailDelay.Dispose(); detailLifetime.Dispose(); detailLeaveDelay.Dispose(); detailPointerMonitor.Dispose(); details.Dispose();
+        }
         base.Dispose(disposing);
         if (disposing) { headingFont.Dispose(); rowFont.Dispose(); metaFont.Dispose(); }
     }
