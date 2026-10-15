@@ -3,7 +3,10 @@ using System.Globalization;
 namespace AiBurgerClock;
 
 // WindowId is the quota window's Id, or "" for the placeholder row shown before any reading.
-internal sealed record QuotaLine(string Text, PanelTone Tone, string Detail, string WindowId = "", double? UsedPercent = null);
+// ComparisonText is row-specific accessibility text; null when its time comparison is hidden.
+// Detail remains the unchanged, whole-Provider tooltip and must not be parsed by either host.
+internal sealed record QuotaLine(string Text, PanelTone Tone, string Detail, string WindowId = "", double? UsedPercent = null,
+    double? ElapsedPercent = null, string? ComparisonText = null);
 
 internal sealed record QuotaSectionText(
     QuotaProvider Provider, QuotaLine Heading, QuotaLine? Scope, IReadOnlyList<QuotaLine> Rows, QuotaLine Metadata)
@@ -18,7 +21,7 @@ internal static class QuotaPanelModel
     public const string ShowQuotas = "한도 보기";
     public const string ShowStatus = "상태 보기";
     public const string ToggleDetail = "ChatGPT (Work/Codex) · Claude · Gemini (Antigravity) 계정 한도. 일반 채팅의 모든 모델 한도를 뜻하지 않습니다. 공식 서비스 상태는 그대로 유지합니다.";
-    public const string Caption = "색 막대 = 사용한 비율 · 시각은 KST\n마우스 올리기: 상세 · Refresh: 다시 조회";
+    public const string Caption = "진함: 사용 · 연함/선: 조회 당시 시간\n마우스 올리기: 상세 · Refresh: 다시 조회";
     public const string CodexScope = "Work/Codex";
     public const string CodexScopeDetail = "ChatGPT 계정의 Work/Codex 한도입니다. 일반 채팅의 모든 모델 한도를 뜻하지 않습니다.";
     public const string GeminiScope = "Antigravity · Gemini 모델";
@@ -43,7 +46,9 @@ internal static class QuotaPanelModel
         string name = ProviderNames.Quota(state.Provider);
         var succeeded = state.LastSuccessfulCheckUtc is { } success ? AgentSchedule.ToKst(success).ToString("MM-dd HH:mm") : "—";
         var next = state.NextCheckUtc is { } due ? AgentSchedule.ToKst(due).ToString("MM-dd HH:mm") : "—";
-        string note = ProviderDetail(state, now);
+        QuotaPace[] paces = state.Reading?.Windows.Select(window =>
+            QuotaPacing.Calculate(window, state.LastSuccessfulCheckUtc, previous, now)).ToArray() ?? [];
+        string note = ProviderDetail(state, now, paces);
 
         var heading = new QuotaLine(
             name + (state.IsRefreshing ? " · 확인 중" : previous && state.Reading is not null ? " · 이전 조회값" : ""),
@@ -55,18 +60,19 @@ internal static class QuotaPanelModel
 
         QuotaLine[] rows = state.Reading is null
             ? [new(state.Error.Length > 0 ? state.Error : gemini ? "한도 조회 대기 · agy CLI 로그인 필요" : "한도 조회 대기 · 공식 CLI 로그인 필요", PanelTone.Muted, note)]
-            : state.Reading.Windows.Select(window =>
+            : state.Reading.Windows.Select((window, index) =>
             {
                 bool elapsed = window.ResetsAtUtc is { } reset && reset <= now;
                 string used = window.UsedPercent.ToString("0.#", CultureInfo.InvariantCulture);
                 return new QuotaLine(
                     $"{window.Label}  {used}% 사용{(previous || elapsed ? " (이전)" : "")} · {DisplayFormatting.CompactResetCountdown(window.ResetsAtUtc, now, window.WindowMinutes)}",
-                    Tone(window, previous, now), note, window.Id, window.UsedPercent);
+                    Tone(window, previous, now), note, window.Id, window.UsedPercent, paces[index].ElapsedPercent,
+                    QuotaPacing.RowComparison(paces[index], state.LastSuccessfulCheckUtc, now));
             }).ToArray();
         return new(state.Provider, heading, scope, rows, metadata);
     }
 
-    private static string ProviderDetail(QuotaState state, DateTimeOffset now)
+    private static string ProviderDetail(QuotaState state, DateTimeOffset now, IReadOnlyList<QuotaPace> paces)
     {
         bool codex = state.Provider == QuotaProvider.Codex;
         bool gemini = state.Provider == QuotaProvider.Gemini;
@@ -87,6 +93,12 @@ internal static class QuotaPanelModel
                 lines.Add($"{window.Label}: {reset}" + (window.ResetsAtUtc <= now ? " · 예정 시각 경과, 새 조회 필요" : ""));
             }
             lines.Add("실제 복원 여부는 새 조회로 확인합니다.\n");
+            lines.Add("시간·사용량 비교");
+            lines.Add(state.LastSuccessfulCheckUtc is { } reference && reference <= now
+                ? QuotaPacing.ReferenceAge(reference, now) : "마지막 조회 기준: 확인 불가");
+            for (int index = 0; index < reading.Windows.Count; index++)
+                lines.Add($"{reading.Windows[index].Label}: {paces[index].Detail}");
+            lines.Add("리셋 예정에서 역산한 단순 시간 기준입니다. 소진 예측이나 실제 창 시작·활성 확인은 아닙니다.\n");
         }
         string Stamp(DateTimeOffset? at, string format) => at is { } value
             ? AgentSchedule.ToKst(value).ToString(format, CultureInfo.InvariantCulture) : "—";

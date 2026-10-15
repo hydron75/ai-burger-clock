@@ -91,6 +91,8 @@ internal static class AccountQuotaUiChecks
             .Single(box => box.Name == provider + "QuotaBox");
         Label[] ProviderLabels(QuotaProvider provider) => Box(provider).Controls.OfType<Label>().ToArray();
         foreach (var provider in Enum.GetValues<QuotaProvider>()) await monitor.RefreshOnceAsync(provider);
+        var callsBeforeOpen = Enum.GetValues<QuotaProvider>().ToDictionary(provider => provider, client.Calls);
+        var dueBeforeOpen = monitor.Snapshot().Select(state => state.NextCheckUtc).ToArray();
         context.ShowWindow();
         var appearance = context.CurrentAppearance;
         var size = context.StatusWindow.ClientSize;
@@ -107,6 +109,9 @@ internal static class AccountQuotaUiChecks
         Check(diagnostics.QuotaClicks == hiddenQuotaClicks && context.StatusWindow.QuotaButton.Text == hiddenQuotaText,
             "Hidden quota PerformClick emits no Click and preserves the selected mode");
         ClickQuotaButton("Show initial quota view");
+        Check(Enum.GetValues<QuotaProvider>().All(provider => client.Calls(provider) == callsBeforeOpen[provider]) &&
+            monitor.Snapshot().Select(state => state.NextCheckUtc).SequenceEqual(dueBeforeOpen),
+            "Opening and toggling quota view never requests a query or changes its existing schedule");
         Check(context.StatusWindow.QuotaView.Visible, "Quota toggle shows ChatGPT Work/Codex and Claude without enlarging the popup");
         context.StatusWindow.UpdateQuotas(monitor.Snapshot().Where(s => s.Provider != QuotaProvider.Gemini).ToArray(), clock());
         var labels = QuotaLabels();
@@ -211,11 +216,40 @@ internal static class AccountQuotaUiChecks
         foreach (var section in QuotaPanelModel.Sections(monitor.Snapshot(), clock()))
         {
             var providerLabels = ProviderLabels(section.Provider);
-            Check(providerLabels.All(label => label.AccessibleDescription == section.Detail) &&
-                section.Rows.All(row => providerLabels.Any(label => label.Text == row.Text)) &&
-                Box(section.Provider).Controls.OfType<QuotaBalanceBar>().All(bar => bar.AccessibleDescription == section.Detail),
-                "Windows rows, bars and accessibility use the shared Provider presentation: " + section.Provider);
+            Check(section.Rows.All(row => providerLabels.Single(label => label.Text == row.Text).AccessibleDescription ==
+                    (row.UsedPercent.HasValue ? row.ComparisonText ?? "" : row.Detail)) &&
+                providerLabels.Where(label => !section.Rows.Any(row => row.Text == label.Text))
+                    .All(label => label.AccessibleDescription == section.Detail) &&
+                Box(section.Provider).Controls.OfType<QuotaBalanceBar>().Select(bar => bar.AccessibleDescription)
+                    .SequenceEqual(section.Rows.Where(row => row.UsedPercent.HasValue).Select(row => row.ComparisonText ?? "")),
+                "Windows quota rows and bars bind shared row comparisons without parsing Provider detail: " + section.Provider);
+            Check(Box(section.Provider).AccessibleDescription == section.Detail &&
+                Box(section.Provider).Controls.Cast<Control>().All(control =>
+                    context.StatusWindow.QuotaView.DetailFor(control) == section.Detail),
+                "Provider-wide tooltip and card accessibility retain the full unchanged detail: " + section.Provider);
+            Check(Box(section.Provider).Controls.OfType<QuotaBalanceBar>().Select(bar => bar.ElapsedPercent)
+                .SequenceEqual(section.Rows.Where(row => row.UsedPercent.HasValue).Select(row => row.ElapsedPercent)),
+                "Windows time boundaries use the shared eligible snapshot percentages: " + section.Provider);
         }
+        var comparisonSnapshot = monitor.Snapshot();
+        var beforeAge = boxes.SelectMany(box => box.Controls.OfType<QuotaBalanceBar>())
+            .Select(bar => (bar.UsedPercent, bar.ElapsedPercent)).ToArray();
+        context.StatusWindow.UpdateQuotas(comparisonSnapshot, clock().AddMinutes(17));
+        Check(boxes.SelectMany(box => box.Controls.OfType<QuotaBalanceBar>())
+            .Select(bar => (bar.UsedPercent, bar.ElapsedPercent)).SequenceEqual(beforeAge) &&
+            context.StatusWindow.QuotaView.DetailFor(Box(QuotaProvider.Codex)).Contains("마지막 조회 기준, 17분 전", StringComparison.Ordinal),
+            "Local time changes Provider reference age without moving usage or time boundaries");
+        foreach (var section in QuotaPanelModel.Sections(comparisonSnapshot, clock().AddMinutes(17)))
+            Check(section.Rows.All(row => ProviderLabels(section.Provider).Single(label => label.Text == row.Text)
+                    .AccessibleDescription == (row.ComparisonText ?? "")) &&
+                Box(section.Provider).Controls.OfType<QuotaBalanceBar>().All(bar =>
+                    bar.ElapsedPercent.HasValue ? bar.AccessibleDescription?.EndsWith("17분 전 기준", StringComparison.Ordinal) == true :
+                    bar.AccessibleDescription == ""),
+                "Screen-reader row and bar ages advance using only their own shared comparison: " + section.Provider);
+        Check(Enum.GetValues<QuotaProvider>().All(provider => client.Calls(provider) == callsBeforeOpen[provider]) &&
+            monitor.Snapshot().Select(state => state.NextCheckUtc).SequenceEqual(dueBeforeOpen),
+            "Reference-age display performs no query and preserves provider-specific due dates");
+        context.StatusWindow.UpdateQuotas(comparisonSnapshot, clock());
         SmokeTest.RenderAndCheckLayout(context.StatusWindow, "account-quotas.png", reportDirectory);
         context.StatusWindow.QuotaView.ScrollControlIntoView(geminiBox);
         var geminiMetadata = ProviderLabels(QuotaProvider.Gemini).Single(l => l.Text.StartsWith("성공 ", StringComparison.Ordinal));
@@ -245,9 +279,14 @@ internal static class AccountQuotaUiChecks
         Check(Box(QuotaProvider.Claude).Controls.OfType<QuotaBalanceBar>().All(bar => bar.FillColor == Color.Gray) &&
             Box(QuotaProvider.Claude).Controls.OfType<QuotaBalanceBar>().First().UsedPercent == 0,
             "Previous balance bars become gray without inventing or discarding the last observed values");
+        Check(Box(QuotaProvider.Claude).Controls.OfType<QuotaBalanceBar>().All(bar => bar.ElapsedPercent is null),
+            "A failed Provider refresh removes time layers and boundaries from its retained values");
+        var failedSection = QuotaPanelModel.Section(monitor.Snapshot().Single(state => state.Provider == QuotaProvider.Claude), clock());
         Check(ProviderLabels(QuotaProvider.Claude).All(label => label.AccessibleDescription ==
-            QuotaPanelModel.Section(monitor.Snapshot().Single(state => state.Provider == QuotaProvider.Claude), clock()).Detail),
-            "Provider accessibility detail refreshes with errors without retaining the previous success note");
+                (failedSection.Rows.Any(row => row.Text == label.Text) ? "" : failedSection.Detail)) &&
+            Box(QuotaProvider.Claude).Controls.OfType<QuotaBalanceBar>().All(bar => bar.AccessibleDescription == "") &&
+            context.StatusWindow.QuotaView.DetailFor(Box(QuotaProvider.Claude)) == failedSection.Detail,
+            "Failed refresh clears stale row comparisons while retaining the full Provider error tooltip");
         SmokeTest.RenderAndCheckLayout(context.StatusWindow, "account-quotas-previous.png", reportDirectory);
         client.FailClaude = false;
         await monitor.RefreshOnceAsync(QuotaProvider.Claude);
@@ -298,6 +337,11 @@ internal static class AccountQuotaUiChecks
         Check(Box(QuotaProvider.Codex).Controls.OfType<QuotaBalanceBar>().Single() is { UsedPercent: 97, FillColor: var expiredColor } &&
             expiredColor == Color.Gray && context.StatusWindow.QuotaView.DetailFor(Box(QuotaProvider.Codex)).Contains("예정 시각 경과", StringComparison.Ordinal),
             "Elapsed reset keeps the observed 97% used bar and states that recovery requires a fresh reading");
+        Check(Box(QuotaProvider.Codex).Controls.OfType<QuotaBalanceBar>().Single().ElapsedPercent is null,
+            "A passed reset never leaves a current time boundary on the old usage bar");
+        Check(Box(QuotaProvider.Codex).Controls.OfType<QuotaBalanceBar>().Single().AccessibleDescription == "" &&
+            QuotaLabels().Single(label => label.Text.Contains("97% 사용 (이전)")).AccessibleDescription == "",
+            "A passed reset clears row and bar comparison descriptions rather than announcing an obsolete pace");
         var exhausted = new QuotaState(QuotaProvider.Claude, new(QuotaProvider.Claude,
             [new("weekly", "주간", 100, clock().AddDays(1), 10080)]),
             LastSuccessfulCheckUtc: clock(), NextCheckUtc: clock().AddMinutes(15));
@@ -358,9 +402,9 @@ internal static class AccountQuotaUiChecks
             context.StatusWindow.UpdateQuotas([new QuotaState(QuotaProvider.Claude,
                 new QuotaReading(QuotaProvider.Claude, [new QuotaWindow("culture", "주간", 12.34, null)]))], clock());
             var cultureRow = QuotaLabels().Single(l => l.Text.StartsWith("주간  ", StringComparison.Ordinal));
-            Check(cultureRow.Text.Contains("12.3% 사용") && cultureRow.AccessibleDescription ==
-                context.StatusWindow.QuotaView.DetailFor(Box(QuotaProvider.Claude)),
-                "Windows used-percentage row keeps invariant formatting and shared Provider accessibility detail in de-DE");
+            Check(cultureRow.Text.Contains("12.3% 사용") && cultureRow.AccessibleDescription == "" &&
+                context.StatusWindow.QuotaView.DetailFor(cultureRow) == context.StatusWindow.QuotaView.DetailFor(Box(QuotaProvider.Claude)),
+                "Windows used row keeps invariant formatting and no guessed comparison, with unchanged Provider tooltip in de-DE");
         }
         finally { CultureInfo.CurrentCulture = culture; }
 
