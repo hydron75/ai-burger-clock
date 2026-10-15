@@ -1,6 +1,6 @@
 # 소스코드, 쉬운 말로 읽기
 
-이 문서는 **Windows 2.4.1 배포 소스 기준**입니다. 양쪽 확인을 마친 #48과 버전·기록 PR #49를 병합한 main `0d69a64`에서 최종 dist를 만들어 배포했습니다. 이후 배포 기록만 갱신하며 문서 커밋을 EXE 소스로 바꾸지 않습니다. 준비/최종 검사·EXE·백업·복원 방법은 [2.4.1 배포 기록](MAINTENANCE_2_4_1.md), 이전 배포는 [2.4.0 기록](MAINTENANCE_2_4_0.md)을 봅니다. Windows 사용법은 [README](README.md), 최신 Mac 버전·검증은 [Mac 안내](Mac/README.md)로 이동하세요. 아래 실행·UI 설명은 Windows 기준이며 Mac의 차이는 12절에 정리했습니다.
+이 문서는 **Windows 2.5.0 후보 소스 기준**입니다. #52가 병합된 main `9716a1c`에서 버전·기록 PR을 준비하며 사용자 승인 전에는 병합·publish·교체하지 않습니다. 현재 dist는 기존 2.4.1이며 최종 EXE 소스는 `0d69a64`입니다. 새 준비 검사와 교체/복원 계획은 [2.5.0 준비 기록](MAINTENANCE_2_5_0.md), 기존 실제 EXE·백업은 [2.4.1 배포 기록](MAINTENANCE_2_4_1.md)을 봅니다. Windows 사용법은 [README](README.md), 최신 Mac 버전·검증은 [Mac 안내](Mac/README.md)로 이동하세요. 아래 실행·UI 설명은 Windows 기준이며 Mac의 차이는 12절에 정리했습니다.
 
 코드를 한 줄씩 번역한 문서는 아닙니다. **각 파일이 무엇을 맡고, 서로 어떻게 연결되는지** 설명합니다. 현재 소스의 루트·Properties C# 76개, Mac 호스트 7개, 공통 검사 입구 1개로 총 84개와 빌드 설정을 다룹니다. `SharedTestSuite.cs`는 루트의 검사 파일에 이미 포함하고, 별도 공통 검사 입구는 `Shared.Tests/Program.cs` 한 개만 셉니다. 컴퓨터가 만든 `bin`·`obj`와 로컬 검증용 `artifacts`는 대상에서 뺍니다.
 
@@ -11,6 +11,10 @@
 **2.4.0에 반영:** #45의 공통 사용률·간략 시간·Provider 상세를 Windows의 막대와 흰색 고정 폭 팝업에 연결합니다. 공통 원본은 #45에서 양쪽 확인 뒤 병합됐으며 이번 배포에서는 C# 동작·검사 코드를 바꾸지 않았습니다. #46의 요금제 표시·Mac CLI 설치 경로 지정 후보는 보류 상태로 유지합니다.
 
 **2.4.1에 반영·배포 완료:** #48은 `ProviderStatusClient`의 OpenAI 전체 구성 요소 보완과 응답 수신/범위 판정 분리, `StatusMonitor`의 수신·과거 판정 유지, `UsageStore`의 크기 제한 보조 진단, `StatusPanelModel`의 공통 카드·Tooltip 문구를 연결합니다. 범위 미확인만 있으면 UNKNOWN / CHECK이며 오래된 장애를 현재 카드에 남기지 않습니다. Windows 상태 카드의 마지막 확인 한 줄로 창은 374×569 DIP입니다. #49와 배포 결과 기록은 이 C#를 다시 바꾸지 않고 버전·문서만 갱신했습니다.
+
+**2.5.0 후보:** #52의 `QuotaPacing`은 마지막 성공 조회에 고정한 시간 비율·사용률 차이와 기준 나이를 계산합니다. Windows 막대는 연한 시간층·진한 사용층·최상단 경계선을 그리며, 행/막대 접근성 설명에는 `QuotaLine.ComparisonText`만 직접 연결합니다. Provider Tooltip 파싱·화면 열기 조회·폴링 정책·DB 변경은 없습니다. 공통 원본은 #52의 Windows/Mac 확인 뒤 병합됐고 이번 준비는 Windows 버전·기록만 변경합니다. #51 성능 최적화와 근무 시간표 가중치는 보류 후보입니다.
+
+이번 준비의 실제 결과는 빌드 경고 0·오류 0, self-test **251,826건**(공통 251,519 + Windows 307)·ExitCode 0, smoke **5회 모두 492 PASS·ExitCode 0**입니다. 기존 dist 2.4.1 자체 검사와의 실제 차이는 +279이고, 후보 실제 계정 시간 비교 정상은 사용자 확인입니다. 일부 PNG의 Refresh 버튼 상태 차이와 승인 후 교체 계획은 [2.5.0 기록](MAINTENANCE_2_5_0.md)에 있습니다. 현재 배포 EXE·자동 시작 등록은 유지하고 기존 2.4.1을 다시 실행했습니다.
 
 ## 1. 작은 안내소라고 생각해 보세요
 
@@ -450,7 +454,7 @@ Mac의 시간대 ID는 `America/New_York`, `America/Los_Angeles`, `Asia/Seoul`�
 
 Mac은 `~/Library/Application Support/AIBurgerClock`에 별도 DB를 쓰고 `SMAppService.MainApp`으로 로그인 항목을 관리합니다. CLI는 절대 실행 경로와 실행 권한을 확인하고, shell 프로필·Keychain·인증 파일은 읽지 않습니다. 기능 규칙을 함께 써도 **두 컴퓨터의 DB와 로그인은 자동 동기화되지 않습니다.**
 
-Windows 배포 EXE는 2.4.0입니다. #45는 공통 표시 계약·Windows UI, #46은 Mac 0.4.0 UI 후속으로 main에 병합됐습니다. 이번 2.4.0 배포 PR은 Windows 버전·문서만 바꾸며 공통 원본이나 Mac 버전은 변경하지 않습니다. `MacCliPaths`는 GUI 앱의 PATH와 `~/.local/bin`, `/opt/homebrew/bin`, `/usr/local/bin`에서 실행 가능한 공식 명령을 찾으며 앱이 인증 파일을 직접 읽지는 않습니다. 현재 Mac 빌드·아이콘·실기 검증은 [Mac 안내](Mac/README.md)·[Mac 기록](MACOS_PORT.md)에서 관리합니다. 기존 Mac 결과를 이번 Windows 배포에서 다시 실행한 검사로 적지 않습니다.
+현재 Windows 배포 EXE는 2.4.1이고 2.5.0은 준비 PR입니다. #52는 공통 계산·행별 비교 문구와 Windows 시간층을 포함하지만 Mac 막대/VoiceOver 연결은 별도 후속입니다. 이번 버전·기록 PR은 공통 원본이나 Mac 버전을 바꾸지 않습니다. `MacCliPaths`는 GUI 앱의 PATH와 `~/.local/bin`, `/opt/homebrew/bin`, `/usr/local/bin`에서 실행 가능한 공식 명령을 찾으며 앱이 인증 파일을 직접 읽지는 않습니다. 현재 Mac 빌드·아이콘·실기 검증은 [Mac 안내](Mac/README.md)·[Mac 기록](MACOS_PORT.md)에서 관리합니다. 기존 Mac 결과를 이번 Windows 준비에서 새로 실행한 검사로 적지 않습니다.
 
 Mac의 상태 UI는 `MacStatusPanel`과 `MacControls`를 쓰는 팝오버입니다. Windows는 `StatusWindow` 안에서 ‘한도 보기 ↔ 상태 보기’로 카드 영역을 전환합니다. 한도 박스·제목 기준선·클릭되는 카드만 hover라는 규칙은 [결정 9](MACOS_UI_PLAN.md)에 따르며, Mac 한도 항상 표시와 Windows 전환 방식의 차이는 결정 10에 남깁니다. 두 호스트의 실제 창 배치·픽셀 검사는 각각의 native smoke가 맡습니다.
 
