@@ -1,6 +1,6 @@
 # 조회 당시 시간·사용량 겹침 표시
 
-2026-10-15 KST. 범위: **공통 코드 변경 + Windows 막대**. Draft 검증 요청이며 **Mac 확인 전 병합하지 않는다.** Mac 막대와 VoiceOver 연결은 Mac 담당의 후속 PR이다. 버전과 배포 EXE는 바꾸지 않았다.
+2026-10-15 KST. 범위: **공통 코드 변경 + Windows 막대**. #52는 Windows/Mac 확인을 마친 뒤 main `9716a1c7c0559f6128c5f384756179f0367fed01`에 병합됐다. Mac 막대와 VoiceOver 연결은 Mac 담당의 별도 후속 PR이다. #52 자체는 버전과 배포 EXE를 바꾸지 않았으며 Windows 배포 준비는 [2.5.0 기록](MAINTENANCE_2_5_0.md)에서 구분한다.
 
 이 문서의 예시·PNG·검사 값은 모두 **합성 데이터**다. 실제 계정의 요금제·사용률·리셋 시각·식별자, 사용자 DB·원본 CLI 출력은 공개하지 않는다.
 
@@ -10,7 +10,7 @@
 - 공통 `QuotaLine.ComparisonText`는 선택적 `string?` 필드다. 합성 예는 `시간 경과 40% · 균등 사용 기준보다 15%p 빠름 · 17분 전 기준`이다. 해당 행의 비교만 포함하며, 비교를 숨기는 경우와 제목·범위·메타데이터·조회 대기 행에서는 `null`이다.
 - Windows 값 행과 막대의 `AccessibleDescription`은 이 필드만 직접 사용한다. `null`이면 설명을 비워 이전 비교가 남지 않게 한다. 보이는 사용률·간략 리셋은 기존 접근성 이름으로 제공하며, Provider 전체 상세를 행별로 파싱하지 않는다.
 - **Provider Tooltip 문구·레이아웃·계산·조회 정책은 그대로다.** 기존 `ReferenceAge`와 새 행 문구가 같은 순수 나이 포맷터를 사용한다.
-- Mac의 [최초 확인](https://github.com/hydron75/ai-burger-clock/pull/52#issuecomment-6186916389)은 `03b2e2f`의 공통 251,439건·Mac 빌드·native smoke 결과다. 아래 새 수치와 API는 **업데이트된 PR HEAD에서 Mac 재확인 대기**이며, push 후에는 그 확인이 끝날 때까지 이 브랜치에 추가 push하지 않는다.
+- Mac의 [최초 확인](https://github.com/hydron75/ai-burger-clock/pull/52#issuecomment-6186916389)은 `03b2e2f`의 공통 251,439건·Mac 빌드·native smoke 결과다. [최신 HEAD 78e6666 재확인](https://github.com/hydron75/ai-burger-clock/pull/52#issuecomment-6187337048)에서는 공통 **251,519건**·빌드 경고 0/오류 0·native smoke 종료 코드 0과 새 필드 호환성을 확인했다. 그 사이 브랜치를 추가 push하지 않았으며 사용자 승인 뒤 #52를 병합했다.
 
 ## 표시와 계산
 
@@ -78,12 +78,12 @@ PNG **20개**를 같은 합성 데이터로 비교했다.
 
 **이번 행별 문구 보완 전후:** 최초 #52의 `after/render/`와 이번 `artifacts/quota-row-comparison-20261015/render/`의 PNG **20개 모두 SHA-256이 동일**하다. Provider Tooltip 3개와 긴 상세도 동일하며, layout JSON **14개도 모두 동일**하다. 따라서 이번 보완은 막대 내부·문구·Tooltip·창 크기·행 수에 시각적 변경이 없다. 새 빌드·공통 검사·명시적 self-test·smoke 원본은 `artifacts/quota-row-comparison-20261015/`에만 보관한다.
 
-## Mac 확인 요청 — 이 Draft PR HEAD
+## Mac 확인 완료 — #52 HEAD 78e6666, Mac 담당 결과
 
-- [ ] 공통 검사 **251,519건**, `Mac/build.sh`, native `--smoke-test`를 실행하고 실제 결과를 PR 코멘트에 기록. 최초 확인의 251,439건보다 **+80건**이다.
-- [ ] `QuotaLine.ElapsedPercent`와 새 선택적 `ComparisonText`가 기존 Mac 코드와 호환되는지 확인. 합성 두 행의 서로 다른 빠름/느림·기준 나이와 숨김 상태의 `null`을 확인.
-- [ ] 합성 Provider 상세의 기준 나이·빠름/느림·비교 불가 사유·정확한 리셋·기존 신선도 안내가 한 상세에 표시되는지 확인.
-- [ ] 이번 PR에서 Mac 막대는 기존 사용량만 표시한다는 점을 확인. Mac 막대 후속 구현이나 VoiceOver 실기 확인을 이번 PR 결과로 대신 적지 않기.
+- [x] 공통 검사 **251,519건**, `Mac/build.sh`, native `--smoke-test` 통과. 최초 확인의 251,439건보다 **+80건**이며 Mac 담당 코멘트에 기록했다.
+- [x] `QuotaLine.ElapsedPercent`와 새 선택적 `ComparisonText`가 기존 Mac 코드와 호환된다. 합성 두 행의 서로 다른 빠름/느림·기준 나이와 숨김 상태의 `null`을 확인했다.
+- [x] Provider 상세의 기존 문구·길이·신선도 안내와 행/막대 값은 그대로다. UI 연결은 Mac native smoke로 확인했으며 실제 hover 관찰은 별도다.
+- [x] 이번 PR에서 Mac 막대는 기존 사용량만 표시하고 팝오버 380×821pt를 유지한다. 후속 시간층 구현·VoiceOver 실기까지 완료한 것으로 적지 않는다.
 
 ### Mac 후속 PR
 
@@ -95,6 +95,6 @@ PNG **20개**를 같은 합성 데이터로 비교했다.
 
 ## 미수행과 배포 보존
 
-Mac 빌드·native 실행·VoiceOver, 실제 Windows OS 테마·고대비·화면 배율 전환·다중 모니터·스크린리더 실기는 **미수행**이다. 후보 코드의 실제 계정 조회 검증과 알림 배너의 시각적 전달 확인도 이번에 수행하지 않았다. 기존 배포본을 다시 실행한 뒤의 평상시 조회는 별개다.
+이 Windows 환경에서는 Mac 빌드·native 실행·VoiceOver, 실제 Windows OS 테마·고대비·화면 배율 전환·다중 모니터·스크린리더 실기는 **미수행**이다. 위 Mac 빌드/native는 Mac 담당이 별도로 실행한 결과다. #52 후보 코드의 실제 계정 조회 검증과 알림 배너의 시각적 전달 확인도 당시 수행하지 않았다. 기존 배포본의 평상시 조회와 후속 2.5.0 준비의 실제 화면 확인은 별도다.
 
 배포 EXE의 SHA-256은 전후 `E610CD39DB17EBDC48EC7A6E0349B2A2B2993DEBE4DE555E41F6E1C10FE104D1`로 같다. publish·배포 교체·버전 변경은 하지 않았으며, 검사 후 같은 2.4.1 배포본을 다시 실행하고 프로세스 응답을 확인했다.
