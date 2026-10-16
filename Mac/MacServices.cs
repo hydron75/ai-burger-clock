@@ -9,6 +9,7 @@ internal sealed class MacNotifications : UNUserNotificationCenterDelegate
 {
     private readonly Action<string> feedback;
     private bool authorized;
+    private bool answered;
     private bool stopped;
     private long serial;
 
@@ -26,9 +27,13 @@ internal sealed class MacNotifications : UNUserNotificationCenterDelegate
             {
                 if (stopped) return;
                 authorized = granted && error is null;
+                answered = true;
                 if (!authorized) feedback("알림이 꺼져 있습니다. macOS 시스템 설정 → 알림에서 허용할 수 있습니다.");
             }));
     }
+
+    // True once macOS answered the permission request and the answer was "not allowed".
+    internal bool Denied => answered && !authorized;
 
     internal void Show(string title, string body)
     {

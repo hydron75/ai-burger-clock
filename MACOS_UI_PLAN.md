@@ -125,7 +125,7 @@ PR #14에서 HTTP 설정, 알림 문구, 네트워크 재조회 제한은 이미
   - 지금은 `statusItem.Menu = menu`라서 왼쪽 클릭에도 메뉴가 뜹니다. `Menu`를 비우고 `statusItem.Button`에 Action과 `SendActionOn(LeftMouseUp | RightMouseUp)`을 지정합니다.
   - 동작 시점의 `NSApplication.SharedApplication.CurrentEvent`로 왼쪽·오른쪽을 구분합니다. control-클릭은 오른쪽으로 취급합니다.
 - **왼쪽 클릭**: `NSPopover`를 `Behavior = Transient`로 띄우고 버튼 아래에 붙입니다. 바깥을 클릭하면 닫힙니다. Accessory 앱이라 표시 직전에 `NSApplication.Activate()`가 필요합니다(현재 `Show()`와 같은 방식).
-- **오른쪽 클릭**: Refresh / 로그인 항목 설정 열기… / 종료(⌘Q)만 있는 짧은 NSMenu를 버튼 아래에 띄웁니다.
+- **오른쪽 클릭**: Refresh / 한도 회복 알림(체크, 기본 꺼짐; #59 연결 때 추가) / 로그인 항목 설정 열기… / 종료(⌘Q)만 있는 짧은 NSMenu를 버튼 아래에 띄웁니다.
 - **패널 내용**: 새 `MacStatusPanel`(NSViewController)이 Windows 순서 1)~8)을 `NSStackView`로 세로 배치합니다.
   - 현재 절대 좌표 방식(`MacStatusWindow`)을 대체합니다.
   - 기존 `MacStatusWindow`(NSWindow)와 "상태 창 열기" 메뉴는 제거합니다. 클릭했을 때만 표시합니다(결정 5-3).
