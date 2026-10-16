@@ -41,20 +41,49 @@
 - 새 Gemini 성공 캐시에 선택적 `ResetAnchorPolicyVersion=1`을 저장한다. 필드가 없는 기존 JSON은 0이며 기본 0은 직렬화에서 생략한다. 새 정책 캐시는 정상 이전 기준을 재시작 후에도 보존한다. JSON payload `Version=1`, `AccountQuota.v1.Gemini` 키, DB schema 2는 그대로이며 구형 reader는 추가 필드를 무시한다. 알 수 없는 정책 버전은 안전하게 거부한다. 캐시를 읽거나 조회에 실패했다는 이유만으로 새 성공 캐시를 쓰지 않는다.
 - 상세에 `Gemini 사용 0% 창의 리셋은 빠른 조회 기준에서 제외합니다.` 한 줄만 추가한다. 사용량 행·막대·리셋 카운트다운·시간 비교·회복 알림 판정·CLI 명령/버전 보호·수동 Refresh/시작/절전/연결 복구는 변경하지 않는다. 화면을 열 때 새 조회를 추가하지 않는다.
 
+### 추가 보완: Provider별 다음 조회 예약 진단
+
+- Codex·Claude·Gemini가 조회를 마치고 다음 조회를 정할 때 **실제 예약에 사용한 판정 결과**를 공통 진단 파일에 남긴다. 별도 설명용 계산으로 예약 이유를 추정하지 않는다. 성공·실패 모두 기록하며 취소되어 다음 예약을 만들지 않은 조회는 기록하지 않는다.
+- 모든 Provider를 합쳐 **최근 256건·최대 128KiB**만 보관한다. 재시작 후에도 이어 쓰며 같은 폴더의 임시 파일을 완성한 뒤 교체한다. 기존 파일이 손상됐거나 알 수 없는 형식·과대 크기·권한 문제·잠금 상태이면 원본을 덮어쓰지 않고 그 기록을 건너뛴다. 진단 실패가 조회 성공·회복 알림을 실패로 바꾸지는 않지만 이 경우 이력이 빠질 수 있다.
+- 기본 위치는 Windows `%LOCALAPPDATA%\AIBurgerClock\logs\quota-polling-diagnostics.json`, Mac `~/Library/Application Support/AIBurgerClock/logs/quota-polling-diagnostics.json`이다. 실제 DB가 다른 위치이면 **그 DB 폴더의 `logs/`**를 쓴다. 임시 DB 검사도 해당 임시 폴더만 사용하며, store 없는 모니터는 명시적으로 주입하지 않는 한 파일을 만들지 않는다.
+- JSON의 `Entries`는 기록된 순서다. `Provider`, `AttemptedAtUtc`(조회 시도 시작), `RecordedAtUtc`(예약 결정 시점), `NextCheckUtc`(다음 조회 예정), `Reason`, `SelectedResetUtc`(예약 근거 리셋, 없으면 null), `Succeeded`, `ConsecutiveFailures`, `ResetAnchorCount`(보관된 리셋 기준 수, 최대 64)를 기록한다. 모든 시각은 UTC다. `ResetAnchorCount`는 보관 목록 수이며 현재 창을 다시 합산한 정책의 전체 후보 수를 뜻하지 않는다.
+- 이유는 `Regular`(기본 6시간), `LowRemaining`(사용 90% 초과~100% 미만, 1시간), `Exhausted`(정확히 100%, 15분), `ResetPeriod`(리셋 전후 구간, 5분), `ResetEntry`(리셋 15분 전 진입이 더 빠름), `FailureRetry`(실패 재시도), `Overdue`(이미 지난 예약의 즉시 조회)다. 실패 재시도와 다른 후보의 시각이 같으면 `FailureRetry`로 적고 예정 시각은 바꾸지 않는다.
+- **이 파일은 다음 예약의 이력이지 실행 트리거의 이력이 아니다.** 수동 Refresh·시작·절전 복귀·연결 복구는 예정 대기를 앞당길 수 있으므로 실제 조회 간격을 모두 정기 조회로 해석하지 않는다. 기존 배포 2.6.0의 과거 기록을 소급해 복원하지 않는다.
+- 요금제·사용률·계정/창 ID·CLI 원문·오류 원문은 저장하지 않는다. 다만 요청한 선택 리셋과 조회 시각은 계정 활동과 관련된 **로컬 비공개 정보**다. 파일 원문·실제 시각을 PR/코멘트에 올리지 말고 합성 자료나 일반화한 간격·이유별 건수만 공유한다.
+
+Windows에서 최근 20건을 로컬로 확인하는 예:
+
+```powershell
+$quotaLog = Join-Path $env:LOCALAPPDATA 'AIBurgerClock\logs\quota-polling-diagnostics.json'
+(Get-Content -LiteralPath $quotaLog -Raw | ConvertFrom-Json).Entries |
+    Select-Object -Last 20 |
+    Format-Table Provider, Reason, RecordedAtUtc, NextCheckUtc, SelectedResetUtc, Succeeded, ConsecutiveFailures, ResetAnchorCount
+```
+
+Mac에서는 위 경로의 JSON을 텍스트 편집기로 열어 `Entries`의 끝부분을 확인한다. 앱이 아직 이 PR 빌드가 아니거나 다음 예약 전이면 파일이 없는 것이 정상이다.
+
+### 추가 보완: 1분 이내 리셋 흔들림 압축
+
+- Mac이 보고한 Claude 기준 목록 상한 64개는 실제로는 두 리셋 주변의 약 1초 흔들림이었다. 단일 시각으로 반올림하면 빠른 조회 구간의 최초 진입이나 최종 종료를 줄일 수 있어, **전체 폭 1분 이내 묶음의 가장 이른 값·가장 늦은 값만** 보존한다. 완전히 같으면 하나만 남긴다. 인접 값의 간격만 보고 연쇄 병합하지 않으며 묶음 전체 폭은 1분을 넘지 않는다.
+- 합성 예: 두 시각 주변 64개 → **두 묶음·네 끝점**. 각 묶음의 원래 리셋 ±15분 구간 합집합이 정확히 같아 최초 진입·최종 종료와 이전 리셋 +15분을 보존한다. 원래 최대 64개 제한과 timestamp 배열/캐시 JSON 형식은 유지하며 제한 때문에 끝점 쌍을 반만 남기지 않는다.
+- **작은 예약 차이는 있다.** 이미 빠른 구간 안에서 중간 흔들림 값이 만들던 중복 진입 예약은 사라질 수 있어, 그 중간 예약 시각은 최대 1분 달라질 수 있다. 예를 들어 합성 리셋 `12:00:00/20/40`, 현재 `11:45:10`이면 다음 중복 진입은 `11:45:20` 대신 `11:45:40`이다. 빠른 구간 자체·최초 진입·최종 종료·기본/부족/실패 주기는 바뀌지 않는다.
+
 ### Windows·공통 검증
 
-- SDK 10.0.402, `build.ps1` 경고 0/오류 0, self-test **252,395건·ExitCode 0**. #62의 252,149건 대비 새 공통 검사 **+246**, 공통 **252,088**, Windows 전용 **307 그대로**다. 나머지 검사 그룹은 건수까지 같고 중복 실행하지 않는다. 별도 Shared.Tests도 **252,088건·ExitCode 0**이다.
+- SDK 10.0.402, 추가 보완 후 `build.ps1` 경고 0/오류 0, self-test **252,869건·ExitCode 0**. #63 최초 252,395건 대비 **+474**(진단 367 + 예약/압축/통합 107), #62의 252,149건 대비 **+720**이다. 공통 **252,562**, Windows 전용 **307 그대로**이며 별도 Shared.Tests도 **252,562건·ExitCode 0**이다. 기존 그룹 감소·중복 실행은 없다. 최초 보완 검사에서 잘못된 진단 파일의 `InvalidDataException`이 빠져나오는 오류를 발견해 예외 격리를 수정한 뒤 전체를 다시 실행했다.
 - 새 `GeminiPollingPolicyTests`는 세 종류 0% 창의 경계·극소 양수·다른 Provider·혼합 사용·조회 지연·실패 재시도, 가짜 시계 7일×이동 300/17/10분(각각 29회·6시간 간격), 64개 구형 오염 기준과 첫 실패, 실제 사용→0% 뒤 새 캐시/재시작과 이전 +15분 만료, optional JSON/schema 호환을 확인한다. 가짜 CLI·합성 데이터·임시 DB만 쓰며 설치된 CLI·사용자 DB를 열지 않는다.
 - Windows native smoke **1회 574 PASS·실패 0·실제 ExitCode 0(48.83초)**. 진단용 stderr는 기존처럼 보존했으며 비어 있다는 뜻이 아니다. #62 Windows 검증 소스와 같은 렌더 기준 대비 합성 PNG **19/20**, layout JSON **14/14 SHA-256 동일**다. 유일한 차이는 Gemini Provider 상세의 예외 안내로, 폭 640px 그대로·높이 **958→1022px**(192 DPI에서 두 줄 증가)다. 창·한도 행/막대 수·나머지 상태/통계/기록 화면은 같다. [변경 후 합성 상세](docs/reviews/gemini-idle-reset-polling-20261016/quota-tooltip-gemini.png).
+- **진단·압축 보완 후 재검증:** native smoke 추가 **1회 574 PASS·실패 0·실제 ExitCode 0(49.03초)**. #63 최초 렌더 대비 합성 PNG **20/20**, layout JSON **14/14 SHA-256 동일**다. 이 보완에는 화면 변경이 없다. 새 검사는 예약 이유·선택 리셋·실패 재시도 우선·취소·저장 실패 격리·256건/128KiB·동시 쓰기/재시작·형식 오류, 1분 경계/연쇄 금지/구간 합집합/이전 구간 만료/캐시 재시작을 합성 응답·임시 DB로 확인한다.
 - 검사 후 기존 **2.6.0 배포 EXE**를 다시 실행해 프로세스 응답 정상과 파일 SHA-256 불변을 확인했다. publish·자동 시작 등록/설정·앱 버전 변경은 하지 않았다. 일반 앱 재실행에 따른 원래 자체 조회·캐시 갱신은 사용자 DB 불변을 뜻하지 않는다.
-- 로컬 증거는 ignored `artifacts/gemini-idle-reset-polling-20261016/`에 둔다. 이 수정의 실제 장시간 자동 조회·운영 실행 수 감소 측정·실제 계정 조회는 **미수행**이다. CLI 자동 업데이트 준비 작업과 별개다.
+- 로컬 증거는 ignored `artifacts/gemini-idle-reset-polling-20261016/`에 두며 추가 보완은 `diagnostics-followup/`의 build/self-test/shared-tests/smoke와 최초 실패 기록에 구분한다. 이 수정의 실제 장시간 자동 조회·운영 실행 수 감소 측정·실제 계정 조회는 **미수행**이다. CLI 자동 업데이트 준비 작업과 별개다.
 
 ### Mac 확인 요청
 
-- 같은 PR HEAD에서 공통 **252,088건**, `Mac/build.sh` 경고 0/오류 0, native `--smoke-test` ExitCode 0을 확인한다. Mac 코드는 이번 PR에서 수정하지 않는다.
+- 추가 보완한 같은 PR HEAD에서 공통 **252,562건**, `Mac/build.sh` 경고 0/오류 0, native `--smoke-test` ExitCode 0을 다시 확인한다. 이전 HEAD의 빌드/smoke·진행 중인 관찰은 새 진단/압축 코드의 확인으로 취급하지 않는다. Mac 코드는 이번 PR에서 수정하지 않는다.
 - 미사용 5시간·공통 주간·모델 주간이 이동해도 다음 정기 조회는 6시간이며, 사용이 있는 다른 창의 리셋/한도 부족·실패 재시도는 계속 우선함을 확인한다. 날짜/범위는 합성 자료로 적는다.
 - 구형 Gemini 캐시 정리와 새 캐시의 실제 사용→0% 후 이전 리셋 +15분·재시작 보존을 확인한다. 기본 OFF·새 행 첫 등장 무알림·Refresh·절전/연결 복구도 회귀 확인한다.
 - Provider 상세의 예외 안내 한 줄과 팝오버/스크롤·막대 수/행 수·VoiceOver 비교 연결에 예상 밖 변화가 없는지 확인한다. 실제 계정 값·원문·캡처를 공개하지 않는다.
+- 진단 파일이 Mac의 실제 DB 폴더 아래 생성되고 세 Provider의 예약 이유·선택 리셋·UTC 시각이 다음 예약과 맞는지, 재시작·상한/쓰기 실패 격리가 지켜지는지 확인한다. Claude의 흔들림 기준 압축과 최초 진입·최종 종료 보존을 확인하되 공개 기록에는 실제 리셋 시각을 적지 않는다. push 후 Mac 재확인이 끝날 때까지 이 브랜치에 추가 push하지 않는다.
 
 ## #30 구현·배포 당시 기록
 

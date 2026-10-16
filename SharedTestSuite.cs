@@ -34,6 +34,8 @@ internal static class SharedTestSuite
             Report("Gemini Antigravity quota schemas/policy", GeminiQuotaTests.Run());
             Report("Gemini model weekly scopes/pacing/recovery/cache (synthetic)", await GeminiModelQuotaTests.RunAsync(directory));
             Report("Gemini unused-reset polling/cache migration (synthetic)", await GeminiPollingPolicyTests.RunAsync(directory));
+            Report("quota polling diagnostic history (synthetic)", await QuotaPollingDiagnosticTests.RunAsync(directory));
+            Report("quota scheduling reasons/reset coalescing (synthetic)", await QuotaSchedulingTests.RunAsync(directory));
             Report("Gemini quota CLI guards/protocol (synthetic)", await GeminiQuotaClientTests.RunAsync());
             Report("quota monitor/restart/cancellation (fake CLI)", await AccountQuotaMonitorTests.RunAsync());
             Report("quota CLI setup/protocol/cancellation (POSIX fixtures)", await SharedQuotaProtocolTests.RunAsync());
