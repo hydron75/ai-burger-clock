@@ -1,5 +1,24 @@
 # Gemini / Antigravity 한도 — #30 구현·2.3.0 배포 기록
 
+## 모델 전용 주간 행
+
+**2026-10-16 개발 브랜치: 공통 코드 변경·Mac 확인 전 병합 대기. 배포 EXE 미교체.** 아래 #30 당시의 실제 두 창 기록을 세 창으로 고쳐 쓰지 않는다.
+
+- 순서는 `5시간` → `주간` → `주간 {묶음 이름}`이다. 합성 예시는 `주간 Gemini Synthetic Model`이며 모델명을 고정하지 않는다. 공통 주간을 `주간 전체`로 바꾸거나 각 묶음의 비율을 더하지 않는다. 동시 차감 관계는 응답만으로 보장되지 않는다.
+- 추가 묶음은 정확한 `Gemini ` 이름 영역, `gemini-…-weekly` ID 영역, **정확히 하나의 `weekly` 창**, 유효한 필드·비율·리셋·중복·길이 제한을 모두 만족해야 한다. Gemini처럼 보이는 잘못된 이름, 미지원 창, 중복·모순은 전체 Gemini 응답을 거부한다. 무관한 Claude/GPT·크레딧은 계속 제외한다. 기존 공통 묶음에서 한 창만 제공하는 응답도 유지한다.
+- 원본 `(묶음 이름, bucket ID)`를 길이 접두 방식으로 합쳐 모델 행 ID를 만든다. 표시용 단축 이름을 정체성으로 쓰지 않으며, 합친 ID는 캐시·알림의 512자 한도를 넘으면 거부한다. 기존 공통 두 ID는 유지한다.
+- 새 행은 10080분 주간 창으로 기존 시간층·경계선·행별 접근성 비교·Provider 상세에 연결된다. 회복 알림은 기본 꺼짐이며 첫 등장·이름/ID 변경·소실 후 재등장은 조용히 기준만 만든다. 같은 창의 정확한 소진→회복만 기존 엔진이 알린다.
+- 버전 허용 범위·공식 CLI 명령·0턴/0토큰 보호·캐시 v1/DB schema 2·조회 정책 계산은 바꾸지 않는다. 새 행도 기존 Provider별 조회 주기 판정 대상이다. 공식 모델/scope 필드가 없는 응답에서 관측한 제한적 호환 규칙이지 미래의 모든 묶음 자동 지원 보장은 아니다.
+- Windows 바깥 창 374×569 DIP·한도 viewport 342×214·전환 방식은 그대로다. 추가 행은 박스 내용 높이를 34 DIP 늘리고 내부 세로 스크롤로 표시한다. 문서·PNG는 합성 데이터만 사용한다.
+- **Mac 확인 요청:** 같은 HEAD에서 공통 검사·`Mac/build.sh`·native smoke. 기존 두 행 시나리오는 보존하고 새 세 행 시나리오의 전체 막대 8개(기존 7개+1), 긴 모델명, 낮은 화면의 한도 스크롤·팝오버 높이, VoiceOver의 모델 행 이름·공통 `ComparisonText` 연결을 확인한다. `Mac/README.md`의 범위 설명도 Mac 담당이 갱신한다. 이 PR은 Mac 파일·버전·배포본을 수정하지 않는다.
+- **Windows 실제 검증:** main `5706c2580721a4d94df6d33200455db5cd775029`와 후보에서 SDK 10.0.402·`build.ps1` 경고 0/오류 0, 실제 self-test ExitCode 0. 전체 **252,051 → 252,149건(+98)**, 공통 **251,744 → 251,842(+98)**, Windows 전용 **307 그대로**다. 새 모델 구조/표시/시간 비교/회복/임시 캐시 96건과 CLI 1.3.6/모델 행 전달 2건이 늘었다. 감소·중복 실행은 없다. 별도 `Shared.Tests`도 **251,842건·ExitCode 0**이다.
+- 기준 smoke **572 PASS**, 최종 후보 **574 PASS**, 각각 1회·실제 ExitCode 0이다. 합성 막대·행 순서·접근성/Provider 상세·내부 스크롤·Refresh·합성 10초 조회 중 응답성·기존 회복 알림 연결을 확인했다. 단일 EXE publish·실제 회복 배너·Mac native 검사는 미수행이다.
+- 후보의 실제 호환 확인은 설치 agy **1.3.6**에서 공식 `/usage` 1회·**5.54초·ExitCode 0**, 기존 0턴/0토큰 보호를 통과해 **공통 두 창+모델 전용 주간, 총 세 행**을 채택했다. 원문·계정 수치·시각·식별자는 저장/게시하지 않았고, probe는 사용자 DB·설정을 건드리지 않았다. EXE·검사 DLL·CLI 해시는 실행 전후 동일하다. 전체 계정 화면 육안 확인·실제 회복 알림 전달 검증을 대신하는 것은 아니다.
+- 전후 합성 PNG 20개 중 **14개 SHA-256 동일**. 세 한도 스크롤 화면은 새 행 때문에 달라지고, 일반 한도/메모 화면은 스크롤바 76픽셀만 다르다. Gemini 상세는 폭 640px 그대로·높이 862→958px다. 바깥 client 748×1138px(192 DPI에서 374×569 DIP)는 동일하고 Gemini 박스만 264→332px(+34 DIP) 늘었다. [변경 전](docs/reviews/gemini-model-weekly-20261016/before/account-quotas-gemini.png) / [변경 후](docs/reviews/gemini-model-weekly-20261016/after/account-quotas-gemini.png), [이전 상세](docs/reviews/gemini-model-weekly-20261016/before/quota-tooltip-gemini.png) / [새 상세](docs/reviews/gemini-model-weekly-20261016/after/quota-tooltip-gemini.png). 모든 이미지·수치·시각은 합성 데이터다.
+- 로컬 로그·PNG: ignored `artifacts/gemini-model-weekly-20261016/{before,after}/`. 검사 후 같은 **2.6.0 배포본을 다시 실행**했고 EXE SHA-256은 전후 동일하다. 배포 파일·자동 시작 설정을 바꾸지 않았다.
+
+## #30 구현·배포 당시 기록
+
 **현재 상태(2026-10-09 KST):** #30은 Windows 재진단과 Mac 확인 뒤 사용자 승인으로 main에 병합됐고 #42의 Mac Gemini UI 후속도 병합됐다. #44 승인 뒤 main `019d3f3`에서 **Windows 2.3.0을 배포했다.** [2.3.0 배포 기록](MAINTENANCE_2_3_0.md)에 준비 self-test 251,377건·smoke 5회 모두 293 PASS/종료 코드 0과 agy **1.3.2 실제 조회(8.37초·두 창)**, 최종 단일 EXE 검사·해시·백업을 구분해 적었다. 최종 self-test 251,377건·smoke 293 PASS/종료 코드 0이며 새 트레이·상태 창·Gemini 값 정상 표시는 **사용자 확인**이다.
 
 아래 절은 #30 구현 당시의 날짜·비교 기준·실행 결과다. 당시의 Mac 확인 요청·미수행 항목을 현재 상태로 읽지 않는다. 후속 Windows 진단·검사 전제 보완과 초기 오류 원인 미확정 관찰은 [BACKLOG](BACKLOG.md#관찰-windows-smoke의-뜻밖의-한도-모드-원인-미확정), [#30 재진단 결과](https://github.com/hydron75/ai-burger-clock/pull/30#issuecomment-6072308296), [Mac 확인](https://github.com/hydron75/ai-burger-clock/pull/30#issuecomment-6071703373)에 남긴다. smoke 진단은 현재 코드에도 유지한다.
