@@ -1405,17 +1405,17 @@ smoke 출력(요약): 42절과 같은 항목에 더해 시간 층(시간 층 대
 
 | 항목 | 결과 |
 |---|---|
-| 앱 소스 | main `d21499a` + 코드 커밋(이 PR) |
+| 앱 소스 | `50d62299e7a7bee15c0cc4e5e88ed03721c87620`(#55 브랜치 HEAD = main `d21499ae5a2661d00353cced2966c92eb245fbcb` + 코드 커밋 `f503fac1cd5e6db6f2d05ae6048608f2e65b6fce` + 문서 커밋). 이 번들은 #55 병합 `c85c1f38bbb487d07eba85a7e6d0c375a5e166de`의 Mac 코드와 같다 |
 | Shared.Tests | `PASS ALL SHARED: 251,519 assertions`(공통 변경 없음) |
 | 빌드 | 경고 0 / 오류 0, `codesign --verify --deep --strict` 통과, bundle 0.5.1 / 13(저장소 밖 임시 사본) |
 | `--smoke-test` | PASS / 종료 코드 0. 팝오버 380×821pt 그대로. 막대 대비 최소 3.1:1, 다크 시간 층↔사용 층 최소 2.2:1 |
 | 저장소 경로 `Mac/build.sh --quit-running` | 실행 중이던 0.5.0 앱을 사용자 허락으로 종료 요청해 닫은 뒤 빌드. 경고 0 / 오류 0, bundle 0.5.1 / 13, 124M, `codesign --verify --deep --strict` 통과, `--smoke-test` PASS / 종료 코드 0 |
 | SHA-256 실행 파일 | `9ea914e674bd61108d94a21d661e729ecb5188c1c03a6421824b4932993d87bd` |
 | SHA-256 앱 DLL | `b36f486b73577741c457dc1788dbd54885051462a5ddb975ef3177b71ec45386` |
+| 앱 실행 | 빌드 뒤 같은 경로의 0.5.1 bundle로 앱을 다시 실행했다(수행함) |
 
 ### 수행하지 않은 검증
 - **사용자 직접 확인:** 다크 모드에서 Gemini 막대(시간 층과 사용 층의 구분).
-- 빌드 뒤 같은 경로의 0.5.1 bundle로 앱을 다시 실행했다.
 - 실제 계정 값으로 본 막대, 다중 모니터, 실제 VoiceOver 읽기(44절과 같음).
 
 ## 46. 0.6.0: 한도 회복 알림 연결
