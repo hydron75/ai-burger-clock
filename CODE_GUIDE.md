@@ -1,10 +1,10 @@
 # 소스코드, 쉬운 말로 읽기
 
-이 문서는 **Windows 2.6.0 배포 소스 기준**입니다. #59를 양쪽 검증 뒤 병합하고 #61을 사용자 승인으로 병합해, 깨끗한 main **`4981f5cda325d35eeb76dd60f09d66833efaad77`**에서 단일 EXE를 만들었습니다. 정상 종료·WAL 확인·2.5.1 백업 뒤 교체·최종 검사를 마쳤고 **현재 2.6.0 배포본이 실행 중**입니다. 준비/최종 검사·실제 EXE 해시·백업·사용자 확인과 2.5.1 EXE만 복원하는 방법은 [2.6.0 배포 기록](MAINTENANCE_2_6_0.md)에, 이전 이력은 [2.5.1 기록](MAINTENANCE_2_5_1.md)에 있습니다. 후속 문서 커밋은 EXE 소스가 아닙니다. Windows 사용법은 [README](README.md), 최신 Mac 버전·검증은 [Mac 안내](Mac/README.md)로 이동하세요. 아래 실행·UI 설명은 Windows 기준이며 Mac의 차이는 12절에 정리했습니다.
+이 문서는 **Windows 2.7.0 준비 소스 기준**입니다. #62·#63이 양쪽 확인 뒤 병합된 main **`3757a9eef93d21a1a3254a342a46a96b3baf5c8c`**에서 새 준비 브랜치를 만들고 Windows 버전과 문서만 갱신합니다. **배포 교체는 승인 대기이며 현재 dist는 2.6.0**입니다. 새 변경·준비 검사·Git 기준점·승인 후 교체와 2.6.0 EXE만 복원하는 방법은 [2.7.0 준비 기록](MAINTENANCE_2_7_0.md)에 있습니다. 현재 배포 EXE의 실제 소스는 **`4981f5cda325d35eeb76dd60f09d66833efaad77`**이며 [2.6.0 배포 기록](MAINTENANCE_2_6_0.md)과 구분합니다. 후속 문서 커밋은 EXE 소스가 아닙니다. Windows 사용법은 [README](README.md), 최신 Mac 버전·검증은 [Mac 안내](Mac/README.md)로 이동하세요.
 
-코드를 한 줄씩 번역한 문서는 아닙니다. **각 파일이 무엇을 맡고, 서로 어떻게 연결되는지** 설명합니다. 이 개발 브랜치의 루트·Properties C# 81개, Mac 호스트 7개, 공통 검사 입구 1개로 총 89개와 빌드 설정을 다룹니다. `SharedTestSuite.cs`는 루트의 검사 파일에 이미 포함하고, 별도 공통 검사 입구는 `Shared.Tests/Program.cs` 한 개만 셉니다. 컴퓨터가 만든 `bin`·`obj`와 로컬 검증용 `artifacts`는 대상에서 뺍니다.
+코드를 한 줄씩 번역한 문서는 아닙니다. **각 파일이 무엇을 맡고, 서로 어떻게 연결되는지** 설명합니다. 루트·Properties C# **85개(앱 기능 42 + 검사·진단 42 + 명찰 1)**, Mac 호스트·검사 11개, 공통 검사 입구 1개로 총 **97개**와 빌드 설정을 다룹니다. `SharedTestSuite.cs`는 루트 검사에 이미 포함하고 별도 입구는 `Shared.Tests/Program.cs`만 셉니다. 공통 제품 원본 목록은 **30개**입니다. 이 수는 #60·#62·#63까지 병합한 소스 지도이며 이번 준비에서 C#를 추가했다는 뜻은 아닙니다. 생성된 `bin`·`obj`·검증 `artifacts`는 제외합니다.
 
-**개발 브랜치·Mac 확인 전 병합 대기:** 공통 Gemini 파서는 기존 공통 창 뒤에 단일 weekly 구조의 모델 묶음을 `주간 {묶음 이름}`으로 추가합니다. 원본 묶음명+bucket ID를 정체성으로 써 기존 시간 비교·회복 엔진·캐시에 연결합니다. 기존 두 행 fixture는 호환 검사로 유지하고 새 세 행은 별도로 검사합니다. 배포 2.6.0·Mac 코드·조회 정책 계산은 바꾸지 않습니다. [범위·Mac 확인](GEMINI_ANTIGRAVITY_QUOTAS.md#모델-전용-주간-행).
+**#62·#63 병합 완료·2.7.0 준비에 포함:** 공통 Gemini 파서는 `5시간` → `주간` → `주간 {묶음 이름}`을 만들고 원본 묶음명+bucket ID를 기존 시간 비교·회복 엔진·캐시에 연결합니다. 정확한 사용 0% 창은 새 리셋 후보에서 제외하고 구형 Gemini 캐시의 출처 불명 기준을 한 번 정리합니다. 모든 Provider의 예약 이유·선택 리셋·다음 조회를 최근 256건/128KiB로 기록하며 1분 이내 흔들림은 구간 양끝만 보존합니다. [구조·전환 제약·진단 위치·양쪽 확인](GEMINI_ANTIGRAVITY_QUOTAS.md). 현재 배포 2.6.0에는 이 변경이 아직 없습니다. 이번 준비는 공통 C#·Mac 파일을 다시 고치지 않습니다.
 
 **#59 병합 완료·Windows 2.6.0에 반영:** 공통 [QuotaRecoveryNotifications.cs](QuotaRecoveryNotifications.cs)는 새 성공 관측의 소진→회복만 판정하고 문구를 만듭니다. `AccountQuotaMonitor.Succeeded`는 캐시/시작/실패와 분리한 성공 응답·Provider별 순번을 전달합니다. 콜백은 Provider 게이트를 잡은 채 호출하므로 호스트는 빠른 비동기 UI 전달만 하고 Stop/Dispose를 동기 대기하지 않습니다. Windows는 기본 꺼짐 메뉴와 기존 네이티브 풍선 알림에 연결합니다. 설정은 기존 AppMetadata 한 키이며 schema 2·조회 정책·공식 상태 판정은 그대로입니다. [양쪽 검사·수명 계약·Mac 후속 #60](QUOTA_RECOVERY_NOTIFICATIONS.md). 메뉴는 트레이 우클릭의 Statistics 다음·자동 시작 이전이며 상태/한도 창 안 체크박스가 아닙니다. 이번 Windows 배포에서 공통 로직과 Mac 코드를 다시 바꾸지 않았습니다.
 
@@ -323,7 +323,7 @@ Windows 내부 승인 형식은 알려진 경우만 해석합니다. 낯선 값�
 
 이름을 눌러 소스를 열 수 있습니다. 역할을 알고 필요한 파일부터 읽으면 됩니다.
 
-### 실제 앱 기능: 41개
+### 실제 앱 기능: 42개
 
 | 파일 | 맡은 일 |
 |---|---|
@@ -358,18 +358,19 @@ Windows 내부 승인 형식은 알려진 경우만 해석합니다. 낯선 값�
 | [NetworkRefreshScheduler.cs](NetworkRefreshScheduler.cs) | 네트워크 변화 뒤 5초 대기 후 재조회, 1분에 한 번 제한, 연속 변화는 마지막 변화 기준 한 번으로 합침. 대기 끝에 쓸 수 있는 연결(링크 로컬이 아닌 주소)이 없으면 건너뜀 |
 | [UsageStore.cs](UsageStore.cs) | SQLite 생성·업그레이드·백업·설정·저장·일부 해석 불가 행 구분 |
 | [QuotaJsonContext.cs](QuotaJsonContext.cs) | 한도 캐시를 JSON으로 읽고 쓰는 타입 정보를 빌드 때 생성. Mac trimming 검사와 기존 캐시 호환성 유지 |
+| [QuotaPollingDiagnostics.cs](QuotaPollingDiagnostics.cs) | 세 Provider의 예약 결정·선택 리셋·UTC 시각을 DB 옆 logs에 최근 256건/128KiB로 보관. 원문은 비공개이며 오류가 조회를 중단하지 않음 |
 | [AutoStartManager.cs](AutoStartManager.cs) | Windows 자동 시작 등록과 상태 판정 |
 | [AccountQuotaModels.cs](AccountQuotaModels.cs) | 한도 Provider·기간·사용률·리셋 시각과 조회 약속 |
 | [AccountQuotaParsers.cs](AccountQuotaParsers.cs) | 서로 다른 공식 CLI JSON을 검증한 공통 한도로 변환 |
 | [AccountQuotaClient.cs](AccountQuotaClient.cs) | 표준 경로의 native CLI 실행, 제한시간·출력 크기·취소·응답 검증. 2.3.0의 Gemini는 agy 1.3.1 이상·2.0 미만 사전 확인 후 `/usage`, 기존 hooks·MCP 설정 격리 제한 있음 |
-| [AccountQuotaPolicy.cs](AccountQuotaPolicy.cs) | 6시간·1시간·잔여 0%의 15분·리셋 전후 5분 규칙, 리셋 15분 전 진입, 실패 재시도 상한 계산 |
-| [AccountQuotaMonitor.cs](AccountQuotaMonitor.cs) | Provider별 독립 조회 루프, 마지막 성공값·실패 횟수·다음 조회·재시작 캐시. 2.3.0은 Gemini도 포함 |
+| [AccountQuotaPolicy.cs](AccountQuotaPolicy.cs) | 6시간·1시간·사용 100%의 15분·리셋 전후 5분과 진입/실패 상한·실제 예약 이유. Gemini 미사용 리셋 제외·1분 이내 구간 양끝 압축 |
+| [AccountQuotaMonitor.cs](AccountQuotaMonitor.cs) | Provider별 독립 조회·성공/실패·다음 예약·재시작 캐시와 예약 진단. 구형 Gemini 기준 전환·정상 이전 +15분 보존 |
 | [AccountQuotaView.cs](AccountQuotaView.cs) | 공통 모델을 바인딩하는 한도 보기. Provider별 박스·막대·상세·내부 스크롤·상태 전환, 10초/클릭/Esc 닫힘과 박스 이탈 전 재표시 차단 |
 | [QuotaBalanceBar.cs](QuotaBalanceBar.cs) | Windows 네이티브 사용률 막대. 연한 시간층·진한 사용층·최상단 시간 경계선, 이전/경과 값의 회색과 접근성 바인딩 |
 | [QuotaBarPalette.cs](QuotaBarPalette.cs) | Windows 막대의 실제 합성색 대비로 시간층 농도와 경계선 색을 선택. 고대비 시스템색·경계선 보완 |
 | [QuotaDetailPopup.cs](QuotaDetailPopup.cs) | Windows 비활성화 상세 팝업. 흰색·고정 폭·줄바꿈·포인터 근처/화면 경계 보정·긴 상세 세로 스크롤 |
 
-### 검사와 진단: 38개
+### 검사와 진단: 42개
 
 미완성 임시 코드가 아닙니다. **특별한 검사 명령 때만 쓰는 정식 검사 코드**입니다.
 
@@ -408,6 +409,9 @@ Windows 내부 승인 형식은 알려진 경우만 해석합니다. 낯선 값�
 | [SharedQuotaProtocolTests.cs](SharedQuotaProtocolTests.cs) | POSIX 경로·가짜 CLI 입출력·명령·크기 제한·취소·0턴 검증 |
 | [GeminiQuotaTests.cs](GeminiQuotaTests.cs) | 합성 agy 응답의 Gemini 그룹·5시간/주간·잔여율·리셋·잘못된 값 검사 |
 | [GeminiModelQuotaTests.cs](GeminiModelQuotaTests.cs) | 합성 모델 전용 주간의 보수적 구조·동적 이름/ID·순서·시간 비교·회복·캐시 호환. 공통 실행 목록에 한 번 등록 |
+| [GeminiPollingPolicyTests.cs](GeminiPollingPolicyTests.cs) | 미사용 이동 리셋·가짜 시계 7일·극소 양수·다른 Provider·구형/새 캐시 재시작 246건 |
+| [QuotaPollingDiagnosticTests.cs](QuotaPollingDiagnosticTests.cs) | 임시 파일의 256건/128KiB·동시 기록·재시작·스키마·권한/잠금/손상 격리 367건 |
+| [QuotaSchedulingTests.cs](QuotaSchedulingTests.cs) | 예약 이유와 실제 예정 일치·1분 압축/구간 보존·실패/취소·임시 DB 통합 107건 |
 | [GeminiQuotaClientTests.cs](GeminiQuotaClientTests.cs) | 합성 입출력으로 agy 고정 명령·버전·0턴/0토큰·인증 대기·출력 제한 검사. 설치된 CLI는 실행하지 않음 |
 | [AccountQuotaMonitorTests.cs](AccountQuotaMonitorTests.cs) | 실패 격리·조회 합치기·종료·SQLite 캐시·재시작 |
 | [AccountQuotaUiChecks.cs](AccountQuotaUiChecks.cs) | 가짜 한도로 창 전환·사용률/막대·대표색·실패·공통 상세/접근성·Refresh·기존 상태 복귀 |
@@ -421,7 +425,7 @@ Windows 내부 승인 형식은 알려진 경우만 해석합니다. 낯선 값�
 
 [Properties/AssemblyInfo.cs](Properties/AssemblyInfo.cs)는 프로그램 식별 정보 일부를 담습니다. 버전은 여기 아닌 프로젝트 파일에서 관리하고, 나머지 정보는 SDK가 생성합니다.
 
-### Mac 호스트: 7개 / 공통 검사 입구: 1개
+### Mac 호스트·검사: 11개 / 공통 검사 입구: 1개
 
 | 파일 | 맡은 일 |
 |---|---|
@@ -432,6 +436,10 @@ Windows 내부 승인 형식은 알려진 경우만 해석합니다. 낯선 값�
 | [Mac/MacControls.cs](Mac/MacControls.cs) | Mac 네이티브 컨트롤·글꼴·톤 색·카드 표현 도우미 |
 | [Mac/MacStatisticsWindow.cs](Mac/MacStatisticsWindow.cs) | 공통 계산 결과를 보여주는 Mac 통계 창 |
 | [Mac/MacServices.cs](Mac/MacServices.cs) | macOS 알림 권한과 로그인 항목 등록 |
+| [Mac/MacQuotaRecovery.cs](Mac/MacQuotaRecovery.cs) | Mac의 공통 회복 엔진 연결·메뉴 설정·메인 스레드 알림 대기열·종료 수명 |
+| [Mac/MacQuotaRecoverySmoke.cs](Mac/MacQuotaRecoverySmoke.cs) | Mac native smoke의 합성 회복 알림·설정·수명 시나리오 |
+| [Mac/MacGeminiModelRowSmoke.cs](Mac/MacGeminiModelRowSmoke.cs) | Mac native smoke의 Gemini 모델 행·막대 수·팝오버/스크롤·행별 설명 시나리오 |
+| [Mac/MacPollingDiagnosticSmoke.cs](Mac/MacPollingDiagnosticSmoke.cs) | Mac Release의 예약 진단·256건 상한·리셋 흔들림/연속 이동 시나리오 |
 | [Shared.Tests/Program.cs](Shared.Tests/Program.cs) | OS UI 없이 SharedTestSuite.RunAllAsync를 한 번 실행하는 입구 |
 
 ## 12. 빌드 파일과 폴더 지도
@@ -444,7 +452,7 @@ Windows 내부 승인 형식은 알려진 경우만 해석합니다. 낯선 값�
 | [build.ps1](build.ps1) | 빌드와 자체 검사를 실행하는 순서 |
 | [Portable.pubxml](Properties/PublishProfiles/Portable.pubxml) | 배포용 단일 EXE 설정 |
 | [app.manifest](app.manifest) | Windows 권한·호환 설정. 관리자 권한으로 자동 상승하지 않음 |
-| [Shared/SharedSources.props](Shared/SharedSources.props) | 공통 C# 원본 29개를 Mac과 검사 프로젝트에 연결하는 목록. 검사 실행 목록은 SharedTestSuite에 별도 관리 |
+| [Shared/SharedSources.props](Shared/SharedSources.props) | 공통 C# 원본 30개를 Mac과 검사 프로젝트에 연결하는 목록. 검사 실행 목록은 SharedTestSuite에 별도 관리 |
 | [Shared.Tests/AiBurgerClock.Shared.Tests.csproj](Shared.Tests/AiBurgerClock.Shared.Tests.csproj) | net10.0 공통 검사, 임시 DB와 가짜 HTTP·CLI 사용 |
 | [Mac/AiBurgerClock.Mac.csproj](Mac/AiBurgerClock.Mac.csproj) | native AppKit, net10.0-macos27.0, osx-arm64, preview 버전과 bundle 버전(`ApplicationDisplayVersion`/`ApplicationVersion`) 지정 |
 | [Mac/tools/make-app-icon.swift](Mac/tools/make-app-icon.swift) | Mac 앱 아이콘 10개 크기를 코드로 생성해 `Mac/Assets.xcassets/AppIcon.appiconset`에 저장. 아이콘을 바꿀 때만 실행 |
