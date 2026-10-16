@@ -1,10 +1,10 @@
 # 소스코드, 쉬운 말로 읽기
 
-이 문서는 **Windows 2.7.0 준비 소스 기준**입니다. #62·#63이 양쪽 확인 뒤 병합된 main **`3757a9eef93d21a1a3254a342a46a96b3baf5c8c`**에서 새 준비 브랜치를 만들고 Windows 버전과 문서만 갱신합니다. **배포 교체는 승인 대기이며 현재 dist는 2.6.0**입니다. 새 변경·준비 검사·Git 기준점·승인 후 교체와 2.6.0 EXE만 복원하는 방법은 [2.7.0 준비 기록](MAINTENANCE_2_7_0.md)에 있습니다. 현재 배포 EXE의 실제 소스는 **`4981f5cda325d35eeb76dd60f09d66833efaad77`**이며 [2.6.0 배포 기록](MAINTENANCE_2_6_0.md)과 구분합니다. 후속 문서 커밋은 EXE 소스가 아닙니다. Windows 사용법은 [README](README.md), 최신 Mac 버전·검증은 [Mac 안내](Mac/README.md)로 이동하세요.
+이 문서는 **Windows 2.7.0 배포 소스 기준**입니다. #62·#63의 양쪽 확인 뒤 #64를 사용자 승인으로 병합하고 깨끗한 main **`2d5fe6220821a8c40bd17e5a78d5e093053e892f`**에서 단일 EXE를 만들었습니다. 정상 종료·WAL/SHM 확인·새 백업 뒤 **2.7.0으로 교체·실행 완료**했습니다. 최종 SDK 10.0.402·빌드/publish 경고 0/오류 0·self-test **252,869건·ExitCode 0**, 별도 smoke **1회 574 PASS·ExitCode 0**이며 승인 전 준비 후보 5회와 구분합니다. 실제 EXE 해시·소스/백업·사용자 화면 확인·진단 파일 생성과 2.6.0 EXE만 복원하는 방법은 [2.7.0 배포 기록](MAINTENANCE_2_7_0.md)에 있습니다. 이전 EXE 소스 **`4981f5cda325d35eeb76dd60f09d66833efaad77`**와 후속 배포 결과 문서 커밋은 현재 EXE 소스가 아닙니다. Windows 사용법은 [README](README.md), 최신 Mac 버전·검증은 [Mac 안내](Mac/README.md)로 이동하세요.
 
 코드를 한 줄씩 번역한 문서는 아닙니다. **각 파일이 무엇을 맡고, 서로 어떻게 연결되는지** 설명합니다. 루트·Properties C# **85개(앱 기능 42 + 검사·진단 42 + 명찰 1)**, Mac 호스트·검사 11개, 공통 검사 입구 1개로 총 **97개**와 빌드 설정을 다룹니다. `SharedTestSuite.cs`는 루트 검사에 이미 포함하고 별도 입구는 `Shared.Tests/Program.cs`만 셉니다. 공통 제품 원본 목록은 **30개**입니다. 이 수는 #60·#62·#63까지 병합한 소스 지도이며 이번 준비에서 C#를 추가했다는 뜻은 아닙니다. 생성된 `bin`·`obj`·검증 `artifacts`는 제외합니다.
 
-**#62·#63 병합 완료·2.7.0 준비에 포함:** 공통 Gemini 파서는 `5시간` → `주간` → `주간 {묶음 이름}`을 만들고 원본 묶음명+bucket ID를 기존 시간 비교·회복 엔진·캐시에 연결합니다. 정확한 사용 0% 창은 새 리셋 후보에서 제외하고 구형 Gemini 캐시의 출처 불명 기준을 한 번 정리합니다. 모든 Provider의 예약 이유·선택 리셋·다음 조회를 최근 256건/128KiB로 기록하며 1분 이내 흔들림은 구간 양끝만 보존합니다. [구조·전환 제약·진단 위치·양쪽 확인](GEMINI_ANTIGRAVITY_QUOTAS.md). 현재 배포 2.6.0에는 이 변경이 아직 없습니다. 이번 준비는 공통 C#·Mac 파일을 다시 고치지 않습니다.
+**#62·#63 병합 완료·2.7.0에 반영·배포 완료:** 공통 Gemini 파서는 `5시간` → `주간` → `주간 {묶음 이름}`을 만들고 원본 묶음명+bucket ID를 기존 시간 비교·회복 엔진·캐시에 연결합니다. 정확한 사용 0% 창은 새 리셋 후보에서 제외하고 구형 Gemini 캐시의 출처 불명 기준을 한 번 정리합니다. 모든 Provider의 예약 이유·선택 리셋·다음 조회를 최근 256건/128KiB로 기록하며 1분 이내 흔들림은 구간 양끝만 보존합니다. [구조·전환 제약·진단 위치·양쪽 확인](GEMINI_ANTIGRAVITY_QUOTAS.md). 이번 버전·배포 기록 작업은 공통 C#·Mac 파일을 다시 고치지 않았습니다.
 
 **#59 병합 완료·Windows 2.6.0에 반영:** 공통 [QuotaRecoveryNotifications.cs](QuotaRecoveryNotifications.cs)는 새 성공 관측의 소진→회복만 판정하고 문구를 만듭니다. `AccountQuotaMonitor.Succeeded`는 캐시/시작/실패와 분리한 성공 응답·Provider별 순번을 전달합니다. 콜백은 Provider 게이트를 잡은 채 호출하므로 호스트는 빠른 비동기 UI 전달만 하고 Stop/Dispose를 동기 대기하지 않습니다. Windows는 기본 꺼짐 메뉴와 기존 네이티브 풍선 알림에 연결합니다. 설정은 기존 AppMetadata 한 키이며 schema 2·조회 정책·공식 상태 판정은 그대로입니다. [양쪽 검사·수명 계약·Mac 후속 #60](QUOTA_RECOVERY_NOTIFICATIONS.md). 메뉴는 트레이 우클릭의 Statistics 다음·자동 시작 이전이며 상태/한도 창 안 체크박스가 아닙니다. 이번 Windows 배포에서 공통 로직과 Mac 코드를 다시 바꾸지 않았습니다.
 
@@ -479,7 +479,7 @@ Mac의 시간대 ID는 `America/New_York`, `America/Los_Angeles`, `Asia/Seoul`�
 
 Mac은 `~/Library/Application Support/AIBurgerClock`에 별도 DB를 쓰고 `SMAppService.MainApp`으로 로그인 항목을 관리합니다. CLI는 절대 실행 경로와 실행 권한을 확인하고, shell 프로필·Keychain·인증 파일은 읽지 않습니다. 기능 규칙을 함께 써도 **두 컴퓨터의 DB와 로그인은 자동 동기화되지 않습니다.**
 
-현재 Windows 배포 EXE는 **2.6.0**입니다. #59 공통 회복 판정의 Mac 확인은 끝났고 Mac 네이티브 연결은 #60에서 진행합니다. #52의 공통 시간 비교와 #53·#55·#56의 Mac 후속도 각각의 기록으로 구분합니다. 이번 Windows 버전·제품/검사·기록 PR과 배포 결과 문서는 공통 원본이나 Mac 버전을 바꾸지 않습니다. `MacCliPaths`는 GUI 앱의 PATH와 `~/.local/bin`, `/opt/homebrew/bin`, `/usr/local/bin`에서 실행 가능한 공식 명령을 찾으며 앱이 인증 파일을 직접 읽지는 않습니다. 현재 Mac 빌드·아이콘·실기 검증은 [Mac 안내](Mac/README.md)·[Mac 기록](MACOS_PORT.md)에서 관리합니다. 기존 Mac 결과를 이번 Windows 준비·배포에서 새로 실행한 검사로 적지 않습니다.
+현재 Windows 배포 EXE는 **2.7.0**입니다. #59 공통 회복 판정의 Mac 확인과 Mac 네이티브 연결 #60은 병합 완료했습니다. #52의 공통 시간 비교와 #53·#55·#56의 Mac 후속도 각각의 기록으로 구분합니다. 이번 Windows 버전·배포 결과 문서는 공통 원본이나 Mac 버전을 바꾸지 않습니다. `MacCliPaths`는 GUI 앱의 PATH와 `~/.local/bin`, `/opt/homebrew/bin`, `/usr/local/bin`에서 실행 가능한 공식 명령을 찾으며 앱이 인증 파일을 직접 읽지는 않습니다. 현재 Mac 빌드·아이콘·실기 검증은 [Mac 안내](Mac/README.md)·[Mac 기록](MACOS_PORT.md)에서 관리합니다. 기존 Mac 결과를 이번 Windows 준비·배포에서 새로 실행한 검사로 적지 않습니다.
 
 Mac의 상태 UI는 `MacStatusPanel`과 `MacControls`를 쓰는 팝오버입니다. Windows는 `StatusWindow` 안에서 ‘한도 보기 ↔ 상태 보기’로 카드 영역을 전환합니다. 한도 박스·제목 기준선·클릭되는 카드만 hover라는 규칙은 [결정 9](MACOS_UI_PLAN.md)에 따르며, Mac 한도 항상 표시와 Windows 전환 방식의 차이는 결정 10에 남깁니다. 두 호스트의 실제 창 배치·픽셀 검사는 각각의 native smoke가 맡습니다.
 

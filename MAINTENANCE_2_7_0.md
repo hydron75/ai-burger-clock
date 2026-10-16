@@ -1,6 +1,6 @@
-# AI Burger Clock 2.7.0 — Windows 배포 준비
+# AI Burger Clock 2.7.0 — Windows 배포 기록
 
-기록일: **2026-10-16 KST**. **이번 준비 PR 병합·publish·dist 교체는 사용자 승인 대기**다. 현재 배포 EXE는 **2.6.0**이며 새 배포 백업도 아직 만들지 않았다. 이 문서는 실제 준비 검사와 승인 후 실행할 계획을 구분한다.
+기록일: **2026-10-16 KST**. **사용자 승인 뒤 #64의 Draft를 해제·병합하고 main에서 `git pull --ff-only`했다.** 깨끗한 병합 main **`2d5fe6220821a8c40bd17e5a78d5e093053e892f`**에서 publish하고 정상 종료·WAL/SHM 확인·새 백업 뒤 **Windows 2.7.0으로 교체·실행 완료**했다. 자동 시작 등록은 그대로이며 **트레이·상태 창·Gemini 세 행 정상은 사용자 확인**이다. 진단 파일은 생성·크기만 확인했고 **내용은 읽거나 공개하지 않았다.** 아래 준비 검사 이력과 최종 단일 EXE 배포 검사를 구분한다.
 
 #63을 Mac 확인과 사용자 승인 뒤 main **`3757a9eef93d21a1a3254a342a46a96b3baf5c8c`**에 병합하고 `git pull --ff-only`한 다음 `feature/windows-release-2-7-0`을 만들었다. 범위는 **Windows만 변경(버전·문서)**이다. 이미 양쪽에서 확인해 병합한 #62·#63을 Windows 배포 대상으로 삼지만 **이번 PR은 제품/검사 C#·공통 원본 목록·Mac 파일/버전을 다시 고치지 않는다.**
 
@@ -8,7 +8,7 @@
 
 ## 버전과 2.6.0 이후 변경
 
-Version **2.7.0**, AssemblyVersion·FileVersion **2.7.0.0**으로 준비한다. 추가 한도 행과 조회 정책/진단 개선을 묶은 minor 버전이다. Windows 11 x64 / WinForms / net10.0-windows / framework-dependent 단일 EXE, .NET 10 Desktop Runtime x64 요구사항은 유지한다.
+Version **2.7.0**, AssemblyVersion·FileVersion **2.7.0.0**으로 배포했다. 추가 한도 행과 조회 정책/진단 개선을 묶은 minor 버전이다. Windows 11 x64 / WinForms / net10.0-windows / framework-dependent 단일 EXE, .NET 10 Desktop Runtime x64 요구사항은 유지한다.
 
 | 출처 | 새 Windows 배포에 포함할 내용 |
 |---|---|
@@ -18,7 +18,7 @@ Version **2.7.0**, AssemblyVersion·FileVersion **2.7.0.0**으로 준비한다. 
 | #63 | 구형 Gemini 캐시의 출처 불명 기준을 사용 양수 창에서 한 번 재구성. optional `ResetAnchorPolicyVersion=1`으로 새 캐시의 정상 이전 리셋 +15분을 재시작 후에도 유지 |
 | #63 | 세 Provider의 실제 예약 판정과 같은 결과를 bounded JSON 진단에 기록. 1분 이내 리셋 흔들림은 묶음의 양끝만 보존해 압축 |
 | #60 | Mac 회복 알림·Mac 0.6.0·검사/기록만 변경. 병합됐지만 Windows 신규 기능이나 검사 증가로 세지 않음 |
-| 이번 준비 | Windows 버전 세 필드, README/CODE_GUIDE/BACKLOG와 기능 기록의 병합/준비 상태, 이 문서. 배포 EXE·설정·CLI 설치/업데이트 작업은 별개 |
+| #64 | Windows 버전 세 필드, README/CODE_GUIDE/BACKLOG와 기능 기록, 이 문서. 승인 뒤 병합 main으로 단일 EXE를 배포했다. 사용자 설정·CLI 설치/업데이트 작업은 별개 |
 
 ### 동작·화면·이전 캐시의 제한
 
@@ -34,7 +34,7 @@ Version **2.7.0**, AssemblyVersion·FileVersion **2.7.0.0**으로 준비한다. 
 - 모든 Provider를 합쳐 **최근 256건·최대 128KiB**, 재시작 후 이어 쓰기·완성한 임시 파일로 교체. 손상/알 수 없는 형식·권한/잠금 오류는 원본을 보존하고 그 기록을 건너뛴다. 진단 실패가 조회 성공·회복 알림을 실패로 바꾸지는 않지만 기록이 빠질 수 있다.
 - Provider·조회 시도/예약 결정/다음 조회 UTC 시각·예약 이유·선택 리셋·성공 여부·연속 실패 수·보관 리셋 수를 기록한다. **다음 예약의 결정 기록이지 실행 트리거 이력은 아니다.** 수동·절전·네트워크 신호는 예정 대기를 앞당길 수 있으며 과거 이력을 소급 복원하지 않는다.
 - 사용률·요금제·계정/창 ID·CLI/오류 원문은 저장하지 않는다. **선택 리셋과 조회 시각이 있으므로 실제 파일은 로컬 비공개다.** 공개할 때는 합성 예시나 일반화한 간격/이유별 건수만 사용한다. [필드·이유별 뜻·로컬 확인 명령](GEMINI_ANTIGRAVITY_QUOTAS.md#추가-보완-provider별-다음-조회-예약-진단).
-- 이번 준비는 이 진단을 임시 DB/합성 응답으로 검사했으며 사용자 DB 옆 실제 진단 파일을 만들기 위한 계정 조회는 실행하지 않는다. 기존 배포 2.6.0은 이 파일을 새로 기록하지 않는다.
+- 준비 검사는 임시 DB/합성 응답으로 수행했다. 승인 뒤 새 2.7.0을 일반 실행해 사용자 DB 옆 **실제 진단 파일이 새로 생기고 128KiB 이내임**을 확인했다. **내용은 읽지 않았다.** 교체 전 2.6.0에는 파일이 없었으며 과거 예약 이력을 소급 확인한 것이 아니다.
 
 ## 양쪽 확인 이력과 Mac 관찰의 범위
 
@@ -94,7 +94,7 @@ Version **2.7.0**, AssemblyVersion·FileVersion **2.7.0.0**으로 준비한다. 
 
 | 기준 | 전체 해시 / 상태 |
 |---|---|
-| 현재 배포 2.6.0 EXE 소스 | `4981f5cda325d35eeb76dd60f09d66833efaad77` |
+| 교체 전 2.6.0 EXE 소스 | `4981f5cda325d35eeb76dd60f09d66833efaad77` |
 | 2.6.0 배포 결과 문서 | `e0d4ce6dff00399777693435436a134bd40ca6fa` — EXE 소스 아님 |
 | #60 Mac 후속 병합 | `5706c2580721a4d94df6d33200455db5cd775029` |
 | #62 main 병합 | `bbeb12eeaac62ee20b204ce6159f378f0fbf0846` |
@@ -102,10 +102,10 @@ Version **2.7.0**, AssemblyVersion·FileVersion **2.7.0.0**으로 준비한다. 
 | #63 최종 Mac 검사 HEAD | `4b3ea2b90dc43e15a8fb87b067e4d9ad38f38afe` |
 | #63 main 병합 / 준비 브랜치 출발점 | **`3757a9eef93d21a1a3254a342a46a96b3baf5c8c`** |
 | 2.7.0 버전 / 실제 검사 코드 HEAD | **`3d29482c0f9c494d028b725239d0e06efff24770`** |
-| 준비 PR의 기록 문서 HEAD | PR 본문의 전체 해시 참조 — 제품/검사 C#와 csproj는 위 검사 시점과 동일 |
-| 준비 PR 병합 / 최종 2.7.0 EXE 소스 | **미정·승인 대기** — 병합 main 전체 해시를 실제 배포 때 기록 |
+| 준비 PR의 기록 문서 HEAD | `ef1ef202217306561a939e6494e521ee902d750f` — 제품/검사 C#와 csproj는 위 검사 시점과 동일 |
+| #64 병합 / 최종 2.7.0 EXE 소스 | **`2d5fe6220821a8c40bd17e5a78d5e093053e892f`** — 이후 배포 결과 문서 커밋과 구분 |
 
-| 항목 | 현재 dist 2.6.0 | 검사한 bin 후보 apphost |
+| 항목 | 교체 전 dist 2.6.0 | 준비 검사한 bin 후보 apphost |
 |---|---|---|
 | 경로 | `dist/win-x64/AI Burger Clock.exe` | `bin/Release/net10.0-windows/win-x64/AI Burger Clock.exe` |
 | FileVersion | `2.6.0.0` | `2.7.0.0` |
@@ -113,21 +113,46 @@ Version **2.7.0**, AssemblyVersion·FileVersion **2.7.0.0**으로 준비한다. 
 | 크기 | **3,572,971 bytes** | **163,328 bytes** |
 | SHA-256 | `EEB9F56BF020426E3FDB0CB618B1AC72A43261487CBB44048FA502BE6E4E69D4` | `85384BB0EAC7B609FDDB1F8A4E82418444F8D0CB65B986553848A02C29D24036` |
 
-bin apphost는 주변 DLL이 필요한 검사 빌드이며 **배포용 단일 EXE가 아니다.** dist에 복사하지 않는다. 최종 2.7.0 단일 EXE의 경로·FileVersion·ProductVersion(+병합 해시)·크기·SHA-256·실제 백업 경로는 **승인 후 publish 시 기록**한다.
+bin apphost는 주변 DLL이 필요한 검사 빌드이며 **배포용 단일 EXE가 아니다.** dist에 복사하지 않았다. 최종 단일 EXE는 승인 뒤 병합 main에서 별도로 publish했으며 다음과 같다.
 
-## 승인 후 교체 계획 — 아직 미실행
+## 실제 2.7.0 배포 — 승인 뒤 실행 완료
 
-1. 사용자가 **이번 준비 PR의 병합·배포 교체**를 승인하면 승인 HEAD를 확인해 Draft를 해제/병합하고 main에서 `git pull --ff-only`한다. 깨끗한 병합 main의 전체 해시를 최종 EXE 소스로 확정한다. 후속 결과 문서 커밋과 구분한다.
-2. 실행 중인 앱을 **정상 종료**하고 프로세스 0개, `%LOCALAPPDATA%\AIBurgerClock\burgerclock.db-wal`·`-shm` 부재를 확인한다. 준비 검사 때 종료한 사실로 이 확인을 대신하지 않는다. 남은 sidecar를 삭제하거나 강제 덮어쓰기하지 않는다.
-3. **`../backups/release-2.7.0-<실제 교체일>/`**을 새로 만든다. 같은 이름이 있으면 덮어쓰지 않는다. `replaced-2.6.0.exe`, `dist-2.6.0.zip`, 실제 이전 EXE 소스 **`4981f5cda325d35eeb76dd60f09d66833efaad77`**의 `git archive` ZIP, 정상 종료된 DB와 필요한 비공개 manifest/기존 로그를 보관한다. DB/진단 원문은 공개하지 않는다. 원본/복사본·ZIP 안 EXE 해시와 백업 동안 프로세스/WAL/SHM 부재를 확인한다. 이전 2.6.0 배포 때 만든 백업은 2.5.1 복원용이므로 새 백업을 대신하지 않는다.
-4. **그 깨끗한 병합 main에서 `build.ps1 -Publish`**한다. 빌드/publish 경고 0·오류 0과 최종 단일 EXE self-test·별도 smoke 실제 ExitCode 0을 확인한다. 새 파일을 `published-2.7.0.exe`로도 보존하고 버전·ProductVersion(+소스 해시)·크기·SHA-256·실제 백업 경로를 이 문서에 적는다.
-5. 자동 시작은 **읽기 전용 비교**한다. HKCU Run `AI Burger Clock`이 큰따옴표로 감싼 동일한 절대 dist EXE 경로 + ` --autostart`인지, 값 종류와 StartupApproved/Run 값이 유지되는지 확인한다. 그 경로의 실제 파일 버전/해시가 새 2.7.0이어야 한다. `--verify-autostart`나 체크박스로 등록을 다시 쓰지 않는다.
-6. 새 dist를 실행해 한 개의 앱·정확한 경로·응답, 트레이·상태 창·Gemini 모델 행/시간층/경계선·Provider 상세·Refresh와 기본 OFF 회복 알림 메뉴를 확인한다. 진단이 만들어지면 예약 이유/예정과의 일치를 로컬에서만 확인한다. 도구가 실제 창을 제공하지 못하면 사용자 확인과 자동 검사를 구분한다. 실제 한도 소진/회복이나 리셋권 사용을 임의로 만들지 않는다.
-7. 문제가 있으면 아래 **2.6.0 EXE만 복원**하고 알린다. 새 버전이 만든 DB·진단 로그는 따로 보존한다. PR 병합·단일 EXE publish·교체·백업은 이번 준비 범위에서 실행하지 않는다.
+1. 승인 HEAD **`ef1ef202217306561a939e6494e521ee902d750f`**를 확인해 #64의 Draft를 해제·병합하고 main에서 `git pull --ff-only`했다. PR HEAD와 병합 main의 트리가 동일하고 작업 폴더가 깨끗한 상태에서 최종 EXE를 만들었다.
+2. 도구가 정상 종료 메뉴를 찾지 못해 사용자가 기존 2.6.0을 **정상 종료**했다. 이후 프로세스 0개·실제 DB의 **WAL/SHM 부재**를 확인하고 백업 중에도 다시 확인했다. 강제 종료·sidecar 삭제는 하지 않았다.
+3. 새 **`../backups/release-2.7.0-20261016/`**에 이전 EXE/dist·실제 이전 소스 ZIP·닫힌 DB·비공개 manifest/기존 로그를 백업했다. 이전 백업 폴더를 재사용하지 않았고 EXE 복사본·ZIP 안 EXE·닫힌 DB 복사본 해시가 각각 원본과 같은 것을 확인했다. DB 해시·원문은 공개하지 않는다.
+4. 병합 main에서 **`build.ps1 -Publish`**를 실행해 단일 EXE로 교체했다. SDK **10.0.402**, 빌드/publish **경고 0·오류 0**, 최종 EXE self-test **252,869건(공통 252,562 + Windows 307)·실제 ExitCode 0**이다. 최종 EXE의 별도 smoke는 **1회 574 PASS·실패 0·실제 ExitCode 0, 48.85초**다. 위 준비 후보 5회와 합쳐 세지 않는다.
+5. HKCU Run/StartupApproved의 **값과 종류를 읽기 전용 전후 비교해 동일함**을 확인했다. 큰따옴표 절대 dist 경로 + ` --autostart`가 아래 새 버전·해시의 파일을 가리킨다. 등록·설정 체크박스를 다시 쓰거나 `--verify-autostart`를 실행하지 않았다.
+6. 같은 등록 인수로 새 dist를 실행해 한 개의 프로세스·정확한 경로·`Responding=True`를 확인했다. 도구가 실제 창을 제공하지 못해 **트레이·상태 창·Gemini 세 행(`5시간`·`주간`·`주간 Gemini 4 Argon`) 정상은 사용자 확인**으로 기록한다. 사용자가 실수로 종료한 뒤에도 **동일 EXE를 교체 없이 다시 실행**했고 그 뒤 정상 확인을 받았다. 실제 비율·리셋/조회 시각·화면 캡처는 받거나 게시하지 않았다.
+7. 새 **`logs/quota-polling-diagnostics.json` 생성·128KiB 이내**를 파일 메타데이터로 확인했다. **진단 내용은 읽지 않았으며**, 예약 이유/리셋/예정의 실제 값이나 장시간 조회 감소를 검증했다고 적지 않는다. 배포 문제는 없어 **복원하지 않았다.**
+
+### 최종 단일 EXE
+
+| 항목 | 실제 결과 |
+|---|---|
+| 배포일 / 제작 시각 | **2026-10-16 KST / 14:00경**, 첫 실행 14:01경, 사용자 종료 뒤 동일 파일 재실행 14:02경 |
+| 소스 커밋 | **`2d5fe6220821a8c40bd17e5a78d5e093053e892f`** |
+| 경로 | `dist/win-x64/AI Burger Clock.exe` |
+| FileVersion | **`2.7.0.0`** |
+| ProductVersion | **`2.7.0+2d5fe6220821a8c40bd17e5a78d5e093053e892f`** |
+| 크기 | **3,736,811 bytes** |
+| SHA-256 | **`410B0CDDCEE0BCED6072B04D3ADAAE88AD21A6E585859BBFEC2EA0DC8F202BD3`** |
+| 새 EXE 보존 | 아래 백업 폴더의 `published-2.7.0.exe`와 해시 동일 |
+
+### 실제 로컬 백업
+
+**`../backups/release-2.7.0-20261016/`**(저장소 밖, GitHub 미게시). 절대 위치는 `C:\Users\mc_bl\.codex\.chatgpt-projects\g-p-6aa5eb198fd88191b7382af0eb114af4\backups\release-2.7.0-20261016\`이다. 정상 종료·WAL/SHM 부재 확인 뒤 13:59경 보관했다.
+
+| 파일 | SHA-256 / 확인 |
+|---|---|
+| `replaced-2.6.0.exe` | `EEB9F56BF020426E3FDB0CB618B1AC72A43261487CBB44048FA502BE6E4E69D4` |
+| `dist-2.6.0.zip` | `DC5DC03D6A522659EFC3D2C339804D2DE2B2F6C95F9F95112FBC11CC227CBEDC` — 안의 EXE도 이전 EXE 해시와 동일 |
+| `source-2.6.0-4981f5c.zip` | `2F5BE4B451F6C4D09D6DCCD535615B763B7E6E2AFA519779F2C7D751C33A6B65` — `git archive`로 실제 이전 EXE 소스 보존 |
+| `burgerclock.db`, `manifest-private.json`, 기존 로그 사본 | 로컬 비공개, DB 원본/복사본 해시 일치 확인. 내용·DB 해시 게시 안 함 |
+| `published-2.7.0.exe` | 위 최종 2.7.0 SHA-256과 동일 |
 
 ## 2.6.0으로 되돌리기 — 계획, 실제 시험 미수행
 
-새 앱을 정상 종료하고 프로세스/WAL/SHM을 확인한다. 교체 후 최신 DB를 별도로 보존한 뒤 `replaced-2.6.0.exe` 또는 `dist-2.6.0.zip`의 **EXE만 같은 dist 경로로 복원**한다. FileVersion **2.6.0.0**, ProductVersion **`2.6.0+4981f5cda325d35eeb76dd60f09d66833efaad77`**, 위 현재 dist SHA-256을 확인하고 `--autostart`로 실행해 같은 등록 경로·트레이·창·한도를 확인한다.
+새 앱을 정상 종료하고 프로세스/WAL/SHM을 확인한다. 교체 후 최신 DB를 별도로 보존한 뒤 `replaced-2.6.0.exe` 또는 `dist-2.6.0.zip`의 **EXE만 같은 dist 경로로 복원**한다. FileVersion **2.6.0.0**, ProductVersion **`2.6.0+4981f5cda325d35eeb76dd60f09d66833efaad77`**, 이전 EXE SHA-256 **`EEB9F56BF020426E3FDB0CB618B1AC72A43261487CBB44048FA502BE6E4E69D4`**를 확인하고 `--autostart`로 실행해 같은 등록 경로·트레이·창·한도를 확인한다. 새 2.7.0 해시를 복원 확인에 쓰지 않는다.
 
 - DB schema 2·기존 캐시 키/JSON v1은 유지된다. 소스 검토상 2.6.0은 optional 정책 마커를 무시하고 새 모델 행 캐시도 일반 창으로 읽을 수 있어 통상 **EXE만 복원**하는 계획이다. 실제 복원 실행으로 확인한 결과는 아니다.
 - 시작 때 새 캐시의 모델 행이 잠깐 이전 값으로 보일 수 있으나, 2.6.0 첫 성공 조회는 모델 묶음을 무시해 공통 두 행으로 돌아간다. 모델 전용 행의 live 시간 비교/회복 알림과 잦은 조회 개선은 없어지며 이동 리셋의 과도한 조회가 재발할 수 있다.
@@ -136,7 +161,8 @@ bin apphost는 주변 DLL이 필요한 검사 빌드이며 **배포용 단일 EX
 
 ## 보존·로컬 증거·미수행
 
-- 이번 준비는 `build.ps1`·`--self-test`·smoke만 검사 빌드로 수행한다. publish/단일 EXE 제작·새 배포 백업·dist 교체·자동 시작 등록·실제 사용자 설정 변경은 하지 않는다.
-- Windows 실제 장시간 운영 감소, 실제 계정 CLI/한도 화면·진단 파일 운영, 회복 OS 배너, 재부팅/재로그인·절전/네트워크 단절·다중 모니터/DPI/실제 스크린리더, 별도 Shared.Tests/Mac 실행, **2.6.0 복원 시험은 미수행**이다. 기존 사용자 확인과 Mac 보고를 이번 직접 시험으로 바꾸지 않는다.
+- 승인 전 준비는 Publish 없이 검사했고, 승인 뒤 위 최종 단일 EXE 제작·새 백업·dist 교체·실행을 별도로 마쳤다. 자동 시작 등록·실제 사용자 설정·CLI 설치/업데이트·Mac 코드는 변경하지 않았다.
+- Windows 실제 장시간 운영 감소·진단 내용/예약 이유 대조, 실제 회복 OS 배너, 이번 버전의 재부팅/재로그인·절전/네트워크 단절·다중 모니터/DPI/실제 스크린리더, 별도 Shared.Tests/Mac 실행, **2.6.0 복원 시험은 미수행**이다. 실제 한도 화면은 위 사용자 확인이고 Mac 보고와 직접 수행한 검사를 구분한다.
 - 새 검증 원본은 ignored **`artifacts/release-2.7.0-preparation-20261016/`**의 build/self-test·errors, `smoke/run-01`~`run-05`의 stdout/stderr·합성 PNG/layout와 `smoke-results.json`에 보존한다. smoke 진단 stderr가 비어 있다는 뜻은 아니다.
+- 실제 배포 증거는 ignored **`artifacts/release-2.7.0-deployment-20261016/`**의 publish/self-test·errors, 최종 smoke stdout/stderr·합성 PNG/layout·종료 코드, EXE 메타데이터·읽기 전용 자동 시작 전후 사본·실행/재실행·진단 파일 생성/사용자 확인 기록에 보존한다. private 파일과 실제 진단 내용은 GitHub에 올리지 않는다.
 - 기존 #30의 원인 미확정 관찰·smoke 진단과 #58 검사 전용 창 보호를 유지한다. 이번 준비에서 실패를 숨기기 위해 대기를 늘리거나 검사를 제거하지 않는다.
