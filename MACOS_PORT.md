@@ -1418,15 +1418,15 @@ smoke 출력(요약): 42절과 같은 항목에 더해 시간 층(시간 층 대
 - 빌드 뒤 같은 경로의 0.5.1 bundle로 앱을 다시 실행했다.
 - 실제 계정 값으로 본 막대, 다중 모니터, 실제 VoiceOver 읽기(44절과 같음).
 
-## 46. 한도 회복 알림 연결
+## 46. 0.6.0: 한도 회복 알림 연결
 
-2026-10-16 KST. 범위: **Mac UI만 변경**(공통 코드·Windows 파일 변경 없음). Windows 2.5.1에 들어간 공통 변경(#59, main `92f589e975a27648617f0fc1683c03762b37c5ce`)의 `QuotaRecoveryNotifications`·`QuotaRecoveryText`·설정 키 `QuotaRecoveryNotificationsEnabled`를 그대로 쓰고, Mac은 메뉴·알림 전달·메인 스레드 전환·종료 정리만 연결했다. **Mac 버전은 올리지 않았다**(0.5.1 / build 13 그대로, 버전은 병합 전 사용자 결정). 이 절의 사용량·행 이름은 모두 합성 데이터이며 실제 계정 값·CLI 원문·사용자 DB는 쓰지 않았다.
+2026-10-16 KST. 범위: **Mac UI만 변경**(공통 코드·Windows 파일 변경 없음). 2.5.1 이후 main에 추가되어 Windows 2.6.0에 배포된 기능(#59, main `92f589e975a27648617f0fc1683c03762b37c5ce`)의 `QuotaRecoveryNotifications`·`QuotaRecoveryText`·설정 키 `QuotaRecoveryNotificationsEnabled`를 그대로 쓰고, Mac은 메뉴·알림 전달·메인 스레드 전환·종료 정리만 연결했다. **Mac 버전은 0.6.0 / build 14**(사용자 결정, `Mac/AiBurgerClock.Mac.csproj`의 `Version`·`AssemblyVersion`·`FileVersion`·`ApplicationVersion`), 함께 쓰는 Windows는 2.6.0이다. 이 절의 사용량·행 이름은 모두 합성 데이터이며 실제 계정 값·CLI 원문·사용자 DB는 쓰지 않았다.
 
 ### 연결 방식
 
 | 항목 | 구현 |
 |---|---|
-| 메뉴 | 오른쪽 클릭 메뉴의 `한도 회복 알림`(체크 항목, 기본 꺼짐). 이름·설명은 공통 `QuotaRecoveryText`. 팝오버와 높이(821pt)는 그대로 |
+| 메뉴 | 오른쪽 클릭 메뉴의 `한도 회복 알림`(체크 항목, 기본 꺼짐; Refresh 다음, 로그인 항목 설정 위. Windows 트레이 메뉴의 Statistics 아래·자동 실행 위와 같은 상대 순서이며 Statistics는 Mac 팝오버에 있다). 이름·설명은 공통 `QuotaRecoveryText`. 팝오버와 높이(821pt)는 그대로 |
 | 설정 | `UsageStore.Get/SetQuotaRecoveryNotificationsEnabledAsync`. 누락 = 꺼짐, 읽기 오류 = 꺼짐 + 피드백. 저장 실패 시 기존 설정·체크 유지. 저장은 `pendingWrites`에 넣어 종료 전에 끝낸다 |
 | 입력 | `AccountQuotaMonitor.Succeeded`만 구독. `Changed`(캐시·조회 시작·실패)는 판정에 쓰지 않는다 |
 | 콜백 | 폴링 task에서 Provider 게이트를 잡은 채 호출되므로 종료 여부 확인 + 큐에 넣기 + `BeginInvokeOnMainThread`만 하고 반환. 조회·`StopAsync`를 기다리지 않는다 |
