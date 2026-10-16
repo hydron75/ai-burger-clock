@@ -51,7 +51,8 @@ internal sealed class UsageStore(string? databasePath = null)
 
     internal static void ValidateQuotaCache(QuotaCache cache, QuotaProvider provider)
     {
-        if (cache.Version != 1 || !Enum.IsDefined(provider) || cache.Reading is null || cache.Reading.Provider != provider ||
+        if (cache.Version != 1 || cache.ResetAnchorPolicyVersion is < 0 or > AccountQuotaPolicy.ResetAnchorPolicyVersion ||
+            !Enum.IsDefined(provider) || cache.Reading is null || cache.Reading.Provider != provider ||
             cache.Reading.Windows is not { Count: > 0 and <= 64 } || cache.ResetAnchors is not { Count: <= 64 } ||
             cache.SuccessfulAtUtc < DateTimeOffset.UnixEpoch ||
             cache.Reading.Windows.Any(w => w is null || string.IsNullOrWhiteSpace(w.Id) || w.Id.Length > 512 ||

@@ -8,20 +8,22 @@ internal static class AccountQuotaPolicy
     public static readonly TimeSpan ResetInterval = TimeSpan.FromMinutes(5);
     public static readonly TimeSpan ResetMargin = TimeSpan.FromMinutes(15);
     public static readonly TimeSpan FailureRetryInterval = TimeSpan.FromMinutes(15);
+    internal const int ResetAnchorPolicyVersion = 1;
 
     public static TimeSpan GetInterval(DateTimeOffset nowUtc, IReadOnlyList<QuotaWindow> windows,
-        IEnumerable<DateTimeOffset>? previousResetAnchors = null)
+        IEnumerable<DateTimeOffset>? previousResetAnchors = null, QuotaProvider? provider = null)
     {
-        return IsResetPeriod(nowUtc, ResetAnchors(windows, previousResetAnchors))
+        return IsResetPeriod(nowUtc, ResetAnchors(windows, previousResetAnchors, provider))
             ? ResetInterval : RegularInterval(windows);
     }
 
     public static DateTimeOffset GetNextCheckUtc(DateTimeOffset nowUtc, DateTimeOffset lastCheckedAtUtc,
-        IReadOnlyList<QuotaWindow> windows, IEnumerable<DateTimeOffset>? previousResetAnchors = null)
+        IReadOnlyList<QuotaWindow> windows, IEnumerable<DateTimeOffset>? previousResetAnchors = null,
+        QuotaProvider? provider = null)
     {
         // Materialize once: callers may provide a lazy collection shared with monitoring state.
-        DateTimeOffset[] anchors = ResetAnchors(windows, previousResetAnchors).ToArray();
-        TimeSpan interval = GetInterval(nowUtc, windows, anchors);
+        DateTimeOffset[] anchors = ResetAnchors(windows, previousResetAnchors, provider).ToArray();
+        TimeSpan interval = GetInterval(nowUtc, windows, anchors, provider);
         DateTimeOffset next = lastCheckedAtUtc + interval;
         if (next <= nowUtc) return nowUtc.ToUniversalTime();
         // Selecting an interval at the last in-band check must not create a trailing
@@ -57,11 +59,19 @@ internal static class AccountQuotaPolicy
     private static bool IsResetPeriod(DateTimeOffset instant, IEnumerable<DateTimeOffset> anchors) =>
         anchors.Any(reset => instant >= reset - ResetMargin && instant <= reset + ResetMargin);
 
+    // Gemini can advance an unused window's reset on every response. Such a
+    // timestamp is not an active reset: retaining it can perpetuate fast polling.
+    // Keep raw positive usage, even when the displayed percentage rounds to zero.
+    internal static IEnumerable<DateTimeOffset> CurrentResetAnchors(IReadOnlyList<QuotaWindow> windows,
+        QuotaProvider? provider = null) =>
+        windows.Where(window => window.ResetsAtUtc.HasValue && (provider != QuotaProvider.Gemini ||
+            double.IsFinite(window.UsedPercent) && window.UsedPercent is > 0 and <= 100))
+            .Select(window => window.ResetsAtUtc!.Value);
+
     private static IEnumerable<DateTimeOffset> ResetAnchors(IReadOnlyList<QuotaWindow> windows,
-        IEnumerable<DateTimeOffset>? previousResetAnchors)
+        IEnumerable<DateTimeOffset>? previousResetAnchors, QuotaProvider? provider)
     {
-        return windows.Where(window => window.ResetsAtUtc.HasValue)
-            .Select(window => window.ResetsAtUtc!.Value)
+        return CurrentResetAnchors(windows, provider)
             .Concat(previousResetAnchors ?? []).Distinct();
     }
 }

@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace AiBurgerClock;
 
 internal sealed record QuotaState(QuotaProvider Provider, QuotaReading? Reading = null,
@@ -7,7 +9,8 @@ internal sealed record QuotaState(QuotaProvider Provider, QuotaReading? Reading 
 
 // Only normalized quota numbers/timestamps are cached, never CLI output or credentials.
 internal sealed record QuotaCache(int Version, QuotaReading Reading, DateTimeOffset SuccessfulAtUtc,
-    IReadOnlyList<DateTimeOffset> ResetAnchors);
+    IReadOnlyList<DateTimeOffset> ResetAnchors,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] int ResetAnchorPolicyVersion = 0);
 
 internal sealed class AccountQuotaMonitor : IDisposable
 {
@@ -87,7 +90,14 @@ internal sealed class AccountQuotaMonitor : IDisposable
                         lock (sync)
                         {
                             states[provider] = new(provider, cached.Reading, LastSuccessfulCheckUtc: cached.SuccessfulAtUtc, IsPrevious: true);
-                            anchors[provider] = cached.ResetAnchors.ToArray();
+                            // Legacy Gemini anchors have no window provenance and may
+                            // contain a long chain from unused moving resets. Rebuild
+                            // only that legacy cache's anchors from verified used windows.
+                            // Marked caches retain genuine old reset +15m bands even
+                            // after a newly successful reading reports zero usage.
+                            anchors[provider] = provider == QuotaProvider.Gemini && cached.ResetAnchorPolicyVersion == 0
+                                ? AccountQuotaPolicy.CurrentResetAnchors(cached.Reading.Windows, provider).ToArray()
+                                : cached.ResetAnchors.ToArray();
                         }
                 }
                 catch (OperationCanceledException) when (lifetime.IsCancellationRequested) { return; }
@@ -152,10 +162,11 @@ internal sealed class AccountQuotaMonitor : IDisposable
                 var old = states[provider];
                 var known = reading ?? old.Reading;
                 // Keep the old reset's +15-minute band even when the server returns the next reset.
-                anchors[provider] = anchors[provider].Concat(old.Reading?.Windows.Where(w => w.ResetsAtUtc.HasValue).Select(w => w.ResetsAtUtc!.Value) ?? [])
-                    .Concat(known?.Windows.Where(w => w.ResetsAtUtc.HasValue).Select(w => w.ResetsAtUtc!.Value) ?? [])
+                anchors[provider] = anchors[provider]
+                    .Concat(AccountQuotaPolicy.CurrentResetAnchors(old.Reading?.Windows ?? [], provider))
+                    .Concat(AccountQuotaPolicy.CurrentResetAnchors(known?.Windows ?? [], provider))
                     .Where(r => r.AddMinutes(15) >= now).Distinct().OrderBy(r => r).Take(64).ToArray();
-                var next = AccountQuotaPolicy.GetNextCheckUtc(now, now, known?.Windows ?? [], anchors[provider]);
+                var next = AccountQuotaPolicy.GetNextCheckUtc(now, now, known?.Windows ?? [], anchors[provider], provider);
                 failures[provider] = reading is null ? Math.Min(failures[provider] + 1, 100) : 0;
                 if (reading is null)
                 {
@@ -169,7 +180,8 @@ internal sealed class AccountQuotaMonitor : IDisposable
                 };
                 if (reading is not null)
                 {
-                    cache = new(1, reading, now, anchors[provider]);
+                    cache = new(1, reading, now, anchors[provider], provider == QuotaProvider.Gemini
+                        ? AccountQuotaPolicy.ResetAnchorPolicyVersion : 0);
                     observation = new(provider, ++sequences[provider], now, reading);
                 }
             }
