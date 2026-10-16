@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace AiBurgerClock;
 
 internal sealed record QuotaState(QuotaProvider Provider, QuotaReading? Reading = null,
@@ -7,13 +9,15 @@ internal sealed record QuotaState(QuotaProvider Provider, QuotaReading? Reading 
 
 // Only normalized quota numbers/timestamps are cached, never CLI output or credentials.
 internal sealed record QuotaCache(int Version, QuotaReading Reading, DateTimeOffset SuccessfulAtUtc,
-    IReadOnlyList<DateTimeOffset> ResetAnchors);
+    IReadOnlyList<DateTimeOffset> ResetAnchors,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] int ResetAnchorPolicyVersion = 0);
 
 internal sealed class AccountQuotaMonitor : IDisposable
 {
     private readonly IAccountQuotaClient client;
     private readonly UsageStore? store;
     private readonly Func<DateTimeOffset> utcNow;
+    private readonly QuotaPollingDiagnosticLog? pollingLog;
     private readonly object sync = new();
     private readonly CancellationTokenSource lifetime = new();
     private readonly Dictionary<QuotaProvider, QuotaState> states = Enum.GetValues<QuotaProvider>().ToDictionary(p => p, p => new QuotaState(p));
@@ -34,11 +38,13 @@ internal sealed class AccountQuotaMonitor : IDisposable
     // RefreshOnceAsync for the same provider is skipped while this callback holds the gate.
     public event Action<QuotaObservation>? Succeeded;
 
-    public AccountQuotaMonitor(IAccountQuotaClient client, UsageStore? store = null, Func<DateTimeOffset>? utcNow = null)
+    public AccountQuotaMonitor(IAccountQuotaClient client, UsageStore? store = null, Func<DateTimeOffset>? utcNow = null,
+        QuotaPollingDiagnosticLog? diagnosticLog = null)
     {
         this.client = client;
         this.store = store;
         this.utcNow = utcNow ?? (() => DateTimeOffset.UtcNow);
+        pollingLog = diagnosticLog ?? CreatePollingLog(store);
     }
 
     public IReadOnlyList<QuotaState> Snapshot()
@@ -87,7 +93,14 @@ internal sealed class AccountQuotaMonitor : IDisposable
                         lock (sync)
                         {
                             states[provider] = new(provider, cached.Reading, LastSuccessfulCheckUtc: cached.SuccessfulAtUtc, IsPrevious: true);
-                            anchors[provider] = cached.ResetAnchors.ToArray();
+                            // Legacy Gemini anchors have no window provenance and may
+                            // contain a long chain from unused moving resets. Rebuild
+                            // only that legacy cache's anchors from verified used windows.
+                            // Marked caches retain genuine old reset +15m bands even
+                            // after a newly successful reading reports zero usage.
+                            anchors[provider] = provider == QuotaProvider.Gemini && cached.ResetAnchorPolicyVersion == 0
+                                ? AccountQuotaPolicy.CurrentResetAnchors(cached.Reading.Windows, provider).ToArray()
+                                : cached.ResetAnchors.ToArray();
                         }
                 }
                 catch (OperationCanceledException) when (lifetime.IsCancellationRequested) { return; }
@@ -112,8 +125,10 @@ internal sealed class AccountQuotaMonitor : IDisposable
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, lifetime.Token);
         if (!await gates[provider].WaitAsync(0, linked.Token).ConfigureAwait(false)) return;
         QuotaObservation? observation = null;
+        QuotaPollingDiagnostic? diagnostic = null;
         try
         {
+            DateTimeOffset attemptedAtUtc = utcNow().ToUniversalTime();
             lock (sync) states[provider] = states[provider] with { IsRefreshing = true, NextCheckUtc = null };
             RaiseChanged();
             QuotaReading? reading = null;
@@ -152,24 +167,28 @@ internal sealed class AccountQuotaMonitor : IDisposable
                 var old = states[provider];
                 var known = reading ?? old.Reading;
                 // Keep the old reset's +15-minute band even when the server returns the next reset.
-                anchors[provider] = anchors[provider].Concat(old.Reading?.Windows.Where(w => w.ResetsAtUtc.HasValue).Select(w => w.ResetsAtUtc!.Value) ?? [])
-                    .Concat(known?.Windows.Where(w => w.ResetsAtUtc.HasValue).Select(w => w.ResetsAtUtc!.Value) ?? [])
-                    .Where(r => r.AddMinutes(15) >= now).Distinct().OrderBy(r => r).Take(64).ToArray();
-                var next = AccountQuotaPolicy.GetNextCheckUtc(now, now, known?.Windows ?? [], anchors[provider]);
+                anchors[provider] = AccountQuotaPolicy.CoalesceResetAnchors(anchors[provider]
+                    .Concat(AccountQuotaPolicy.CurrentResetAnchors(old.Reading?.Windows ?? [], provider))
+                    .Concat(AccountQuotaPolicy.CurrentResetAnchors(known?.Windows ?? [], provider))
+                    .Where(r => r.AddMinutes(15) >= now), maximumCount: 64);
+                var plan = AccountQuotaPolicy.GetNextCheckPlan(now, now, known?.Windows ?? [], anchors[provider], provider);
                 failures[provider] = reading is null ? Math.Min(failures[provider] + 1, 100) : 0;
                 if (reading is null)
                 {
                     var retry = now + AccountQuotaPolicy.GetFailureRetryDelay(failures[provider], known?.Windows ?? []);
-                    if (retry < next) next = retry;
+                    if (retry <= plan.NextCheckUtc) plan = new(retry, QuotaCheckReason.FailureRetry);
                 }
                 states[provider] = old with
                 {
                     Reading = known, CheckedAtUtc = now, LastSuccessfulCheckUtc = reading is not null ? now : old.LastSuccessfulCheckUtc,
-                    NextCheckUtc = next, IsPrevious = reading is null, Error = error
+                    NextCheckUtc = plan.NextCheckUtc, IsPrevious = reading is null, Error = error
                 };
+                diagnostic = new(provider.ToString(), attemptedAtUtc, now, plan.NextCheckUtc, plan.Reason.ToString(),
+                    plan.SelectedResetUtc, reading is not null, failures[provider], anchors[provider].Length);
                 if (reading is not null)
                 {
-                    cache = new(1, reading, now, anchors[provider]);
+                    cache = new(1, reading, now, anchors[provider], provider == QuotaProvider.Gemini
+                        ? AccountQuotaPolicy.ResetAnchorPolicyVersion : 0);
                     observation = new(provider, ++sequences[provider], now, reading);
                 }
             }
@@ -183,6 +202,8 @@ internal sealed class AccountQuotaMonitor : IDisposable
                 catch (OperationCanceledException) when (linked.IsCancellationRequested) { throw; }
                 catch { lock (sync) states[provider] = states[provider] with { CacheError = "한도 캐시 저장 실패 (화면 조회값은 유지)" }; }
             }
+            if (diagnostic is not null && !linked.IsCancellationRequested)
+                pollingLog?.TryWrite(diagnostic);
         }
         finally
         {
@@ -200,6 +221,23 @@ internal sealed class AccountQuotaMonitor : IDisposable
                 gates[provider].Release();
                 RaiseChanged();
             }
+        }
+    }
+
+    private static QuotaPollingDiagnosticLog? CreatePollingLog(UsageStore? store)
+    {
+        if (store is null) return null;
+        try
+        {
+            // Derive from the actual store, not the user's global data path:
+            // tests and isolated hosts must keep diagnostics beside their temp DB.
+            string directory = Path.GetDirectoryName(Path.GetFullPath(store.DatabasePath))!;
+            return new(Path.Combine(directory, "logs"));
+        }
+        catch (Exception error) when (error is ArgumentException or IOException or UnauthorizedAccessException
+            or NotSupportedException or System.Security.SecurityException)
+        {
+            return null; // Optional diagnostics must not prevent monitor startup.
         }
     }
 
