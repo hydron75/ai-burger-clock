@@ -2,7 +2,9 @@
 
 이 문서는 **Windows 2.6.0 배포 소스 기준**입니다. #59를 양쪽 검증 뒤 병합하고 #61을 사용자 승인으로 병합해, 깨끗한 main **`4981f5cda325d35eeb76dd60f09d66833efaad77`**에서 단일 EXE를 만들었습니다. 정상 종료·WAL 확인·2.5.1 백업 뒤 교체·최종 검사를 마쳤고 **현재 2.6.0 배포본이 실행 중**입니다. 준비/최종 검사·실제 EXE 해시·백업·사용자 확인과 2.5.1 EXE만 복원하는 방법은 [2.6.0 배포 기록](MAINTENANCE_2_6_0.md)에, 이전 이력은 [2.5.1 기록](MAINTENANCE_2_5_1.md)에 있습니다. 후속 문서 커밋은 EXE 소스가 아닙니다. Windows 사용법은 [README](README.md), 최신 Mac 버전·검증은 [Mac 안내](Mac/README.md)로 이동하세요. 아래 실행·UI 설명은 Windows 기준이며 Mac의 차이는 12절에 정리했습니다.
 
-코드를 한 줄씩 번역한 문서는 아닙니다. **각 파일이 무엇을 맡고, 서로 어떻게 연결되는지** 설명합니다. 이 개발 브랜치의 루트·Properties C# 80개, Mac 호스트 7개, 공통 검사 입구 1개로 총 88개와 빌드 설정을 다룹니다. `SharedTestSuite.cs`는 루트의 검사 파일에 이미 포함하고, 별도 공통 검사 입구는 `Shared.Tests/Program.cs` 한 개만 셉니다. 컴퓨터가 만든 `bin`·`obj`와 로컬 검증용 `artifacts`는 대상에서 뺍니다.
+코드를 한 줄씩 번역한 문서는 아닙니다. **각 파일이 무엇을 맡고, 서로 어떻게 연결되는지** 설명합니다. 이 개발 브랜치의 루트·Properties C# 81개, Mac 호스트 7개, 공통 검사 입구 1개로 총 89개와 빌드 설정을 다룹니다. `SharedTestSuite.cs`는 루트의 검사 파일에 이미 포함하고, 별도 공통 검사 입구는 `Shared.Tests/Program.cs` 한 개만 셉니다. 컴퓨터가 만든 `bin`·`obj`와 로컬 검증용 `artifacts`는 대상에서 뺍니다.
+
+**개발 브랜치·Mac 확인 전 병합 대기:** 공통 Gemini 파서는 기존 공통 창 뒤에 단일 weekly 구조의 모델 묶음을 `주간 {묶음 이름}`으로 추가합니다. 원본 묶음명+bucket ID를 정체성으로 써 기존 시간 비교·회복 엔진·캐시에 연결합니다. 기존 두 행 fixture는 호환 검사로 유지하고 새 세 행은 별도로 검사합니다. 배포 2.6.0·Mac 코드·조회 정책 계산은 바꾸지 않습니다. [범위·Mac 확인](GEMINI_ANTIGRAVITY_QUOTAS.md#모델-전용-주간-행).
 
 **#59 병합 완료·Windows 2.6.0에 반영:** 공통 [QuotaRecoveryNotifications.cs](QuotaRecoveryNotifications.cs)는 새 성공 관측의 소진→회복만 판정하고 문구를 만듭니다. `AccountQuotaMonitor.Succeeded`는 캐시/시작/실패와 분리한 성공 응답·Provider별 순번을 전달합니다. 콜백은 Provider 게이트를 잡은 채 호출하므로 호스트는 빠른 비동기 UI 전달만 하고 Stop/Dispose를 동기 대기하지 않습니다. Windows는 기본 꺼짐 메뉴와 기존 네이티브 풍선 알림에 연결합니다. 설정은 기존 AppMetadata 한 키이며 schema 2·조회 정책·공식 상태 판정은 그대로입니다. [양쪽 검사·수명 계약·Mac 후속 #60](QUOTA_RECOVERY_NOTIFICATIONS.md). 메뉴는 트레이 우클릭의 Statistics 다음·자동 시작 이전이며 상태/한도 창 안 체크박스가 아닙니다. 이번 Windows 배포에서 공통 로직과 Mac 코드를 다시 바꾸지 않았습니다.
 
@@ -405,6 +407,7 @@ Windows 내부 승인 형식은 알려진 경우만 해석합니다. 낯선 값�
 | [AccountQuotaClientTests.cs](AccountQuotaClientTests.cs) | Windows 전용 CLI 경로 예시 |
 | [SharedQuotaProtocolTests.cs](SharedQuotaProtocolTests.cs) | POSIX 경로·가짜 CLI 입출력·명령·크기 제한·취소·0턴 검증 |
 | [GeminiQuotaTests.cs](GeminiQuotaTests.cs) | 합성 agy 응답의 Gemini 그룹·5시간/주간·잔여율·리셋·잘못된 값 검사 |
+| [GeminiModelQuotaTests.cs](GeminiModelQuotaTests.cs) | 합성 모델 전용 주간의 보수적 구조·동적 이름/ID·순서·시간 비교·회복·캐시 호환. 공통 실행 목록에 한 번 등록 |
 | [GeminiQuotaClientTests.cs](GeminiQuotaClientTests.cs) | 합성 입출력으로 agy 고정 명령·버전·0턴/0토큰·인증 대기·출력 제한 검사. 설치된 CLI는 실행하지 않음 |
 | [AccountQuotaMonitorTests.cs](AccountQuotaMonitorTests.cs) | 실패 격리·조회 합치기·종료·SQLite 캐시·재시작 |
 | [AccountQuotaUiChecks.cs](AccountQuotaUiChecks.cs) | 가짜 한도로 창 전환·사용률/막대·대표색·실패·공통 상세/접근성·Refresh·기존 상태 복귀 |

@@ -1,5 +1,11 @@
 # 다음 개선 항목
 
+## 진행 중: Gemini 모델 전용 주간 한도 행 (공통 코드 변경)
+
+- 2026-10-16 KST. 배포 2.6.0이 무시하던 별도 Gemini 모델 주간 묶음을 개발 브랜치에 추가했다. `5시간` → `주간` → `주간 {묶음 이름}`이며 모델명을 고정하지 않고 이름·ID 영역/단일 weekly/필드를 검증한다. 공통 한 창만 있는 기존 응답은 유지하고 모순된 Gemini 묶음은 전체 거부한다.
+- 원본 묶음과 bucket ID로 행을 구분하며 기존 시간 비교·기본 꺼짐 회복 알림에 연결한다. 첫 등장·이름 변경·소실 후 재등장은 무알림이다. Windows 창 크기·전환·조회 정책 계산·DB·버전·배포 EXE는 그대로다.
+- **Draft PR·Mac 확인 전 병합 대기.** [호환 규칙·Mac 막대/높이/VoiceOver 확인](GEMINI_ANTIGRAVITY_QUOTAS.md#모델-전용-주간-행). `Mac/` 전용 소스·문서와 과거 두 창 배포 기록은 수정하지 않는다.
+
 ## Windows 2.6.0에 반영·배포 완료: 한도 회복 알림·Alt+Esc 보완
 
 - 2026-10-16 KST. main `92f589e975a27648617f0fc1683c03762b37c5ce`에서 준비한 **#61을 사용자 승인으로 병합**했다. 깨끗한 병합 main **`4981f5cda325d35eeb76dd60f09d66833efaad77`**에서 publish하고 정상 종료·WAL 확인·새 백업 뒤 **Windows 2.6.0으로 교체·실행 완료**했다. 범위는 **Windows만 변경(버전·Windows 제품/검사·문서)**이며 공통 로직과 Mac 파일·버전은 바꾸지 않았다. [실제 EXE·SHA-256·백업·검사·2.5.1 EXE 복원 방법](MAINTENANCE_2_6_0.md).
@@ -126,7 +132,7 @@
 ## Gemini / Antigravity 한도 표시 (PR #30, 2.3.0에 반영)
 
 - 기록일: 2026-10-09 KST. Windows 재검증과 Mac 확인 뒤 사용자 승인으로 [PR #30](https://github.com/hydron75/ai-burger-clock/pull/30)의 Draft·병합 보류를 해제하고 main에 병합했다(검증 HEAD `6a12acb98dcaf5769dbfb5977288afa49ae424f8`, 병합 `4695a55dc00dd90e95a93aa9ba6f80200fb23a0c`). **Windows 2.3.0 배포본에 반영했다.** 초기 구현·검증과 main 통합 뒤 결과는 [구현·검증 기록](GEMINI_ANTIGRAVITY_QUOTAS.md), 준비·최종 배포 검증은 [2.3.0 기록](MAINTENANCE_2_3_0.md)에서 구분한다.
-- 공식 `agy` CLI **1.3.1 이상, 2.0 미만**의 `-p /usage --output-format json`에서 `Gemini Models` 그룹의 5시간·주간 잔여율과 리셋을 읽는다. 1.3.1 미만·2.x·해석할 수 없는 버전은 거부하며 Gemini Apps 전체 한도·Claude/GPT 그룹·크레딧은 제외한다.
+- #30과 배포 2.6.0은 공식 `agy` CLI **1.3.1 이상, 2.0 미만**의 `-p /usage --output-format json`에서 `Gemini Models` 그룹의 공통 5시간·주간을 읽는다. 모델 전용 주간 행은 상단 개발 브랜치 후속에서 추가하며 아직 배포본에는 없다. 1.3.1 미만·2.x·해석할 수 없는 버전은 거부하며 Gemini Apps 전체 한도·Claude/GPT 그룹·크레딧은 계속 제외한다.
 - 사용자 hooks·MCP 설정 격리 제한을 사용자가 수용한 조건으로 자동 조회에 연결했다. 버전 사전 확인, 자동 업데이트 차단, 입력 닫기, 제한시간, 0턴·0토큰 검증을 적용한다. 완전한 설정 격리·모든 실행의 절대 비소비·서버 데이터 신선도 보장은 아니다.
 - Windows는 한도 보기 전환·기존 창 크기를 유지하며 Provider별 박스와 한도 영역 내부 스크롤을 사용한다. 제목 바깥 기준선·클릭되지 않는 박스의 hover 없음은 UI 계획 결정 9/10을 따른다.
 - SDK 10.0.401, main·통합 후 모두 경고 0·오류 0. Windows self-test **251,182 → 251,377건(+195)**, 공통 **250,875 → 251,070**, Windows 전용 **307 그대로**, self-test 종료 코드 0. 진단만 추가한 #30 20회, 검사 전제 보완 후 #30 20회, 변경하지 않은 main 20회 모두 smoke 실패 0회·종료 코드 0이다. 보완 후 smoke는 **main 255 / #30 293 PASS**이며 합성 10초 Gemini 대기 중 화면·트레이 메뉴·매초 카운트다운이 계속 응답했다. [Windows 재진단 기록](https://github.com/hydron75/ai-burger-clock/pull/30#issuecomment-6072308296).

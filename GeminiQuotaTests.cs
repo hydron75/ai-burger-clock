@@ -2,7 +2,7 @@ using System.Globalization;
 
 namespace AiBurgerClock;
 
-// Synthetic agy 1.3.1 command.data fixtures only. No CLI, network, credentials or persisted account data.
+// Synthetic legacy common-group fixtures. No CLI, network, credentials or persisted account data.
 internal static class GeminiQuotaTests
 {
     internal static int Run()
@@ -27,7 +27,7 @@ internal static class GeminiQuotaTests
                 {"id":"3p-weekly","window":"weekly","remaining_fraction":0,"reset_time":"2027-02-17T12:00:00Z"},
                 {"id":"3p-5h","window":"5h","remaining_fraction":0.05,"reset_time":"2027-02-10T17:00:00Z"}
               ]},
-              {"name":"Gemini Models","description":"Gemini Flash, Gemini Pro","buckets":[
+              {"name":"Gemini Models","description":"Synthetic common Gemini models","buckets":[
                 {"id":"gemini-weekly","name":"Weekly Limit Remaining","window":"weekly","remaining_fraction":0.99609375,"reset_time":"2027-02-17T11:05:00Z"},
                 {"id":"gemini-5h","name":"Five Hour Limit Remaining","window":"5h","remaining_fraction":0.984375,"reset_time":"2027-02-10T16:05:00Z"}
               ]}
@@ -35,7 +35,7 @@ internal static class GeminiQuotaTests
             """;
         QuotaReading reading = AccountQuotaParsers.ParseGemini(data);
         check(reading.Provider == QuotaProvider.Gemini, "Antigravity Gemini is a distinct provider");
-        check(reading.Windows.Count == 2, "only the Gemini group is adopted");
+        check(reading.Windows.Count == 2, "legacy common-only response retains its two windows");
         check(reading.Windows[0].Id == "gemini-5h" && reading.Windows[1].Id == "gemini-weekly",
             "five-hour window precedes weekly regardless of backend order");
         check(reading.Windows[0].Label == "5시간" && reading.Windows[1].Label == "주간",

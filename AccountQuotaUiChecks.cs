@@ -39,7 +39,13 @@ internal sealed class TestAccountQuotaClient(Func<DateTimeOffset> clock, SmokeQu
         {
             QuotaProvider.Codex => [new("session", "5시간", 18, now.AddHours(2), 300), new("weekly", "주간", 92, now.AddDays(2), 10080)],
             QuotaProvider.Claude => [new("session", "5시간", 0, now.AddMinutes(12), 300), new("weekly", "주간", 45, now.AddDays(3), 10080), new("fable", "주간 · Fable", 1, now.AddDays(3), 10080)],
-            _ => [new("gemini-5h", "5시간", 2.01, now.AddHours(3), 300), new("gemini-weekly", "주간", 0.34, now.AddDays(6), 10080)]
+            _ => AccountQuotaParsers.ParseGemini($$"""
+                {"groups":[{"name":"Gemini Models","buckets":[
+                  {"id":"gemini-5h","window":"5h","remaining_fraction":0.9799,"reset_time":"{{now.AddHours(3):O}}"},
+                  {"id":"gemini-weekly","window":"weekly","remaining_fraction":0.9966,"reset_time":"{{now.AddDays(6):O}}"}]},
+                  {"name":"Gemini Synthetic Model","buckets":[
+                    {"id":"gemini-synthetic-weekly","window":"weekly","remaining_fraction":0.65,"reset_time":"{{now.AddDays(4):O}}"}]}]}
+                """).Windows.ToArray()
         };
         return new QuotaReading(provider, windows);
     }
@@ -199,14 +205,22 @@ internal static class AccountQuotaUiChecks
         Check(ProviderLabels(QuotaProvider.Gemini).Any(l => l.Text == "Gemini") &&
             ProviderLabels(QuotaProvider.Gemini).Any(l => l.Text == QuotaPanelModel.GeminiScope) &&
             ProviderLabels(QuotaProvider.Gemini).Any(l => l.Text.StartsWith("5시간  2% 사용", StringComparison.Ordinal)) &&
-            ProviderLabels(QuotaProvider.Gemini).Any(l => l.Text.StartsWith("주간  0.3% 사용", StringComparison.Ordinal)),
-            "Gemini shows only Antigravity Gemini-model scope and two used-percentage windows");
+            ProviderLabels(QuotaProvider.Gemini).Any(l => l.Text.StartsWith("주간  0.3% 사용", StringComparison.Ordinal)) &&
+            ProviderLabels(QuotaProvider.Gemini).Any(l => l.Text.StartsWith("주간 Gemini Synthetic Model  35% 사용", StringComparison.Ordinal)),
+            "Gemini shows common and model-specific Antigravity windows without other products");
+        Check(ProviderLabels(QuotaProvider.Gemini).Where(l => l.Text.Contains("% 사용", StringComparison.Ordinal))
+            .Select(l => l.Text.Split("  ")[0]).SequenceEqual(new[] { "5시간", "주간", "주간 Gemini Synthetic Model" }),
+            "Gemini row order is five-hour, unchanged common weekly, then model weekly");
         Check(ProviderLabels(QuotaProvider.Gemini).Any(l => l.AccessibleDescription?.Contains("Gemini Apps 웹·모바일의 전체 한도가 아니며", StringComparison.Ordinal) == true),
             "Gemini scope details do not imply Gemini Apps or third-party model quotas");
-        Check(geminiBox.Controls.OfType<QuotaBalanceBar>().Count() == 2 &&
+        Check(geminiBox.Controls.OfType<QuotaBalanceBar>().Count() == 3 &&
             geminiBox.Controls.OfType<QuotaBalanceBar>().All(bar => bar.FillColor == QuotaBalanceBar.ProviderColor(QuotaProvider.Gemini)) &&
             Math.Abs(geminiBox.Controls.OfType<QuotaBalanceBar>().First().UsedPercent - 2.01) < 1e-9,
             "Gemini blue bars retain precise consumed fractions from the verified reading");
+        Check(geminiBox.Controls.OfType<QuotaBalanceBar>().Last().ElapsedPercent is > 42 and < 43 &&
+            geminiBox.Controls.OfType<QuotaBalanceBar>().Last().AccessibleDescription!.Contains("균등 사용 기준보다", StringComparison.Ordinal) &&
+            context.StatusWindow.QuotaView.DetailFor(geminiBox).Contains("주간 Gemini Synthetic Model:", StringComparison.Ordinal),
+            "Gemini model weekly has a time boundary, row accessibility comparison and Provider detail");
         Check(context.StatusWindow.ClientSize == size && context.StatusWindow.QuotaView.VerticalScroll.Visible &&
             !context.StatusWindow.QuotaView.HorizontalScroll.Visible && boxes.All(box =>
                 box.Controls.OfType<Label>().All(label => label.Bottom <= box.Height)),

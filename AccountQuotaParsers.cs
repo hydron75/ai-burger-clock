@@ -83,15 +83,23 @@ internal static class AccountQuotaParsers
 
         List<QuotaWindow> windows = [];
         HashSet<string> ids = new(StringComparer.Ordinal);
+        HashSet<string> groupNames = new(StringComparer.Ordinal);
         bool foundGemini = false;
         foreach (JsonElement group in groups.EnumerateArray())
         {
             RequireObject(group);
-            if (RequiredString(group, "name") != "Gemini Models") continue;
-            if (foundGemini) throw Invalid();
-            foundGemini = true;
+            string groupName = RequiredString(group, "name");
+            bool common = groupName == "Gemini Models";
+            // Preserve unrelated groups (including Claude/GPT and credits) as exclusions.
+            // A Gemini-looking but unsupported group must not silently hide a binding limit.
+            if (!common && !groupName.TrimStart().StartsWith("Gemini", StringComparison.OrdinalIgnoreCase)) continue;
+            if (!groupNames.Add(groupName)) throw Invalid();
+            if (common) foundGemini = true;
+            else if (!groupName.StartsWith("Gemini ", StringComparison.Ordinal) || groupName.Length <= 7 ||
+                groupName != groupName.Trim() || char.IsWhiteSpace(groupName[7]) || groupName.Any(char.IsControl))
+                throw Invalid();
             if (!group.TryGetProperty("buckets", out JsonElement buckets) || buckets.ValueKind != JsonValueKind.Array
-                || buckets.GetArrayLength() is 0 or > MaximumWindows)
+                || buckets.GetArrayLength() is 0 or > MaximumWindows || (!common && buckets.GetArrayLength() != 1))
                 throw Invalid();
 
             foreach (JsonElement bucket in buckets.EnumerateArray())
@@ -99,14 +107,29 @@ internal static class AccountQuotaParsers
                 RequireObject(bucket);
                 string id = RequiredString(bucket, "id");
                 string slot = RequiredString(bucket, "window");
-                (string Label, int Minutes) window = (id, slot) switch
+                (string Label, int Minutes) window;
+                string windowId = id;
+                if (common) window = (id, slot) switch
                 {
                     ("gemini-5h", "5h") => ("5시간", 300),
                     ("gemini-weekly", "weekly") => ("주간", 10080),
                     // Unknown Gemini buckets may be binding limits; never silently omit them.
                     _ => throw Invalid()
                 };
-                if (!ids.Add(id)) throw Invalid();
+                else
+                {
+                    // Observed compatibility contract, not a guess based on prose/model lists:
+                    // an additional Gemini group has one Gemini-namespaced weekly bucket.
+                    if (slot != "weekly" || id.Length <= 14 || !id.StartsWith("gemini-", StringComparison.Ordinal) ||
+                        !id.EndsWith("-weekly", StringComparison.Ordinal) || id.Any(character => char.IsWhiteSpace(character) || char.IsControl(character)))
+                        throw Invalid();
+                    window = (ShortLabel("주간 " + groupName), 10080);
+                    // Length-prefix the original group name, not its shortened display label.
+                    // This is an unambiguous pair and a changed scope seeds a new alert baseline.
+                    windowId = "gemini-model:" + groupName.Length.ToString(CultureInfo.InvariantCulture) + ":" + groupName + id;
+                    if (windowId.Length > 512) throw Invalid();
+                }
+                if (!ids.Add(windowId) || windows.Count >= MaximumWindows) throw Invalid();
                 if (!bucket.TryGetProperty("remaining_fraction", out JsonElement value)
                     || value.ValueKind != JsonValueKind.Number || !value.TryGetDouble(out double fraction)
                     || !double.IsFinite(fraction) || fraction is < 0 or > 1)
@@ -115,12 +138,17 @@ internal static class AccountQuotaParsers
                 // Subtracting an extremely small positive fraction can round to 100.
                 // Only a raw zero fraction is exhaustion, never rounding during conversion.
                 if (fraction > 0 && used == 100) used = Math.BitDecrement(100.0);
-                windows.Add(new QuotaWindow(id, window.Label, used,
+                windows.Add(new QuotaWindow(windowId, window.Label, used,
                     IsoReset(bucket, "reset_time"), window.Minutes));
             }
         }
         if (!foundGemini) throw Invalid();
-        windows.Sort((left, right) => Nullable.Compare(left.WindowMinutes, right.WindowMinutes));
+        static int Rank(QuotaWindow window) => window.Id switch { "gemini-5h" => 0, "gemini-weekly" => 1, _ => 2 };
+        windows.Sort((left, right) =>
+        {
+            int rank = Rank(left).CompareTo(Rank(right));
+            return rank != 0 ? rank : StringComparer.Ordinal.Compare(left.Id, right.Id);
+        });
         return new QuotaReading(QuotaProvider.Gemini, windows.AsReadOnly());
     });
 

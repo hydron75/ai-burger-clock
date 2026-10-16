@@ -13,6 +13,8 @@ internal static class GeminiQuotaClientTests
            {"name":"Gemini Models","buckets":[
              {"id":"gemini-5h","window":"5h","remaining_fraction":0.984375,"reset_time":"2027-02-10T16:05:00Z"},
              {"id":"gemini-weekly","window":"weekly","remaining_fraction":0.99609375,"reset_time":"2027-02-17T11:05:00Z"}]},
+           {"name":"Gemini Synthetic Model","buckets":[
+             {"id":"gemini-synthetic-weekly","window":"weekly","remaining_fraction":0.4,"reset_time":"2027-02-14T10:00:00Z"}]},
            {"name":"Claude and GPT models","buckets":[{"id":"3p-5h","remaining_fraction":0}]}
          ]}}}
         """;
@@ -52,7 +54,7 @@ internal static class GeminiQuotaClientTests
         Check(Environment.GetEnvironmentVariable("AGY_CLI_DISABLE_AUTO_UPDATE") == updaterBefore, "parent settings remain unchanged");
         Check(!start.ArgumentList.Contains("--disable-slash-commands") && !start.ArgumentList.Contains("--agent") &&
             !start.ArgumentList.Contains("--remote-control") && !start.ArgumentList.Contains("--continue"), "no model fallback or remote/resume options");
-        foreach (string version in new[] { "1.3.1", "1.3.1\r\n", "1.3.2", "1.3.10", "1.4.0", "1.4.12", "1.10.0" })
+        foreach (string version in new[] { "1.3.1", "1.3.1\r\n", "1.3.2", "1.3.6", "1.3.10", "1.4.0", "1.4.12", "1.10.0" })
             Check(AccountQuotaClient.IsSupportedGeminiVersion(version), "stable supported version accepted: " + version.Trim());
         foreach (string version in new[] { "", "1.1.10", "1.1.11", "1.2.99", "1.3.0", "2.0.0", "2.1.0", "agy 1.3.1",
             "1.3.1\n/usage", "1.3", "1.3.1.0", "1.3.2-beta.1", "1.3.2+build.5", "1.03.1", "1.3.-1", "1.3.2147483648",
@@ -60,10 +62,11 @@ internal static class GeminiQuotaClientTests
             Check(!AccountQuotaClient.IsSupportedGeminiVersion(version), "unsupported or ambiguous version blocked before sending a prompt: " + version);
 
         QuotaReading reading = await Read(Success);
-        Check(reading.Provider == QuotaProvider.Gemini && reading.Windows.Count == 2, "single pretty-printed command result is accepted");
+        Check(reading.Provider == QuotaProvider.Gemini && reading.Windows.Count == 3, "single pretty-printed common and scoped command result is accepted");
         Check(reading.Windows[0].Id == "gemini-5h" && reading.Windows[1].Id == "gemini-weekly", "only typed Gemini buckets, not prose or 3p, are used");
         Check(Math.Abs(reading.Windows[1].RemainingPercent - 99.609375) < 1e-12, "precise fractions survive transport");
-        Check((await Read(Change(root => root["response"] = "wrong prose"))).Windows.Count == 2, "human response field never supplies limits");
+        Check(reading.Windows[2].Label == "주간 Gemini Synthetic Model", "model weekly survives the zero-activity transport guards");
+        Check((await Read(Change(root => root["response"] = "wrong prose"))).Windows.Count == 3, "human response field never supplies limits");
         await Reject(() => Read(Change(root => root["status"] = "ERROR")), "error status rejected");
         await Reject(() => Read(Change(root => root["conversation_id"] = "created-conversation")), "new conversation rejected");
         await Reject(() => Read(Change(root => root["conversation_id"] = null)), "missing conversation evidence rejected");
