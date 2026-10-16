@@ -270,9 +270,9 @@ internal static class QuotaToolTipUiChecks
             view.FinishDetailLeave(pointer);
             check(!view.Details.Visible, "Synthetic pointer exit is outside both the Provider and scrollable popup");
         }
-        bool Input(int message, Keys key = Keys.None)
+        bool Input(int message, Keys key = Keys.None, int lParam = 0)
         {
-            var input = Message.Create(host.Handle, message, (IntPtr)(int)key, IntPtr.Zero);
+            var input = Message.Create(host.Handle, message, (IntPtr)(int)key, (IntPtr)lParam);
             return Application.FilterMessage(ref input);
         }
         async Task WaitFor(Func<bool> condition, string label, int timeout = -1)
@@ -348,6 +348,8 @@ internal static class QuotaToolTipUiChecks
             }
             check(!Input(0x0100, Keys.Space) && view.Details.Visible,
                 "Unrelated keys remain available while a tooltip is visible");
+            check(!Input(0x0104, Keys.Escape, 1 << 29) && view.Details.Visible,
+                "Alt+Escape passes through the input filter without dismissing a visible tooltip");
             check(Input(0x0100, Keys.Escape) && !view.Details.Visible && host.Visible,
                 "Escape reaches the non-focused Provider tooltip and closes only the tooltip");
             CheckSuppressed("Escape");
@@ -359,6 +361,10 @@ internal static class QuotaToolTipUiChecks
             check(view.Details.Visible, "Provider can reopen after an Escape dismissal and actual box exit");
             Leave();
             Hover(); // Cancel before the hover delay has fired.
+            var pendingHover = (System.Windows.Forms.Timer)typeof(AccountQuotaView).GetField("detailDelay",
+                System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.GetValue(view)!;
+            check(!Input(0x0104, Keys.Escape, 1 << 29) && !view.Details.Visible && pendingHover.Enabled,
+                "Alt+Escape passes through the input filter without cancelling a pending tooltip hover");
             check(Input(0x0100, Keys.Escape), "Escape cancels a pending hover as well as a visible detail");
             await Task.Delay(SystemInformation.MouseHoverTime + 150);
             CheckSuppressed("pending hover cancelled");

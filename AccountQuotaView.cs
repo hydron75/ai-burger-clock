@@ -220,7 +220,8 @@ internal sealed class AccountQuotaView : Panel, IMessageFilter
         if (pendingDetail is null) return false;
         // Filter the UI thread, not just the unfocused quota panel: Escape belongs to the owner,
         // and a click may target a label, bar, popup scrollbar, or another owner control.
-        if (message.Msg is 0x0100 or 0x0104 && (Keys)message.WParam.ToInt32() == Keys.Escape)
+        // Leave WM_SYSKEYDOWN (Alt+Escape) to Windows' window-switching shortcut.
+        if (message.Msg == 0x0100 && (Keys)message.WParam.ToInt32() == Keys.Escape)
         {
             DismissDetail();
             return true;
