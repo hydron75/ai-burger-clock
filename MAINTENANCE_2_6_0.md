@@ -1,6 +1,6 @@
-# AI Burger Clock 2.6.0 — Windows 한도 회복 알림 배포 준비
+# AI Burger Clock 2.6.0 — Windows 한도 회복 알림 배포
 
-기록일: **2026-10-16 KST**. 상태: **준비 빌드·self-test·smoke 5회 통과 / Draft PR 승인 대기 / PR 병합·publish·배포 EXE 교체 미수행**. 현재 배포본은 **Windows 2.5.1**이다.
+기록일: **2026-10-16 KST**. 상태: **#61 승인·병합 / 정상 종료·WAL 확인·백업·publish·EXE 교체·최종 self-test/smoke 완료**. 현재 실행 중인 앱은 **Windows 2.6.0 배포본**이다. 자동 시작 등록은 유지했고, 최종 트레이·상태 창·회복 알림 메뉴 꺼짐은 **사용자 확인 완료**다. 아래 준비 후보 5회와 최종 단일 EXE의 별도 검사를 구분한다.
 
 #59가 Windows·Mac 확인 뒤 main `92f589e975a27648617f0fc1683c03762b37c5ce`에 병합된 상태에서 `git pull --ff-only`하고 `feature/windows-release-2-6-0`을 만들었다. 범위는 **Windows만 변경(버전·Windows 제품/검사·문서)**이다. 이미 병합한 #59의 공통 기능을 배포 대상으로 삼지만 **이번 PR에서 공통 로직·공통 검사·Mac 파일/버전·MACOS_PORT는 바꾸지 않는다.** Mac 네이티브 한도 회복 알림은 후속 **#60 진행 중**이다.
 
@@ -8,14 +8,14 @@
 
 ## 버전과 2.5.1 이후 Windows 변경
 
-Version **2.6.0**, AssemblyVersion·FileVersion **2.6.0.0**으로 준비한다. 한도 회복 알림이라는 선택 기능이 추가돼 minor 버전을 올린다. Windows 11 x64 / WinForms / net10.0-windows / framework-dependent 단일 EXE와 .NET 10 Desktop Runtime x64 요구사항은 유지한다.
+Version **2.6.0**, AssemblyVersion·FileVersion **2.6.0.0**으로 배포했다. 한도 회복 알림이라는 선택 기능이 추가돼 minor 버전을 올렸다. Windows 11 x64 / WinForms / net10.0-windows / framework-dependent 단일 EXE와 .NET 10 Desktop Runtime x64 요구사항은 유지한다.
 
 | 출처 | Windows에 반영할 내용 |
 |---|---|
 | #59 | 검증된 새 성공 응답의 동일 창 사용 100% → 100% 미만을 확인할 때만 회복 알림. 기본 OFF, 캐시/첫 성공/예정 시각 경과는 무알림 |
 | #59 | 공통 `QuotaRecoveryNotifications`·`QuotaRecoveryText`, `AppMetadata` 한 키, Provider별 성공 순번과 Windows 메뉴/풍선 연결. 추가 조회·schema 변경 없음 |
 | #57 리뷰 후속 | Alt+Esc를 상세 팝업 닫기로 소비하지 않고 OS 창 순환에 넘김. 일반 Esc·클릭·10초 자동 닫힘·박스 이탈 전 재등장 방지는 유지 |
-| 문서 | #59의 Draft·Mac 확인 대기 문구를 병합 완료·2.6.0 반영 예정으로 정리하고 Mac 연결은 #60 진행 중으로 구분 |
+| 문서 | #59의 Draft·Mac 확인 대기 문구를 병합 완료·Windows 2.6.0 배포 기준으로 정리하고 Mac 연결은 #60 진행 중으로 구분 |
 | #57 README 리뷰 | #58 준비 문서와 후속 배포 기록에서 10초로 수정한 사항을 답변하고 해당 스레드를 해결 처리했다. 새 동작 변경은 아님 |
 
 이전 EXE 소스 `2897aea` 뒤의 `f1a0d96`은 2.5.1 배포 결과 문서이고 EXE 소스가 아니다. #59의 Windows/Mac 검증 이력은 [회복 알림 기록](QUOTA_RECOVERY_NOTIFICATIONS.md)에 유지하며 이번 후보의 실제 검사를 대신하지 않는다. #30의 원인 미확정 smoke 관찰과 기존 진단·#58 검사 창 보호를 유지한다. 성능 최적화·근무 시간표 가중치·요금제/CLI 경로·7b/7c는 재개하지 않는다.
@@ -33,8 +33,8 @@ Windows의 **한도 회복 알림**은 **트레이 아이콘 우클릭 메뉴의
 - `AiBurgerClock.csproj`: Version / AssemblyVersion / FileVersion 함께 변경.
 - `AccountQuotaView.cs`: Alt+Esc를 팝업 닫기 메시지 처리에서 제외.
 - `QuotaToolTipUiChecks.cs`: 합성 메시지의 Alt+Esc 비소비·상세 유지와 일반 Esc 회귀 확인.
-- `QUOTA_RECOVERY_NOTIFICATIONS.md`, `BACKLOG.md`: #59 병합·Mac 확인 완료·Windows 2.6.0 반영 예정 및 Mac #60 진행 상태.
-- `README.md`, `CODE_GUIDE.md`: 미배포 후보/현재 배포 분리, 메뉴 위치와 소스 기준·검증 기록 연결.
+- `QUOTA_RECOVERY_NOTIFICATIONS.md`, `BACKLOG.md`: #59 병합·Mac 확인 완료·Windows 2.6.0 반영 및 Mac #60 진행 상태. 준비 당시 미배포와 이후 실제 배포 결과를 구분.
+- `README.md`, `CODE_GUIDE.md`: 준비 후보/최종 배포 구분, 메뉴 위치와 소스 기준·검증 기록 연결.
 
 신규:
 
@@ -92,11 +92,11 @@ Windows의 **한도 회복 알림**은 **트레이 아이콘 우클릭 메뉴의
 
 ### #57 README 리뷰와 기존 배포본 복귀
 
-[README 리뷰 스레드](https://github.com/hydron75/ai-burger-clock/pull/57#discussion_r4282336796)에 #58 준비 문서와 후속 배포 기록에서 반영한 사항이라고 답변하고 **해결 처리**했다. 당시 배포 2.5.0의 30초 안내와 후보 2.5.1의 10초 안내는 구분되어 있었으며 현재 README는 배포 2.5.1의 10초·클릭/Esc·재등장 방지를 설명한다. Alt+Esc 별도 스레드는 이번 새 PR 병합 전이므로 닫지 않았다.
+[README 리뷰 스레드](https://github.com/hydron75/ai-burger-clock/pull/57#discussion_r4282336796)에 #58 준비 문서와 후속 배포 기록에서 반영한 사항이라고 답변하고 **해결 처리**했다. 당시 배포 2.5.0의 30초 안내와 후보 2.5.1의 10초 안내는 구분되어 있었으며 2.5.1부터 10초·클릭/Esc·재등장 방지를 설명한다. Alt+Esc 별도 스레드는 준비 당시 #61 병합 전이어서 닫지 않았다.
 
 검사 종료 후 **2026-10-16 09:25 KST** 기존 dist 2.5.1을 `--autostart`로 다시 실행했다. 앱 한 개·정확한 dist 경로·`Responding=True`·입력 대기 준비, 아래 기존 ProductVersion·크기·SHA-256 일치를 확인했다. 테스트 2.6.0을 실행해 둔 것이 아니며 새 화면/OS 배너를 육안 확인했다고 적지 않는다. 배포 EXE·사용자 설정·자동 시작 등록은 교체/변경하지 않았다.
 
-**과거 기준(이번 실행이 아님):** #59의 Windows 빌드는 경고 0·오류 0, self-test **252,051건 = 공통 251,744 + Windows 전용 307**, 실제 ExitCode 0이었다. 기존 배포 2.5.1 self-test **251,826건 = 251,519 + 307** 대비 **+225**이며 monitor +19·회복 판정/문구 +188·설정 저장 +18이다. #59 smoke는 별도 **1회 570 PASS·ExitCode 0**, 기존 배포 준비 530에 회복 알림 UI 40건이 늘었다. 이번 Alt+Esc 회귀 검사는 smoke에 추가되므로 새 합계와 증가 사유를 실제 실행 뒤 적는다. 공통 동작은 그대로이므로 공통/Windows 자체 검사 증감은 별도로 비교한다.
+**과거 기준(이번 실행이 아님):** #59의 Windows 빌드는 경고 0·오류 0, self-test **252,051건 = 공통 251,744 + Windows 전용 307**, 실제 ExitCode 0이었다. 기존 배포 2.5.1 self-test **251,826건 = 251,519 + 307** 대비 **+225**이며 monitor +19·회복 판정/문구 +188·설정 저장 +18이다. #59 smoke는 별도 **1회 570 PASS·ExitCode 0**, 기존 배포 준비 530에 회복 알림 UI 40건이 늘었다. 이번 Alt+Esc 회귀 검사 2건으로 smoke는 **572건**이 됐고 공통/Windows 자체 검사 증감은 위 표처럼 각각 0이다.
 
 #59의 Mac 확인은 HEAD `e467b0d798ca266f06e5586f48ad34a309104d09`, Xcode 27.0(27A266a)·SDK 10.0.401, 공통 251,744건·빌드 경고/오류 0·native smoke ExitCode 0과 별도 합성 프로브 63건이다. 최종 주석 5줄 변경 뒤 재검사는 하지 않았다. 이번 준비는 Windows만 변경하므로 Mac 검사를 새로 실행한 것으로 기록하지 않는다.
 
@@ -109,10 +109,11 @@ Windows의 **한도 회복 알림**은 **트레이 아이콘 우클릭 메뉴의
 | #59 Mac 검증 HEAD | `e467b0d798ca266f06e5586f48ad34a309104d09` |
 | #59 병합 / 이번 브랜치 출발점 | `92f589e975a27648617f0fc1683c03762b37c5ce` |
 | 2.6.0 버전·Alt+Esc 보완 / 실제 검증 HEAD | `f2e0296f5ab4a4a8f6ad8e6e1a936a4c72eaac2d` |
-| 이번 준비 PR 병합 | **미수행·사용자 승인 대기** |
-| 최종 2.6.0 단일 EXE 소스 | **아직 없음** — 승인 후 깨끗한 병합 main에서 publish할 커밋 |
+| #61 승인·병합한 HEAD | `1f15539ef10fb47464c7a9314ff550188107eda4` |
+| #61 main 병합 | `4981f5cda325d35eeb76dd60f09d66833efaad77` |
+| 최종 2.6.0 단일 EXE 소스 | **`4981f5cda325d35eeb76dd60f09d66833efaad77`** — 병합 main, 깨끗한 작업 트리 |
 
-| 항목 | 현재 배포 2.5.1 — 기존 배포 기록 기준 |
+| 항목 | 교체 전·백업한 2.5.1 |
 |---|---|
 | 경로 | `dist/win-x64/AI Burger Clock.exe` |
 | FileVersion | `2.5.1.0` |
@@ -130,9 +131,46 @@ Windows의 **한도 회복 알림**은 **트레이 아이콘 우클릭 메뉴의
 | 크기 | 163,328 bytes |
 | SHA-256 | `2E7DF640A14BE0EEC32A36F7C178DD252CED93648BD47C5A1A595E582E032F37` |
 
-**최종 2.6.0 단일 EXE와 실제 배포 커밋·시각·해시·백업 경로는 아직 없다.** 승인 후 병합 main에서 따로 만든다.
+### 최종 배포 단일 EXE
 
-## 승인 후 교체 계획 — 아직 실행하지 않음
+| 항목 | 현재 배포 2.6.0 |
+|---|---|
+| 경로 | `dist/win-x64/AI Burger Clock.exe` |
+| 소스 커밋 | `4981f5cda325d35eeb76dd60f09d66833efaad77` |
+| FileVersion | `2.6.0.0` |
+| ProductVersion | `2.6.0+4981f5cda325d35eeb76dd60f09d66833efaad77` |
+| 크기 | **3,572,971 bytes** |
+| SHA-256 | `EEB9F56BF020426E3FDB0CB618B1AC72A43261487CBB44048FA502BE6E4E69D4` |
+
+배포 결과를 적는 후속 문서 커밋은 **EXE의 소스 커밋이 아니다.** 문서 반영 뒤 다시 publish하지 않는다.
+
+## 실제 백업·교체와 최종 검증
+
+1. 사용자 승인으로 #61의 HEAD `1f15539ef10fb47464c7a9314ff550188107eda4`를 지정해 Draft를 해제·병합했다. main에서 `git pull --ff-only`하고 깨끗한 작업 트리의 전체 해시 **`4981f5cda325d35eeb76dd60f09d66833efaad77`**를 확정했다. 승인 HEAD와 병합 main 사이 C#·csproj·공통 원본 목록 차이는 없다.
+2. 사용자가 기존 2.5.1을 **정상 종료**한 뒤 앱 프로세스 0개와 실제 DB의 `-wal`·`-shm` 부재를 확인했다. 강제 종료하거나 sidecar를 삭제하지 않았다.
+3. **2026-10-16 09:37 KST**, 존재하지 않던 **`../backups/release-2.6.0-20261016/`**를 새로 만들었다. 기존 EXE·dist ZIP·실제 이전 EXE 소스 `2897aea54141f9ed55054847a0268f73d4f79eaa`의 source ZIP·닫힌 DB를 보관했다. 원본/복사본 및 ZIP 안 EXE 해시 일치, 백업 중 프로세스/WAL/SHM 부재와 DB 불변을 확인했다. 백업 DB만 읽기 전용으로 검사해 SQLite quick_check 정상·schema 2·설정 키 누락에 따른 **회복 알림 기본 OFF**를 확인했다. 실제 DB 초기화나 설정 저장은 하지 않았다.
+4. 같은 병합 main에서 **`build.ps1 -Publish`**를 실행했다. SDK **10.0.402**, 빌드 **경고 0·오류 0**, publish 성공과 최종 단일 EXE self-test **252,051건(공통 251,744 + Windows 307)·실제 ExitCode 0**을 확인했다. 준비 후보와 검사 수가 같고, 기존 배포 2.5.1 대비 +225는 위 #59 그룹별 증가와 같다.
+5. 실제 dist 단일 EXE로 별도 **`--smoke-test --report-directory` 1회**를 실행해 **572 PASS·실패 표시 0·실제 ExitCode 0, 48.64초**를 확인했다. 준비 후보 5회와 합쳐 세지 않는다. Alt+Esc 표시/hover 대기 통과 2건, 일반 Esc·클릭·실제 10초 만료·재등장 방지, 창·트레이·기록·통계·한도/시간 비교·Refresh·합성 Gemini 지연 중 응답성 및 회복 알림 UI 40건이 통과했다. 임시 DB·가짜 HTTP/CLI이며 `--verify-autostart`는 사용하지 않았다. BalloonTipShown 이벤트 **19건**은 네이티브 이벤트 확인이지 OS 배너 육안 확인이 아니다.
+6. 정상 앱 실행 전까지 실제 DB는 백업 직전과 같은 해시이며 WAL/SHM도 없었다. 새 EXE를 백업의 **`published-2.6.0.exe`**에도 보관해 dist와 버전·크기·해시 일치를 확인했다. 이후 일반 실행은 정상 조회/캐시를 갱신하므로 전체 작업 동안 사용자 DB가 불변이었다고 주장하지 않는다.
+7. 자동 시작은 **읽기 전용으로 전후 비교**했다. HKCU Run `AI Burger Clock`은 **String / 큰따옴표로 감싼 같은 절대 dist 경로 + ` --autostart`**, StartupApproved/Run은 **Binary / `020000000000000000000000`**으로 종류·값이 모두 유지됐다. 등록 경로가 가리키는 실제 파일은 위 **2.6.0 버전·SHA-256**과 일치한다. 등록을 새로 쓰거나 재부팅/재로그인 시험을 하지 않았다.
+8. **09:42 KST** 새 dist를 인자 없이 일반 실행했다. 앱 한 개·정확한 dist 실행 경로·`Responding=True`·입력 대기 준비를 확인했다. 앱 조작 도구에 실제 창·트레이가 노출되지 않아 최종 화면은 **사용자에게 확인받았다: 트레이·상태 창·‘한도 회복 알림’ 메뉴 꺼짐 모두 정상**. 메뉴는 Statistics 다음·자동 시작 이전이며 설정을 켜도록 요청하거나 실제 계정 값/캡처를 받지 않았다. 현재 실행 중인 것은 테스트 apphost가 아닌 **2.6.0 배포본**이다.
+9. 배포 검증에서 복원이 필요한 문제는 없었다. **2.5.1 EXE 복원 적용·복원 시험은 미수행**이다. Mac·공통 코드·자동 시작 등록·실제 회복 알림 설정을 변경하지 않았다.
+
+### 실제 로컬 백업
+
+경로는 **`../backups/release-2.6.0-20261016/`**다. ZIP·DB·manifest·원본 로그·바이너리는 로컬에만 보관하며 GitHub에 올리지 않는다.
+
+| 백업 파일 | 크기 | SHA-256 / 확인 |
+|---|---:|---|
+| `replaced-2.5.1.exe` | 3,474,667 bytes | `0276257DE59E8BDBD95B157BC44A640A4C5664C22DF868EE9CE867DBAA768B72` |
+| `dist-2.5.1.zip` | 1,711,695 bytes | `CC3B3713933D5D4C49DDD84DC99B74D31D2AA18F7CF51901AA775ED08DF15450` |
+| `source-2.5.1-2897aea.zip` | 3,321,443 bytes | `1AF0C7EC15272D2EFE37ADCA171980713A05E033B5C560E705053C71A230770C` |
+| `burgerclock.db` | 비공개 | 정상 종료 뒤 원본/복사본 해시 일치·읽기 전용 quick_check/schema 2·회복 알림 OFF 확인. 내용·해시는 공개하지 않음 |
+| `published-2.6.0.exe` | 3,572,971 bytes | `EEB9F56BF020426E3FDB0CB618B1AC72A43261487CBB44048FA502BE6E4E69D4` |
+
+소스 ZIP은 실제 이전 EXE 소스 `2897aea54141f9ed55054847a0268f73d4f79eaa`의 `git archive`이며 이후 배포 결과 문서 커밋의 ZIP이 아니다. 새 백업 폴더를 만들었고 기존 백업은 덮어쓰지 않았다.
+
+## 승인받은 교체 계획 — 위와 같이 실행, 복원 미적용
 
 1. 사용자가 준비 PR 병합·교체를 승인하면 승인 HEAD를 지정해 Draft를 해제·병합하고 main에서 `git pull --ff-only`한다. 깨끗한 작업 트리와 병합 main의 **전체 해시를 최종 EXE 소스**로 기록한다. 후속 배포 결과 문서 커밋과 구분한다.
 2. 실행 중인 앱을 **정상 종료**하고 프로세스 0개와 `%LOCALAPPDATA%/AIBurgerClock/burgerclock.db-wal`·`-shm` 부재를 확인한다. 준비 검사 전 종료를 이때 확인으로 대신하지 않는다. sidecar가 남으면 삭제·강제 덮어쓰기하지 않고 원인을 확인한다.
@@ -147,10 +185,13 @@ Windows의 **한도 회복 알림**은 **트레이 아이콘 우클릭 메뉴의
 
 #59는 schema 2와 기존 한도 캐시/기록 형식을 유지하고 `AppMetadata` 한 키만 추가했다. 2.5.1로 돌아가면 회복 알림 메뉴·동작과 Alt+Esc 보완이 없는 것이 예상 차이다. 새 설정 키를 2.5.1이 사용하지 않는다고 DB를 삭제하거나 백업 DB를 자동 덮어쓰지 않는다. DB 복원이 별도로 필요하면 현재 데이터를 보존하고 유실 위험·범위를 설명한 뒤 승인받는다. **복원 시험·실제 복원은 미수행**이다.
 
-## 미수행과 남은 승인
+## 실제 사용자 확인·로컬 증거·미수행
 
-- 준비 단계에서 **PR 병합·새 배포 백업·publish·dist 교체·실제 복원은 하지 않는다.** 최종 단일 EXE 검사도 승인 뒤 별도다.
+- 준비 단계에서는 PR 병합·publish·dist 교체를 하지 않았으며 기존 2.5.1을 다시 실행했다. 이후 **#61 승인·병합·정상 종료·새 배포 백업·publish·dist 교체·최종 단일 EXE 검사·새 2.6.0 실행을 완료**했다. 준비 검사와 실제 배포 결과는 위와 같이 구분한다.
+- **최종 2.6.0 배포본 사용자 확인(2026-10-16 KST): 트레이·상태 창·회복 알림 메뉴 꺼짐 모두 정상.** 이는 앱 조작 도구의 화면 관찰이 아니라 사용자가 실제 화면을 확인한 결과다. 설정을 켜거나 실제 계정 회복/OS 배너를 시험한 결과는 아니다.
 - 회복 알림은 기본 OFF이며 실제 사용자 DB의 ON/OFF 설정을 준비 검사를 위해 바꾸지 않는다. 임시 DB·합성 성공 응답으로 메뉴·저장·중복·대기열을 검사한다.
 - 실제 OS 배너의 육안 노출, Alt+Esc의 실제 OS 창 순환, 실제 계정/CLI probe, 재부팅/재로그인·절전·장시간 운영·DPI/고대비·다중 모니터·스크린리더 실기, 별도 Shared.Tests·Mac 실행은 **미수행**이다. self-test 안의 공통 실행과 별도 Shared.Tests 실행을 구분한다.
 - 기존 네트워크 단절·재연결 정상은 **사용자 확인**으로 BACKLOG에 남아 있으며 이번 작업이 직접 재측정한 결과가 아니다.
 - Mac 파일·버전·native 검사는 이번 작업 대상이 아니다. #60 진행과 #59 공통 검증 완료를 구분한다. 새 준비 검사 원본은 ignored `artifacts/release-2.6.0-preparation-20261016/`의 `build-restricted-network-failed.txt`·`build-escalated-cached-failed.txt`·`restore-force.txt`·`build.txt`·`self-test.txt`·errors, `smoke/run-01`~`run-05`·`smoke-results.json`·`restart-2.5.1.json`에만 로컬 보관한다.
+- 최종 배포 증거는 별도 ignored `artifacts/release-2.6.0-deployment-20261016/`의 `before.json`, `backup-private.json`, `recovery-setting-backup.json`, `publish.txt`, `final-self-test.txt`·errors, `final-smoke/smoke.txt`·errors·합성 render, `final-smoke-result.json`, `published-metadata.json`, `autostart-before-private.json`·`autostart-after-private.json`, `launch.json`에 보존한다. 백업 manifest·DB 해시·원본 진단·실제 계정 값은 공개하지 않는다.
+- **2.5.1 복원 시험·복원 적용은 미수행**이다. 새 배포본을 실행해 둔 상태이며 배포 뒤 소스/제품 코드 변경은 없다. 후속 문서 커밋을 EXE의 소스로 기록하거나 문서 반영 뒤 다시 publish하지 않는다.
