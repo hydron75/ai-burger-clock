@@ -1639,7 +1639,8 @@ Xcode가 27.1(27A9275)로 올라갔는데 설치된 .NET macOS 워크로드(27.0
 | 터미널 | `지원되지 않는 Xcode 조합으로 빌드합니다. smoke와 실제 동작을 확인한 뒤 사용하세요.` + Xcode(build), 워크로드와 요구 Xcode, .NET SDK, git 커밋 + 기록 안내. 성공하면 끝에 기록하라는 참고 문구 |
 | 로그 | `artifacts/mac-build/xcode-mismatch.log`(Git 제외)에 시작 한 줄과 종료 코드 한 줄. 빌드 실패도 종료 코드로 남음 |
 | 불필요하게 켠 경우 | 두 버전이 같으면 검사를 건너뛰지 않고(플래그 없이) 알림과 로그 한 줄 |
-| 요구 버전 | 설치된 macOS SDK 팩의 `Microsoft.macOS.Sdk.Versions.props`(`RecommendedXcodeVersion`)에서 읽음. 읽지 못하면 `unknown`으로 기록하고 요청대로 건너뜀 |
+| 요구 버전 | 설치된 macOS SDK 팩의 `Microsoft.macOS.Sdk.Versions.props`(`RecommendedXcodeVersion`)에서 읽고 워크로드처럼 major.minor로 정규화해 비교(`27.0.1` → `27.0`). 읽지 못하면 `unknown`으로 기록하고 요청대로 건너뜀 |
+| Xcode major | 옵션이 없으면 기존 `Xcode 27` 사전 검사 그대로. 옵션을 켠 경우에만 더 높은 major(예: 28)를 통과시키고 로그에 "major가 27이 아님"을 덧붙임. 더 낮은 Xcode는 통과시키지 않음 |
 | 기록 규칙 | 이 옵션으로 만든 빌드를 실제로 쓰면 MACOS_PORT에 옵션 사용 사실과 Xcode·워크로드 버전을 적는다(Mac/README) |
 
 ### 이 Mac에서 수행한 검증 (저장소 밖 임시 사본, 실행 중인 앱은 그대로)
@@ -1652,7 +1653,9 @@ Xcode가 27.1(27A9275)로 올라갔는데 설치된 .NET macOS 워크로드(27.0
 | `--allow-xcode-mismatch --quit-running` | 파싱·빌드 성공(종료 코드 0), 로그 2줄 추가 |
 | 옵션을 켠 채 빌드 실패(일부러 넣은 문법 오류) | 종료 코드 1이 로그에 남고 성공 안내는 나오지 않음 |
 | 판정 함수 | 27.0/27.0 → unneeded, 27.1/27.0 → bypass, 27.1/없음 → unknown, 설치된 팩에서 요구 버전 27.0 읽음, 팩이 없으면 빈 값 |
+| 요구 버전 정규화(Codex 리뷰 반영) | 합성 props `27.0`→27.0, `27.0.1`→27.0, `27.1.2.3`→27.1, `27`→27.0 |
+| Xcode major 사전 검사(Codex 리뷰 반영, 함수 단위) | Xcode 27.x → ok, 28.0: 옵션 없음 → blocked / 옵션 있음 → allowed, 26.4·빈 값: 옵션과 무관하게 blocked |
 
 ### 수행하지 않은 검증
-- 두 버전이 같은 상태에서 옵션을 켠 end-to-end 실행(이 Mac은 현재 항상 불일치). 판정 함수 단위로만 확인했다.
+- 두 버전이 같은 상태에서 옵션을 켠 end-to-end 실행과 Xcode 28 환경 실행(이 Mac은 Xcode 27.1 하나뿐). 판정 함수 단위로만 확인했다.
 - 이 옵션으로 만든 빌드의 장시간 사용과 배포 교체. 실제로 쓰게 되면 위 기록 규칙에 따라 해당 절에 적는다.

@@ -17,6 +17,21 @@ for task_arg in "$@"; do
   esac
 done
 
+# $1 text of `xcodebuild -version`, $2 true when --allow-xcode-mismatch was given.
+# Echoes: ok (Xcode 27) | not27-allowed (a newer major, and the caller explicitly allowed a mismatch) | not27-blocked.
+task_xcode_major_gate() {
+  local major
+  major="$(printf '%s\n' "$1" | awk 'NR == 1 { split($2, v, "."); print v[1] }')"
+  if [[ "$1" == Xcode\ 27* ]]; then
+    echo ok
+  elif [[ "$2" == true && "$major" =~ ^[0-9]+$ && "$major" -gt 27 ]]; then
+    # Only a NEWER major can plausibly carry the macOS 27 SDK; an older Xcode never can.
+    echo not27-allowed
+  else
+    echo not27-blocked
+  fi
+}
+
 echo "AI Burger Clock macOS 빌드 준비를 확인합니다."
 task_script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 task_app="$task_script_dir/bin/Release/net10.0-macos27.0/osx-arm64/AI Burger Clock.app"
@@ -112,10 +127,18 @@ if ! task_xcode_version="$(/usr/bin/xcodebuild -version)"; then
   echo "읽기 전용 확인: /usr/bin/xcodebuild -version 및 /usr/bin/xcode-select -p" >&2
   exit 2
 fi
-if [[ "$task_xcode_version" != Xcode\ 27* ]]; then
-  echo "macOS 27 SDK를 제공하는 Xcode 27이 필요합니다. 현재: $task_xcode_version" >&2
-  exit 2
-fi
+task_xcode_not27=false
+case "$(task_xcode_major_gate "$task_xcode_version" "$task_allow_xcode_mismatch")" in
+  not27-blocked)
+    echo "macOS 27 SDK를 제공하는 Xcode 27이 필요합니다. 현재: $task_xcode_version" >&2
+    exit 2
+    ;;
+  not27-allowed)
+    # Xcode may cross a major version before the workload catches up. The explicit option lets the
+    # build try; the compiler/SDK checks that follow decide whether the combination really works.
+    task_xcode_not27=true
+    ;;
+esac
 echo "$task_xcode_version"
 cd "$task_script_dir"
 echo ".NET SDK 확인 중..."
@@ -159,7 +182,10 @@ task_required_xcode_version() {
   root="${DOTNET_ROOT:-$(cd -- "$(dirname -- "$(/usr/bin/readlink -f "$dotnet_path" 2>/dev/null || printf '%s' "$dotnet_path")")" && pwd)}"
   props="$(ls -d "$root"/packs/Microsoft.macOS.Sdk.net10.0_27.0/*/targets/Microsoft.macOS.Sdk.Versions.props 2>/dev/null | sort -V | tail -n 1 || true)"
   [[ -n "$props" ]] || return 0
-  sed -n 's/.*<RecommendedXcodeVersion>\([0-9][0-9.]*\)<.*/\1/p' "$props" | head -n 1
+  # The property may carry more than major.minor (e.g. 27.0.1) but the workload validates only
+  # major.minor, so compare the same way.
+  sed -n 's/.*<RecommendedXcodeVersion>\([0-9][0-9.]*\)<.*/\1/p' "$props" | head -n 1 \
+    | awk -F. 'NF { print $1 "." ($2 == "" ? 0 : $2) }'
 }
 # $1 installed Xcode major.minor, $2 required major.minor (may be empty). Echoes: bypass | unneeded | unknown.
 task_xcode_mismatch_state() {
@@ -178,6 +204,9 @@ if [[ "$task_allow_xcode_mismatch" == true ]]; then
   task_required_xcode="$(task_required_xcode_version)"
   task_git_head="$(git -C "$task_script_dir" rev-parse --short HEAD 2>/dev/null || echo unknown)"
   task_xcode_details="Xcode ${task_xcode_mm} (${task_xcode_build:-?}), macos workload ${task_workload_version:-?} requires Xcode ${task_required_xcode:-unknown}, .NET SDK ${task_sdk_version}, git ${task_git_head}"
+  if [[ "$task_xcode_not27" == true ]]; then
+    task_xcode_details="${task_xcode_details}, Xcode major is not 27 (the macOS 27 SDK may be missing; the build will fail if so)"
+  fi
   case "$(task_xcode_mismatch_state "$task_xcode_mm" "$task_required_xcode")" in
     unneeded)
       echo "알림: --allow-xcode-mismatch가 켜졌지만 Xcode ${task_xcode_mm}가 워크로드 요구 버전과 같아 필요하지 않습니다. 버전 검사를 건너뛰지 않고 평소처럼 빌드합니다." >&2
