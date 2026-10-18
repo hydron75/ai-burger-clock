@@ -206,6 +206,26 @@ bash Mac/build.sh
 - `bash Mac/build.sh --quit-running`은 묻지 않고 종료를 요청한 뒤 빌드합니다.
 - 종료 요청이 실패하거나 20초 안에 끝나지 않으면 빌드를 시작하지 않고 종료 코드 2로 멈춥니다. 앱을 메뉴바 아이콘 오른쪽 클릭 → 종료로 닫고 다시 실행하세요.
 
+### Xcode와 워크로드가 요구하는 버전이 다를 때 (`--allow-xcode-mismatch`)
+
+.NET macOS 워크로드는 자신이 요구하는 Xcode의 major.minor와 설치된 Xcode가 다르면 `E0191`(예: `requires Xcode 27.0. The current version of Xcode is 27.1`)로 빌드를 멈춥니다. Xcode가 먼저 올라가고 워크로드가 늦게 따라오는 기간에 생기며, 새 워크로드가 나오기 전에는 워크로드 갱신으로 해결되지 않습니다.
+
+`bash Mac/build.sh --allow-xcode-mismatch`는 **이 버전 검사 하나만** 건너뜁니다(`-p:ValidateXcodeVersion=false`). 다른 검사와 경고를 오류로 취급하는 설정, 서명 검증은 그대로입니다. `--quit-running`과 함께 쓸 수 있습니다.
+
+- **기본은 꺼짐입니다.** 옵션이 없으면 지금처럼 `E0191`로 멈추고 아무것도 기록하지 않습니다.
+- **켜면** 터미널에 `지원되지 않는 Xcode 조합으로 빌드합니다. smoke와 실제 동작을 확인한 뒤 사용하세요.`와 함께 Xcode 버전(build 번호), 워크로드 버전과 그것이 요구하는 Xcode, .NET SDK, git 커밋을 보여 주고, 같은 내용을 `artifacts/mac-build/xcode-mismatch.log`(Git에서 제외)에 시각과 함께 한 줄 남깁니다. 빌드가 끝나면 종료 코드도 한 줄 더 남기고, 성공했다면 기록하라는 참고 문구를 다시 보여 줍니다.
+- **불필요하게 켠 경우**(두 버전이 같음)에는 검사를 건너뛰지 않고 평소처럼 빌드하며, "필요하지 않다"는 알림과 로그 한 줄만 남깁니다.
+- 워크로드가 요구하는 Xcode 버전은 설치된 macOS SDK 팩(`Microsoft.macOS.Sdk.Versions.props`)에서 읽습니다. 읽지 못하면 "unknown"으로 기록하고 요청대로 건너뜁니다.
+
+**기록 규칙:** 이 옵션으로 만든 빌드를 실제로 쓰게 되면(앱 교체, 배포, 또는 그 빌드의 결과를 PR·기록의 근거로 쓸 때) 해당 `MACOS_PORT.md` 절의 "이 Mac에서 수행한 검증" 표에 다음을 적습니다.
+
+1. `--allow-xcode-mismatch`를 사용했다는 사실.
+2. Xcode 버전과 build 번호, .NET macOS 워크로드 버전과 그것이 요구하는 Xcode, .NET SDK 버전(`xcodebuild -version`, `dotnet workload list`, 위 로그 한 줄).
+3. 같은 조건에서 확인한 결과: smoke 종료 코드, 가능하면 같은 조건으로 만든 직전 main 기준선의 smoke 결과.
+4. 로그 파일은 로컬에만 있으므로 위 내용을 문서에 직접 옮깁니다. 문서에는 계정 값이나 로컬 절대 경로를 적지 않습니다.
+
+임시 사본으로 검증만 할 때도 같은 옵션을 쓰고, 그 결과를 PR 코멘트에 적을 때는 "Xcode ○○ + 워크로드 ○○, 버전 검사 건너뜀"을 함께 밝힙니다. 워크로드가 새 Xcode를 지원하게 되면 이 옵션은 쓰지 않습니다.
+
 ### 출력 없이 종료 / CommandLineTools 선택
 
 소스 `91c32c6`의 빌드에서 `xcodebuild -version` 단계가 실패했지만 오류를 숨겨 조용히 종료한 사례가 있습니다. 최신 스크립트는 시작과 도구 확인 단계를 즉시 표시하고, Xcode·SDK·workload 조회 실패 시 원래 오류를 보존한 채 종료 코드 2로 멈춥니다. 이 경우 공통 검사와 앱 컴파일은 시작하지 않습니다.
