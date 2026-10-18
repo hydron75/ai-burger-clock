@@ -368,7 +368,7 @@ internal static class AccountQuotaMonitorTests
         await monitor.RefreshOnceAsync(QuotaProvider.Gemini);
         check(State(monitor, QuotaProvider.Gemini).NextCheckUtc == now.AddHours(1), "Verified low Gemini recovery changes to hourly polling");
         used = 20;
-        reset = now.AddHours(2);
+        reset = now.AddHours(1);
         await monitor.RefreshOnceAsync(QuotaProvider.Gemini);
         check(State(monitor, QuotaProvider.Gemini).NextCheckUtc == reset.Value.AddMinutes(-15), "Gemini enters the reset band before a long wait ends");
         now = reset.Value.AddMinutes(-10);
@@ -381,6 +381,10 @@ internal static class AccountQuotaMonitorTests
         await monitor.RefreshOnceAsync(QuotaProvider.Gemini);
         check(State(monitor, QuotaProvider.Gemini).NextCheckUtc == now.AddHours(1), "Gemini returns to the hourly default outside the reset band");
         DateTimeOffset success = now;
+        // Other Providers are already past their new hourly deadline by this
+        // synthetic instant. Refresh their baselines so the isolation check below
+        // tests Gemini's failure, not unrelated overdue presentation.
+        await Task.WhenAll(monitor.RefreshOnceAsync(QuotaProvider.Codex), monitor.RefreshOnceAsync(QuotaProvider.Claude));
         client.Handler = (_, _) => Task.FromException<QuotaReading>(new IOException("Synthetic agy diagnostic secret"));
         await monitor.RefreshOnceAsync(QuotaProvider.Gemini);
         var previous = State(monitor, QuotaProvider.Gemini);
