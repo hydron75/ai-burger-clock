@@ -258,34 +258,16 @@ internal sealed class MacQuotaNotifications
     }
 
     // Re-validates each kind against the current reading and its own setting; drops what is no longer true.
+    // The validity rules are the shared QuotaPendingAlertPolicy; this host keeps settings, epochs, queue and delivery.
     private Pending? Current(Pending queued, QuotaReading reading, DateTimeOffset now, long continuityId)
     {
         if (now < queued.Observation.CheckedAtUtc) return null;
         QuotaRecoveryAlert? recovered = recovery.Active && queued.Recovery is { } alert &&
-            RecoveryStillCurrent(alert, queued.Observation.Reading, reading, now) ? alert : null;
+            QuotaPendingAlertPolicy.RecoveryStillCurrent(alert, queued.Observation.Reading, reading, now) ? alert : null;
         QuotaEarlyResetAlert? early = earlyReset.Active && queued.EarlyReset is { } change &&
-            EarlyResetStillCurrent(change, queued.Observation.Reading, reading, now, continuityId) ? change : null;
+            QuotaPendingAlertPolicy.EarlyResetStillCurrent(change, queued.Observation.Reading, reading, now, continuityId) ? change : null;
         return recovered is null && early is null ? null : queued with { Recovery = recovered, EarlyReset = early };
     }
-
-    private static bool RecoveryStillCurrent(QuotaRecoveryAlert alert, QuotaReading expected, QuotaReading current,
-        DateTimeOffset now) => alert.WindowIds.All(id =>
-            current.Windows.Any(window => window.Id == id && window.UsedPercent < 100 &&
-                (window.ResetsAtUtc is null || window.ResetsAtUtc > now) &&
-                expected.Windows.Any(old => old.Id == id && old.WindowMinutes == window.WindowMinutes)));
-
-    // Same contract as the Windows host: an unbroken read sequence, the same window set, no re-exhaustion, the
-    // reset still where it was seen, and the record not older than 90 minutes.
-    private static bool EarlyResetStillCurrent(QuotaEarlyResetAlert alert, QuotaReading expected, QuotaReading current,
-        DateTimeOffset now, long continuityId) =>
-        continuityId > 0 && continuityId == alert.ContinuityId && now >= alert.CheckedAtUtc &&
-        now - alert.CheckedAtUtc <= TimeSpan.FromMinutes(90) &&
-        expected.Windows.Select(window => (window.Id, window.WindowMinutes)).ToHashSet()
-            .SetEquals(current.Windows.Select(window => (window.Id, window.WindowMinutes))) &&
-        alert.Windows.All(change => current.Windows.Any(window => window.Id == change.Id &&
-            window.WindowMinutes == change.WindowMinutes && window.UsedPercent < 100 &&
-            window.ResetsAtUtc is { } reset && reset > now &&
-            (reset - change.ResetUtc).Duration() <= TimeSpan.FromMinutes(1)));
 
     internal Task ChangeAsync(bool value) => ChangeAsync(recovery, value);
     internal Task ChangeEarlyResetAsync(bool value) => ChangeAsync(earlyReset, value);

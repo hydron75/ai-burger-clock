@@ -450,12 +450,6 @@ namespace AiBurgerClock
             }
         }
 
-        private static bool RecoveryStillCurrent(QuotaRecoveryAlert alert, QuotaReading expected,
-            QuotaReading current, DateTimeOffset now) => alert.WindowIds.All(id =>
-                current.Windows.Any(window => window.Id == id && window.UsedPercent < 100 &&
-                    (window.ResetsAtUtc is null || window.ResetsAtUtc > now) &&
-                    expected.Windows.Any(old => old.Id == id && old.WindowMinutes == window.WindowMinutes)));
-
         private void ShowNativeQuotaNotification(QuotaNotificationAlert alert)
         {
             (trayIcon.BalloonTipTitle, trayIcon.BalloonTipText) = (alert.Title, alert.Body);
@@ -468,24 +462,13 @@ namespace AiBurgerClock
         {
             if (now < pending.Observation.CheckedAtUtc) return null;
             var recovery = quotaRecoveryEnabled && quotaRecoverySettingsReady && !changingQuotaRecoverySetting &&
-                pending.Recovery is { } recovered && RecoveryStillCurrent(recovered, pending.Observation.Reading, reading, now)
+                pending.Recovery is { } recovered && QuotaPendingAlertPolicy.RecoveryStillCurrent(recovered, pending.Observation.Reading, reading, now)
                 ? recovered : null;
             var earlyReset = quotaEarlyResetEnabled && quotaEarlyResetSettingsReady && !changingQuotaEarlyResetSetting &&
-                pending.EarlyReset is { } early && EarlyResetStillCurrent(early, pending.Observation.Reading,
+                pending.EarlyReset is { } early && QuotaPendingAlertPolicy.EarlyResetStillCurrent(early, pending.Observation.Reading,
                     reading, now, continuityId) ? early : null;
             return recovery is null && earlyReset is null ? null : pending with { Recovery = recovery, EarlyReset = earlyReset };
         }
-
-        private static bool EarlyResetStillCurrent(QuotaEarlyResetAlert alert, QuotaReading expected,
-            QuotaReading current, DateTimeOffset now, long continuityId) =>
-            continuityId > 0 && continuityId == alert.ContinuityId && now >= alert.CheckedAtUtc &&
-            now - alert.CheckedAtUtc <= TimeSpan.FromMinutes(90) &&
-            expected.Windows.Select(window => (window.Id, window.WindowMinutes)).ToHashSet()
-                .SetEquals(current.Windows.Select(window => (window.Id, window.WindowMinutes))) &&
-            alert.Windows.All(change => current.Windows.Any(window => window.Id == change.Id &&
-                window.WindowMinutes == change.WindowMinutes && window.UsedPercent < 100 &&
-                window.ResetsAtUtc is { } reset && reset > now &&
-                (reset - change.ResetUtc).Duration() <= TimeSpan.FromMinutes(1)));
 
         private void KeepPending(QuotaProvider provider, PendingQuotaAlert? pending)
         {

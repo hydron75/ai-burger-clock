@@ -47,6 +47,7 @@ internal static class SharedTestSuite
             Report("quota recovery notification settings (temporary SQLite)", await QuotaRecoverySettingsTests.RunAsync(directory));
             Report("quota early-reset decisions/text/combined alerts (synthetic)", QuotaEarlyResetNotificationTests.Run());
             Report("quota early-reset notification settings (temporary SQLite)", await QuotaEarlyResetSettingsTests.RunAsync(directory));
+            Report("quota pending-alert revalidation (synthetic)", QuotaPendingAlertPolicyTests.Run());
             Report("recording/note limit/feedback text (Windows golden)", RecordingTests.Run());
             Report("statistics text (Windows golden)", StatisticsTextTests.Run());
             return total;
