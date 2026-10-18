@@ -2,15 +2,35 @@
 set -euo pipefail
 
 task_quit_running=false
+task_allow_xcode_mismatch=false
 for task_arg in "$@"; do
   case "$task_arg" in
     --quit-running) task_quit_running=true ;;
+    --allow-xcode-mismatch) task_allow_xcode_mismatch=true ;;
     *)
-      echo "지원 옵션: --quit-running (이 bundle로 실행 중인 앱을 묻지 않고 종료한 뒤 빌드)" >&2
+      echo "지원 옵션:" >&2
+      echo "  --quit-running          이 bundle로 실행 중인 앱을 묻지 않고 종료한 뒤 빌드" >&2
+      echo "  --allow-xcode-mismatch  Xcode와 .NET macOS 워크로드가 요구하는 Xcode 버전이 다를 때 그 버전 검사만 건너뜀" >&2
+      echo "                          (기본 꺼짐. 켜면 경고와 로그를 남기며 두 버전을 MACOS_PORT에 기록해야 함: Mac/README 참조)" >&2
       exit 2
       ;;
   esac
 done
+
+# $1 text of `xcodebuild -version`, $2 true when --allow-xcode-mismatch was given.
+# Echoes: ok (Xcode 27) | not27-allowed (a newer major, and the caller explicitly allowed a mismatch) | not27-blocked.
+task_xcode_major_gate() {
+  local major
+  major="$(printf '%s\n' "$1" | awk 'NR == 1 { split($2, v, "."); print v[1] }')"
+  if [[ "$1" == Xcode\ 27* ]]; then
+    echo ok
+  elif [[ "$2" == true && "$major" =~ ^[0-9]+$ && "$major" -gt 27 ]]; then
+    # Only a NEWER major can plausibly carry the macOS 27 SDK; an older Xcode never can.
+    echo not27-allowed
+  else
+    echo not27-blocked
+  fi
+}
 
 echo "AI Burger Clock macOS 빌드 준비를 확인합니다."
 task_script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
@@ -107,10 +127,18 @@ if ! task_xcode_version="$(/usr/bin/xcodebuild -version)"; then
   echo "읽기 전용 확인: /usr/bin/xcodebuild -version 및 /usr/bin/xcode-select -p" >&2
   exit 2
 fi
-if [[ "$task_xcode_version" != Xcode\ 27* ]]; then
-  echo "macOS 27 SDK를 제공하는 Xcode 27이 필요합니다. 현재: $task_xcode_version" >&2
-  exit 2
-fi
+task_xcode_not27=false
+case "$(task_xcode_major_gate "$task_xcode_version" "$task_allow_xcode_mismatch")" in
+  not27-blocked)
+    echo "macOS 27 SDK를 제공하는 Xcode 27이 필요합니다. 현재: $task_xcode_version" >&2
+    exit 2
+    ;;
+  not27-allowed)
+    # Xcode may cross a major version before the workload catches up. The explicit option lets the
+    # build try; the compiler/SDK checks that follow decide whether the combination really works.
+    task_xcode_not27=true
+    ;;
+esac
 echo "$task_xcode_version"
 cd "$task_script_dir"
 echo ".NET SDK 확인 중..."
@@ -134,6 +162,68 @@ if ! printf '%s\n' "$task_workloads" | awk '$1 == "macos" { found = 1 } END { ex
   echo ".NET macos workload가 필요합니다. 공식 설치 안내를 확인하세요(자동 설치하지 않음)." >&2
   exit 2
 fi
+# --- Optional: build despite an Xcode / .NET macOS workload mismatch (off by default) ---------------
+# The macOS workload requires one Xcode major.minor (RecommendedXcodeVersion in its SDK pack) and stops
+# with E0191 otherwise, e.g. when Xcode updates before the workload does. With --allow-xcode-mismatch
+# only that version check is skipped (-p:ValidateXcodeVersion=false). Nothing else is relaxed, and it
+# is never on unless the caller asks. Every use leaves a warning on the terminal and a line in
+# artifacts/mac-build/xcode-mismatch.log (ignored by Git), including the final exit code.
+task_build_extra=""
+task_xcode_log_dir="$(cd -- "$task_script_dir/.." && pwd)/artifacts/mac-build"
+task_xcode_log="$task_xcode_log_dir/xcode-mismatch.log"
+task_xcode_log_note() {
+  mkdir -p -- "$task_xcode_log_dir"
+  printf '%s %s\n' "$(date '+%Y-%m-%dT%H:%M:%S%z')" "$*" >> "$task_xcode_log"
+}
+# Prints the Xcode major.minor the installed macOS SDK pack asks for, or nothing when it cannot be read.
+task_required_xcode_version() {
+  local dotnet_path root props
+  dotnet_path="$(command -v dotnet)"
+  root="${DOTNET_ROOT:-$(cd -- "$(dirname -- "$(/usr/bin/readlink -f "$dotnet_path" 2>/dev/null || printf '%s' "$dotnet_path")")" && pwd)}"
+  props="$(ls -d "$root"/packs/Microsoft.macOS.Sdk.net10.0_27.0/*/targets/Microsoft.macOS.Sdk.Versions.props 2>/dev/null | sort -V | tail -n 1 || true)"
+  [[ -n "$props" ]] || return 0
+  # The property may carry more than major.minor (e.g. 27.0.1) but the workload validates only
+  # major.minor, so compare the same way.
+  sed -n 's/.*<RecommendedXcodeVersion>\([0-9][0-9.]*\)<.*/\1/p' "$props" | head -n 1 \
+    | awk -F. 'NF { print $1 "." ($2 == "" ? 0 : $2) }'
+}
+# $1 installed Xcode major.minor, $2 required major.minor (may be empty). Echoes: bypass | unneeded | unknown.
+task_xcode_mismatch_state() {
+  if [[ -z "$2" ]]; then
+    echo unknown
+  elif [[ "$1" == "$2" ]]; then
+    echo unneeded
+  else
+    echo bypass
+  fi
+}
+if [[ "$task_allow_xcode_mismatch" == true ]]; then
+  task_xcode_mm="$(printf '%s\n' "$task_xcode_version" | awk 'NR == 1 { split($2, v, "."); print v[1] "." v[2] }')"
+  task_xcode_build="$(printf '%s\n' "$task_xcode_version" | awk '/^Build version/ { print $3 }')"
+  task_workload_version="$(printf '%s\n' "$task_workloads" | awk '$1 == "macos" { print $2 }')"
+  task_required_xcode="$(task_required_xcode_version)"
+  task_git_head="$(git -C "$task_script_dir" rev-parse --short HEAD 2>/dev/null || echo unknown)"
+  task_xcode_details="Xcode ${task_xcode_mm} (${task_xcode_build:-?}), macos workload ${task_workload_version:-?} requires Xcode ${task_required_xcode:-unknown}, .NET SDK ${task_sdk_version}, git ${task_git_head}"
+  if [[ "$task_xcode_not27" == true ]]; then
+    task_xcode_details="${task_xcode_details}, Xcode major is not 27 (the macOS 27 SDK may be missing; the build will fail if so)"
+  fi
+  case "$(task_xcode_mismatch_state "$task_xcode_mm" "$task_required_xcode")" in
+    unneeded)
+      echo "알림: --allow-xcode-mismatch가 켜졌지만 Xcode ${task_xcode_mm}가 워크로드 요구 버전과 같아 필요하지 않습니다. 버전 검사를 건너뛰지 않고 평소처럼 빌드합니다." >&2
+      task_xcode_log_note "allow-xcode-mismatch requested but NOT needed (versions match): ${task_xcode_details}"
+      ;;
+    *)
+      echo "경고: 지원되지 않는 Xcode 조합으로 빌드합니다. smoke와 실제 동작을 확인한 뒤 사용하세요." >&2
+      echo "  ${task_xcode_details}" >&2
+      echo "  이 빌드를 실제로 쓰게 되면 MACOS_PORT에 옵션 사용 사실과 위 버전을 기록하세요. 기록: ${task_xcode_log}" >&2
+      task_xcode_log_note "allow-xcode-mismatch ON (version check skipped): ${task_xcode_details}"
+      # EXIT also fires on failures (set -e); keep the original status.
+      trap 'task_status=$?; task_xcode_log_note "allow-xcode-mismatch build finished (exit ${task_status})"; if [[ "$task_status" -eq 0 ]]; then echo "참고: 이 bundle은 --allow-xcode-mismatch로 만들었습니다. MACOS_PORT에 옵션 사용 사실과 Xcode·워크로드 버전을 기록하세요." >&2; fi' EXIT
+      task_build_extra="-p:ValidateXcodeVersion=false"
+      ;;
+  esac
+fi
+
 # A sudo workload installation can leave the default user HTTP cache inaccessible.
 # Use a build-local cache unless the caller explicitly supplies a different one.
 # This changes neither NuGet audit nor the global package cache/settings.
@@ -147,7 +237,7 @@ export NUGET_HTTP_CACHE_PATH="$task_http_cache"
 
 echo "NuGet HTTP cache: $NUGET_HTTP_CACHE_PATH"
 dotnet run --project ../Shared.Tests/AiBurgerClock.Shared.Tests.csproj -c Release --property:TreatWarningsAsErrors=true
-dotnet build AiBurgerClock.Mac.csproj -c Release -warnaserror
+dotnet build AiBurgerClock.Mac.csproj -c Release -warnaserror ${task_build_extra:+"$task_build_extra"}
 if [[ ! -d "$task_app" ]]; then
   echo "빌드는 끝났으나 예상 .app가 없습니다. MSBuild 출력에서 실제 bundle 경로를 확인하세요." >&2
   exit 1
