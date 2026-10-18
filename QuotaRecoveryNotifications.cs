@@ -2,8 +2,11 @@ namespace AiBurgerClock;
 
 // Only a newly verified live response may create an observation. Cache loads, refresh-start
 // events and failures are not observations; Sequence increases independently per provider.
+// A positive ContinuityId identifies consecutive completed live reads in this monitor
+// instance. Any started read ending unsuccessfully, including cancellation, changes it;
+// caches do not carry it. Zero is an unspecified legacy caller, not proof of continuity.
 internal sealed record QuotaObservation(QuotaProvider Provider, long Sequence,
-    DateTimeOffset CheckedAtUtc, QuotaReading Reading);
+    DateTimeOffset CheckedAtUtc, QuotaReading Reading, long ContinuityId = 0);
 
 internal sealed record QuotaRecoveryAlert(QuotaProvider Provider, long Sequence,
     string Title, string Body, IReadOnlyList<string> WindowIds);

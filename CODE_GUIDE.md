@@ -1,10 +1,12 @@
 # 소스코드, 쉬운 말로 읽기
 
-**개발 중 정책 갱신(2026-10-18 KST):** 공통 계정 한도의 기본 간격과 모니터 fallback은 **1시간**입니다. 사용 90% 초과~100% 미만도 1시간이지만 진단 이유는 `LowRemaining`, 정상 기본은 `Regular`로 구분합니다. 소진 15분·리셋 구간 5분·Gemini 원본 사용 0% 리셋 제외는 유지하고 실패 재시도는 15분→30분→최대 1시간입니다. 아래 2.7.0 배포·검사 수치는 당시 기록으로 보존하며 Mac 확인 전에는 이 변경을 병합·배포하지 않습니다. [공통 변경·검사·Mac 확인](QUOTA_HOURLY_POLLING.md).
+**개발 중 기능(2026-10-18 KST):** 공통 [QuotaEarlyResetNotifications.cs](QuotaEarlyResetNotifications.cs)는 연속 성공으로 확인된 비교에 한해 조기 초기화를 추정하고, 별도 기본 꺼짐 설정과 같은 응답의 회복 알림 통합을 맡습니다. Windows의 메뉴·알림·Provider 상세만 연결하고 Mac 연결은 후속 PR입니다. Mac 확인 전 병합하지 않으며 버전·배포 EXE는 바꾸지 않습니다. [조건·연속성·검사·Mac 확인](QUOTA_EARLY_RESET_NOTIFICATIONS.md).
 
-이 문서는 **Windows 2.7.0 배포 소스 기준**입니다. #62·#63의 양쪽 확인 뒤 #64를 사용자 승인으로 병합하고 깨끗한 main **`2d5fe6220821a8c40bd17e5a78d5e093053e892f`**에서 단일 EXE를 만들었습니다. 정상 종료·WAL/SHM 확인·새 백업 뒤 **2.7.0으로 교체·실행 완료**했습니다. 최종 SDK 10.0.402·빌드/publish 경고 0/오류 0·self-test **252,869건·ExitCode 0**, 별도 smoke **1회 574 PASS·ExitCode 0**이며 승인 전 준비 후보 5회와 구분합니다. 실제 EXE 해시·소스/백업·사용자 화면 확인·진단 파일 생성과 2.6.0 EXE만 복원하는 방법은 [2.7.0 배포 기록](MAINTENANCE_2_7_0.md)에 있습니다. 이전 EXE 소스 **`4981f5cda325d35eeb76dd60f09d66833efaad77`**와 후속 배포 결과 문서 커밋은 현재 EXE 소스가 아닙니다. Windows 사용법은 [README](README.md), 최신 Mac 버전·검증은 [Mac 안내](Mac/README.md)로 이동하세요.
+**#68 병합 완료·배포 대기:** 공통 계정 한도의 기본 간격과 모니터 fallback은 **1시간**입니다. 사용 90% 초과~100% 미만도 1시간이지만 진단 이유는 `LowRemaining`, 정상 기본은 `Regular`로 구분합니다. 소진 15분·리셋 구간 5분·Gemini 원본 사용 0% 리셋 제외와 실패 재시도 15분→30분→최대 1시간을 유지합니다. Mac 확인 뒤 main **`2bf188e`**에 병합했으며 배포 2.7.0은 아직 기본 6시간입니다. [공통 변경·양쪽 확인](QUOTA_HOURLY_POLLING.md).
 
-코드를 한 줄씩 번역한 문서는 아닙니다. **각 파일이 무엇을 맡고, 서로 어떻게 연결되는지** 설명합니다. 루트·Properties C# **85개(앱 기능 42 + 검사·진단 42 + 명찰 1)**, Mac 호스트·검사 11개, 공통 검사 입구 1개로 총 **97개**와 빌드 설정을 다룹니다. `SharedTestSuite.cs`는 루트 검사에 이미 포함하고 별도 입구는 `Shared.Tests/Program.cs`만 셉니다. 공통 제품 원본 목록은 **30개**입니다. 이 수는 #60·#62·#63까지 병합한 소스 지도이며 이번 준비에서 C#를 추가했다는 뜻은 아닙니다. 생성된 `bin`·`obj`·검증 `artifacts`는 제외합니다.
+배포 이력은 **Windows 2.7.0 배포 소스 기준**이고, 아래 현재 소스 지도에는 개발 중 변경을 함께 설명합니다. #62·#63의 양쪽 확인 뒤 #64를 사용자 승인으로 병합하고 깨끗한 main **`2d5fe6220821a8c40bd17e5a78d5e093053e892f`**에서 단일 EXE를 만들었습니다. 정상 종료·WAL/SHM 확인·새 백업 뒤 **2.7.0으로 교체·실행 완료**했습니다. 최종 SDK 10.0.402·빌드/publish 경고 0/오류 0·self-test **252,869건·ExitCode 0**, 별도 smoke **1회 574 PASS·ExitCode 0**이며 승인 전 준비 후보 5회와 구분합니다. 실제 EXE 해시·소스/백업·사용자 화면 확인·진단 파일 생성과 2.6.0 EXE만 복원하는 방법은 [2.7.0 배포 기록](MAINTENANCE_2_7_0.md)에 있습니다. 이전 EXE 소스 **`4981f5cda325d35eeb76dd60f09d66833efaad77`**와 후속 배포 결과 문서 커밋은 현재 EXE 소스가 아닙니다. Windows 사용법은 [README](README.md), 최신 Mac 버전·검증은 [Mac 안내](Mac/README.md)로 이동하세요.
+
+코드를 한 줄씩 번역한 문서는 아닙니다. **각 파일이 무엇을 맡고, 서로 어떻게 연결되는지** 설명합니다. 아래 지도는 배포 소스에 이번 개발 변경을 더한 루트·Properties C# **89개(앱 기능 43 + 검사·진단 45 + 명찰 1)**, Mac 호스트·검사 11개, 공통 검사 입구 1개로 총 **101개**와 빌드 설정을 다룹니다. `SharedTestSuite.cs`는 루트 검사에 이미 포함하고 별도 입구는 `Shared.Tests/Program.cs`만 셉니다. 공통 제품 원본 목록은 **31개**입니다. 이번 조기 초기화 엔진 1개·공통 검사 2개·Windows UI 검사 1개를 포함한 수이며 배포 2.7.0 당시의 검사 결과를 바꾼 것이 아닙니다. 생성된 `bin`·`obj`·검증 `artifacts`는 제외합니다.
 
 **#62·#63 병합 완료·2.7.0에 반영·배포 완료:** 공통 Gemini 파서는 `5시간` → `주간` → `주간 {묶음 이름}`을 만들고 원본 묶음명+bucket ID를 기존 시간 비교·회복 엔진·캐시에 연결합니다. 정확한 사용 0% 창은 새 리셋 후보에서 제외하고 구형 Gemini 캐시의 출처 불명 기준을 한 번 정리합니다. 모든 Provider의 예약 이유·선택 리셋·다음 조회를 최근 256건/128KiB로 기록하며 1분 이내 흔들림은 구간 양끝만 보존합니다. [구조·전환 제약·진단 위치·양쪽 확인](GEMINI_ANTIGRAVITY_QUOTAS.md). 이번 버전·배포 기록 작업은 공통 C#·Mac 파일을 다시 고치지 않았습니다.
 
@@ -205,6 +207,10 @@ UNKNOWN/STALE인 BURGER는 BURGER + CHECK입니다. **공식 상태로 시간표
 
 실제 Windows 알림을 요청하는 곳은 `TrayApplicationContext`입니다. 시간 경계 알림과 공휴일 설정 변경 알림도 구분합니다.
 
+개발 중인 조기 초기화 알림은 **같은 Provider·창 ID·확인된 기간**의 사용량 감소가 20%p 이상·새 사용량 10% 이하이고 이전 리셋까지 5분 초과·리셋 변경 1분 초과·연속 성공 간격 0분 초과~90분 이하이며 리셋과 기간이 모순되지 않을 때만 후보를 만듭니다. `QuotaObservation.ContinuityId`가 양수로 같고 성공 순번도 바로 이어져야 합니다. 실제 실패·검증 실패·시간 초과·시작된 취소는 연속성을 끊지만, 진행 중이라 건너뛴 Refresh나 정상 응답의 캐시 저장 실패는 끊지 않습니다. 계정·요금제 변경을 직접 판별할 필드가 없어 원인은 단정하지 않습니다.
+
+`QuotaEarlyResetText`는 **“예정보다 일찍 초기화된 것으로 보입니다”**라는 배너와 로컬 상세 문구를 만들고 `QuotaNotificationText.Combine`은 같은 성공 응답의 회복/조기 초기화를 Provider별 배너 하나로 합칩니다. 회복 단독 문구는 그대로입니다. 두 설정은 별도 기본 꺼짐이고 Windows 메뉴 순서는 Statistics → 한도 회복 알림 → 한도 조기 초기화 알림 → 자동 시작입니다. Provider별 최신 1건은 메모리에만 남아 상세에 수치·이전/다음 리셋·확인 나이를 보여주며 현재 값이나 실제 초기화 시각으로 부르지 않습니다. 새 OS 배너에는 수치·시각·ID를 넣지 않습니다.
+
 2.2.4의 [StatusTicker.cs](StatusTicker.cs)는 매초 시간표 전환·Provider 알림·아이콘 변경의 **판정만** 공통으로 맡습니다. 입력 이유는 초기화·타이머·Provider 변경·정책 변경입니다. `TrayApplicationContext.RefreshStatus(bool, bool)`는 기존 호출 지점을 받는 감싸는 함수로 남고, UI·알림 적용 순서와 색상은 Windows가 유지합니다.
 
 중복 Provider 입력은 첫 값을 사용하고 [WindowsWarningLog.cs](WindowsWarningLog.cs)에 경고를 보냅니다. 앱 데이터의 `logs/status-ticker.log`와 이전 로그 1개는 각각 최대 64 KiB이며, 정상 입력에는 파일을 만들지 않습니다. 관리자 권한·이벤트 로그 원본 등록은 필요 없고 로그 실패가 판정·화면을 중단시키지 않습니다.
@@ -325,7 +331,7 @@ Windows 내부 승인 형식은 알려진 경우만 해석합니다. 낯선 값�
 
 이름을 눌러 소스를 열 수 있습니다. 역할을 알고 필요한 파일부터 읽으면 됩니다.
 
-### 실제 앱 기능: 42개
+### 실제 앱 기능: 43개
 
 | 파일 | 맡은 일 |
 |---|---|
@@ -346,11 +352,12 @@ Windows 내부 승인 형식은 알려진 경우만 해석합니다. 낯선 값�
 | [StatusMonitor.cs](StatusMonitor.cs) | 정기 조회, 실패 격리, 오래된 정보 판정 |
 | [RecommendationNotifications.cs](RecommendationNotifications.cs) | 마지막 확정 권고 기억, 중복 알림 방지 |
 | [QuotaRecoveryNotifications.cs](QuotaRecoveryNotifications.cs) | 검증된 성공 관측의 창별 소진→회복 판정·중복 방지와 공통 설정/알림 문구. 조회·네이티브 표시는 호스트가 맡음 |
+| [QuotaEarlyResetNotifications.cs](QuotaEarlyResetNotifications.cs) | 연속 성공의 예정 전 사용량 감소·리셋 변경 추정, 실행 중 최신 1건·상세 문구·독립 설정과 회복/조기 초기화 배너 통합. 조회·표시는 호스트 담당 |
 | [TrayPresentation.cs](TrayPresentation.cs) | 트레이 문자·색상·짧은 도움말 결정. 두 OS가 함께 쓰는 전환·Provider 알림 문구 |
 | [WindowsProviderNames.cs](WindowsProviderNames.cs) | Windows 화면·메뉴·기록·통계·Tooltip·알림에서 OpenAI를 ChatGPT로 표시. 저장 식별자와 공식 URL은 유지 |
 | [ProviderNames.cs](ProviderNames.cs) | 두 OS의 공통 제품 표시 이름. 식별자·DB 값과 구분 |
 | [StatusPanelModel.cs](StatusPanelModel.cs) | 시간표·Provider 상태 카드의 공통 본문·톤·상세 Tooltip. 빈 선택 항목 숨김 |
-| [QuotaPanelModel.cs](QuotaPanelModel.cs) | 공통 사용량 제목·범위·사용률·간략 시간·조회 시각·톤·Provider별 하나의 상세. QuotaLine.ComparisonText는 행별 접근성 비교 문구이며 숨김은 null. UI 색·박스·전환은 호스트가 결정 |
+| [QuotaPanelModel.cs](QuotaPanelModel.cs) | 공통 사용량 제목·범위·사용률·간략 시간·조회 시각·톤·Provider별 하나의 상세. 선택적 최근 조기 초기화 기록은 상세에만 추가. QuotaLine.ComparisonText는 행별 접근성 비교 문구이며 숨김은 null. UI 색·박스·전환은 호스트가 결정 |
 | [QuotaPacing.cs](QuotaPacing.cs) | 마지막 성공 조회 시각에 고정된 시간 비율·사용량 차이·행별 비교 문구와 기준 나이. 계산 불가 사유를 분리하며 조회 정책은 바꾸지 않음 |
 | [UsageMeasurementFactory.cs](UsageMeasurementFactory.cs) | 기록 메뉴 목록·상태 캡처·메모의 공백/문자 요소 경계 제한 |
 | [FeedbackText.cs](FeedbackText.cs) | 기록·공휴일 피드백과 메모 잘림 안내 문구 |
@@ -366,13 +373,13 @@ Windows 내부 승인 형식은 알려진 경우만 해석합니다. 낯선 값�
 | [AccountQuotaParsers.cs](AccountQuotaParsers.cs) | 서로 다른 공식 CLI JSON을 검증한 공통 한도로 변환 |
 | [AccountQuotaClient.cs](AccountQuotaClient.cs) | 표준 경로의 native CLI 실행, 제한시간·출력 크기·취소·응답 검증. 2.3.0의 Gemini는 agy 1.3.1 이상·2.0 미만 사전 확인 후 `/usage`, 기존 hooks·MCP 설정 격리 제한 있음 |
 | [AccountQuotaPolicy.cs](AccountQuotaPolicy.cs) | 기본 1시간·사용 90% 초과~100% 미만 1시간을 이유로 구분. 사용 100%의 15분·리셋 전후 5분·실패 최대 1시간, Gemini 미사용 리셋 제외·1분 이내 구간 양끝 압축 |
-| [AccountQuotaMonitor.cs](AccountQuotaMonitor.cs) | Provider별 독립 조회·성공/실패·다음 예약·재시작 캐시와 예약 진단. 구형 Gemini 기준 전환·정상 이전 +15분 보존 |
+| [AccountQuotaMonitor.cs](AccountQuotaMonitor.cs) | Provider별 독립 조회·성공/실패·다음 예약·재시작 캐시와 예약 진단. 성공 순번과 실제 실패를 구분하는 ContinuityId 전달, 구형 Gemini 기준 전환·정상 이전 +15분 보존 |
 | [AccountQuotaView.cs](AccountQuotaView.cs) | 공통 모델을 바인딩하는 한도 보기. Provider별 박스·막대·상세·내부 스크롤·상태 전환, 10초/클릭/Esc 닫힘과 박스 이탈 전 재표시 차단 |
 | [QuotaBalanceBar.cs](QuotaBalanceBar.cs) | Windows 네이티브 사용률 막대. 연한 시간층·진한 사용층·최상단 시간 경계선, 이전/경과 값의 회색과 접근성 바인딩 |
 | [QuotaBarPalette.cs](QuotaBarPalette.cs) | Windows 막대의 실제 합성색 대비로 시간층 농도와 경계선 색을 선택. 고대비 시스템색·경계선 보완 |
 | [QuotaDetailPopup.cs](QuotaDetailPopup.cs) | Windows 비활성화 상세 팝업. 흰색·고정 폭·줄바꿈·포인터 근처/화면 경계 보정·긴 상세 세로 스크롤 |
 
-### 검사와 진단: 42개
+### 검사와 진단: 45개
 
 미완성 임시 코드가 아닙니다. **특별한 검사 명령 때만 쓰는 정식 검사 코드**입니다.
 
@@ -387,11 +394,14 @@ Windows 내부 승인 형식은 알려진 경우만 해석합니다. 낯선 값�
 | [StatusTickerTests.cs](StatusTickerTests.cs) | 입력 이유·전환·알림 우선 순서·아이콘 변경·중복 Provider 판정 |
 | [WindowsWarningLogChecks.cs](WindowsWarningLogChecks.cs) | 임시 파일로 경고 크기·회전·Unicode·쓰기 실패 격리 검사 |
 | [PanelModelTests.cs](PanelModelTests.cs) | 공통 상태·한도 본문과 톤, 상세 Tooltip 골든 검사 |
-| [QuotaPresentationTests.cs](QuotaPresentationTests.cs) | 공통 사용률·간략 시간·Provider 상세와 행별 시간 비교 연결 146건. 공통 실행 목록에 한 번 등록 |
+| [QuotaPresentationTests.cs](QuotaPresentationTests.cs) | 공통 사용률·간략 시간·Provider 상세와 행별 시간 비교·최근 조기 초기화 기록 연결 170건. 공통 실행 목록에 한 번 등록 |
 | [QuotaPacingTests.cs](QuotaPacingTests.cs) | 합성 시각으로 시간 비율 고정·계산 불가·%p 문구·행별 비교·조회 기준 나이 207건 |
 | [QuotaRecoveryNotificationTests.cs](QuotaRecoveryNotificationTests.cs) | 새 성공만의 회복·부분 회복·첫 성공/반복/기간 변경 무알림과 문구 검사 |
 | [QuotaRecoverySettingsTests.cs](QuotaRecoverySettingsTests.cs) | 임시 SQLite에서 기본 OFF·저장·오류·취소와 schema 2 유지 |
 | [QuotaRecoveryUiChecks.cs](QuotaRecoveryUiChecks.cs) | 실제 Windows 메시지 루프의 opt-in 메뉴·합성 성공 응답·네이티브 알림 요청·우선순위/대기열·재시작/종료 검사 |
+| [QuotaEarlyResetNotificationTests.cs](QuotaEarlyResetNotificationTests.cs) | 합성 응답으로 세 Provider·5시간/주간/모델 주간의 경계·연속성·오탐 제외·최신 기록·문구 개인정보·회복 배너 통합 912건 |
+| [QuotaEarlyResetSettingsTests.cs](QuotaEarlyResetSettingsTests.cs) | 임시 SQLite에서 독립 기본 OFF·저장/읽기 오류·취소·schema/기존 캐시 보존 50건 |
+| [QuotaEarlyResetUiChecks.cs](QuotaEarlyResetUiChecks.cs) | 실제 Windows 메시지 루프의 독립 메뉴·성공 비교·통합 배너·최근 상세·대기 취소·설정 오류/종료 검사 |
 | [QuotaBarUiChecks.cs](QuotaBarUiChecks.cs) | 합성 라이트·다크·고대비 팔레트와 96/144/192 DPI의 겹침·경계선 픽셀 83건. Windows smoke에서 호출 |
 | [RecordingTests.cs](RecordingTests.cs) | 공통 기록 캡처·메뉴·메모 제한·피드백 골든 검사 |
 | [StatisticsTextTests.cs](StatisticsTextTests.cs) | 공통 통계 본문·표 제목·기간·주의 문구 골든 검사 |
@@ -415,7 +425,7 @@ Windows 내부 승인 형식은 알려진 경우만 해석합니다. 낯선 값�
 | [QuotaPollingDiagnosticTests.cs](QuotaPollingDiagnosticTests.cs) | 임시 파일의 256건/128KiB·동시 기록·재시작·스키마·권한/잠금/손상 격리 367건 |
 | [QuotaSchedulingTests.cs](QuotaSchedulingTests.cs) | 예약 이유와 실제 예정 일치·1분 압축/구간 보존·실패/취소·임시 DB 통합 107건 |
 | [GeminiQuotaClientTests.cs](GeminiQuotaClientTests.cs) | 합성 입출력으로 agy 고정 명령·버전·0턴/0토큰·인증 대기·출력 제한 검사. 설치된 CLI는 실행하지 않음 |
-| [AccountQuotaMonitorTests.cs](AccountQuotaMonitorTests.cs) | 실패 격리·조회 합치기·종료·SQLite 캐시·재시작 |
+| [AccountQuotaMonitorTests.cs](AccountQuotaMonitorTests.cs) | 실패 격리·조회 합치기·종료·SQLite 캐시·재시작과 실패/검증 실패/취소/캐시 저장의 연속성 192건 |
 | [AccountQuotaUiChecks.cs](AccountQuotaUiChecks.cs) | 가짜 한도로 창 전환·사용률/막대·대표색·실패·공통 상세/접근성·Refresh·기존 상태 복귀 |
 | [QuotaToolTipUiChecks.cs](QuotaToolTipUiChecks.cs) | 실제 WinForms에서 상세 모양·배치·DPI·스크롤·10초 만료·재등장 방지·창 재열기 검사. 합성 fixture 수명 진단과 수동 닫힘 보호 |
 | [LiveQuotaProbe.cs](LiveQuotaProbe.cs) | 공식 CLI 실제 계정 조회 결과 중 한도 정보만 출력 |
@@ -454,7 +464,7 @@ Windows 내부 승인 형식은 알려진 경우만 해석합니다. 낯선 값�
 | [build.ps1](build.ps1) | 빌드와 자체 검사를 실행하는 순서 |
 | [Portable.pubxml](Properties/PublishProfiles/Portable.pubxml) | 배포용 단일 EXE 설정 |
 | [app.manifest](app.manifest) | Windows 권한·호환 설정. 관리자 권한으로 자동 상승하지 않음 |
-| [Shared/SharedSources.props](Shared/SharedSources.props) | 공통 C# 원본 30개를 Mac과 검사 프로젝트에 연결하는 목록. 검사 실행 목록은 SharedTestSuite에 별도 관리 |
+| [Shared/SharedSources.props](Shared/SharedSources.props) | 공통 C# 원본 31개를 Mac과 검사 프로젝트에 연결하는 목록. 검사 실행 목록은 SharedTestSuite에 별도 관리 |
 | [Shared.Tests/AiBurgerClock.Shared.Tests.csproj](Shared.Tests/AiBurgerClock.Shared.Tests.csproj) | net10.0 공통 검사, 임시 DB와 가짜 HTTP·CLI 사용 |
 | [Mac/AiBurgerClock.Mac.csproj](Mac/AiBurgerClock.Mac.csproj) | native AppKit, net10.0-macos27.0, osx-arm64, preview 버전과 bundle 버전(`ApplicationDisplayVersion`/`ApplicationVersion`) 지정 |
 | [Mac/tools/make-app-icon.swift](Mac/tools/make-app-icon.swift) | Mac 앱 아이콘 10개 크기를 코드로 생성해 `Mac/Assets.xcassets/AppIcon.appiconset`에 저장. 아이콘을 바꿀 때만 실행 |
@@ -539,5 +549,6 @@ Mac native smoke는 실제 Mac에서만 실행하며 Windows의 옵션을 그대
 - **기록이 어떻게 쌓이는지:** Phase2Models → UsageStore → StatisticsAnalysis → OS별 통계 창.
 - **버튼이 하는 일:** StatusWindow → TrayApplicationContext.
 - **잔여량 조회와 다음 갱신:** AccountQuotaClient → AccountQuotaParsers → AccountQuotaMonitor / AccountQuotaPolicy → QuotaPanelModel → AccountQuotaView. 사용자 실측 통계와는 별개이며 캐시는 UsageStore의 AppMetadata에 Provider별 한 항목을 사용합니다. 2.3.0의 Gemini 연결은 기존 schema 2를 유지하며 `AccountQuota.v1.Gemini`만 추가합니다.
+- **조기 초기화 추정과 회복 알림:** AccountQuotaMonitor.Succeeded → QuotaRecoveryNotifications / QuotaEarlyResetNotifications → QuotaNotificationText.Combine → Windows 알림 대기열. 최근 확인 기록은 QuotaPanelModel의 선택적 상세에만 연결하고 Mac 알림 연결은 후속 PR에서 진행합니다.
 
 색상은 표시 문제, 공휴일은 시간표 정책, 경험 기록은 관찰 데이터, 추천 점수는 데이터 해석 문제입니다. 이 구분이 작은 앱의 가장 중요한 구조입니다.

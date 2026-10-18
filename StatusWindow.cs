@@ -236,11 +236,12 @@ internal sealed class StatusWindow : Form
 
     internal AccountQuotaView QuotaView => quotaView;
     internal Button QuotaButton => quotaButton;
-    internal void UpdateQuotas(IReadOnlyList<QuotaState> quotas, DateTimeOffset now)
+    internal void UpdateQuotas(IReadOnlyList<QuotaState> quotas, DateTimeOffset now,
+        IReadOnlyDictionary<QuotaProvider, QuotaEarlyResetAlert>? recentEarlyResets = null)
     {
         // Refresh stays tied to the official status poll: a quota CLI read can take up to
         // 30-40s, and a click while it runs only skips the provider already refreshing.
-        quotaView.UpdateQuotas(quotas, now);
+        quotaView.UpdateQuotas(quotas, now, recentEarlyResets);
         SetQuotaCaption();
     }
 

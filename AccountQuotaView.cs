@@ -248,9 +248,10 @@ internal sealed class AccountQuotaView : Panel, IMessageFilter
         }
     }
 
-    public void UpdateQuotas(IReadOnlyList<QuotaState> states, DateTimeOffset now)
+    public void UpdateQuotas(IReadOnlyList<QuotaState> states, DateTimeOffset now,
+        IReadOnlyDictionary<QuotaProvider, QuotaEarlyResetAlert>? recentEarlyResets = null)
     {
-        var sections = QuotaPanelModel.Sections(states, now);
+        var sections = QuotaPanelModel.Sections(states, now, recentEarlyResets);
         string key = DeviceDpi + "|" + string.Join('|', sections.Select(s => s.Provider + ":" + (s.Scope is not null) + ":" + string.Join(',', s.Rows.Select(row => row.WindowId))));
         if (key != layoutKey)
         {

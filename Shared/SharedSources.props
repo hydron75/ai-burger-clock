@@ -28,6 +28,7 @@
     <Compile Include="$(MSBuildThisFileDirectory)../QuotaPanelModel.cs" Link="Shared/QuotaPanelModel.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)../QuotaPacing.cs" Link="Shared/QuotaPacing.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)../QuotaRecoveryNotifications.cs" Link="Shared/QuotaRecoveryNotifications.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)../QuotaEarlyResetNotifications.cs" Link="Shared/QuotaEarlyResetNotifications.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)../UsageMeasurementFactory.cs" Link="Shared/UsageMeasurementFactory.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)../FeedbackText.cs" Link="Shared/FeedbackText.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)../AppPaths.cs" Link="Shared/AppPaths.cs" />

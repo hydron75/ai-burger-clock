@@ -5,7 +5,7 @@ namespace AiBurgerClock;
 internal sealed record QuotaState(QuotaProvider Provider, QuotaReading? Reading = null,
     DateTimeOffset? CheckedAtUtc = null, DateTimeOffset? LastSuccessfulCheckUtc = null,
     DateTimeOffset? NextCheckUtc = null, bool IsRefreshing = false, bool IsPrevious = false,
-    string Error = "", string CacheError = "");
+    string Error = "", string CacheError = "", long ContinuityId = 0);
 
 // Only normalized quota numbers/timestamps are cached, never CLI output or credentials.
 internal sealed record QuotaCache(int Version, QuotaReading Reading, DateTimeOffset SuccessfulAtUtc,
@@ -20,7 +20,8 @@ internal sealed class AccountQuotaMonitor : IDisposable
     private readonly QuotaPollingDiagnosticLog? pollingLog;
     private readonly object sync = new();
     private readonly CancellationTokenSource lifetime = new();
-    private readonly Dictionary<QuotaProvider, QuotaState> states = Enum.GetValues<QuotaProvider>().ToDictionary(p => p, p => new QuotaState(p));
+    private readonly Dictionary<QuotaProvider, QuotaState> states = Enum.GetValues<QuotaProvider>()
+        .ToDictionary(p => p, p => new QuotaState(p, ContinuityId: 1));
     private readonly Dictionary<QuotaProvider, SemaphoreSlim> wakes = Enum.GetValues<QuotaProvider>().ToDictionary(p => p, _ => new SemaphoreSlim(0, 1));
     private readonly Dictionary<QuotaProvider, SemaphoreSlim> gates = Enum.GetValues<QuotaProvider>().ToDictionary(p => p, _ => new SemaphoreSlim(1, 1));
     private readonly Dictionary<QuotaProvider, DateTimeOffset[]> anchors = Enum.GetValues<QuotaProvider>().ToDictionary(p => p, _ => Array.Empty<DateTimeOffset>());
@@ -92,7 +93,8 @@ internal sealed class AccountQuotaMonitor : IDisposable
                     if (cached is not null)
                         lock (sync)
                         {
-                            states[provider] = new(provider, cached.Reading, LastSuccessfulCheckUtc: cached.SuccessfulAtUtc, IsPrevious: true);
+                            states[provider] = new(provider, cached.Reading, LastSuccessfulCheckUtc: cached.SuccessfulAtUtc,
+                                IsPrevious: true, ContinuityId: states[provider].ContinuityId);
                             // Legacy Gemini anchors have no window provenance and may
                             // contain a long chain from unused moving resets. Rebuild
                             // only that legacy cache's anchors from verified used windows.
@@ -126,6 +128,7 @@ internal sealed class AccountQuotaMonitor : IDisposable
         if (!await gates[provider].WaitAsync(0, linked.Token).ConfigureAwait(false)) return;
         QuotaObservation? observation = null;
         QuotaPollingDiagnostic? diagnostic = null;
+        bool readStarted = false;
         try
         {
             DateTimeOffset attemptedAtUtc = utcNow().ToUniversalTime();
@@ -137,6 +140,8 @@ internal sealed class AccountQuotaMonitor : IDisposable
             {
                 using var timeout = CancellationTokenSource.CreateLinkedTokenSource(linked.Token);
                 timeout.CancelAfter(TimeSpan.FromSeconds(40));
+                linked.Token.ThrowIfCancellationRequested();
+                readStarted = true;
                 var candidate = await client.ReadAsync(provider, timeout.Token).ConfigureAwait(false);
                 timeout.Token.ThrowIfCancellationRequested();
                 // Own the accepted windows: a client must not be able to mutate a
@@ -189,7 +194,7 @@ internal sealed class AccountQuotaMonitor : IDisposable
                 {
                     cache = new(1, reading, now, anchors[provider], provider == QuotaProvider.Gemini
                         ? AccountQuotaPolicy.ResetAnchorPolicyVersion : 0);
-                    observation = new(provider, ++sequences[provider], now, reading);
+                    observation = new(provider, ++sequences[provider], now, reading, old.ContinuityId);
                 }
             }
             if (store is not null && cache is not null)
@@ -207,14 +212,28 @@ internal sealed class AccountQuotaMonitor : IDisposable
         }
         finally
         {
-            lock (sync) states[provider] = states[provider] with { IsRefreshing = false };
+            bool publishSuccess;
+            lock (sync)
+            {
+                // Commit completion once. A valid response whose cache write was
+                // cancelled keeps its verified values/time, but emits no success and
+                // cannot bridge a later early-reset comparison or a queued UI alert.
+                // Cache/diagnostic write failures alone do not invalidate a live read.
+                publishSuccess = observation is not null && !linked.IsCancellationRequested;
+                var state = states[provider];
+                states[provider] = state with
+                {
+                    IsRefreshing = false,
+                    ContinuityId = readStarted && !publishSuccess ? state.ContinuityId + 1 : state.ContinuityId
+                };
+            }
             try
             {
                 // Outside the state lock, but before releasing the provider gate:
                 // fast host callbacks see a completed refresh and cannot receive
                 // this provider's later response before the current one.
-                if (observation is not null && !linked.IsCancellationRequested)
-                    RaiseSucceeded(observation);
+                if (publishSuccess)
+                    RaiseSucceeded(observation!);
             }
             finally
             {
