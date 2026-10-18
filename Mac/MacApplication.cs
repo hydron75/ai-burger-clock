@@ -22,7 +22,7 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
     private MacStatisticsWindow? statisticsWindow;
     private MacNotifications? notifications;
     // Quota recovery notification (#59 shared engine); created with the panel, see DidFinishLaunching.
-    private MacQuotaRecovery? quotaRecovery;
+    private MacQuotaNotifications? quotaNotifications;
     private NSStatusItem? statusItem;
     private NSImage? statusImage;
     // Right-click menu only; left-click opens the status popover.
@@ -52,7 +52,8 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
         NSApplication.SharedApplication.ActivationPolicy = NSApplicationActivationPolicy.Accessory;
         panel = new(RefreshAll, ShowStatistics, enabled => _ = ChangeHolidayAsync(enabled), ChangeAutoStart,
             OpenStatusPage, (provider, type, note) => _ = RecordAsync(provider, type, note), smoke);
-        quotaRecovery = new(() => stopping, enabled => store.SetQuotaRecoveryNotificationsEnabledAsync(enabled),
+        quotaNotifications = new(() => stopping, enabled => store.SetQuotaRecoveryNotificationsEnabledAsync(enabled),
+            enabled => store.SetQuotaEarlyResetNotificationsEnabledAsync(enabled),
             provider => quotaMonitor?.Snapshot().FirstOrDefault(state => state.Provider == provider),
             alert => notifications?.Show(alert.Title, alert.Body),
             (text, error) => panel?.SetFeedback(text, error),
@@ -86,7 +87,9 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
         contextMenu.AddItem(new NSMenuItem("Refresh", (_, _) => RefreshAll()));
         // Global, default OFF; the same shared label and detail as Windows. Stays in the right-click menu so
         // the popover and its height are unchanged.
-        contextMenu.AddItem(quotaRecovery!.MenuItem);
+        contextMenu.AddItem(quotaNotifications!.MenuItem);
+        // Separate global setting, default OFF, right after the recovery item (Windows keeps the same order).
+        contextMenu.AddItem(quotaNotifications.EarlyResetMenuItem);
         contextMenu.AddItem(new NSMenuItem("로그인 항목 설정 열기…", (_, _) => MacAutoStart.OpenSettings()) { Enabled = !smoke });
         contextMenu.AddItem(NSMenuItem.SeparatorItem);
         contextMenu.AddItem(new NSMenuItem("종료", "q", (_, _) => NSApplication.SharedApplication.Terminate(null)));
@@ -132,8 +135,11 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
             }
         }
         // Read the recovery setting even if the holiday setting failed: they are independent keys.
-        if (quotaRecovery is not null)
-            await quotaRecovery.LoadAsync(() => store.GetQuotaRecoveryNotificationsEnabledAsync(lifetime.Token));
+        if (quotaNotifications is not null)
+        {
+            await quotaNotifications.LoadAsync(() => store.GetQuotaRecoveryNotificationsEnabledAsync(lifetime.Token));
+            await quotaNotifications.LoadEarlyResetAsync(() => store.GetQuotaEarlyResetNotificationsEnabledAsync(lifetime.Token));
+        }
         try
         {
             if (stopping) return;
@@ -151,8 +157,8 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
             statusMonitor.Changed += QueueDisplayRefresh;
             quotaMonitor.Changed += QueueDisplayRefresh;
             // Only verified live responses (Succeeded), never Changed: cache loads, refresh starts and
-            // failures must not decide a recovery. Hand-off only; see MacQuotaRecovery.OnSucceeded.
-            quotaRecovery?.Attach(quotaMonitor);
+            // failures must not decide a recovery. Hand-off only; see MacQuotaNotifications.OnSucceeded.
+            quotaNotifications?.Attach(quotaMonitor);
             // System notification permission is optional and must not stop status/quota polling.
             try
             {
@@ -223,7 +229,7 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
         if (result.Transition is { } transition) Notify(transition.Title, transition.Body);
         foreach (ProviderAlert alert in result.ProviderAlerts) Notify(alert.Title, alert.Body);
         // Existing schedule/service alerts are requested first; a quota recovery alert never precedes them.
-        quotaRecovery?.ShowPending();
+        quotaNotifications?.ShowPending();
         if (statusItem?.Button is { } button)
         {
             if (result.AppearanceChanged || button.Image is null)
@@ -247,12 +253,12 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
     {
         smokeNotifications?.Add((title, body));
         notifications?.Show(title, body);
-        quotaRecovery?.DeferAfterExisting();
+        quotaNotifications?.DeferAfterExisting();
     }
 
     private void UpdatePanel(ScheduleSnapshot snapshot, IReadOnlyList<ProviderStatus> providers) =>
         panel?.Update(snapshot, providers, QuotaStates(), statusMonitor?.IsRefreshing ?? false,
-            statusMonitor?.NextRefreshUtc, statusMonitor?.StorageError ?? "");
+            statusMonitor?.NextRefreshUtc, statusMonitor?.StorageError ?? "", quotaNotifications?.RecentEarlyResets());
 
     private IReadOnlyList<QuotaState> QuotaStates() => quotaMonitor?.Snapshot() ??
         Enum.GetValues<QuotaProvider>().Select(provider => new QuotaState(provider)).ToArray();
@@ -310,7 +316,7 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
             {
                 var (title, body) = FeedbackText.HolidayNotification(enabled, Schedule(DateTimeOffset.UtcNow));
                 notifications?.Show(title, body);
-                quotaRecovery?.DeferAfterExisting();
+                quotaNotifications?.DeferAfterExisting();
             }
         }
         catch (OperationCanceledException) when (lifetime.IsCancellationRequested) { }
@@ -437,7 +443,7 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
             stopping = true;
             // Unsubscribe before awaiting the monitors: the callback must not outlive shutdown, and
             // shutdown must never wait inside it.
-            quotaRecovery?.Detach();
+            quotaNotifications?.Detach();
             timer?.Invalidate();
             lifetime.Cancel();
             _ = StopAsync();
@@ -469,7 +475,7 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
             }
             if (statusMonitor is not null) statusMonitor.Changed -= QueueDisplayRefresh;
             if (quotaMonitor is not null) quotaMonitor.Changed -= QueueDisplayRefresh;
-            quotaRecovery?.Detach();
+            quotaNotifications?.Detach();
             statusMonitor?.Dispose();
             quotaMonitor?.Dispose();
             http?.Dispose();
@@ -585,9 +591,9 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
                 !IsContextClick(Click(NSEventType.LeftMouseUp, NSEventModifierMask.ControlKeyMask)))
                 throw new InvalidOperationException("Left/right/control-click routing is wrong.");
             string[] menuTitles = contextMenu.Items.Select(item => item.IsSeparatorItem ? "-" : item.Title).ToArray();
-            if (!menuTitles.SequenceEqual(["Refresh", QuotaRecoveryText.MenuLabel, "로그인 항목 설정 열기…", "-", "종료"]) ||
+            if (!menuTitles.SequenceEqual(["Refresh", QuotaRecoveryText.MenuLabel, QuotaEarlyResetText.MenuLabel, "로그인 항목 설정 열기…", "-", "종료"]) ||
                 contextMenu.Items[^1].KeyEquivalent != "q")
-                throw new InvalidOperationException("Right-click menu must be Refresh / 한도 회복 알림 / 로그인 항목 설정 열기… / 종료 ⌘Q.");
+                throw new InvalidOperationException("Right-click menu must be Refresh / 한도 회복 알림 / 한도 조기 초기화 알림 / 로그인 항목 설정 열기… / 종료 ⌘Q.");
 
             ShowPanel();
             if (!panel.IsShown) throw new InvalidOperationException("Status popover did not open.");
@@ -816,11 +822,16 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
             string geminiModelResult = MacGeminiModelRowSmoke.Verify(panel, Schedule(now), healthy, quota, claudeQuota, now);
             panel.Update(Schedule(now), healthy, quotas, false, now.AddMinutes(5), "");
             panel.Verify(Schedule(now), healthy, quotas);
+            // Early reset (#70): the remembered record shows only in its Provider detail; rows and height do not change.
+            string earlyResetUiResult = MacEarlyResetSmoke.VerifyPanel(panel, Schedule(now), healthy, quotas, now);
             panel.Close();
             string displayResult = VerifyDisplayDecisions();
             string diagnosticResult = await MacPollingDiagnosticSmoke.VerifyAsync(lifetime.Token);
-            string recoveryResult = await MacQuotaRecoverySmoke.VerifyAsync(store, quotaRecovery!, contextMenu,
+            string recoveryResult = await MacQuotaRecoverySmoke.VerifyAsync(store, quotaNotifications!, contextMenu,
                 BeginInvokeOnMainThread, lifetime.Token);
+            string earlyResetResult = await MacEarlyResetSmoke.VerifyAsync(lifetime.Token);
+            string earlyResetControllerResult = await MacQuotaRecoverySmoke.VerifyEarlyResetAsync(store, quotaNotifications!,
+                contextMenu, BeginInvokeOnMainThread, lifetime.Token);
             ShowStatistics();
             await statisticsWindow!.RefreshAsync();
             if (!statisticsWindow.Window.IsVisible || statisticsWindow.Window.DangerousReleasedWhenClosed)
@@ -835,7 +846,7 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
             await statisticsWindow.RefreshAsync();
             if (!statisticsWindow.Window.IsVisible)
                 throw new InvalidOperationException("Statistics window did not reopen from the menu-bar action.");
-            Console.WriteLine($"PASS: bundle version, menu-tracking countdown timer, 20pt menu icon white/dark disc + color glyph light/dark 1x-2x pixels (glyph contrast min {iconContrast:0.0}:1), left/right/control-click routing, right-click menu, popover open/close/reopen, shared panel text/record menu/quota lines, {activationResult}, tone contrast >= 4.5:1 light+dark (min {weakest:0.0}:1), card text x = quota box text x ({layout.BoxTextX:0}pt; titles {layout.TitleX:0}pt), whole-card click/quota boxes read-only, shared quota title, usage bars (0% empty/100% full, provider colors >= 3:1 light+dark min {barWeakest:0.0}:1, muted when previous/elapsed, none without a value), time layer (tint-track/tint-used >= 1.5:1 min {tintWeakest:0.0}:1, marker >= 3:1 min {markerWeakest:0.0}:1 light+dark, dark tint-used >= 2.0:1 min {darkSeparationWeakest:0.0}:1, marker position/end points, hidden states, spoken row = text + comparison), one shared Provider detail per quota box, three quota boxes incl. Gemini, popover {layout.Size.Width:0}x{layout.Size.Height:0}pt (this screen usable {layout.UsableHeight:0}pt; 1280x800 {standard.Height:0}pt not cut off, quota area {standardQuota:0}pt; 1024x640 {small.Height:0}pt with quota area {smallQuota:0}pt scrolling), 1,000-char note limit, temporary SQLite, four events/notes via shared factory, {displayResult}, {recoveryResult}, {geminiModelResult}, {diagnosticResult}, statistics (shared text, explanation fits, Mac empty-state hint), injected quota countdown; no account/network/settings changes.");
+            Console.WriteLine($"PASS: bundle version, menu-tracking countdown timer, 20pt menu icon white/dark disc + color glyph light/dark 1x-2x pixels (glyph contrast min {iconContrast:0.0}:1), left/right/control-click routing, right-click menu, popover open/close/reopen, shared panel text/record menu/quota lines, {activationResult}, tone contrast >= 4.5:1 light+dark (min {weakest:0.0}:1), card text x = quota box text x ({layout.BoxTextX:0}pt; titles {layout.TitleX:0}pt), whole-card click/quota boxes read-only, shared quota title, usage bars (0% empty/100% full, provider colors >= 3:1 light+dark min {barWeakest:0.0}:1, muted when previous/elapsed, none without a value), time layer (tint-track/tint-used >= 1.5:1 min {tintWeakest:0.0}:1, marker >= 3:1 min {markerWeakest:0.0}:1 light+dark, dark tint-used >= 2.0:1 min {darkSeparationWeakest:0.0}:1, marker position/end points, hidden states, spoken row = text + comparison), one shared Provider detail per quota box, three quota boxes incl. Gemini, popover {layout.Size.Width:0}x{layout.Size.Height:0}pt (this screen usable {layout.UsableHeight:0}pt; 1280x800 {standard.Height:0}pt not cut off, quota area {standardQuota:0}pt; 1024x640 {small.Height:0}pt with quota area {smallQuota:0}pt scrolling), 1,000-char note limit, temporary SQLite, four events/notes via shared factory, {displayResult}, {recoveryResult}, {earlyResetResult}, {earlyResetControllerResult}, {earlyResetUiResult}, {geminiModelResult}, {diagnosticResult}, statistics (shared text, explanation fits, Mac empty-state hint), injected quota countdown; no account/network/settings changes.");
             ExitCode = 0;
         }
         catch (Exception error)

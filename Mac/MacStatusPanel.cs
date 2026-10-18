@@ -185,7 +185,8 @@ internal sealed class MacStatusPanel : IDisposable
     // Called every second while the popover is open. Text and tooltips are written only when they
     // change: reassigning an unchanged tooltip closes it while it is being read.
     internal void Update(ScheduleSnapshot snapshot, IReadOnlyList<ProviderStatus> states,
-        IReadOnlyList<QuotaState> quotaStates, bool refreshing, DateTimeOffset? due, string storageError)
+        IReadOnlyList<QuotaState> quotaStates, bool refreshing, DateTimeOffset? due, string storageError,
+        IReadOnlyDictionary<QuotaProvider, QuotaEarlyResetAlert>? recentEarlyResets = null)
     {
         var schedule = StatusPanelModel.Schedule(snapshot);
         SetText(state, schedule.State);
@@ -207,7 +208,7 @@ internal sealed class MacStatusPanel : IDisposable
             foreach (NSView view in new NSView[] { card.View, card.Heading, card.Official, card.Reason }) SetTip(view, text.Detail);
         }
 
-        UpdateQuotas(quotaStates, snapshot.NowUtc);
+        UpdateQuotas(quotaStates, snapshot.NowUtc, recentEarlyResets);
         SetText(checkedCaption, StatusPanelModel.CheckedCaption(states, refreshing, due));
         refresh.Enabled = !refreshing;
         // Show a storage error only when it changes, so it does not overwrite later save/setting
@@ -220,11 +221,12 @@ internal sealed class MacStatusPanel : IDisposable
         }
     }
 
-    private void UpdateQuotas(IReadOnlyList<QuotaState> states, DateTimeOffset now)
+    private void UpdateQuotas(IReadOnlyList<QuotaState> states, DateTimeOffset now,
+        IReadOnlyDictionary<QuotaProvider, QuotaEarlyResetAlert>? recentEarlyResets)
     {
         string key = string.Join('|', states.Select(s => s.Provider + ":" +
             string.Join(',', s.Reading?.Windows.Select(w => w.Id) ?? [])));
-        IReadOnlyList<QuotaSectionText> sections = QuotaPanelModel.Sections(states, now);
+        IReadOnlyList<QuotaSectionText> sections = QuotaPanelModel.Sections(states, now, recentEarlyResets);
         if (key != quotaLayoutKey)
         {
             quotaLayoutKey = key;
@@ -628,7 +630,8 @@ internal sealed class MacStatusPanel : IDisposable
 
     internal sealed record Layout(CGSize Size, nfloat TitleX, nfloat BoxTextX, nfloat UsableHeight, nfloat BoxTextWidth);
 
-    internal Layout Verify(ScheduleSnapshot snapshot, IReadOnlyList<ProviderStatus> states, IReadOnlyList<QuotaState> quotaStates)
+    internal Layout Verify(ScheduleSnapshot snapshot, IReadOnlyList<ProviderStatus> states, IReadOnlyList<QuotaState> quotaStates,
+        IReadOnlyDictionary<QuotaProvider, QuotaEarlyResetAlert>? recentEarlyResets = null)
     {
         content.LayoutSubtreeIfNeeded();
         var schedule = StatusPanelModel.Schedule(snapshot);
@@ -655,7 +658,7 @@ internal sealed class MacStatusPanel : IDisposable
         }
         if (cards[ProviderKind.OpenAI].Heading.StringValue.Split(' ')[0] != "ChatGPT")
             throw new InvalidOperationException("The OpenAI card does not show the ChatGPT product name.");
-        var sections = QuotaPanelModel.Sections(quotaStates, snapshot.NowUtc);
+        var sections = QuotaPanelModel.Sections(quotaStates, snapshot.NowUtc, recentEarlyResets);
         if (quotas.Count != sections.Count)
             throw new InvalidOperationException("Quota sections differ from the shared panel model.");
         foreach (QuotaSectionText section in sections)
