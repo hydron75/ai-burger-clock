@@ -18,7 +18,9 @@ internal static class QuotaSchedulingTests
 
         CoalescingTests(Check);
         DecisionTests(Check);
+        HourlyReasonTests(Check);
         await DiagnosticIntegrationTestsAsync(directory, Check);
+        await HourlyDiagnosticIntegrationTestsAsync(directory, Check);
         await CanceledReadTestsAsync(directory, Check);
         await UnwritableDiagnosticTestsAsync(directory, Check);
         await RestartTestsAsync(directory, Check);
@@ -103,19 +105,19 @@ internal static class QuotaSchedulingTests
                 "scheduling decisions use UTC instants regardless of input display offset");
         }
 
-        Plan(Now, Now, [Window(0)], Now.AddHours(6), QuotaCheckReason.Regular);
-        Plan(Now, Now, [Window(90)], Now.AddHours(6), QuotaCheckReason.Regular);
+        Plan(Now, Now, [Window(0)], Now.AddHours(1), QuotaCheckReason.Regular);
+        Plan(Now, Now, [Window(90)], Now.AddHours(1), QuotaCheckReason.Regular);
         Plan(Now, Now, [Window(90.0001)], Now.AddHours(1), QuotaCheckReason.LowRemaining);
         Plan(Now, Now, [Window(99.96)], Now.AddHours(1), QuotaCheckReason.LowRemaining);
         Plan(Now, Now, [Window(100)], Now.AddMinutes(15), QuotaCheckReason.Exhausted);
         Plan(Now, Now, [Window(20), Window(100, id: "weekly", minutes: 10080)],
             Now.AddMinutes(15), QuotaCheckReason.Exhausted);
-        Plan(Now, Now, [], Now.AddHours(6), QuotaCheckReason.Regular);
+        Plan(Now, Now, [], Now.AddHours(1), QuotaCheckReason.Regular);
         Plan(Now, Now.AddHours(-7), [Window(20)], Now, QuotaCheckReason.Overdue);
         Plan(Now.ToOffset(TimeSpan.FromHours(9)), Now.ToOffset(TimeSpan.FromHours(9)),
-            [Window(20)], Now.AddHours(6), QuotaCheckReason.Regular);
+            [Window(20)], Now.AddHours(1), QuotaCheckReason.Regular);
 
-        DateTimeOffset reset = Now.AddHours(2);
+        DateTimeOffset reset = Now.AddHours(1);
         Plan(Now, Now, [Window(20, reset)], reset.AddMinutes(-15), QuotaCheckReason.ResetEntry, reset);
         Plan(reset.AddMinutes(-15), reset.AddMinutes(-15), [Window(100, reset)],
             reset.AddMinutes(-10), QuotaCheckReason.ResetPeriod, reset);
@@ -123,12 +125,12 @@ internal static class QuotaSchedulingTests
         Plan(reset.AddMinutes(10), reset.AddMinutes(10), [Window(20, reset)],
             reset.AddMinutes(15), QuotaCheckReason.ResetPeriod, reset);
         Plan(reset.AddMinutes(15), reset.AddMinutes(15), [Window(20, reset)],
-            reset.AddMinutes(15).AddHours(6), QuotaCheckReason.Regular);
+            reset.AddMinutes(15).AddHours(1), QuotaCheckReason.Regular);
         Plan(reset.AddMinutes(15), reset.AddMinutes(15), [Window(95, reset)],
             reset.AddMinutes(15).AddHours(1), QuotaCheckReason.LowRemaining);
         Plan(reset.AddMinutes(15), reset.AddMinutes(15), [Window(100, reset)],
             reset.AddMinutes(30), QuotaCheckReason.Exhausted);
-        Plan(Now, Now, [Window(0, Now.AddMinutes(10))], Now.AddHours(6), QuotaCheckReason.Regular,
+        Plan(Now, Now, [Window(0, Now.AddMinutes(10))], Now.AddHours(1), QuotaCheckReason.Regular,
             provider: QuotaProvider.Gemini);
         Plan(Now, Now, [Window(0.0001, Now.AddMinutes(17))], Now.AddMinutes(2),
             QuotaCheckReason.ResetEntry, Now.AddMinutes(17), provider: QuotaProvider.Gemini);
@@ -143,6 +145,48 @@ internal static class QuotaSchedulingTests
         check(compressed.NextCheckUtc == reset.AddMinutes(-15).AddSeconds(40)
             && compressed.Reason == QuotaCheckReason.ResetEntry && compressed.SelectedResetUtc == reset.AddSeconds(40),
             "coalescing removes only the redundant intermediate entry within a one-minute jitter group");
+    }
+
+    private static void HourlyReasonTests(Action<bool, string> check)
+    {
+        check(AccountQuotaPolicy.DefaultInterval == TimeSpan.FromHours(1)
+            && AccountQuotaPolicy.LowRemainingInterval == AccountQuotaPolicy.DefaultInterval,
+            "the shared hourly default deliberately equals the high-usage interval without sharing its reason");
+        foreach (QuotaProvider provider in Enum.GetValues<QuotaProvider>())
+        {
+            foreach ((double used, QuotaCheckReason reason) in new[]
+            {
+                (0d, QuotaCheckReason.Regular), (90d, QuotaCheckReason.Regular),
+                (90.0001, QuotaCheckReason.LowRemaining), (99.96, QuotaCheckReason.LowRemaining),
+                (100d, QuotaCheckReason.Exhausted)
+            })
+            {
+                QuotaCheckPlan plan = AccountQuotaPolicy.GetNextCheckPlan(Now, Now, [Window(used)], provider: provider);
+                DateTimeOffset expected = used == 100 ? Now.AddMinutes(15) : Now.AddHours(1);
+                check(plan.NextCheckUtc == expected && plan.SelectedResetUtc is null,
+                    "all Providers retain the hourly or exhausted deadline for the exact raw usage boundary");
+                check(plan.Reason == reason,
+                    "Regular and LowRemaining are distinguished by raw usage even when both intervals are one hour");
+            }
+            foreach (double invalid in new[] { double.NaN, double.PositiveInfinity, double.NegativeInfinity, -1, 100.01 })
+            {
+                QuotaCheckPlan plan = AccountQuotaPolicy.GetNextCheckPlan(Now, Now, [Window(invalid)], provider: provider);
+                check(plan.Reason == QuotaCheckReason.Regular && plan.NextCheckUtc == Now.AddHours(1),
+                    "invalid raw percentages cannot mislabel the default as a high-usage or exhausted schedule");
+            }
+            QuotaCheckPlan unknown = AccountQuotaPolicy.GetNextCheckPlan(Now, Now, [], provider: provider);
+            check(unknown.Reason == QuotaCheckReason.Regular && unknown.NextCheckUtc == Now.AddHours(1),
+                "a missing reading uses the hourly Regular schedule without inventing a usage reason");
+            QuotaCheckPlan distant = AccountQuotaPolicy.GetNextCheckPlan(Now, Now,
+                [Window(20, Now.AddHours(2))], provider: provider);
+            check(distant.Reason == QuotaCheckReason.Regular && distant.NextCheckUtc == Now.AddHours(1),
+                "an hourly default is not postponed to a reset-band entry more than one hour away");
+            QuotaCheckPlan tied = AccountQuotaPolicy.GetNextCheckPlan(Now, Now,
+                [Window(20, Now.AddMinutes(75))], provider: provider);
+            check(tied.Reason == QuotaCheckReason.ResetEntry && tied.NextCheckUtc == Now.AddHours(1)
+                && tied.SelectedResetUtc == Now.AddMinutes(75),
+                "a reset-band entry tied with the hourly deadline retains its selected reset diagnostic");
+        }
     }
 
     private static async Task DiagnosticIntegrationTestsAsync(string directory, Action<bool, string> check)
@@ -225,6 +269,106 @@ internal static class QuotaSchedulingTests
         await automatic.StopAsync();
     }
 
+    private static async Task HourlyDiagnosticIntegrationTestsAsync(string directory, Action<bool, string> check)
+    {
+        foreach (QuotaProvider provider in Enum.GetValues<QuotaProvider>())
+        {
+            var log = new QuotaPollingDiagnosticLog(Path.Combine(directory, "quota-hourly-diagnostics-" + provider));
+            DateTimeOffset now = Now;
+            double used = 0;
+            DateTimeOffset? reset = null;
+            bool fail = false;
+            var client = new FakeClient((requested, _) => fail
+                ? Task.FromException<QuotaReading>(new IOException("Synthetic hourly query failure"))
+                : Task.FromResult(new QuotaReading(requested, [Window(used, reset)])));
+            using var monitor = new AccountQuotaMonitor(client, utcNow: () => now, diagnosticLog: log);
+
+            foreach ((double percent, QuotaCheckReason reason) in new[]
+            {
+                (0d, QuotaCheckReason.Regular), (90d, QuotaCheckReason.Regular),
+                (90.0001, QuotaCheckReason.LowRemaining), (99.96, QuotaCheckReason.LowRemaining),
+                (100d, QuotaCheckReason.Exhausted)
+            })
+            {
+                used = percent;
+                await monitor.RefreshOnceAsync(provider);
+                QuotaPollingDiagnostic entry = Read(log).Entries[^1];
+                check(entry.Provider == provider.ToString() && entry.Reason == reason.ToString(),
+                    "persisted diagnostics distinguish raw-usage reasons for every Provider, including both hourly reasons");
+                check(entry.NextCheckUtc == (used == 100 ? now.AddMinutes(15) : now.AddHours(1))
+                    && entry.NextCheckUtc == State(monitor, provider).NextCheckUtc,
+                    "each serialized raw-boundary decision has exactly the deadline used by the monitor");
+                check(entry.Succeeded && entry.ConsecutiveFailures == 0 && entry.SelectedResetUtc is null,
+                    "raw usage changes alone do not invent failures or selected reset instants");
+            }
+
+            foreach (double percent in new[] { 0d, 90.0001, 100d })
+            {
+                used = percent;
+                fail = false;
+                await monitor.RefreshOnceAsync(provider);
+                DateTimeOffset success = now;
+                fail = true;
+                int consecutiveFailures = 0;
+                foreach (int minutes in new[] { 15, 30, 60, 60, 60 })
+                {
+                    now = now.AddMinutes(1);
+                    await monitor.RefreshOnceAsync(provider);
+                    QuotaPollingDiagnostic entry = Read(log).Entries[^1];
+                    check(!entry.Succeeded && entry.Reason == QuotaCheckReason.FailureRetry.ToString()
+                        && entry.ConsecutiveFailures == ++consecutiveFailures,
+                        "failed reads serialize their own retry reason and counter rather than either hourly usage reason");
+                    check(entry.NextCheckUtc == now.AddMinutes(used == 100 ? 15 : minutes)
+                        && entry.NextCheckUtc == State(monitor, provider).NextCheckUtc,
+                        "every Provider caps failures at one hour, or fifteen minutes while exactly exhausted");
+                    check(State(monitor, provider).IsPrevious && State(monitor, provider).LastSuccessfulCheckUtc == success,
+                        "an hourly retry never treats previous values as a fresh successful observation");
+                }
+                fail = false;
+                await monitor.RefreshOnceAsync(provider);
+                QuotaPollingDiagnostic recovered = Read(log).Entries[^1];
+                QuotaCheckReason expected = used == 100 ? QuotaCheckReason.Exhausted : used > 90
+                    ? QuotaCheckReason.LowRemaining : QuotaCheckReason.Regular;
+                check(recovered.Succeeded && recovered.ConsecutiveFailures == 0 && recovered.Reason == expected.ToString(),
+                    "a success resets retry backoff and restores the condition-based reason, even for equal hourly intervals");
+            }
+
+            used = 20;
+            reset = now.AddMinutes(17);
+            await monitor.RefreshOnceAsync(provider);
+            QuotaPollingDiagnostic upcoming = Read(log).Entries[^1];
+            check(upcoming.Reason == QuotaCheckReason.ResetEntry.ToString()
+                && upcoming.NextCheckUtc == now.AddMinutes(2) && upcoming.SelectedResetUtc == reset,
+                "a genuine reset entry still takes precedence over the one-hour default for every Provider");
+            fail = true;
+            await monitor.RefreshOnceAsync(provider);
+            QuotaPollingDiagnostic beforeBand = Read(log).Entries[^1];
+            check(!beforeBand.Succeeded && beforeBand.Reason == QuotaCheckReason.ResetEntry.ToString()
+                && beforeBand.NextCheckUtc == now.AddMinutes(2) && beforeBand.SelectedResetUtc == reset,
+                "a two-minute reset entry wins over the initial fifteen-minute failure retry");
+            now = reset.Value.AddMinutes(-15);
+            await monitor.RefreshOnceAsync(provider);
+            QuotaPollingDiagnostic withinBand = Read(log).Entries[^1];
+            check(!withinBand.Succeeded && withinBand.Reason == QuotaCheckReason.ResetPeriod.ToString()
+                && withinBand.NextCheckUtc == now.AddMinutes(5) && withinBand.SelectedResetUtc == reset,
+                "five-minute reset scheduling also wins over a second failed read's thirty-minute retry");
+            now = reset.Value.AddMinutes(16);
+            await monitor.RefreshOnceAsync(provider);
+            QuotaPollingDiagnostic afterBand = Read(log).Entries[^1];
+            check(!afterBand.Succeeded && afterBand.Reason == QuotaCheckReason.FailureRetry.ToString()
+                && afterBand.NextCheckUtc == now.AddHours(1) && afterBand.SelectedResetUtc is null,
+                "an expired reset band restores the capped one-hour retry without a stale selected reset");
+            fail = false;
+            reset = now.AddHours(2);
+            await monitor.RefreshOnceAsync(provider);
+            QuotaPollingDiagnostic final = Read(log).Entries[^1];
+            check(final.Succeeded && final.Reason == QuotaCheckReason.Regular.ToString()
+                && final.ConsecutiveFailures == 0 && final.NextCheckUtc == now.AddHours(1),
+                "a successful response after a reset band resumes the hourly Regular schedule and clears backoff");
+            await monitor.StopAsync();
+        }
+    }
+
     private static async Task CanceledReadTestsAsync(string directory, Action<bool, string> check)
     {
         var log = new QuotaPollingDiagnosticLog(Path.Combine(directory, "quota-scheduling-canceled"));
@@ -261,7 +405,7 @@ internal static class QuotaSchedulingTests
         monitor.Succeeded += _ => observations++;
         await monitor.RefreshOnceAsync(QuotaProvider.Gemini);
         QuotaState state = State(monitor, QuotaProvider.Gemini);
-        check(state.LastSuccessfulCheckUtc == Now && state.NextCheckUtc == Now.AddHours(6)
+        check(state.LastSuccessfulCheckUtc == Now && state.NextCheckUtc == Now.AddHours(1)
             && !state.IsPrevious && state.Error.Length == 0 && observations == 1,
             "a diagnostic write failure cannot fail polling, change its deadline or suppress a successful observation");
         check(await File.ReadAllTextAsync(blocked) == "Synthetic file blocks a diagnostic directory.",
@@ -273,7 +417,7 @@ internal static class QuotaSchedulingTests
     {
         string root = Path.Combine(directory, "quota-scheduling-restart");
         var store = new UsageStore(Path.Combine(root, "temporary.db"));
-        DateTimeOffset first = Now.AddHours(2);
+        DateTimeOffset first = Now.AddHours(1);
         DateTimeOffset second = Now.AddDays(3);
         DateTimeOffset[] jitter = Enumerable.Range(0, 32).SelectMany(index => new[]
             { first.AddMilliseconds(index * 30), second.AddMilliseconds(index * 30) }).ToArray();
@@ -310,7 +454,7 @@ internal static class QuotaSchedulingTests
         check(persisted is not null && persisted.ResetAnchors.Contains(first)
             && persisted.ResetAnchors.Contains(first.AddMilliseconds(930)),
             "reopening compacted cache preserves both old reset endpoints through their remaining fifteen-minute band");
-        check(State(again, QuotaProvider.Claude).NextCheckUtc == first.AddHours(5).AddMinutes(-15),
+        check(State(again, QuotaProvider.Claude).NextCheckUtc == inOldBand.AddHours(1),
             "the old band's last minute does not invent a trailing fast check after restart");
     }
 

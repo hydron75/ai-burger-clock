@@ -66,13 +66,23 @@ internal static class MacPollingDiagnosticSmoke
             QuotaReading R(QuotaProvider p, params QuotaWindow[] w) => new(p, w);
             DateTimeOffset T() => client.Clock;
 
-            // Regular: unused moving windows only (no reset is selected, 6 hour regular schedule).
+            // Regular: unused moving windows only (no reset is selected, 1 hour default schedule since #68).
             Entry regular = await Poll(QuotaProvider.Gemini, (p, now) => R(p,
                 new QuotaWindow("gemini-5h", "5시간", 0, now.AddHours(5), 300), new QuotaWindow("gemini-weekly", "주간", 0, now.AddDays(6), 10080)));
             Check(regular is { Provider: "Gemini", Reason: "Regular", Selected: null, Succeeded: true, Failures: 0, Anchors: 0 },
                 $"regular entry has the wrong shape ({regular.Reason}, anchors {regular.Anchors}).");
-            Check(regular.Next == T().AddHours(6) && regular.Attempted == T() && regular.Recorded == T(),
-                "regular entry must record attempted/recorded/next times (next = +6h).");
+            Check(regular.Next == T().AddHours(1) && regular.Attempted == T() && regular.Recorded == T(),
+                "regular entry must record attempted/recorded/next times (next = +1h).");
+
+            // The default and a high usage share the same 1 hour interval but must stay distinguishable in the
+            // diagnostics: raw usage > 90% and < 100% is LowRemaining, 90% itself is still Regular.
+            foreach ((double usage, string reason) in new[] { (90.0, "Regular"), (90.5, "LowRemaining"), (99.9, "LowRemaining") })
+            {
+                Entry high = await Poll(QuotaProvider.Gemini, (p, now) => R(p,
+                    new QuotaWindow("gemini-5h", "5시간", usage, now.AddDays(2), 300)));
+                Check(high.Reason == reason && high.Selected is null && high.Next == T().AddHours(1) && high.Succeeded,
+                    $"{usage}% must be {reason} with a +1h next check (found {high.Reason}, +{(high.Next - T()).TotalMinutes:0}m).");
+            }
 
             // ResetPeriod: a used window resetting in 10 minutes -> 5 minute checks, that reset selected.
             DateTimeOffset reset = T().AddMinutes(10);
@@ -135,7 +145,21 @@ internal static class MacPollingDiagnosticSmoke
                 "Succeeded", "ConsecutiveFailures", "ResetAnchorCount"];
             Check(keys.SetEquals(expected), "the stored fields are not exactly the nine scheduling fields: " + string.Join(",", keys));
             Check(Directory.GetFiles(Path.Combine(directory, "logs")).Length == 1, "temporary files were left behind.");
-            return $"polling diagnostics (Regular/ResetPeriod/ResetEntry/Exhausted/FailureRetry with next + selected reset, 1m jitter -> {jitterAnchors} anchors, " +
+            // Provider detail (what the Mac tooltips show; panel.Verify checks they equal this text): 1 hour default.
+            QuotaState Sample(QuotaProvider provider, string id) => new(provider,
+                new(provider, [new QuotaWindow(id, "주간", 10, client.Clock.AddDays(3), 10080)]),
+                LastSuccessfulCheckUtc: client.Clock, NextCheckUtc: client.Clock.AddHours(1));
+            var details = QuotaPanelModel.Sections([Sample(QuotaProvider.Codex, "codex-weekly"), Sample(QuotaProvider.Claude, "weekly_all"),
+                Sample(QuotaProvider.Gemini, "gemini-weekly")], client.Clock);
+            Check(details.Count == 3, "expected one Provider detail per quota box.");
+            foreach (var section in details)
+            {
+                Check(section.Detail.Contains("기본 1시간") && section.Detail.Contains("사용 90% 초과~100% 미만은 1시간") && !section.Detail.Contains("기본 6시간"),
+                    $"{section.Provider} detail does not state the 1 hour default policy.");
+                Check(section.Detail.Contains("사용 0% 창의 리셋은 빠른 조회 기준에서 제외") == (section.Provider == QuotaProvider.Gemini),
+                    $"{section.Provider} detail has the wrong Gemini 0% exception line.");
+            }
+            return $"polling diagnostics (Regular/ResetPeriod/ResetEntry/Exhausted/FailureRetry with next + selected reset, 1h default (Regular vs LowRemaining >90%), 1h policy text in all three Provider details, 1m jitter -> {jitterAnchors} anchors, " +
                    $"40s chain kept {chain}, 256 entries {bytes / 1024.0:0.0}KiB, 9 scheduling fields only)";
         }
         finally

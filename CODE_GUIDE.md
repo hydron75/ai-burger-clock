@@ -1,5 +1,7 @@
 # 소스코드, 쉬운 말로 읽기
 
+**개발 중 정책 갱신(2026-10-18 KST):** 공통 계정 한도의 기본 간격과 모니터 fallback은 **1시간**입니다. 사용 90% 초과~100% 미만도 1시간이지만 진단 이유는 `LowRemaining`, 정상 기본은 `Regular`로 구분합니다. 소진 15분·리셋 구간 5분·Gemini 원본 사용 0% 리셋 제외는 유지하고 실패 재시도는 15분→30분→최대 1시간입니다. 아래 2.7.0 배포·검사 수치는 당시 기록으로 보존하며 Mac 확인 전에는 이 변경을 병합·배포하지 않습니다. [공통 변경·검사·Mac 확인](QUOTA_HOURLY_POLLING.md).
+
 이 문서는 **Windows 2.7.0 배포 소스 기준**입니다. #62·#63의 양쪽 확인 뒤 #64를 사용자 승인으로 병합하고 깨끗한 main **`2d5fe6220821a8c40bd17e5a78d5e093053e892f`**에서 단일 EXE를 만들었습니다. 정상 종료·WAL/SHM 확인·새 백업 뒤 **2.7.0으로 교체·실행 완료**했습니다. 최종 SDK 10.0.402·빌드/publish 경고 0/오류 0·self-test **252,869건·ExitCode 0**, 별도 smoke **1회 574 PASS·ExitCode 0**이며 승인 전 준비 후보 5회와 구분합니다. 실제 EXE 해시·소스/백업·사용자 화면 확인·진단 파일 생성과 2.6.0 EXE만 복원하는 방법은 [2.7.0 배포 기록](MAINTENANCE_2_7_0.md)에 있습니다. 이전 EXE 소스 **`4981f5cda325d35eeb76dd60f09d66833efaad77`**와 후속 배포 결과 문서 커밋은 현재 EXE 소스가 아닙니다. Windows 사용법은 [README](README.md), 최신 Mac 버전·검증은 [Mac 안내](Mac/README.md)로 이동하세요.
 
 코드를 한 줄씩 번역한 문서는 아닙니다. **각 파일이 무엇을 맡고, 서로 어떻게 연결되는지** 설명합니다. 루트·Properties C# **85개(앱 기능 42 + 검사·진단 42 + 명찰 1)**, Mac 호스트·검사 11개, 공통 검사 입구 1개로 총 **97개**와 빌드 설정을 다룹니다. `SharedTestSuite.cs`는 루트 검사에 이미 포함하고 별도 입구는 `Shared.Tests/Program.cs`만 셉니다. 공통 제품 원본 목록은 **30개**입니다. 이 수는 #60·#62·#63까지 병합한 소스 지도이며 이번 준비에서 C#를 추가했다는 뜻은 아닙니다. 생성된 `bin`·`obj`·검증 `artifacts`는 제외합니다.
@@ -363,7 +365,7 @@ Windows 내부 승인 형식은 알려진 경우만 해석합니다. 낯선 값�
 | [AccountQuotaModels.cs](AccountQuotaModels.cs) | 한도 Provider·기간·사용률·리셋 시각과 조회 약속 |
 | [AccountQuotaParsers.cs](AccountQuotaParsers.cs) | 서로 다른 공식 CLI JSON을 검증한 공통 한도로 변환 |
 | [AccountQuotaClient.cs](AccountQuotaClient.cs) | 표준 경로의 native CLI 실행, 제한시간·출력 크기·취소·응답 검증. 2.3.0의 Gemini는 agy 1.3.1 이상·2.0 미만 사전 확인 후 `/usage`, 기존 hooks·MCP 설정 격리 제한 있음 |
-| [AccountQuotaPolicy.cs](AccountQuotaPolicy.cs) | 6시간·1시간·사용 100%의 15분·리셋 전후 5분과 진입/실패 상한·실제 예약 이유. Gemini 미사용 리셋 제외·1분 이내 구간 양끝 압축 |
+| [AccountQuotaPolicy.cs](AccountQuotaPolicy.cs) | 기본 1시간·사용 90% 초과~100% 미만 1시간을 이유로 구분. 사용 100%의 15분·리셋 전후 5분·실패 최대 1시간, Gemini 미사용 리셋 제외·1분 이내 구간 양끝 압축 |
 | [AccountQuotaMonitor.cs](AccountQuotaMonitor.cs) | Provider별 독립 조회·성공/실패·다음 예약·재시작 캐시와 예약 진단. 구형 Gemini 기준 전환·정상 이전 +15분 보존 |
 | [AccountQuotaView.cs](AccountQuotaView.cs) | 공통 모델을 바인딩하는 한도 보기. Provider별 박스·막대·상세·내부 스크롤·상태 전환, 10초/클릭/Esc 닫힘과 박스 이탈 전 재표시 차단 |
 | [QuotaBalanceBar.cs](QuotaBalanceBar.cs) | Windows 네이티브 사용률 막대. 연한 시간층·진한 사용층·최상단 시간 경계선, 이전/경과 값의 회색과 접근성 바인딩 |

@@ -111,7 +111,7 @@ internal sealed class AccountQuotaMonitor : IDisposable
             {
                 await RefreshOnceAsync(provider, lifetime.Token).ConfigureAwait(false);
                 DateTimeOffset next;
-                lock (sync) next = states[provider].NextCheckUtc ?? utcNow().AddHours(6);
+                lock (sync) next = states[provider].NextCheckUtc ?? utcNow() + AccountQuotaPolicy.DefaultInterval;
                 TimeSpan delay = next - utcNow();
                 // No catch-up bursts after resume/clock changes. A wake is coalesced to one pass.
                 await wakes[provider].WaitAsync(delay > TimeSpan.Zero ? delay : TimeSpan.FromSeconds(1), lifetime.Token).ConfigureAwait(false);

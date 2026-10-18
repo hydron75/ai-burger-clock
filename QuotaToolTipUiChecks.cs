@@ -121,7 +121,7 @@ internal static class QuotaToolTipUiChecks
         check(text.Contains("리셋·한도 복원 예정", StringComparison.Ordinal) && text.Contains(" KST", StringComparison.Ordinal) &&
             text.Contains("실제 복원 여부는 새 조회로 확인", StringComparison.Ordinal),
             "Provider detail includes exact reset times without promising unverified recovery: " + provider);
-        check(text.Split("기본 6시간", StringSplitOptions.None).Length == 2 && !text.Contains("사용 18% / 잔여 82%", StringComparison.Ordinal),
+        check(text.Split("기본 1시간", StringSplitOptions.None).Length == 2 && !text.Contains("사용 18% / 잔여 82%", StringComparison.Ordinal),
             "Provider detail keeps polling explanation once instead of repeating visible percentages: " + provider);
         Point pointer = view.PointToScreen(new Point(view.Width / 2, view.Height / 2));
         var owner = view.FindForm()!;

@@ -7,7 +7,7 @@ internal sealed record QuotaCheckPlan(DateTimeOffset NextCheckUtc, QuotaCheckRea
 
 internal static class AccountQuotaPolicy
 {
-    public static readonly TimeSpan DefaultInterval = TimeSpan.FromHours(6);
+    public static readonly TimeSpan DefaultInterval = TimeSpan.FromHours(1);
     public static readonly TimeSpan LowRemainingInterval = TimeSpan.FromHours(1);
     public static readonly TimeSpan ExhaustedInterval = TimeSpan.FromMinutes(15);
     public static readonly TimeSpan ResetInterval = TimeSpan.FromMinutes(5);
@@ -20,7 +20,7 @@ internal static class AccountQuotaPolicy
         IEnumerable<DateTimeOffset>? previousResetAnchors = null, QuotaProvider? provider = null)
     {
         return IsResetPeriod(nowUtc, ResetAnchors(windows, previousResetAnchors, provider))
-            ? ResetInterval : RegularInterval(windows);
+            ? ResetInterval : RegularSchedule(windows).Interval;
     }
 
     public static DateTimeOffset GetNextCheckUtc(DateTimeOffset nowUtc, DateTimeOffset lastCheckedAtUtc,
@@ -36,24 +36,23 @@ internal static class AccountQuotaPolicy
     {
         // Materialize once: callers may provide a lazy collection shared with monitoring state.
         DateTimeOffset[] anchors = ResetAnchors(windows, previousResetAnchors, provider).ToArray();
-        TimeSpan interval = GetInterval(nowUtc, windows, anchors, provider);
-        TimeSpan regular = RegularInterval(windows);
-        QuotaCheckReason regularReason = regular == ExhaustedInterval ? QuotaCheckReason.Exhausted :
-            regular == LowRemainingInterval ? QuotaCheckReason.LowRemaining : QuotaCheckReason.Regular;
-        QuotaCheckReason reason = interval == ResetInterval ? QuotaCheckReason.ResetPeriod : regularReason;
-        DateTimeOffset? selected = interval == ResetInterval
+        (TimeSpan regular, QuotaCheckReason regularReason) = RegularSchedule(windows);
+        bool inResetPeriod = IsResetPeriod(nowUtc, anchors);
+        TimeSpan interval = inResetPeriod ? ResetInterval : regular;
+        QuotaCheckReason reason = inResetPeriod ? QuotaCheckReason.ResetPeriod : regularReason;
+        DateTimeOffset? selected = inResetPeriod
             ? anchors.First(reset => IsResetPeriod(nowUtc, [reset])) : null;
         DateTimeOffset next = lastCheckedAtUtc + interval;
         if (next <= nowUtc) return new(nowUtc.ToUniversalTime(), QuotaCheckReason.Overdue, selected);
         // Selecting an interval at the last in-band check must not create a trailing
         // fast poll outside the +/-15m band. Another overlapping band may keep it fast.
-        if (interval == ResetInterval && !IsResetPeriod(next, anchors))
+        if (inResetPeriod && !IsResetPeriod(next, anchors))
         {
             next = lastCheckedAtUtc + regular;
             reason = regularReason;
             selected = null;
         }
-        else if (interval == ResetInterval)
+        else if (inResetPeriod)
         {
             selected = anchors.First(reset => IsResetPeriod(next, [reset]));
         }
@@ -71,21 +70,26 @@ internal static class AccountQuotaPolicy
         return new((next < nowUtc ? nowUtc : next).ToUniversalTime(), reason, selected);
     }
 
-    // After consecutive failed reads: 15m, 30m, 1h, ... never later than the regular interval.
-    // A transient CLI/server failure then does not leave the previous value for up to 6h.
+    // After consecutive failed reads: 15m, 30m, then at most 1h; never later than
+    // the usage-based interval (15m for an exhausted window).
     public static TimeSpan GetFailureRetryDelay(int consecutiveFailures, IReadOnlyList<QuotaWindow> windows)
     {
-        TimeSpan regular = RegularInterval(windows);
+        TimeSpan regular = RegularSchedule(windows).Interval;
         TimeSpan delay = FailureRetryInterval * Math.Pow(2, Math.Clamp(consecutiveFailures - 1, 0, 10));
         return delay < regular ? delay : regular;
     }
 
-    private static TimeSpan RegularInterval(IReadOnlyList<QuotaWindow> windows)
+    private static (TimeSpan Interval, QuotaCheckReason Reason) RegularSchedule(IReadOnlyList<QuotaWindow> windows)
     {
         // Use the verified raw percentage, not a rounded "0%" display label.
-        if (windows.Any(window => window.UsedPercent == 100)) return ExhaustedInterval;
+        // Default and low-remaining schedules are both hourly: their reason must
+        // come from the condition, never by comparing the resulting intervals.
+        if (windows.Any(window => window.UsedPercent == 100))
+            return (ExhaustedInterval, QuotaCheckReason.Exhausted);
         return windows.Any(window => double.IsFinite(window.UsedPercent)
-            && window.UsedPercent is > 90 and < 100) ? LowRemainingInterval : DefaultInterval;
+            && window.UsedPercent is > 90 and < 100)
+            ? (LowRemainingInterval, QuotaCheckReason.LowRemaining)
+            : (DefaultInterval, QuotaCheckReason.Regular);
     }
 
     private static bool IsResetPeriod(DateTimeOffset instant, IEnumerable<DateTimeOffset> anchors) =>
