@@ -23,23 +23,14 @@ namespace AiBurgerClock
         private readonly ToolStripMenuItem autoStartMenuItem;
         private readonly ToolStripMenuItem holidayMenuItem;
         private readonly ToolStripMenuItem quotaRecoveryMenuItem;
-        private readonly ToolStripMenuItem quotaEarlyResetMenuItem;
         private readonly QuotaRecoveryNotifications quotaRecoveryNotifications = new();
-        private readonly QuotaEarlyResetNotifications quotaEarlyResetNotifications = new();
-        private sealed record PendingQuotaAlert(QuotaRecoveryAlert? Recovery, QuotaEarlyResetAlert? EarlyReset,
-            QuotaObservation Observation);
-        private readonly Dictionary<QuotaProvider, PendingQuotaAlert> pendingQuotaAlerts = new();
+        private readonly Dictionary<QuotaProvider, (QuotaRecoveryAlert Alert, QuotaObservation Observation)> pendingQuotaAlerts = new();
         private readonly Func<long> notificationMilliseconds;
-        private readonly Action<QuotaNotificationAlert> showQuotaNotification;
         private long quotaNotificationNotBefore;
         private bool quotaRecoveryEnabled;
         private bool quotaRecoverySettingsReady;
         private bool changingQuotaRecoverySetting;
         private int quotaNotificationEpoch;
-        private bool quotaEarlyResetEnabled;
-        private bool quotaEarlyResetSettingsReady;
-        private bool changingQuotaEarlyResetSetting;
-        private int quotaEarlyResetNotificationEpoch;
         private Icon? currentIcon;
         private TrayAppearance? currentAppearance;
         private bool disposed;
@@ -62,14 +53,12 @@ namespace AiBurgerClock
         internal event Action<AgentState>? TransitionNotificationRequested;
         internal event Action<ProviderKind, Recommendation>? ProviderNotificationRequested;
         internal event Action<QuotaRecoveryAlert>? QuotaRecoveryNotificationRequested;
-        internal event Action<QuotaNotificationAlert>? QuotaNotificationRequested;
 
         // Normal runs use UTC now; the explicit smoke test supplies a clock without changing Windows time.
-        public TrayApplicationContext(bool startedAutomatically, Func<DateTimeOffset>? utcNow = null, bool enableServices = true, UsageStore? usageStore = null, HttpClient? statusHttpClient = null, Action<Uri>? openStatusPage = null, IAccountQuotaClient? accountQuotaClient = null, Func<long>? notificationMilliseconds = null, Action<QuotaNotificationAlert>? quotaNotificationSink = null)
+        public TrayApplicationContext(bool startedAutomatically, Func<DateTimeOffset>? utcNow = null, bool enableServices = true, UsageStore? usageStore = null, HttpClient? statusHttpClient = null, Action<Uri>? openStatusPage = null, IAccountQuotaClient? accountQuotaClient = null, Func<long>? notificationMilliseconds = null)
         {
             this.utcNow = utcNow ?? (() => DateTimeOffset.UtcNow);
             this.notificationMilliseconds = notificationMilliseconds ?? (() => Environment.TickCount64);
-            showQuotaNotification = quotaNotificationSink ?? ShowNativeQuotaNotification;
             this.openStatusPage = openStatusPage ?? ProviderStatusPages.Open;
             store = usageStore ?? new UsageStore();
             statusTicker = new StatusTicker(WindowsProviderNames.Provider, warn: new WindowsWarningLog().Write);
@@ -94,11 +83,6 @@ namespace AiBurgerClock
                 Enabled = false, ToolTipText = QuotaRecoveryText.MenuDetail
             };
             quotaRecoveryMenuItem.Click += async (_, _) => await SetQuotaRecoveryNotificationsAsync(!quotaRecoveryEnabled);
-            quotaEarlyResetMenuItem = new ToolStripMenuItem(QuotaEarlyResetText.MenuLabel)
-            {
-                Enabled = false, ToolTipText = QuotaEarlyResetText.MenuDetail
-            };
-            quotaEarlyResetMenuItem.Click += async (_, _) => await SetQuotaEarlyResetNotificationsAsync(!quotaEarlyResetEnabled);
             ToolStripMenuItem exitItem = new ToolStripMenuItem("종료");
 
             showItem.Click += delegate { ShowWindow(); };
@@ -125,7 +109,6 @@ namespace AiBurgerClock
             statisticsItem.Click += (_, _) => ShowStatistics();
             menu.Items.Add(statisticsItem);
             menu.Items.Add(quotaRecoveryMenuItem);
-            menu.Items.Add(quotaEarlyResetMenuItem);
             menu.Items.Add(autoStartMenuItem);
             menu.Items.Add(holidayMenuItem);
             menu.Items.Add(new ToolStripSeparator());
@@ -196,15 +179,6 @@ namespace AiBurgerClock
             if (exiting || disposed) return;
             quotaRecoverySettingsReady = true;
             RefreshQuotaRecoveryMenu();
-            try { quotaEarlyResetEnabled = await store.GetQuotaEarlyResetNotificationsEnabledAsync(); }
-            catch
-            {
-                quotaEarlyResetEnabled = false;
-                statusWindow.SetFeedback(QuotaEarlyResetText.SettingReadFailed, true);
-            }
-            if (exiting || disposed) return;
-            quotaEarlyResetSettingsReady = true;
-            RefreshQuotaEarlyResetMenu();
             holidaySettingsReady = true;
             RefreshHolidayControls();
             RefreshStatus(false); // Initial policy load is not a service recovery or a time transition.
@@ -361,39 +335,30 @@ namespace AiBurgerClock
             statusWindow.UpdateProviders(result.Providers, result.Schedule, monitor?.IsRefreshing ?? false,
                 monitor?.NextRefreshUtc, monitor?.StorageError ?? "");
             // Quotas never change official service health, schedule recommendations or tray colors.
-            var recent = Enum.GetValues<QuotaProvider>()
-                .Select(provider => (Provider: provider, Alert: quotaEarlyResetNotifications.Recent(provider)))
-                .Where(item => item.Alert is not null).ToDictionary(item => item.Provider, item => item.Alert!);
             statusWindow.UpdateQuotas(quotaMonitor?.Snapshot() ??
-                Enum.GetValues<QuotaProvider>().Select(p => new QuotaState(p)).ToArray(), utcNow(), recent);
+                Enum.GetValues<QuotaProvider>().Select(p => new QuotaState(p)).ToArray(), utcNow());
         }
 
         private void OnQuotaSucceeded(QuotaObservation observation)
         {
             if (exiting || disposed || statusWindow.IsDisposed) return;
             int epoch = Volatile.Read(ref quotaNotificationEpoch);
-            int earlyResetEpoch = Volatile.Read(ref quotaEarlyResetNotificationEpoch);
             try
             {
                 // Unlike Changed, success observations must not be coalesced: every accepted
                 // reading is needed to distinguish exhaustion and recovery in the right order.
                 statusWindow.BeginInvoke(() =>
                 {
-                    if (exiting || disposed) return;
-                    bool recoveryCurrent = epoch == Volatile.Read(ref quotaNotificationEpoch);
-                    bool earlyResetCurrent = earlyResetEpoch == Volatile.Read(ref quotaEarlyResetNotificationEpoch);
-                    if (!recoveryCurrent && !earlyResetCurrent) return;
+                    if (exiting || disposed || epoch != Volatile.Read(ref quotaNotificationEpoch)) return;
                     // Invalidate at every success, not just at delivery. If a window disappears
                     // or changes period and later returns, an old queued alert must stay gone.
-                    if (pendingQuotaAlerts.TryGetValue(observation.Provider, out var pending))
-                        KeepPending(observation.Provider, CurrentPending(pending, observation.Reading,
-                            observation.CheckedAtUtc, observation.ContinuityId));
-                    var recovery = recoveryCurrent ? quotaRecoveryNotifications.Observe(observation,
-                        quotaRecoveryEnabled && quotaRecoverySettingsReady && !changingQuotaRecoverySetting) : null;
-                    var earlyReset = earlyResetCurrent ? quotaEarlyResetNotifications.Observe(observation,
-                        quotaEarlyResetEnabled && quotaEarlyResetSettingsReady && !changingQuotaEarlyResetSetting) : null;
-                    if (recovery is not null || earlyReset is not null)
-                        pendingQuotaAlerts[observation.Provider] = new(recovery, earlyReset, observation);
+                    if (pendingQuotaAlerts.TryGetValue(observation.Provider, out var pending) &&
+                        (observation.CheckedAtUtc < pending.Observation.CheckedAtUtc ||
+                         !RecoveryStillCurrent(pending.Alert, pending.Observation.Reading, observation.Reading, observation.CheckedAtUtc)))
+                        pendingQuotaAlerts.Remove(observation.Provider);
+                    var alert = quotaRecoveryNotifications.Observe(observation,
+                        quotaRecoveryEnabled && quotaRecoverySettingsReady && !changingQuotaRecoverySetting);
+                    if (alert is not null) pendingQuotaAlerts[alert.Provider] = (alert, observation);
                     // Existing schedule/official alerts always apply before a quota alert.
                     RefreshStatus(TickReason.ProviderChanged);
                 });
@@ -406,46 +371,40 @@ namespace AiBurgerClock
 
         private void ShowPendingQuotaNotification()
         {
-            if (exiting || disposed) return;
+            if (exiting || disposed || !quotaRecoveryEnabled || changingQuotaRecoverySetting) return;
             // At most one pending summary per Provider (three entries), never an unbounded history.
             foreach (var provider in pendingQuotaAlerts.Keys.OrderBy(provider => provider).ToArray())
             {
                 var pending = pendingQuotaAlerts[provider];
+                var alert = pending.Alert;
                 var state = quotaMonitor?.Snapshot().FirstOrDefault(state => state.Provider == provider);
                 // A failed later query, disappearance, re-exhaustion or elapsed reset invalidates
                 // a queued summary. Never show a past recovery as a current availability claim.
                 if (state is null || state.IsPrevious || state.Reading is null ||
-                    state.LastSuccessfulCheckUtc is not { } success || success < pending.Observation.CheckedAtUtc)
+                    state.LastSuccessfulCheckUtc < pending.Observation.CheckedAtUtc ||
+                    !RecoveryStillCurrent(alert, pending.Observation.Reading, state.Reading, utcNow()))
                 {
                     pendingQuotaAlerts.Remove(provider);
                     continue;
                 }
-                // Wait for an in-flight read rather than sending against a partially
-                // completed attempt whose eventual failure would break continuity.
-                if (state.IsRefreshing) continue;
-                pending = CurrentPending(pending, state.Reading, utcNow(), state.ContinuityId);
-                KeepPending(provider, pending);
-                if (pending is null) continue;
-                var alert = QuotaNotificationText.Combine(pending.Recovery, pending.EarlyReset);
-                if (alert is null) { pendingQuotaAlerts.Remove(provider); continue; }
                 if (notificationMilliseconds() < quotaNotificationNotBefore) continue;
                 pendingQuotaAlerts.Remove(provider);
                 try
                 {
-                    showQuotaNotification(alert);
+                    (trayIcon.BalloonTipTitle, trayIcon.BalloonTipText) = (alert.Title, alert.Body);
+                    trayIcon.BalloonTipIcon = ToolTipIcon.Info;
+                    trayIcon.ShowBalloonTip(6000);
                 }
                 catch (Exception error) when (error is System.ComponentModel.Win32Exception or InvalidOperationException)
                 {
-                    statusWindow.SetFeedback(alert.EarlyReset is not null
-                        ? QuotaEarlyResetText.DeliveryFailed : QuotaRecoveryText.DeliveryFailed, true);
+                    statusWindow.SetFeedback(QuotaRecoveryText.DeliveryFailed, true);
                     // The observation was already consumed. A display failure must not retry
                     // this same alert on every tick or interrupt quota polling.
                     DeferQuotaNotifications(6500);
                     return;
                 }
                 DeferQuotaNotifications(6500);
-                if (alert.Recovery is { } recovery) QuotaRecoveryNotificationRequested?.Invoke(recovery);
-                QuotaNotificationRequested?.Invoke(alert);
+                QuotaRecoveryNotificationRequested?.Invoke(alert);
                 return;
             }
         }
@@ -456,59 +415,12 @@ namespace AiBurgerClock
                     (window.ResetsAtUtc is null || window.ResetsAtUtc > now) &&
                     expected.Windows.Any(old => old.Id == id && old.WindowMinutes == window.WindowMinutes)));
 
-        private void ShowNativeQuotaNotification(QuotaNotificationAlert alert)
-        {
-            (trayIcon.BalloonTipTitle, trayIcon.BalloonTipText) = (alert.Title, alert.Body);
-            trayIcon.BalloonTipIcon = ToolTipIcon.Info;
-            trayIcon.ShowBalloonTip(6000);
-        }
-
-        private PendingQuotaAlert? CurrentPending(PendingQuotaAlert pending, QuotaReading reading,
-            DateTimeOffset now, long continuityId)
-        {
-            if (now < pending.Observation.CheckedAtUtc) return null;
-            var recovery = quotaRecoveryEnabled && quotaRecoverySettingsReady && !changingQuotaRecoverySetting &&
-                pending.Recovery is { } recovered && RecoveryStillCurrent(recovered, pending.Observation.Reading, reading, now)
-                ? recovered : null;
-            var earlyReset = quotaEarlyResetEnabled && quotaEarlyResetSettingsReady && !changingQuotaEarlyResetSetting &&
-                pending.EarlyReset is { } early && EarlyResetStillCurrent(early, pending.Observation.Reading,
-                    reading, now, continuityId) ? early : null;
-            return recovery is null && earlyReset is null ? null : pending with { Recovery = recovery, EarlyReset = earlyReset };
-        }
-
-        private static bool EarlyResetStillCurrent(QuotaEarlyResetAlert alert, QuotaReading expected,
-            QuotaReading current, DateTimeOffset now, long continuityId) =>
-            continuityId > 0 && continuityId == alert.ContinuityId && now >= alert.CheckedAtUtc &&
-            now - alert.CheckedAtUtc <= TimeSpan.FromMinutes(90) &&
-            expected.Windows.Select(window => (window.Id, window.WindowMinutes)).ToHashSet()
-                .SetEquals(current.Windows.Select(window => (window.Id, window.WindowMinutes))) &&
-            alert.Windows.All(change => current.Windows.Any(window => window.Id == change.Id &&
-                window.WindowMinutes == change.WindowMinutes && window.UsedPercent < 100 &&
-                window.ResetsAtUtc is { } reset && reset > now &&
-                (reset - change.ResetUtc).Duration() <= TimeSpan.FromMinutes(1)));
-
-        private void KeepPending(QuotaProvider provider, PendingQuotaAlert? pending)
-        {
-            if (pending is null) pendingQuotaAlerts.Remove(provider);
-            else pendingQuotaAlerts[provider] = pending;
-        }
-
-        private void DropPendingKind(bool earlyReset)
-        {
-            foreach (var provider in pendingQuotaAlerts.Keys.ToArray())
-            {
-                var pending = pendingQuotaAlerts[provider];
-                pending = earlyReset ? pending with { EarlyReset = null } : pending with { Recovery = null };
-                KeepPending(provider, pending.Recovery is null && pending.EarlyReset is null ? null : pending);
-            }
-        }
-
         internal async Task SetQuotaRecoveryNotificationsAsync(bool enabled)
         {
             if (exiting || disposed || !quotaRecoverySettingsReady || changingQuotaRecoverySetting) return;
             changingQuotaRecoverySetting = true;
             Interlocked.Increment(ref quotaNotificationEpoch);
-            DropPendingKind(earlyReset: false);
+            pendingQuotaAlerts.Clear();
             quotaRecoveryNotifications.Reset();
             RefreshQuotaRecoveryMenu();
             Task save = store.SetQuotaRecoveryNotificationsEnabledAsync(enabled);
@@ -529,7 +441,7 @@ namespace AiBurgerClock
                 pendingWrites.Remove(save);
                 // Enabling never replays a recovery observed while disabled or while saving.
                 Interlocked.Increment(ref quotaNotificationEpoch);
-                DropPendingKind(earlyReset: false);
+                pendingQuotaAlerts.Clear();
                 quotaRecoveryNotifications.Reset();
                 changingQuotaRecoverySetting = false;
                 if (!disposed) RefreshQuotaRecoveryMenu();
@@ -540,44 +452,6 @@ namespace AiBurgerClock
         {
             quotaRecoveryMenuItem.Checked = quotaRecoveryEnabled;
             quotaRecoveryMenuItem.Enabled = quotaRecoverySettingsReady && !changingQuotaRecoverySetting && !exiting;
-        }
-
-        internal async Task SetQuotaEarlyResetNotificationsAsync(bool enabled)
-        {
-            if (exiting || disposed || !quotaEarlyResetSettingsReady || changingQuotaEarlyResetSetting) return;
-            changingQuotaEarlyResetSetting = true;
-            Interlocked.Increment(ref quotaEarlyResetNotificationEpoch);
-            DropPendingKind(earlyReset: true);
-            quotaEarlyResetNotifications.Reset();
-            RefreshQuotaEarlyResetMenu();
-            Task save = store.SetQuotaEarlyResetNotificationsEnabledAsync(enabled);
-            pendingWrites.Add(save);
-            try
-            {
-                await save;
-                if (exiting || disposed) return;
-                quotaEarlyResetEnabled = enabled;
-                statusWindow.SetFeedback(QuotaEarlyResetText.Saved(enabled));
-            }
-            catch
-            {
-                if (!disposed) statusWindow.SetFeedback(QuotaEarlyResetText.SettingSaveFailed, true);
-            }
-            finally
-            {
-                pendingWrites.Remove(save);
-                Interlocked.Increment(ref quotaEarlyResetNotificationEpoch);
-                DropPendingKind(earlyReset: true);
-                quotaEarlyResetNotifications.Reset();
-                changingQuotaEarlyResetSetting = false;
-                if (!disposed) RefreshQuotaEarlyResetMenu();
-            }
-        }
-
-        private void RefreshQuotaEarlyResetMenu()
-        {
-            quotaEarlyResetMenuItem.Checked = quotaEarlyResetEnabled;
-            quotaEarlyResetMenuItem.Enabled = quotaEarlyResetSettingsReady && !changingQuotaEarlyResetSetting && !exiting;
         }
 
         private void OpenStatusPage(ProviderKind provider)
@@ -740,7 +614,6 @@ namespace AiBurgerClock
             exiting = true;
             pendingQuotaAlerts.Clear();
             Interlocked.Increment(ref quotaNotificationEpoch);
-            Interlocked.Increment(ref quotaEarlyResetNotificationEpoch);
             timer.Stop();
             trayIcon.Visible = false;
             statisticsWindow?.Close();
@@ -767,10 +640,6 @@ namespace AiBurgerClock
         internal TrayAppearance? CurrentAppearance => currentAppearance;
         internal bool QuotaRecoveryNotificationsEnabled => quotaRecoveryEnabled;
         internal ToolStripMenuItem QuotaRecoveryMenuItem => quotaRecoveryMenuItem;
-        internal bool QuotaEarlyResetNotificationsEnabled => quotaEarlyResetEnabled;
-        internal ToolStripMenuItem QuotaEarlyResetMenuItem => quotaEarlyResetMenuItem;
-        internal QuotaEarlyResetAlert? RecentEarlyReset(QuotaProvider provider) =>
-            exiting || disposed ? null : quotaEarlyResetNotifications.Recent(provider);
 
         protected override void Dispose(bool disposing)
         {
@@ -791,7 +660,6 @@ namespace AiBurgerClock
                 }
                 pendingQuotaAlerts.Clear();
                 Interlocked.Increment(ref quotaNotificationEpoch);
-                Interlocked.Increment(ref quotaEarlyResetNotificationEpoch);
                 quotaMonitor?.Dispose();
                 monitor?.Dispose();
                 ownedHttpClient?.Dispose();

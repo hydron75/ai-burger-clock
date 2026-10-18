@@ -163,44 +163,6 @@ internal static class QuotaPresentationTests
                 Check(QuotaPanelModel.Section(unavailable, now).Rows.All(row => row.ComparisonText is null),
                     provider + " unavailable comparison is null in the shared row contract");
         }
-        foreach (var provider in Enum.GetValues<QuotaProvider>())
-        {
-            var engine = new QuotaEarlyResetNotifications();
-            QuotaObservation Reading(long sequence, DateTimeOffset at, double used, DateTimeOffset reset) =>
-                new(provider, sequence, at, new(provider, [new("synthetic-weekly", "합성 주간", used, reset, 10080)]), 1);
-            _ = engine.Observe(Reading(1, now.AddHours(-1), 60, now.AddDays(2)), true);
-            var observation = Reading(2, now, 5, now.AddDays(6));
-            var recent = engine.Observe(observation, true)!;
-            var state = new QuotaState(provider, observation.Reading, now, now, now.AddHours(1));
-            var original = QuotaPanelModel.Section(state, now);
-            var detailed = QuotaPanelModel.Section(state, now, recent);
-            Check(recent is not null && !original.Detail.Contains("최근 조기 초기화", StringComparison.Ordinal),
-                provider + " no history keeps the existing whole-Provider detail unchanged");
-            Check(detailed.Detail.Contains(QuotaEarlyResetText.Detail(recent!, now), StringComparison.Ordinal) &&
-                detailed.Detail.Contains("사용 60% → 5%", StringComparison.Ordinal),
-                provider + " only Provider detail appends the session-only reset record and exact synthetic values");
-            Check(detailed.Heading with { Detail = "" } == original.Heading with { Detail = "" } &&
-                detailed.Metadata with { Detail = "" } == original.Metadata with { Detail = "" } &&
-                detailed.Rows.Select(row => row with { Detail = "" }).SequenceEqual(original.Rows.Select(row => row with { Detail = "" })),
-                provider + " recent record changes no visible row, bar value, tone, comparison or due metadata");
-            Check(detailed.Rows.All(row => row.Detail == detailed.Detail) && detailed.Metadata.Detail == detailed.Detail &&
-                (detailed.Scope is null || detailed.Scope.Detail == detailed.Detail),
-                provider + " every hover target shares exactly one Provider detail with the historical record");
-            var later = QuotaPanelModel.Section(state, now.AddMinutes(17), recent);
-            Check(later.Detail.Contains("확인 17분 전", StringComparison.Ordinal) &&
-                later.Detail.Contains("현재 한도 값이 아닌 당시의 확인 기록", StringComparison.Ordinal),
-                provider + " confirmation age advances without mislabelling history as the latest quota observation");
-            var failed = QuotaPanelModel.Section(state with { IsPrevious = true, Error = "합성 조회 실패" }, now, recent);
-            Check(failed.Detail.Contains("합성 조회 실패", StringComparison.Ordinal) &&
-                failed.Detail.Contains("최근 조기 초기화", StringComparison.Ordinal) && failed.Rows.All(row => row.Tone == PanelTone.Muted),
-                provider + " previous values retain clearly historical information without appearing freshly verified");
-            var other = recent! with { Provider = provider == QuotaProvider.Codex ? QuotaProvider.Claude : QuotaProvider.Codex };
-            Check(QuotaPanelModel.Section(state, now, other).Detail == original.Detail,
-                provider + " another Provider's historical values never leak into this detail");
-            var routed = QuotaPanelModel.Sections([state], now, new Dictionary<QuotaProvider, QuotaEarlyResetAlert> { [provider] = recent! });
-            Check(routed.Single().Detail == detailed.Detail && state.NextCheckUtc == now.AddHours(1) && state.LastSuccessfulCheckUtc == now,
-                provider + " host history routing is pure and changes no quota query state");
-        }
         var culture = CultureInfo.CurrentCulture;
         try
         {

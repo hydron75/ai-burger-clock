@@ -125,35 +125,6 @@ internal sealed class UsageStore(string? databasePath = null)
             return true;
         }, cancellationToken);
 
-    // Early-reset inference is a separate opt-in, never inherited from recovery
-    // notifications. Only the preference is saved; recent reset observations stay in memory.
-    public Task<bool> GetQuotaEarlyResetNotificationsEnabledAsync(CancellationToken cancellationToken = default) =>
-        ExecuteAsync(connection =>
-        {
-            using var command = connection.CreateCommand();
-            command.CommandText = "SELECT Value FROM AppMetadata WHERE Key=$key;";
-            command.Parameters.AddWithValue("$key", QuotaEarlyResetText.SettingKey);
-            return command.ExecuteScalar() switch
-            {
-                null => false,
-                "1" => true,
-                "0" => false,
-                _ => throw new InvalidDataException("한도 조기 초기화 알림 설정을 읽을 수 없습니다.")
-            };
-        }, cancellationToken);
-
-    public Task SetQuotaEarlyResetNotificationsEnabledAsync(bool enabled, CancellationToken cancellationToken = default) =>
-        ExecuteAsync(connection =>
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            using var command = connection.CreateCommand();
-            command.CommandText = "INSERT INTO AppMetadata(Key,Value) VALUES($key,$value) ON CONFLICT(Key) DO UPDATE SET Value=excluded.Value;";
-            command.Parameters.AddWithValue("$key", QuotaEarlyResetText.SettingKey);
-            command.Parameters.AddWithValue("$value", enabled ? "1" : "0");
-            command.ExecuteNonQuery();
-            return true;
-        }, cancellationToken);
-
     public Task AddUsageAsync(UsageMeasurement item, CancellationToken cancellationToken = default) =>
         AddUsageBatchAsync([item], cancellationToken);
 

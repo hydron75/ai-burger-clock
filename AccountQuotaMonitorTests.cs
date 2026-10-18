@@ -21,12 +21,6 @@ internal static class AccountQuotaMonitorTests
             await SuccessObservationTestsAsync(directory, Check);
             await SuccessObservationCancellationTestsAsync(Check);
             await SuccessObservationOrderingTestsAsync(Check);
-            await ContinuityTestsAsync(Check);
-            await StartedCancellationContinuityTestsAsync(Check);
-            await CacheContinuityTestsAsync(directory, Check);
-            await CachePersistenceCancellationTestsAsync(directory, Check);
-            await DiagnosticFailureContinuityTestsAsync(directory, Check);
-            await QueuedContinuityObservationTestsAsync(Check);
             await ExhaustedPollingTestsAsync(Check);
             await GeminiPollingTestsAsync(Check);
             await OverlapTestsAsync(Check);
@@ -249,10 +243,6 @@ internal static class AccountQuotaMonitorTests
         check(failedCacheState.CacheError.Length > 0 && failedCacheState.Error.Length == 0
             && failedCacheState.Reading?.Windows[0].UsedPercent == 20,
             "Cache warning remains distinct from a live query failure");
-        await cacheFailure.RefreshOnceAsync(QuotaProvider.Codex);
-        check(cacheObservations.Count == 2 && cacheObservations.All(item => item.ContinuityId == 1)
-            && cacheObservations[^1].Sequence == 2 && State(cacheFailure, QuotaProvider.Codex).ContinuityId == 1,
-            "Repeated cache-save failures preserve accepted live continuity and successful sequences");
         await cacheFailure.StopAsync();
     }
 
@@ -275,8 +265,6 @@ internal static class AccountQuotaMonitorTests
             "Client returning after cancellation cannot be accepted or emit a successful observation");
         check(!State(monitor, QuotaProvider.Codex).IsRefreshing,
             "Cancellation clears the refresh flag without manufacturing a failure or success");
-        check(State(monitor, QuotaProvider.Codex).ContinuityId == 2,
-            "Cancellation after a client returned still exposes a continuity break in the snapshot");
         client.Handler = (provider, _) => Task.FromResult(Reading(provider, 20));
         await monitor.RefreshOnceAsync(QuotaProvider.Codex);
         check(observations.Count == 1 && observations[0].Sequence == 1,
@@ -296,8 +284,6 @@ internal static class AccountQuotaMonitorTests
         catch (OperationCanceledException) { stoppedCanceled = true; }
         check(stoppedCanceled && afterStop == 0 && State(stopped, QuotaProvider.Claude).LastSuccessfulCheckUtc is null,
             "Lifetime cancellation after client return suppresses success as well as notification callbacks");
-        check(State(stopped, QuotaProvider.Claude).ContinuityId == 2,
-            "Lifetime cancellation finalizes the started attempt's continuity before disposal completes");
     }
 
     private static async Task SuccessObservationOrderingTestsAsync(Action<bool, string> check)
@@ -332,295 +318,6 @@ internal static class AccountQuotaMonitorTests
         await monitor.RefreshOnceAsync(QuotaProvider.Codex);
         check(delivered.SequenceEqual([1L, 2L]) && client.Calls(QuotaProvider.Codex) == 2,
             "Success callbacks are ordered outside the state lock while the provider gate still serializes delivery");
-        await monitor.StopAsync();
-    }
-
-    private static async Task ContinuityTestsAsync(Action<bool, string> check)
-    {
-        foreach (QuotaProvider provider in Enum.GetValues<QuotaProvider>())
-        {
-            DateTimeOffset now = Now;
-            var client = new FakeClient((requested, _) => Task.FromResult(Reading(requested, 80)));
-            using var monitor = new AccountQuotaMonitor(client, utcNow: () => now);
-            List<QuotaObservation> observations = [];
-            bool callbacksMatchSnapshot = true;
-            monitor.Succeeded += observation =>
-            {
-                QuotaState completed = State(monitor, observation.Provider);
-                callbacksMatchSnapshot &= !completed.IsRefreshing && completed.ContinuityId == observation.ContinuityId
-                    && completed.LastSuccessfulCheckUtc == observation.CheckedAtUtc;
-                observations.Add(observation);
-            };
-            check(monitor.Snapshot().All(state => state.ContinuityId == 1),
-                "Every provider begins with positive process-local continuity before its first attempt");
-            await monitor.RefreshOnceAsync(provider);
-            check(observations.Count == 1 && observations[0].Sequence == 1 && observations[0].ContinuityId == 1
-                && State(monitor, provider).ContinuityId == 1,
-                "First accepted live response carries the current positive continuity generation");
-            now = now.AddMinutes(1);
-            await monitor.RefreshOnceAsync(provider);
-            check(observations.Count == 2 && observations[^1].Sequence == 2 && observations[^1].ContinuityId == 1,
-                "Uninterrupted successes advance only the successful sequence, not continuity");
-
-            client.Handler = (_, _) => Task.FromException<QuotaReading>(new IOException("Synthetic interrupted read"));
-            await monitor.RefreshOnceAsync(provider);
-            check(observations.Count == 2 && State(monitor, provider) is { ContinuityId: 2, IsPrevious: true },
-                "A failed started attempt changes the snapshot generation without emitting or consuming success");
-            check(monitor.Snapshot().Where(state => state.Provider != provider).All(state => state.ContinuityId == 1),
-                "A continuity break belongs only to its provider");
-            client.Handler = (requested, _) => Task.FromResult(Reading(requested, 5));
-            await monitor.RefreshOnceAsync(provider);
-            check(observations[^1].Sequence == 3 && observations[^1].ContinuityId == 2,
-                "Recovery after failure keeps the old successful sequence semantics but exposes the break");
-
-            client.Handler = (requested, _) => Task.FromResult(Reading(
-                requested == QuotaProvider.Codex ? QuotaProvider.Claude : QuotaProvider.Codex, 5));
-            await monitor.RefreshOnceAsync(provider);
-            check(observations.Count == 3 && State(monitor, provider).ContinuityId == 3,
-                "A mismatched response breaks continuity exactly once without a successful observation");
-            client.Handler = (requested, _) => Task.FromResult(Reading(requested, 5));
-            await monitor.RefreshOnceAsync(provider);
-            check(observations[^1].Sequence == 4 && observations[^1].ContinuityId == 3,
-                "A valid response after invalid data seeds the new generation");
-
-            client.Handler = (_, _) => Task.FromException<QuotaReading>(new OperationCanceledException("Synthetic CLI timeout"));
-            await monitor.RefreshOnceAsync(provider);
-            check(observations.Count == 4 && State(monitor, provider).ContinuityId == 4
-                && State(monitor, provider).Error.Contains("시간 초과", StringComparison.Ordinal),
-                "Client cancellation without caller cancellation is a timeout failure and breaks continuity");
-            client.Handler = (requested, _) => Task.FromResult(Reading(requested, 5));
-            await monitor.RefreshOnceAsync(provider);
-            check(observations[^1].Sequence == 5 && observations[^1].ContinuityId == 4,
-                "Timeout failures do not consume a successful sequence");
-
-            using var precanceled = new CancellationTokenSource();
-            precanceled.Cancel();
-            int callsBefore = client.Calls(provider);
-            bool canceled = false;
-            try { await monitor.RefreshOnceAsync(provider, precanceled.Token); }
-            catch (OperationCanceledException) { canceled = true; }
-            check(canceled && client.Calls(provider) == callsBefore && observations.Count == 5
-                && State(monitor, provider).ContinuityId == 4 && !State(monitor, provider).IsRefreshing,
-                "A precancelled caller never starts a read or breaks continuity");
-
-            var entered = Signal();
-            var release = Signal();
-            client.Handler = async (requested, token) =>
-            {
-                entered.TrySetResult();
-                await release.Task.WaitAsync(token).ConfigureAwait(false);
-                return Reading(requested, 5);
-            };
-            Task active = monitor.RefreshOnceAsync(provider);
-            await entered.Task.WaitAsync(TimeSpan.FromSeconds(3));
-            await monitor.RefreshOnceAsync(provider);
-            check(client.Calls(provider) == callsBefore + 1 && State(monitor, provider).ContinuityId == 4,
-                "A busy-provider skip does not start an additional read or break continuity");
-            release.TrySetResult();
-            await active;
-            check(observations.Count == 6 && observations[^1].Sequence == 6 && observations[^1].ContinuityId == 4,
-                "The original in-flight success retains continuity after a skipped overlap");
-
-            client.Handler = (_, _) => Task.FromException<QuotaReading>(new IOException("Synthetic later failure"));
-            await monitor.RefreshOnceAsync(provider);
-            check(observations[0].ContinuityId == 1 && observations[0].Reading.Windows[0].UsedPercent == 80
-                && State(monitor, provider).ContinuityId == 5,
-                "Previously delivered immutable observations do not change when the current generation advances");
-            check(callbacksMatchSnapshot, "Every success callback sees its exact completed snapshot generation and time");
-            await monitor.StopAsync();
-        }
-
-        var recovery = new QuotaRecoveryNotifications();
-        var recoveryClient = new FakeClient((provider, _) => Task.FromResult(Reading(provider, 100)));
-        using var recoveryMonitor = new AccountQuotaMonitor(recoveryClient, utcNow: () => Now);
-        List<QuotaRecoveryAlert> alerts = [];
-        recoveryMonitor.Succeeded += observation =>
-        {
-            if (recovery.Observe(observation, enabled: true) is { } alert) alerts.Add(alert);
-        };
-        await recoveryMonitor.RefreshOnceAsync(QuotaProvider.Codex);
-        recoveryClient.Handler = (_, _) => Task.FromException<QuotaReading>(new IOException("Synthetic recovery gap"));
-        await recoveryMonitor.RefreshOnceAsync(QuotaProvider.Codex);
-        recoveryClient.Handler = (provider, _) => Task.FromResult(Reading(provider, 10));
-        await recoveryMonitor.RefreshOnceAsync(QuotaProvider.Codex);
-        check(alerts.Count == 1 && alerts[0].Sequence == 2 && alerts[0].WindowIds.SequenceEqual(["account:5h"]),
-            "Existing exhaustion-recovery alerts still span failed reads; early-reset continuity is independent");
-        await recoveryMonitor.StopAsync();
-    }
-
-    private static async Task StartedCancellationContinuityTestsAsync(Action<bool, string> check)
-    {
-        foreach (QuotaProvider provider in Enum.GetValues<QuotaProvider>())
-        {
-            var entered = Signal();
-            var client = new FakeClient(async (requested, token) =>
-            {
-                entered.TrySetResult();
-                await Task.Delay(Timeout.Infinite, token).ConfigureAwait(false);
-                return Reading(requested, 5);
-            });
-            using var monitor = new AccountQuotaMonitor(client, utcNow: () => Now);
-            using var cancellation = new CancellationTokenSource();
-            List<QuotaObservation> observations = [];
-            monitor.Succeeded += observations.Add;
-            Task active = monitor.RefreshOnceAsync(provider, cancellation.Token);
-            await entered.Task.WaitAsync(TimeSpan.FromSeconds(3));
-            check(State(monitor, provider) is { IsRefreshing: true, ContinuityId: 1 },
-                "A running read keeps the current generation until its result is finalized");
-            cancellation.Cancel();
-            bool canceled = false;
-            try { await active; }
-            catch (OperationCanceledException) { canceled = true; }
-            check(canceled && State(monitor, provider) is { IsRefreshing: false, ContinuityId: 2 }
-                && observations.Count == 0 && State(monitor, provider).LastSuccessfulCheckUtc is null,
-                "External cancellation of a started read breaks continuity without a ghost success");
-            check(monitor.Snapshot().Where(state => state.Provider != provider).All(state => state.ContinuityId == 1),
-                "Cancelling one provider does not invalidate another provider's pending comparison");
-            client.Handler = (requested, _) => Task.FromResult(Reading(requested, 5));
-            await monitor.RefreshOnceAsync(provider);
-            check(observations.Count == 1 && observations[0] is { Sequence: 1, ContinuityId: 2 },
-                "The next real success starts at sequence one in the post-cancellation generation");
-            await monitor.StopAsync();
-        }
-
-        using var beforeReadCancellation = new CancellationTokenSource();
-        var notInvoked = new FakeClient((provider, _) => Task.FromResult(Reading(provider, 5)));
-        using var beforeRead = new AccountQuotaMonitor(notInvoked, utcNow: () => Now);
-        beforeRead.Changed += () =>
-        {
-            if (State(beforeRead, QuotaProvider.Codex).IsRefreshing) beforeReadCancellation.Cancel();
-        };
-        bool beforeReadCanceled = false;
-        try { await beforeRead.RefreshOnceAsync(QuotaProvider.Codex, beforeReadCancellation.Token); }
-        catch (OperationCanceledException) { beforeReadCanceled = true; }
-        check(beforeReadCanceled && notInvoked.Calls(QuotaProvider.Codex) == 0
-            && State(beforeRead, QuotaProvider.Codex) is { ContinuityId: 1, IsRefreshing: false },
-            "Cancellation after acquiring the provider gate but before invoking the client is not a started read");
-        await beforeRead.StopAsync();
-    }
-
-    private static async Task CacheContinuityTestsAsync(string directory, Action<bool, string> check)
-    {
-        var store = new UsageStore(Path.Combine(directory, "continuity-cache.db"));
-        foreach (QuotaProvider provider in Enum.GetValues<QuotaProvider>())
-            await store.SaveQuotaAsync(new(1, Reading(provider, 80), Now.AddMinutes(-10), []));
-        var release = Signal();
-        var client = new FakeClient(async (provider, token) =>
-        {
-            await release.Task.WaitAsync(token).ConfigureAwait(false);
-            return Reading(provider, 5);
-        });
-        using (var monitor = new AccountQuotaMonitor(client, store, () => Now))
-        {
-            var observations = new System.Collections.Concurrent.ConcurrentQueue<QuotaObservation>();
-            monitor.Succeeded += observations.Enqueue;
-            monitor.Start();
-            await WaitAsync(() => monitor.Snapshot().All(state => state.IsRefreshing && state.Reading is not null));
-            check(monitor.Snapshot().All(state => state is { ContinuityId: 1, IsPrevious: true }
-                && state.LastSuccessfulCheckUtc == Now.AddMinutes(-10)) && observations.IsEmpty,
-                "Loading a cache preserves the new monitor's positive generation but never establishes live continuity");
-            release.TrySetResult();
-            await WaitAsync(() => observations.Count == 3 && monitor.Snapshot().All(state => !state.IsRefreshing));
-            check(observations.All(item => item is { ContinuityId: 1, Sequence: 1 })
-                && monitor.Snapshot().All(state => state.ContinuityId == 1),
-                "First live successes after cache loading seed sequence one without a false continuity break");
-            await monitor.StopAsync();
-        }
-        var cache = await store.ReadQuotaAsync(QuotaProvider.Codex);
-        check(cache is not null && !JsonSerializer.Serialize(cache, QuotaJsonContext.Default.QuotaCache)
-            .Contains("ContinuityId", StringComparison.Ordinal),
-            "Continuity generation is never persisted in the normalized quota cache");
-        using var restarted = new AccountQuotaMonitor(client, store, () => Now.AddMinutes(1));
-        var restartObservations = new System.Collections.Concurrent.ConcurrentQueue<QuotaObservation>();
-        restarted.Succeeded += restartObservations.Enqueue;
-        restarted.Start();
-        await WaitAsync(() => restartObservations.Count == 3 && restarted.Snapshot().All(state => !state.IsRefreshing));
-        check(restartObservations.All(item => item is { Sequence: 1, ContinuityId: 1 }),
-            "Restart creates a fresh live baseline rather than restoring sequence or continuity from the cache");
-        await restarted.StopAsync();
-    }
-
-    private static async Task CachePersistenceCancellationTestsAsync(string directory, Action<bool, string> check)
-    {
-        var store = new UsageStore(Path.Combine(directory, "continuity-cancel-cache.db"));
-        await store.InitializeAsync();
-        // Hold the existing operation gate to pause precisely at cache persistence,
-        // rather than relying on SQLite timing or adding a production-only test hook.
-        var storeGate = (SemaphoreSlim)typeof(UsageStore).GetField("gate",
-            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.GetValue(store)!;
-        await storeGate.WaitAsync();
-        var client = new FakeClient((provider, _) => Task.FromResult(Reading(provider, 5)));
-        using var monitor = new AccountQuotaMonitor(client, store, () => Now);
-        using var cancellation = new CancellationTokenSource();
-        List<QuotaObservation> observations = [];
-        monitor.Succeeded += observations.Add;
-        Task active = monitor.RefreshOnceAsync(QuotaProvider.Codex, cancellation.Token);
-        try
-        {
-            await WaitAsync(() => State(monitor, QuotaProvider.Codex).LastSuccessfulCheckUtc == Now);
-            check(State(monitor, QuotaProvider.Codex) is { ContinuityId: 1, IsRefreshing: true } && observations.Count == 0,
-                "A validated response may be visible while cache persistence is still awaiting completion");
-            cancellation.Cancel();
-            bool canceled = false;
-            try { await active; }
-            catch (OperationCanceledException) { canceled = true; }
-            check(canceled && observations.Count == 0
-                && State(monitor, QuotaProvider.Codex) is { ContinuityId: 2, IsRefreshing: false }
-                && State(monitor, QuotaProvider.Codex).LastSuccessfulCheckUtc == Now
-                && State(monitor, QuotaProvider.Codex).Reading?.Windows[0].UsedPercent == 5,
-                "Cancelled cache persistence keeps validated values but suppresses delivery and breaks continuity once");
-        }
-        finally { storeGate.Release(); }
-        await monitor.RefreshOnceAsync(QuotaProvider.Codex);
-        check(observations.Count == 1 && observations[0] is { Sequence: 2, ContinuityId: 2 },
-            "The success sequence already assigned before cancelled persistence remains consumed without bridging generations");
-        await monitor.RefreshOnceAsync(QuotaProvider.Codex);
-        check(observations.Count == 2 && observations[1] is { Sequence: 3, ContinuityId: 2 },
-            "Subsequent fully completed reads remain consecutive in the new generation");
-        await monitor.StopAsync();
-    }
-
-    private static async Task QueuedContinuityObservationTestsAsync(Action<bool, string> check)
-    {
-        var client = new FakeClient((provider, _) => Task.FromResult(Reading(provider, 80)));
-        using var monitor = new AccountQuotaMonitor(client, utcNow: () => Now);
-        Queue<Action> callbacks = new();
-        List<(QuotaObservation Observation, QuotaState Current)> delivered = [];
-        monitor.Succeeded += observation => callbacks.Enqueue(() => delivered.Add((observation, State(monitor, observation.Provider))));
-        await monitor.RefreshOnceAsync(QuotaProvider.Codex);
-        client.Handler = (_, _) => Task.FromException<QuotaReading>(new IOException("Synthetic gap before UI delivery"));
-        await monitor.RefreshOnceAsync(QuotaProvider.Codex);
-        client.Handler = (provider, _) => Task.FromResult(Reading(provider, 5));
-        await monitor.RefreshOnceAsync(QuotaProvider.Codex);
-        check(callbacks.Count == 2 && delivered.Count == 0, "Asynchronous hosts can defer success callbacks without retaining a state lock");
-        while (callbacks.TryDequeue(out Action? callback)) callback();
-        check(delivered[0].Observation is { Sequence: 1, ContinuityId: 1 }
-            && delivered[0].Observation.Reading.Windows[0].UsedPercent == 80
-            && delivered[0].Current is { ContinuityId: 2, IsRefreshing: false },
-            "A queued old observation stays immutable while a fresh snapshot exposes the intervening failed attempt");
-        check(delivered[1].Observation is { Sequence: 2, ContinuityId: 2 }
-            && delivered[1].Current.ContinuityId == delivered[1].Observation.ContinuityId
-            && delivered[1].Current.Reading?.Windows[0].UsedPercent == 5,
-            "The queued latest successful observation matches its fresh snapshot's positive generation");
-        await monitor.StopAsync();
-    }
-
-    private static async Task DiagnosticFailureContinuityTestsAsync(string directory, Action<bool, string> check)
-    {
-        var diagnosticLog = new QuotaPollingDiagnosticLog(Path.Combine(directory, "continuity-invalid-diagnostic"));
-        Directory.CreateDirectory(diagnosticLog.LogPath);
-        var client = new FakeClient((provider, _) => Task.FromResult(Reading(provider, 5)));
-        using var monitor = new AccountQuotaMonitor(client, utcNow: () => Now, diagnosticLog: diagnosticLog);
-        List<QuotaObservation> observations = [];
-        monitor.Succeeded += observations.Add;
-        await monitor.RefreshOnceAsync(QuotaProvider.Codex);
-        await monitor.RefreshOnceAsync(QuotaProvider.Codex);
-        check(observations.Count == 2 && observations[0].Sequence == 1 && observations[1].Sequence == 2
-            && observations.All(item => item.ContinuityId == 1)
-            && State(monitor, QuotaProvider.Codex).ContinuityId == 1,
-            "An unavailable optional diagnostic file neither interrupts delivery nor breaks live continuity");
-        check(Directory.Exists(diagnosticLog.LogPath) && State(monitor, QuotaProvider.Codex).Error.Length == 0,
-            "A diagnostic failure preserves the existing target and remains separate from the live-read result");
         await monitor.StopAsync();
     }
 

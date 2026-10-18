@@ -35,11 +35,10 @@ internal static class QuotaPanelModel
             window.RemainingPercent < 10 ? PanelTone.Caution : PanelTone.Good;
     }
 
-    public static IReadOnlyList<QuotaSectionText> Sections(IReadOnlyList<QuotaState> states, DateTimeOffset now,
-        IReadOnlyDictionary<QuotaProvider, QuotaEarlyResetAlert>? recentEarlyResets = null) =>
-        states.Select(state => Section(state, now, recentEarlyResets?.GetValueOrDefault(state.Provider))).ToArray();
+    public static IReadOnlyList<QuotaSectionText> Sections(IReadOnlyList<QuotaState> states, DateTimeOffset now) =>
+        states.Select(state => Section(state, now)).ToArray();
 
-    public static QuotaSectionText Section(QuotaState state, DateTimeOffset now, QuotaEarlyResetAlert? recentEarlyReset = null)
+    public static QuotaSectionText Section(QuotaState state, DateTimeOffset now)
     {
         bool previous = state.IsPrevious;
         bool codex = state.Provider == QuotaProvider.Codex;
@@ -49,7 +48,7 @@ internal static class QuotaPanelModel
         var next = state.NextCheckUtc is { } due ? AgentSchedule.ToKst(due).ToString("MM-dd HH:mm") : "—";
         QuotaPace[] paces = state.Reading?.Windows.Select(window =>
             QuotaPacing.Calculate(window, state.LastSuccessfulCheckUtc, previous, now)).ToArray() ?? [];
-        string note = ProviderDetail(state, now, paces, recentEarlyReset);
+        string note = ProviderDetail(state, now, paces);
 
         var heading = new QuotaLine(
             name + (state.IsRefreshing ? " · 확인 중" : previous && state.Reading is not null ? " · 이전 조회값" : ""),
@@ -73,8 +72,7 @@ internal static class QuotaPanelModel
         return new(state.Provider, heading, scope, rows, metadata);
     }
 
-    private static string ProviderDetail(QuotaState state, DateTimeOffset now, IReadOnlyList<QuotaPace> paces,
-        QuotaEarlyResetAlert? recentEarlyReset)
+    private static string ProviderDetail(QuotaState state, DateTimeOffset now, IReadOnlyList<QuotaPace> paces)
     {
         bool codex = state.Provider == QuotaProvider.Codex;
         bool gemini = state.Provider == QuotaProvider.Gemini;
@@ -102,8 +100,6 @@ internal static class QuotaPanelModel
                 lines.Add($"{reading.Windows[index].Label}: {paces[index].Detail}");
             lines.Add("리셋 예정에서 역산한 단순 시간 기준입니다. 소진 예측이나 실제 창 시작·활성 확인은 아닙니다.\n");
         }
-        if (recentEarlyReset is { } recent && recent.Provider == state.Provider)
-            lines.Add(QuotaEarlyResetText.Detail(recent, now) + "\n");
         string Stamp(DateTimeOffset? at, string format) => at is { } value
             ? AgentSchedule.ToKst(value).ToString(format, CultureInfo.InvariantCulture) : "—";
         lines.Add("마지막 성공: " + Stamp(state.LastSuccessfulCheckUtc, "MM-dd HH:mm"));
