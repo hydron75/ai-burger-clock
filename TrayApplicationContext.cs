@@ -30,6 +30,7 @@ namespace AiBurgerClock
             QuotaObservation Observation);
         private readonly Dictionary<QuotaProvider, PendingQuotaAlert> pendingQuotaAlerts = new();
         private readonly Func<long> notificationMilliseconds;
+        private readonly Action<QuotaNotificationAlert> showQuotaNotification;
         private long quotaNotificationNotBefore;
         private bool quotaRecoveryEnabled;
         private bool quotaRecoverySettingsReady;
@@ -64,10 +65,11 @@ namespace AiBurgerClock
         internal event Action<QuotaNotificationAlert>? QuotaNotificationRequested;
 
         // Normal runs use UTC now; the explicit smoke test supplies a clock without changing Windows time.
-        public TrayApplicationContext(bool startedAutomatically, Func<DateTimeOffset>? utcNow = null, bool enableServices = true, UsageStore? usageStore = null, HttpClient? statusHttpClient = null, Action<Uri>? openStatusPage = null, IAccountQuotaClient? accountQuotaClient = null, Func<long>? notificationMilliseconds = null)
+        public TrayApplicationContext(bool startedAutomatically, Func<DateTimeOffset>? utcNow = null, bool enableServices = true, UsageStore? usageStore = null, HttpClient? statusHttpClient = null, Action<Uri>? openStatusPage = null, IAccountQuotaClient? accountQuotaClient = null, Func<long>? notificationMilliseconds = null, Action<QuotaNotificationAlert>? quotaNotificationSink = null)
         {
             this.utcNow = utcNow ?? (() => DateTimeOffset.UtcNow);
             this.notificationMilliseconds = notificationMilliseconds ?? (() => Environment.TickCount64);
+            showQuotaNotification = quotaNotificationSink ?? ShowNativeQuotaNotification;
             this.openStatusPage = openStatusPage ?? ProviderStatusPages.Open;
             store = usageStore ?? new UsageStore();
             statusTicker = new StatusTicker(WindowsProviderNames.Provider, warn: new WindowsWarningLog().Write);
@@ -430,9 +432,7 @@ namespace AiBurgerClock
                 pendingQuotaAlerts.Remove(provider);
                 try
                 {
-                    (trayIcon.BalloonTipTitle, trayIcon.BalloonTipText) = (alert.Title, alert.Body);
-                    trayIcon.BalloonTipIcon = ToolTipIcon.Info;
-                    trayIcon.ShowBalloonTip(6000);
+                    showQuotaNotification(alert);
                 }
                 catch (Exception error) when (error is System.ComponentModel.Win32Exception or InvalidOperationException)
                 {
@@ -455,6 +455,13 @@ namespace AiBurgerClock
                 current.Windows.Any(window => window.Id == id && window.UsedPercent < 100 &&
                     (window.ResetsAtUtc is null || window.ResetsAtUtc > now) &&
                     expected.Windows.Any(old => old.Id == id && old.WindowMinutes == window.WindowMinutes)));
+
+        private void ShowNativeQuotaNotification(QuotaNotificationAlert alert)
+        {
+            (trayIcon.BalloonTipTitle, trayIcon.BalloonTipText) = (alert.Title, alert.Body);
+            trayIcon.BalloonTipIcon = ToolTipIcon.Info;
+            trayIcon.ShowBalloonTip(6000);
+        }
 
         private PendingQuotaAlert? CurrentPending(PendingQuotaAlert pending, QuotaReading reading,
             DateTimeOffset now, long continuityId)

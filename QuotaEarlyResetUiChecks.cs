@@ -411,6 +411,138 @@ internal static class QuotaEarlyResetUiChecks
             try { Directory.Delete(directory, recursive: true); }
             catch (IOException) { Console.WriteLine("INFO: Private early reset smoke data remains in its temporary folder."); }
         }
+        await RunDeliveryFailureAsync();
+    }
+
+    private static async Task RunDeliveryFailureAsync()
+    {
+        string directory = Directory.CreateTempSubdirectory("AiBurgerClock-early-reset-delivery-").FullName;
+        var now = new DateTimeOffset(2026, 9, 19, 12, 0, 0, TimeSpan.FromHours(9));
+        long milliseconds = 60000;
+        var store = new UsageStore(Path.Combine(directory, "delivery-failure.db"));
+        QuotaWindow[] Rows(double used, DateTimeOffset reset) =>
+            [new("synthetic-session", "5시간", used, reset, 300)];
+        var client = new EarlyResetClient(Rows(60, now.AddHours(2)));
+        using var handler = new TestStatusHttpHandler();
+        using var http = new HttpClient(handler);
+        TrayApplicationContext? context = null;
+        bool disposed = false;
+        bool rejectDelivery = true;
+        int attempts = 0;
+        var delivered = new List<QuotaNotificationAlert>();
+
+        void Check(bool condition, string label)
+        {
+            if (!condition) throw new InvalidOperationException("Quota early reset delivery UI: " + label);
+            Console.WriteLine("PASS: " + label);
+        }
+        async Task FlushUi()
+        {
+            var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            context!.StatusWindow.BeginInvoke(() => completion.SetResult());
+            await completion.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        }
+        async Task Refresh()
+        {
+            await Task.Run(() => context!.QuotaMonitor!.RefreshOnceAsync(QuotaProvider.Claude));
+            await FlushUi();
+        }
+
+        try
+        {
+            context = new TrayApplicationContext(true, () => now, usageStore: store,
+                statusHttpClient: http, accountQuotaClient: client,
+                notificationMilliseconds: () => milliseconds,
+                quotaNotificationSink: _ =>
+                {
+                    attempts++;
+                    if (rejectDelivery) throw new InvalidOperationException("Synthetic native notification delivery failure");
+                });
+            context.QuotaNotificationRequested += delivered.Add;
+            await context.Initialization;
+            var deadline = DateTime.UtcNow.AddSeconds(5);
+            while (context.ProviderMonitor is not { IsRefreshing: false } ||
+                context.ProviderMonitor.Snapshot().Any(state => !state.LastSuccessfulCheckUtc.HasValue) ||
+                context.QuotaMonitor!.Snapshot().Any(state => !state.LastSuccessfulCheckUtc.HasValue || state.IsRefreshing))
+            {
+                if (DateTime.UtcNow > deadline) throw new TimeoutException("Private delivery failure host startup");
+                await Task.Delay(20);
+            }
+            await FlushUi();
+            Check(!context.QuotaEarlyResetNotificationsEnabled && attempts == 0 && delivered.Count == 0,
+                "Injected delivery failure host starts silent with early reset opt-in OFF");
+            int calls = client.TotalCalls;
+            int serviceCalls = handler.RequestCount;
+            var otherProviderChecks = context.QuotaMonitor.Snapshot().Where(state => state.Provider != QuotaProvider.Claude)
+                .Select(state => state.CheckedAtUtc).ToArray();
+            await context.SetQuotaEarlyResetNotificationsAsync(true);
+            await FlushUi();
+            Check(await store.GetQuotaEarlyResetNotificationsEnabledAsync() &&
+                !await store.GetQuotaRecoveryNotificationsEnabledAsync() && client.TotalCalls == calls &&
+                handler.RequestCount == serviceCalls,
+                "Delivery test opt-in persists independently without querying or changing recovery preferences");
+            await Refresh();
+            Check(attempts == 0 && delivered.Count == 0 && context.RecentEarlyReset(QuotaProvider.Claude) is null,
+                "First successful opt-in reading seeds silently even with a rejecting notification sink");
+
+            now = now.AddMinutes(1);
+            milliseconds += 60000;
+            client.Set(QuotaProvider.Claude, Rows(10, now.AddHours(3)));
+            await Refresh();
+            Check(attempts == 1 && delivered.Count == 0 &&
+                context.StatusWindow.FeedbackLabel.Text == QuotaEarlyResetText.DeliveryFailed &&
+                context.StatusWindow.FeedbackLabel.ForeColor == Color.Firebrick,
+                "Synthetic native delivery failure is attempted once and reports shared error feedback without a delivered event");
+            QuotaEarlyResetAlert? failedDeliveryHistory = context.RecentEarlyReset(QuotaProvider.Claude);
+            Check(failedDeliveryHistory is { Windows.Count: 1 } && failedDeliveryHistory.Windows[0].UsedPercent == 10,
+                "A confirmed early reset remains in local session detail even when its native banner cannot be delivered");
+            calls = client.TotalCalls;
+            for (int tick = 0; tick < 3; tick++)
+            {
+                milliseconds += 7000;
+                context.RefreshStatus(false);
+                await FlushUi();
+            }
+            Check(attempts == 1 && delivered.Count == 0 && client.TotalCalls == calls,
+                "Repeated UI ticks do not retry a consumed failed delivery or issue another quota query");
+
+            client.Set(QuotaProvider.Claude, Rows(60, now.AddHours(2)));
+            await Refresh();
+            Check(attempts == 1 && context.QuotaMonitor.Snapshot().Single(state => state.Provider == QuotaProvider.Claude)
+                is { IsRefreshing: false, IsPrevious: false, Error: "" },
+                "A native delivery failure does not interrupt later successful quota refreshes");
+            now = now.AddMinutes(1);
+            milliseconds += 60000;
+            rejectDelivery = false;
+            client.Set(QuotaProvider.Claude, Rows(5, now.AddHours(3)));
+            await Refresh();
+            Check(attempts == 2 && delivered.Count == 1 && delivered[0] is { Recovery: null, EarlyReset: not null },
+                "A new legitimate early reset can deliver once after a prior native delivery failure");
+            Check(context.RecentEarlyReset(QuotaProvider.Claude) is { } recent &&
+                recent.Sequence > failedDeliveryHistory!.Sequence && recent.Windows[0].UsedPercent == 5,
+                "A later confirmed event replaces the single local history entry after delivery recovers");
+            Check(context.QuotaEarlyResetNotificationsEnabled && !context.QuotaRecoveryNotificationsEnabled &&
+                context.QuotaMonitor.Snapshot().Where(state => state.Provider != QuotaProvider.Claude)
+                    .Select(state => state.CheckedAtUtc).SequenceEqual(otherProviderChecks) && handler.RequestCount == serviceCalls,
+                "Delivery failure and recovery preserve both preferences and do not query unrelated Providers");
+            await context.QuotaMonitor.StopAsync();
+            await context.ProviderMonitor!.StopAsync();
+            context.Dispose();
+            disposed = true;
+            Check(context.StatusWindow.IsDisposed,
+                "Injected delivery failure host stops and disposes normally without touching actual OS notification settings");
+        }
+        finally
+        {
+            if (context is not null && !disposed)
+            {
+                if (context.QuotaMonitor is not null) await context.QuotaMonitor.StopAsync();
+                if (context.ProviderMonitor is not null) await context.ProviderMonitor.StopAsync();
+                context.Dispose();
+            }
+            try { Directory.Delete(directory, recursive: true); }
+            catch (IOException) { Console.WriteLine("INFO: Private early reset delivery smoke data remains in its temporary folder."); }
+        }
     }
 
     private sealed class EarlyResetClient(IReadOnlyList<QuotaWindow> initial) : IAccountQuotaClient
