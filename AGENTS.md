@@ -62,7 +62,8 @@ Windows 앱 검사는 앱 EXE에 옵션을 붙여 실행합니다. 분기는 [Pr
 - Windows 쪽에서 공통 원본을 고치면 Mac 공통 검사·native smoke 확인을 PR에 요청 항목으로 적습니다. Mac 담당이 그 PR HEAD로 `Mac/build.sh`와 `--smoke-test`를 실행하고 결과를 PR 코멘트로 남깁니다.
 - **분리 원칙(2026-10-08):** 필수 로직은 공통 원본에 두고, UI는 각 OS 네이티브(Windows WinForms, Mac AppKit)로 만듭니다. 패널 본문 문구와 표시 판정(톤)도 공통에 둡니다. 색·글꼴·레이아웃·클릭 동작·자동 실행 문구·메뉴 구성은 각 OS가 정합니다. 상세: [MACOS_UI_PLAN](MACOS_UI_PLAN.md).
   - **흐름 변경 규칙(2026-10-09):** 기록·공휴일·시작·종료 흐름을 바꾸는 PR은 상대 호스트 확인 항목을 반드시 적습니다. 이 흐름은 아직 두 호스트(`TrayApplicationContext`, `MacApplication`)에 따로 있어 한쪽만 고쳐질 수 있기 때문입니다(MACOS_UI_PLAN 4-4).
-  - **메뉴 항목 예외(2026-10-08):** 메뉴 항목의 종류·순서·문구는 공통(`UsageMeasurementFactory.MenuItems` 등)에 둡니다. 메뉴를 만들고 띄우는 코드·단축키·위치·열리는 방식은 각 OS가 맡습니다. 두 OS가 같은 항목을 같은 순서로 보여 주기 위한 예외입니다.
+  - **메뉴 항목 예외(2026-10-08, 범위 명확화 2026-10-18):** 상태 창·팝오버의 **Provider 기록 메뉴**처럼 두 OS가 같은 항목을 같은 순서로 보여 줘야 하는 메뉴는 항목의 종류·순서·문구를 공통(`UsageMeasurementFactory.MenuItems` 등)에 둡니다. 메뉴를 만들고 띄우는 코드·단축키·위치·열리는 방식은 각 OS가 맡습니다.
+  - **트레이·메뉴바 메뉴(2026-10-18):** Windows 트레이 메뉴와 Mac 메뉴바(오른쪽 클릭) 메뉴의 **구성과 순서는 각 OS가 정하고, 문구 상수(`QuotaRecoveryText.MenuLabel` 등)만 공통**에 둡니다. 새 항목을 더할 때는 공통 문구 상수를 쓰고, 양쪽 호스트가 항목을 따로 만들어도 됩니다. 항목의 의미·기본값(예: 기본 꺼짐)은 PR 본문에 양쪽 확인 항목으로 적습니다.
 - **개선 전달:** Windows·Mac 구분 없이 먼저 개선안을 낸 쪽이 그 개선을 공통 원본 PR로 올립니다. 상대 담당은 자기 UI에 맞춰 반영하고, 반영할 수 없는 부분은 이유와 대안을 PR 코멘트로 회신합니다(재검토 회신).
 - Mac 버전은 `Mac/AiBurgerClock.Mac.csproj`에서만 바꿉니다. `Version`·`AssemblyVersion`·`FileVersion`·`ApplicationVersion`을 함께 바꿉니다. `AssemblyVersion`은 공식 상태 조회 User-Agent와 CLI 클라이언트 버전에 쓰입니다. `Info.plist`에는 적지 않습니다([Mac/README](Mac/README.md)).
 
