@@ -124,8 +124,8 @@ internal static class AccountQuotaTests
         QuotaWindow low = new("low", "low", 90.01, null);
         QuotaWindow exhausted = new("exhausted", "5시간", 100, null, 300);
         QuotaWindow nearZero = exhausted with { UsedPercent = 99.96 };
-        check(AccountQuotaPolicy.GetInterval(now, [normal]) == TimeSpan.FromHours(6), "Normal polling is 6h");
-        check(AccountQuotaPolicy.GetInterval(now, [normal with { UsedPercent = 90 }]) == TimeSpan.FromHours(6), "Exactly 10% remaining is not below 10%");
+        check(AccountQuotaPolicy.GetInterval(now, [normal]) == TimeSpan.FromHours(1), "Normal polling is 1h");
+        check(AccountQuotaPolicy.GetInterval(now, [normal with { UsedPercent = 90 }]) == TimeSpan.FromHours(1), "Exactly 10% remaining retains the hourly default");
         check(AccountQuotaPolicy.GetInterval(now, [low]) == TimeSpan.FromHours(1), "Below 10% remaining polls hourly");
         check(AccountQuotaPolicy.GetInterval(now, [normal, low]) == TimeSpan.FromHours(1), "Any applicable window enables hourly polling");
         check(AccountQuotaPolicy.GetInterval(now, [exhausted]) == TimeSpan.FromMinutes(15), "Exactly exhausted 5h quota polls every 15m");
@@ -137,28 +137,28 @@ internal static class AccountQuotaTests
         check(AccountQuotaPolicy.GetInterval(now, [nearZero]) == TimeSpan.FromHours(1), "Display rounding to 0% must not enable exhausted polling");
         foreach (double invalid in new[] { double.NaN, double.PositiveInfinity, double.NegativeInfinity, -1, 100.01 })
         {
-            check(AccountQuotaPolicy.GetInterval(now, [normal with { UsedPercent = invalid }]) == TimeSpan.FromHours(6),
+            check(AccountQuotaPolicy.GetInterval(now, [normal with { UsedPercent = invalid }]) == TimeSpan.FromHours(1),
                 "Invalid usage cannot invent exhaustion or low-remaining polling");
             check(AccountQuotaPolicy.GetInterval(now, [normal with { UsedPercent = invalid }, low]) == TimeSpan.FromHours(1),
                 "Invalid usage cannot override another valid low-remaining window");
         }
-        check(AccountQuotaPolicy.GetInterval(now, []) == TimeSpan.FromHours(6), "Unknown quota does not invent low remaining");
-        check(AccountQuotaPolicy.GetInterval(now, [normal]) == TimeSpan.FromHours(6), "Another provider's low quota cannot affect this provider");
-        check(AccountQuotaPolicy.GetNextCheckUtc(now, now, [normal]) == now.AddHours(6), "Normal next check");
+        check(AccountQuotaPolicy.GetInterval(now, []) == TimeSpan.FromHours(1), "Unknown quota does not invent low remaining");
+        check(AccountQuotaPolicy.GetInterval(now, [normal]) == TimeSpan.FromHours(1), "Another provider's low quota cannot affect this provider");
+        check(AccountQuotaPolicy.GetNextCheckUtc(now, now, [normal]) == now.AddHours(1), "Normal next check");
         check(AccountQuotaPolicy.GetNextCheckUtc(now, now, [low]) == now.AddHours(1), "Low remaining next check");
         check(AccountQuotaPolicy.GetNextCheckUtc(now, now, [exhausted]) == now.AddMinutes(15), "Exhausted next check does not require a reset timestamp");
         check(AccountQuotaPolicy.GetNextCheckUtc(now, now, [nearZero]) == now.AddHours(1), "Fresh fractional recovery returns to hourly checks");
-        check(AccountQuotaPolicy.GetNextCheckUtc(now, now, [exhausted with { UsedPercent = 30 }]) == now.AddHours(6), "Fresh normal recovery returns to 6h checks");
+        check(AccountQuotaPolicy.GetNextCheckUtc(now, now, [exhausted with { UsedPercent = 30 }]) == now.AddHours(1), "Fresh normal recovery returns to hourly default checks");
         check(AccountQuotaPolicy.GetFailureRetryDelay(1, [normal]) == TimeSpan.FromMinutes(15), "First failed read retries after 15m");
         check(AccountQuotaPolicy.GetFailureRetryDelay(2, [normal]) == TimeSpan.FromMinutes(30), "Failed read retry doubles");
-        check(AccountQuotaPolicy.GetFailureRetryDelay(100, [normal]) == TimeSpan.FromHours(6), "Failure retry never exceeds normal 6h");
+        check(AccountQuotaPolicy.GetFailureRetryDelay(100, [normal]) == TimeSpan.FromHours(1), "Failure retry never exceeds the normal 1h cap");
         check(AccountQuotaPolicy.GetFailureRetryDelay(100, [low]) == TimeSpan.FromHours(1), "Failure retry never exceeds low-remaining 1h");
         foreach (int failures in new[] { 1, 2, 100 })
             check(AccountQuotaPolicy.GetFailureRetryDelay(failures, [normal, exhausted]) == TimeSpan.FromMinutes(15),
                 "Failed exhausted reads stay capped at 15m instead of backing off to an hour");
-        check(AccountQuotaPolicy.GetFailureRetryDelay(100, []) == TimeSpan.FromHours(6), "Failure retry without a reading caps at 6h");
+        check(AccountQuotaPolicy.GetFailureRetryDelay(100, []) == TimeSpan.FromHours(1), "Failure retry without a reading caps at 1h");
 
-        DateTimeOffset reset = now.AddHours(2);
+        DateTimeOffset reset = now.AddHours(1);
         QuotaWindow resetting = normal with { ResetsAtUtc = reset };
         QuotaWindow exhaustedResetting = exhausted with { ResetsAtUtc = reset };
         check(AccountQuotaPolicy.GetNextCheckUtc(now, now, [resetting]) == reset.AddMinutes(-15), "Long wait enters reset-15m band on time");
@@ -168,8 +168,8 @@ internal static class AccountQuotaTests
         check(AccountQuotaPolicy.GetInterval(reset.AddMinutes(-15), [resetting]) == TimeSpan.FromMinutes(5), "Reset fast band includes start boundary");
         check(AccountQuotaPolicy.GetInterval(reset, [resetting]) == TimeSpan.FromMinutes(5), "Reset instant polls every 5m");
         check(AccountQuotaPolicy.GetInterval(reset.AddMinutes(15), [resetting]) == TimeSpan.FromMinutes(5), "Reset fast band includes end boundary");
-        check(AccountQuotaPolicy.GetInterval(reset.AddMinutes(-15).AddTicks(-1), [resetting]) == TimeSpan.FromHours(6), "Before fast band normal cadence");
-        check(AccountQuotaPolicy.GetInterval(reset.AddMinutes(15).AddTicks(1), [resetting]) == TimeSpan.FromHours(6), "After fast band normal cadence");
+        check(AccountQuotaPolicy.GetInterval(reset.AddMinutes(-15).AddTicks(-1), [resetting]) == TimeSpan.FromHours(1), "Before fast band normal cadence");
+        check(AccountQuotaPolicy.GetInterval(reset.AddMinutes(15).AddTicks(1), [resetting]) == TimeSpan.FromHours(1), "After fast band normal cadence");
         check(AccountQuotaPolicy.GetInterval(reset, [low, resetting]) == TimeSpan.FromMinutes(5), "Shortest polling condition wins");
         check(AccountQuotaPolicy.GetInterval(reset, [low, exhaustedResetting]) == TimeSpan.FromMinutes(5), "Reset 5m cadence wins over exhausted 15m cadence");
         check(AccountQuotaPolicy.GetInterval(reset.AddMinutes(16), [low, resetting]) == TimeSpan.FromHours(1), "After reset band return to low-remaining cadence");
@@ -180,14 +180,14 @@ internal static class AccountQuotaTests
         foreach (int minute in new[] { 14, 15, 16 })
         {
             DateTimeOffset boundaryNow = reset.AddMinutes(minute);
-            check(AccountQuotaPolicy.GetNextCheckUtc(boundaryNow, boundaryNow, [resetting]) == boundaryNow.AddHours(6),
+            check(AccountQuotaPolicy.GetNextCheckUtc(boundaryNow, boundaryNow, [resetting]) == boundaryNow.AddHours(1),
                 $"Reset+{minute}m does not schedule trailing fast poll outside the band");
             check(AccountQuotaPolicy.GetNextCheckUtc(boundaryNow, boundaryNow, [resetting, low]) == boundaryNow.AddHours(1),
                 $"Reset+{minute}m resumes hourly cadence when remaining is below10%");
             check(AccountQuotaPolicy.GetNextCheckUtc(boundaryNow, boundaryNow, [exhaustedResetting]) == boundaryNow.AddMinutes(15),
                 $"Reset+{minute}m resumes exhausted15m cadence without a trailing fast poll");
             check(AccountQuotaPolicy.GetNextCheckUtc(boundaryNow, boundaryNow,
-                [resetting with { UsedPercent = 90 }]) == boundaryNow.AddHours(6),
+                [resetting with { UsedPercent = 90 }]) == boundaryNow.AddHours(1),
                 $"Reset+{minute}m keeps exact10% remaining on normal cadence");
         }
         QuotaWindow overlapping = normal with { Id = "overlap", ResetsAtUtc = reset.AddMinutes(10) };
@@ -196,13 +196,13 @@ internal static class AccountQuotaTests
         check(AccountQuotaPolicy.GetNextCheckUtc(reset.AddMinutes(20), reset.AddMinutes(20), [resetting, overlapping])
             == reset.AddMinutes(25), "Overlapping band's inclusive end still permits a5m candidate");
         check(AccountQuotaPolicy.GetNextCheckUtc(reset.AddMinutes(25), reset.AddMinutes(25), [resetting, overlapping])
-            == reset.AddMinutes(25).AddHours(6), "Overlapping bands stop fast polling after their final end");
+            == reset.AddMinutes(25).AddHours(1), "Overlapping bands stop fast polling after their final end");
         QuotaWindow touching = normal with { Id = "touching", ResetsAtUtc = reset.AddMinutes(30) };
         check(AccountQuotaPolicy.GetNextCheckUtc(reset.AddMinutes(15), reset.AddMinutes(15), [resetting, touching])
             == reset.AddMinutes(20), "Touching reset bands remain continuous at the boundary");
         QuotaWindow later = normal with { Id = "later", ResetsAtUtc = reset.AddMinutes(45) };
         check(AccountQuotaPolicy.GetNextCheckUtc(reset.AddMinutes(14), reset.AddMinutes(14), [resetting, later])
-            == reset.AddMinutes(30), "Future reset entry still wakes before resumed6h interval");
+            == reset.AddMinutes(30), "Future reset entry still wakes before the resumed hourly interval");
         QuotaWindow soon = normal with { Id = "soon", ResetsAtUtc = reset.AddMinutes(31) };
         check(AccountQuotaPolicy.GetNextCheckUtc(reset.AddMinutes(14), reset.AddMinutes(14), [resetting, soon])
             == reset.AddMinutes(16), "Upcoming band entry wins even when5m candidate lies in that band");
@@ -213,12 +213,12 @@ internal static class AccountQuotaTests
 
         QuotaWindow advanced = normal with { ResetsAtUtc = reset.AddDays(7) };
         check(AccountQuotaPolicy.GetInterval(reset.AddMinutes(10), [advanced], [reset]) == TimeSpan.FromMinutes(5), "Old reset anchor retained after server rolls reset forward");
-        check(AccountQuotaPolicy.GetInterval(reset.AddMinutes(16), [advanced], [reset]) == TimeSpan.FromHours(6), "Old anchor cannot cause indefinite fast polling");
+        check(AccountQuotaPolicy.GetInterval(reset.AddMinutes(16), [advanced], [reset]) == TimeSpan.FromHours(1), "Old anchor cannot cause indefinite fast polling");
         check(AccountQuotaPolicy.GetInterval(reset.AddMinutes(10), [exhausted with { ResetsAtUtc = reset.AddDays(7) }], [reset])
             == TimeSpan.FromMinutes(5), "Exhausted quota preserves old reset's fast band after server advances reset");
         check(AccountQuotaPolicy.GetInterval(reset.AddMinutes(16), [exhausted with { ResetsAtUtc = reset.AddDays(7) }], [reset])
             == TimeSpan.FromMinutes(15), "Expired old reset anchor restores exhausted cadence");
-        check(AccountQuotaPolicy.GetInterval(now, [normal with { ResetsAtUtc = now.AddDays(-7) }]) == TimeSpan.FromHours(6), "Long-past reset is not a live reset band");
+        check(AccountQuotaPolicy.GetInterval(now, [normal with { ResetsAtUtc = now.AddDays(-7) }]) == TimeSpan.FromHours(1), "Long-past reset is not a live reset band");
         check(AccountQuotaPolicy.GetNextCheckUtc(now, now, [normal], [now.AddHours(1)]) == now.AddMinutes(45), "Retained future anchor can wake scheduler");
         check(AccountQuotaPolicy.GetNextCheckUtc(now, now.AddDays(-1), [normal]) == now, "Resume or overdue schedule queries once immediately");
         check(AccountQuotaPolicy.GetNextCheckUtc(reset, reset.AddHours(-1), [resetting]) == reset, "Entering fast band catches overdue poll immediately");
@@ -228,7 +228,7 @@ internal static class AccountQuotaTests
         check(AccountQuotaPolicy.GetNextCheckUtc(kstNow, kstNow, [resetting]) == reset.AddMinutes(-15), "Polling compares instants, not displayed timezone");
         foreach (DateTimeOffset dstDate in new[] { Utc(2026, 3, 8, 7, 0, 0), Utc(2026, 11, 1, 6, 0, 0) })
         {
-            check(AccountQuotaPolicy.GetNextCheckUtc(dstDate, dstDate, [normal]) == dstDate.AddHours(6), "DST transition does not change UTC quota cadence");
+            check(AccountQuotaPolicy.GetNextCheckUtc(dstDate, dstDate, [normal]) == dstDate.AddHours(1), "DST transition does not change UTC quota cadence");
         }
     }
 

@@ -19,8 +19,8 @@ internal static class GeminiPollingPolicyTests
         }
 
         Check(AccountQuotaPolicy.GetNextCheckUtc(Now, Now, [Window(0, Now.AddMinutes(10))],
-            provider: QuotaProvider.Gemini) == Now.AddHours(6),
-            "unused Gemini reset near now must not replace the six-hour interval with five-minute polling");
+            provider: QuotaProvider.Gemini) == Now.AddHours(1),
+            "unused Gemini reset near now must not replace the hourly interval with five-minute polling");
         PolicyTests(Check);
         await MovingResetTestsAsync(Check);
         await FailureTestsAsync(Check);
@@ -40,9 +40,9 @@ internal static class GeminiPollingPolicyTests
             {
                 var unused = window with { ResetsAtUtc = Now.AddMinutes(minutes) };
                 check(AccountQuotaPolicy.GetInterval(Now, [unused], provider: QuotaProvider.Gemini)
-                    == TimeSpan.FromHours(6), "each unused Gemini window is excluded from a live reset band");
+                    == TimeSpan.FromHours(1), "each unused Gemini window is excluded from a live reset band");
                 check(AccountQuotaPolicy.GetNextCheckUtc(Now, Now, [unused], provider: QuotaProvider.Gemini)
-                    == Now.AddHours(6), "each unused Gemini window cannot schedule a future reset-band entry");
+                    == Now.AddHours(1), "each unused Gemini window cannot schedule a future reset-band entry");
             }
             foreach (double invalidOrZero in new[] { 0d, -0d, -1, double.NaN,
                 double.PositiveInfinity, double.NegativeInfinity, 100.01 })
@@ -65,7 +65,7 @@ internal static class GeminiPollingPolicyTests
 
         foreach ((double used, TimeSpan interval) in new[]
         {
-            (0d, TimeSpan.FromHours(6)), (90d, TimeSpan.FromHours(6)), (90.01, TimeSpan.FromHours(1)),
+            (0d, TimeSpan.FromHours(1)), (90d, TimeSpan.FromHours(1)), (90.01, TimeSpan.FromHours(1)),
             (99.96, TimeSpan.FromHours(1)), (100d, TimeSpan.FromMinutes(15))
         })
             check(AccountQuotaPolicy.GetInterval(Now, [Window(0, Now), Window(used, null, "other")],
@@ -83,7 +83,7 @@ internal static class GeminiPollingPolicyTests
             check(AccountQuotaPolicy.GetInterval(Now.AddMinutes(minutes), [Window(0.0001, Now)],
                 provider: QuotaProvider.Gemini) == TimeSpan.FromMinutes(5), "positive reset bands retain inclusive boundaries");
         check(AccountQuotaPolicy.GetNextCheckUtc(Now.AddMinutes(15), Now.AddMinutes(15), [Window(20, Now)],
-            provider: QuotaProvider.Gemini) == Now.AddMinutes(15).AddHours(6), "no trailing five-minute poll follows a genuine band");
+            provider: QuotaProvider.Gemini) == Now.AddMinutes(15).AddHours(1), "no trailing five-minute poll follows a genuine band");
         foreach (QuotaProvider provider in Enum.GetValues<QuotaProvider>())
             check(QuotaPanelModel.Section(new(provider), Now).Detail.Contains(
                 "Gemini 사용 0% 창의 리셋은 빠른 조회 기준에서 제외합니다.", StringComparison.Ordinal)
@@ -103,11 +103,11 @@ internal static class GeminiPollingPolicyTests
             for (; now <= Now.AddDays(7); now = State(monitor).NextCheckUtc!.Value)
             {
                 await monitor.RefreshOnceAsync(QuotaProvider.Gemini);
-                check(State(monitor).NextCheckUtc == now.AddHours(6),
+                check(State(monitor).NextCheckUtc == now.AddHours(1),
                     "seven virtual days of moving unused resets never create two/five-minute polling");
                 calls++;
             }
-            check(calls == 29 && client.Calls == 29, "moving unused resets perform only the expected six-hour synthetic checks");
+            check(calls == 169 && client.Calls == 169, "seven inclusive virtual days perform 169 hourly checks without reset-driven extra queries");
             await monitor.StopAsync();
         }
     }
@@ -122,7 +122,7 @@ internal static class GeminiPollingPolicyTests
         using var monitor = new AccountQuotaMonitor(client, utcNow: () => now);
         await monitor.RefreshOnceAsync(QuotaProvider.Gemini);
         fail = true;
-        foreach (int minutes in new[] { 15, 30, 60, 120, 240, 360, 360 })
+        foreach (int minutes in new[] { 15, 30, 60, 60, 60, 60, 60 })
         {
             await monitor.RefreshOnceAsync(QuotaProvider.Gemini);
             QuotaState state = State(monitor);
@@ -133,7 +133,7 @@ internal static class GeminiPollingPolicyTests
         }
         fail = false;
         await monitor.RefreshOnceAsync(QuotaProvider.Gemini);
-        check(State(monitor).NextCheckUtc == now.AddHours(6), "success clears failures and unused reset polling remains six-hourly");
+        check(State(monitor).NextCheckUtc == now.AddHours(1), "success clears failures and unused reset polling remains hourly");
         fail = true;
         await monitor.RefreshOnceAsync(QuotaProvider.Gemini);
         check(State(monitor).NextCheckUtc == now.AddMinutes(15), "a new failure episode starts at fifteen minutes");
@@ -177,7 +177,7 @@ internal static class GeminiPollingPolicyTests
             var repaired = await store.ReadQuotaAsync(QuotaProvider.Gemini);
             check(repaired?.ResetAnchorPolicyVersion == 1 && repaired.ResetAnchors.SequenceEqual([Now.AddDays(3)]),
                 "the next success saves only eligible legacy reading anchors with the new provenance marker");
-            check(State(monitor).NextCheckUtc == now.AddHours(6), "mixed zero/positive legacy readings do not reintroduce discarded anchors");
+            check(State(monitor).NextCheckUtc == now.AddHours(1), "mixed zero/positive legacy readings do not reintroduce discarded anchors");
             await monitor.StopAsync();
         }
         check(Scalar(path, "PRAGMA user_version;") == 2 &&
@@ -240,13 +240,13 @@ internal static class GeminiPollingPolicyTests
                 "restart keeps the trusted old plus-fifteen-minute band even with zero current usage");
             now = reset.AddMinutes(15);
             await restarted.RefreshOnceAsync(QuotaProvider.Gemini);
-            check(State(restarted).NextCheckUtc == now.AddHours(6), "the inclusive band's end does not schedule a trailing fast check");
+            check(State(restarted).NextCheckUtc == now.AddHours(1), "the inclusive band's end does not schedule a trailing fast check");
             now = now.AddTicks(1);
             await restarted.RefreshOnceAsync(QuotaProvider.Gemini);
             var cached = await store.ReadQuotaAsync(QuotaProvider.Gemini);
             check(cached is { ResetAnchorPolicyVersion: 1 } && cached.ResetAnchors.Count == 0,
                 "expired trusted anchors are removed from the new cache");
-            check(State(restarted).NextCheckUtc == now.AddHours(6), "zero-use reading returns to ordinary cadence after the genuine band");
+            check(State(restarted).NextCheckUtc == now.AddHours(1), "zero-use reading returns to ordinary cadence after the genuine band");
             await restarted.StopAsync();
         }
     }

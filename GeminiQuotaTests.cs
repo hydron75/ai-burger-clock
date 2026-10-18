@@ -100,7 +100,7 @@ internal static class GeminiQuotaTests
             """{"id":"gemini-5h","window":"5h","remaining_fraction":0.05}"""));
         check(AccountQuotaPolicy.GetInterval(now, low.Windows) == TimeSpan.FromHours(1),
             "Gemini low remaining uses the shared one-hour policy");
-        check(AccountQuotaPolicy.GetInterval(now, reading.Windows) == TimeSpan.FromHours(6),
+        check(AccountQuotaPolicy.GetInterval(now, reading.Windows) == TimeSpan.FromHours(1),
             "third-party exhausted windows do not shorten Gemini polling");
         QuotaReading nearZero = AccountQuotaParsers.ParseGemini(GeminiRows(
             """{"id":"gemini-5h","window":"5h","remaining_fraction":0.0004}"""));

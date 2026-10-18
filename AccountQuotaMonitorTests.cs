@@ -60,7 +60,7 @@ internal static class AccountQuotaMonitorTests
         check(claude.Reading is null && claude.IsPrevious && claude.LastSuccessfulCheckUtc is null && claude.Error.Length > 0,
             "Initial failed provider remains unknown, not zero or full");
         check(!claude.Error.Contains("sensitive", StringComparison.Ordinal), "Exception details never become the visible error");
-        check(codex.CheckedAtUtc == now && codex.LastSuccessfulCheckUtc == now && codex.NextCheckUtc == now.AddHours(6),
+        check(codex.CheckedAtUtc == now && codex.LastSuccessfulCheckUtc == now && codex.NextCheckUtc == now.AddHours(1),
             "Success sets current timestamps and default schedule");
 
         now = now.AddHours(1);
@@ -96,8 +96,8 @@ internal static class AccountQuotaMonitorTests
         await monitor.RefreshOnceAsync(QuotaProvider.Codex);
         check(!State(monitor, QuotaProvider.Codex).IsPrevious && State(monitor, QuotaProvider.Codex).Error.Length == 0,
             "Valid reading recovers after invalid responses");
-        check(State(monitor, QuotaProvider.Codex).NextCheckUtc == now.AddHours(6), "Success resets failure backoff to the normal schedule");
-        now = now.AddHours(6).AddMinutes(6);
+        check(State(monitor, QuotaProvider.Codex).NextCheckUtc == now.AddHours(1), "Success resets failure backoff to the normal schedule");
+        now = now.AddHours(1).AddMinutes(6);
         check(State(monitor, QuotaProvider.Codex).IsPrevious, "Overdue refresh presents cached values as previous");
         now = Now.AddHours(-1);
         check(State(monitor, QuotaProvider.Codex).IsPrevious, "Backward clock change cannot make future cached data fresh");
@@ -122,7 +122,7 @@ internal static class AccountQuotaMonitorTests
         await Task.WhenAll(monitor.RefreshOnceAsync(QuotaProvider.Codex), monitor.RefreshOnceAsync(QuotaProvider.Claude));
         check(State(monitor, QuotaProvider.Claude).NextCheckUtc == now.AddMinutes(15),
             "One exhausted weekly window enables 15m polling even while the 5h window has remaining quota");
-        check(State(monitor, QuotaProvider.Codex).NextCheckUtc == now.AddHours(6),
+        check(State(monitor, QuotaProvider.Codex).NextCheckUtc == now.AddHours(1),
             "Claude exhaustion cannot shorten Codex's independent normal polling interval");
 
         client.Handler = (_, _) => Task.FromException<QuotaReading>(new IOException("Synthetic exhausted-query failure"));
@@ -136,7 +136,7 @@ internal static class AccountQuotaMonitorTests
             check(claude.IsPrevious && claude.Reading?.Windows[1].RemainingPercent == 0 && claude.LastSuccessfulCheckUtc == Now,
                 "Failed exhausted read preserves the known zero and its original successful time");
         }
-        check(State(monitor, QuotaProvider.Codex).NextCheckUtc == Now.AddHours(6) && State(monitor, QuotaProvider.Codex).Error.Length == 0,
+        check(State(monitor, QuotaProvider.Codex).NextCheckUtc == Now.AddHours(1) && State(monitor, QuotaProvider.Codex).Error.Length == 0,
             "Repeated Claude failures cannot alter another provider's cadence or error state");
 
         now = now.AddMinutes(15);
@@ -158,13 +158,13 @@ internal static class AccountQuotaMonitorTests
         now = now.AddHours(1);
         claudeWeeklyUsed = 0;
         await monitor.RefreshOnceAsync(QuotaProvider.Claude);
-        check(State(monitor, QuotaProvider.Claude).NextCheckUtc == now.AddHours(6),
-            "A successful full recovery returns the provider to normal 6h polling");
+        check(State(monitor, QuotaProvider.Claude).NextCheckUtc == now.AddHours(1),
+            "A successful full recovery returns the provider to normal hourly polling");
 
         codexUsed = 100;
         await Task.WhenAll(monitor.RefreshOnceAsync(QuotaProvider.Codex), monitor.RefreshOnceAsync(QuotaProvider.Claude));
         check(State(monitor, QuotaProvider.Codex).NextCheckUtc == now.AddMinutes(15)
-            && State(monitor, QuotaProvider.Claude).NextCheckUtc == now.AddHours(6),
+            && State(monitor, QuotaProvider.Claude).NextCheckUtc == now.AddHours(1),
             "The same exhausted rule applies to Codex without changing recovered Claude's cadence");
         await monitor.StopAsync();
     }
@@ -361,8 +361,8 @@ internal static class AccountQuotaMonitorTests
         using var monitor = new AccountQuotaMonitor(client, utcNow: () => now);
         await Task.WhenAll(Enum.GetValues<QuotaProvider>().Select(provider => monitor.RefreshOnceAsync(provider)));
         check(State(monitor, QuotaProvider.Gemini).NextCheckUtc == now.AddMinutes(15), "Gemini exhaustion polls every 15m");
-        check(State(monitor, QuotaProvider.Codex).NextCheckUtc == now.AddHours(6) &&
-            State(monitor, QuotaProvider.Claude).NextCheckUtc == now.AddHours(6), "Gemini exhaustion cannot shorten other providers' cadence");
+        check(State(monitor, QuotaProvider.Codex).NextCheckUtc == now.AddHours(1) &&
+            State(monitor, QuotaProvider.Claude).NextCheckUtc == now.AddHours(1), "Gemini exhaustion cannot shorten other providers' cadence");
         check(State(monitor, QuotaProvider.Gemini).Reading?.Windows.Count == 2, "Gemini five-hour and weekly windows stay together");
         used = 96;
         await monitor.RefreshOnceAsync(QuotaProvider.Gemini);
@@ -379,7 +379,7 @@ internal static class AccountQuotaMonitorTests
         check(State(monitor, QuotaProvider.Gemini).NextCheckUtc == now.AddMinutes(5), "Gemini preserves the old reset anchor after rollover");
         now = now.AddMinutes(26);
         await monitor.RefreshOnceAsync(QuotaProvider.Gemini);
-        check(State(monitor, QuotaProvider.Gemini).NextCheckUtc == now.AddHours(6), "Gemini returns to 6h outside the reset band");
+        check(State(monitor, QuotaProvider.Gemini).NextCheckUtc == now.AddHours(1), "Gemini returns to the hourly default outside the reset band");
         DateTimeOffset success = now;
         client.Handler = (_, _) => Task.FromException<QuotaReading>(new IOException("Synthetic agy diagnostic secret"));
         await monitor.RefreshOnceAsync(QuotaProvider.Gemini);
@@ -426,7 +426,7 @@ internal static class AccountQuotaMonitorTests
             monitor.RequestRefresh();
             await WaitAsync(() => Enum.GetValues<QuotaProvider>().All(provider => client.Calls(provider) == 3)
                 && monitor.Snapshot().All(state => !state.IsRefreshing));
-            check(monitor.Snapshot().All(state => state.NextCheckUtc == Now.AddHours(6)),
+            check(monitor.Snapshot().All(state => state.NextCheckUtc == Now.AddHours(1)),
                 "Manual refresh re-arms the next scheduled check");
             await monitor.StopAsync();
             monitor.RequestRefresh(queueWhileRefreshing: true);
@@ -585,7 +585,7 @@ internal static class AccountQuotaMonitorTests
         var client = new FakeClient((provider, _) => Task.FromResult(Reading(provider, 20, reportedReset)));
         using var monitor = new AccountQuotaMonitor(client, store, () => now);
         await monitor.RefreshOnceAsync(QuotaProvider.Codex);
-        check(State(monitor, QuotaProvider.Codex).NextCheckUtc == reset.AddMinutes(-15), "Monitor wakes at reset band start instead of waiting 6h");
+        check(State(monitor, QuotaProvider.Codex).NextCheckUtc == reset.AddMinutes(-15), "Monitor wakes at reset band start instead of waiting an hour");
         now = reset.AddMinutes(1);
         reportedReset = reset.AddDays(7);
         await monitor.RefreshOnceAsync(QuotaProvider.Codex);
@@ -604,7 +604,7 @@ internal static class AccountQuotaMonitorTests
         }
         now = reset.AddMinutes(16);
         await monitor.RefreshOnceAsync(QuotaProvider.Codex);
-        check(State(monitor, QuotaProvider.Codex).NextCheckUtc == now.AddHours(6), "After old reset+15m monitor returns to ordinary cadence");
+        check(State(monitor, QuotaProvider.Codex).NextCheckUtc == now.AddHours(1), "After old reset+15m monitor returns to ordinary cadence");
         cache = await store.ReadQuotaAsync(QuotaProvider.Codex);
         check(cache is not null && !cache.ResetAnchors.Contains(reset), "Expired anchors are pruned from persisted cache");
         await monitor.StopAsync();
