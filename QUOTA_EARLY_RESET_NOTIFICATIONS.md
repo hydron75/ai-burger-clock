@@ -59,7 +59,29 @@
 
 ## Windows 검사
 
-검증 후 실제 빌드·self-test·smoke 결과와 소스 커밋을 기록한다. 변경 전 `build.ps1`은 SDK 10.0.402·경고 0/오류 0, self-test **253,548건(공통 253,241 + Windows 전용 307)·ExitCode 0**이다. 증거는 ignored `artifacts/quota-early-reset-20261018*`의 작업별 보고서에 보관하고 공개 원문을 붙이지 않는다. 테스트 EXE는 #66의 고정 before/after 슬롯만 사용한다.
+2026-10-18 KST, SDK **10.0.402**로 실행했다. 변경 전은 main `2bf188e9a15449e7dbe12e2853f9c1fb0ead4ecb`, 최종 C# 검증 소스는 `06cba5019364c3ea25d8098c55e1212b208ff466`이다. 이후 커밋은 문서·검증 기록만 포함한다.
+
+| 항목 | 변경 전 | 변경 후 |
+|---|---:|---:|
+| `build.ps1` | 경고 0 / 오류 0 | 경고 0 / 오류 0 |
+| Windows `--self-test` | 253,548 PASS | **254,609 PASS** |
+| 그중 공통 | 253,241 | **254,302** |
+| Windows 전용 self-test | 307 | **307 (변동 없음)** |
+| `--smoke-test` | 574 PASS / ExitCode 0 | **634 PASS / ExitCode 0** |
+| 기존 PNG / 레이아웃 | 20 / 14 | **20 / 14 모두 SHA-256 동일** |
+
+공통 **+1,061건**은 조기 초기화 판정·문구·통합 **912**, 독립 설정 **50**, 모니터 연속성 **+75**(117→192), Provider 상세 **+24**(146→170)다. `Shared.Tests` 별도 실행도 **254,302 PASS / ExitCode 0**이다. Windows self-test에 개별 중복 등록하지 않고 `SharedTestSuite`에서 각 그룹을 한 번 실행한다.
+
+새 Windows 메시지 루프 smoke **+60건**은 메뉴·설정·UI 전달·한 배너 통합·상세/접근성·우선순위·대기 취소·종료/재시작과 전달 오류를 검사한다. 합성 알림 sink가 예외를 내는 경우 **한 번 시도 후 피드백, 같은 알림 재시도 없음, 최근 기록 보존, 이후 조회/새 알림 정상 재개**를 확인했다. 기본 sink는 기존 네이티브 `ShowBalloonTip` 그대로다. 최종 before/after smoke는 각각 1회 실행했고 실패·시간 초과가 없었다. 고정 슬롯의 트레이 기록 추가도 관측되지 않았다.
+
+증거는 ignored `artifacts/quota-early-reset-20261018*`의 작업별 보고서에 보관하고 공개 원문을 붙이지 않는다.
+
+- 최종 빌드·self-test: `artifacts/quota-early-reset-20261018-after/build/20261018-140137-011/`
+- 변경 전 smoke: `artifacts/quota-early-reset-20261018/windows-tests/before/20261018-135827-575-22f2f5/`
+- 변경 후 smoke: `artifacts/quota-early-reset-20261018/windows-tests/after/20261018-140201-779-ba34e4/`
+- 공통 별도 실행: `artifacts/quota-early-reset-20261018/shared-tests-development.txt`
+
+테스트 EXE는 #66의 고정 before/after 슬롯만 사용했다. 기존 PNG는 새 설정 OFF·최근 기록 없음인 기존 fixture가 동일한지를 확인한 결과이며 새 이력이 있는 상세는 합성 UI 검사로 확인했다. 네이티브 알림 요청·메시지 루프 검사는 실제 OS 정책에 따른 배너 육안 확인과 다르다. 실제 계정 조회 실험·장시간 운영·Mac 빌드/실행은 하지 않았다. **배포 EXE 해시·버전은 그대로이고, 검사 뒤 같은 2.7.0 배포본을 다시 실행했다.**
 
 합성 검사는 다음을 포함한다.
 
@@ -70,7 +92,7 @@
 
 ## Mac 확인과 후속 작업
 
-**이 PR 병합 전:** 이 HEAD에서 `Shared.Tests`, `Mac/build.sh`, native `--smoke-test`를 실행하고 공통 검사 수·빌드/종료 코드와 기존 화면/회복 알림/조회 정책 불변을 확인한다. `QuotaObservation`·`QuotaState`의 선택적 새 필드와 공유 원본 추가를 확인한다. 이 PR은 Mac의 새 알림을 연결하지 않으므로 Mac 조기 초기화 배너가 나오지 않는 것이 정상이다. 기존 Xcode/워크로드 환경 제약은 별도로 기록하며 우회 빌드를 정상 지원 환경으로 부르지 않는다.
+**이 PR 병합 전:** 이 HEAD에서 `Shared.Tests` **254,302건**, `Mac/build.sh`, native `--smoke-test`를 실행하고 빌드/종료 코드와 기존 화면/회복 알림/조회 정책 불변을 확인한다. `QuotaObservation`·`QuotaState`의 선택적 새 필드와 공유 원본 추가를 확인한다. 이 PR은 Mac의 새 알림을 연결하지 않으므로 Mac 조기 초기화 배너가 나오지 않는 것이 정상이다. #68의 기본 1시간 정책과 Mac 기존 검사 기대값은 그대로다. 기존 Xcode/워크로드 환경 제약은 별도로 기록하며 우회 빌드를 정상 지원 환경으로 부르지 않는다.
 
 **Mac 후속 PR:**
 
