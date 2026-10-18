@@ -1,14 +1,14 @@
-# AI Burger Clock 2.8.0 — Windows 배포 준비 기록
+# AI Burger Clock 2.8.0 — Windows 배포 기록
 
-기록일: **2026-10-18 KST**. #70 병합 뒤 main에서 `git pull --ff-only`하고 **`2a4b581aee3eea0f1dca3236aeb4415504fa9c09`**에서 `feature/windows-release-2-8-0`을 만들었다. 범위는 **Windows만 변경(버전·문서)**이다. 이미 main에 있는 #68·#70을 새 Windows 배포 대상으로 삼으며 **이번 PR은 제품/검사 C#·공통 원본 목록·Mac 파일/버전을 다시 고치지 않는다.**
+기록일: **2026-10-18 KST**. 사용자 승인으로 #72의 Draft를 해제·병합하고 main에서 `git pull --ff-only`했다. 깨끗한 병합 main **`01d82bf3bf26d28b7e9bfac02b2b0e684a051b1f`**에서 정상 종료·실제 DB WAL/SHM 확인·새 백업 뒤 publish하여 **Windows 2.8.0으로 교체·실행 완료**했다. 자동 시작은 같은 dist 경로를 가리키고 프로세스 응답·최종 단일 EXE 검사는 정상이다. **실제 트레이·상태 창·조기 초기화 메뉴 OFF·Provider 상세 기본 1시간 정상은 사용자 확인**이다.
 
-**PR 병합·배포 교체는 사용자 승인 대기다. 현재 배포 EXE는 2.7.0 그대로이며 2.8.0을 배포 완료로 기록하지 않는다.** 준비 빌드는 Publish 없이 bin에 만들고 #66 고정 테스트 경로에서 검사한다. 새 백업·실제 DB/WAL 확인·단일 EXE publish·교체는 승인 뒤 수행한다.
+준비 이력: #70 병합 뒤 main **`2a4b581aee3eea0f1dca3236aeb4415504fa9c09`**에서 `feature/windows-release-2-8-0`을 만들었다. #72와 이번 결과 기록은 **Windows만 변경(버전·문서)**이며 제품/검사 C#·공통 원본 목록·Mac 파일/버전은 다시 고치지 않았다. 아래 **준비 bin 후보의 smoke 5회**와 승인 뒤 **최종 단일 EXE의 별도 smoke 1회**를 구분한다.
 
 공개 PR·문서·이미지는 합성 데이터와 일반화한 결과만 사용한다. 실제 계정 요금제·사용률·남은 비율·리셋 시각·식별자·CLI/진단 원문·사용자 DB는 게시하지 않는다.
 
 ## 버전과 2.7.0 이후 변경
 
-Version **2.8.0**, AssemblyVersion·FileVersion **2.8.0.0**으로 준비한다. 새로운 조기 초기화 추정 알림과 기본 조회 정책 변경을 묶은 minor 버전이다. Windows 11 x64 / WinForms / net10.0-windows / framework-dependent 단일 EXE와 .NET 10 Desktop Runtime x64 요구사항은 유지한다.
+Version **2.8.0**, AssemblyVersion·FileVersion **2.8.0.0**으로 배포했다. 새로운 조기 초기화 추정 알림과 기본 조회 정책 변경을 묶은 minor 버전이다. Windows 11 x64 / WinForms / net10.0-windows / framework-dependent 단일 EXE와 .NET 10 Desktop Runtime x64 요구사항은 유지한다.
 
 | 출처 | 새 Windows 배포에 포함할 내용 |
 |---|---|
@@ -98,9 +98,10 @@ Version **2.8.0**, AssemblyVersion·FileVersion **2.8.0.0**으로 준비한다. 
 | #70 검증 PR HEAD | `f30d181267536df8e758854976da531f350e3dcd` |
 | #70 main 병합 / 준비 브랜치 출발점 | **`2a4b581aee3eea0f1dca3236aeb4415504fa9c09`** |
 | 2.8.0 버전 / 실제 검사 코드 HEAD | **`654399955dc32697a22033bbb90766bdf090b1d9`** |
-| 2.8.0 PR 병합 / 최종 단일 EXE 소스 | **미정 — 사용자 승인 뒤 병합 main으로 제작** |
+| #72 승인한 최종 PR HEAD | `d9efa508ee7335712765adff329611126ccce96f` |
+| #72 병합 / 최종 단일 EXE 소스 | **`01d82bf3bf26d28b7e9bfac02b2b0e684a051b1f`** — 뒤의 결과 기록 커밋과 구분 |
 
-| 항목 | 현재 배포본 | 준비 검사 bin apphost |
+| 항목 | 교체 전 2.7.0 배포본 | 준비 검사 bin apphost |
 |---|---|---|
 | 경로 | `dist/win-x64/AI Burger Clock.exe` | `bin/Release/net10.0-windows/win-x64/AI Burger Clock.exe` |
 | FileVersion | `2.7.0.0` | `2.8.0.0` |
@@ -108,9 +109,59 @@ Version **2.8.0**, AssemblyVersion·FileVersion **2.8.0.0**으로 준비한다. 
 | 크기 | **3,736,811 bytes** | **163,328 bytes** |
 | SHA-256 | `410B0CDDCEE0BCED6072B04D3ADAAE88AD21A6E585859BBFEC2EA0DC8F202BD3` | `BC63E40692D65AB7186967EFA08CA8BCC21E958C2C90E918AA434A67D1195384` |
 
-bin apphost는 주변 DLL이 필요한 **검사 빌드이며 배포용 단일 EXE가 아니다.** dist에 복사하지 않는다. 최종 단일 EXE의 해시·크기·소스와 실제 백업은 승인 뒤 별도로 기록한다.
+bin apphost는 주변 DLL이 필요한 **검사 빌드이며 배포용 단일 EXE가 아니다.** dist에 복사하지 않았다. 승인 뒤 병합 main에서 만든 실제 단일 EXE와 백업은 다음 절로 구분한다.
 
-## 승인 뒤 교체 계획 — 아직 실행하지 않음
+## 실제 2.8.0 배포 — 승인 뒤 실행 완료
+
+1. 승인 HEAD **`d9efa508ee7335712765adff329611126ccce96f`**를 확인해 #72의 Draft를 해제·병합하고 main에서 `git pull --ff-only`했다. #72 HEAD와 병합 main의 트리는 같고, 실제 빌드 전에 작업 폴더가 깨끗함을 확인했다.
+2. Computer Use가 기존 앱의 정상 종료 메뉴를 제공하지 못해 사용자가 2.7.0을 **정상 종료**했다. 앱 프로세스 0개·실제 DB의 **WAL/SHM 부재**를 확인했다. 숨긴 native cmd의 파일 메타데이터/해시와 도구의 파일 해시가 같아 가상화 사본을 다른 실제 DB로 오인하지 않았음을 대조했다. DB 행·계정 값은 열어 출력하지 않았고 sidecar 삭제·강제 종료도 하지 않았다.
+3. 새 **`../backups/release-2.8.0-20261018/`**에 이전 EXE/dist·실제 2.7.0 소스 ZIP·정상 종료한 DB·비공개 manifest/기존 로그를 보존했다. EXE 원본/복사본/ZIP 안 EXE 해시와 DB 원본/복사본 해시를 확인하고 백업 뒤에도 프로세스·WAL을 다시 확인했다. 기존 백업은 덮어쓰지 않았다.
+4. 병합 main에서 **`build.ps1 -Publish`**를 실행해 단일 EXE로 교체했다. SDK **10.0.402**, 빌드/publish **경고 0·오류 0**, 최종 단일 EXE self-test **254,609건(공통 254,302 + Windows 307)·실제 ExitCode 0**이다. 준비 후보와 같은 검사 수이며 C#·검사·대기 시간을 바꾸지 않았다.
+5. 최종 단일 EXE를 #66 고정 after 슬롯에 복사해 별도 smoke **1회 634 PASS·실패 0·실제 ExitCode 0, 51.68초**를 확인했다. 합성 PNG 20개를 생성했고 고정 슬롯 트레이 키 추가는 0개다. 실제 사용자 DB는 정상 실행 직전까지 백업 당시 해시와 같고 WAL/SHM이 없었다. 위 준비 후보 5회와 합쳐 세지 않는다.
+6. 자동 시작의 **Run 경로·값·종류와 StartupApproved 종류**는 백업 스냅샷과 같았다. 큰따옴표 절대 dist 경로 + ` --autostart`가 새 **2.8.0** 파일을 가리킨다. 현재 승인 바이트도 준비 단계에서 확인한 **`02` + 0 바이트 11개**와 같았다. 등록·알림 설정·Windows 표시 설정은 쓰지 않았다. 아래 검증 헬퍼 오탐도 구분해 보존한다.
+7. 새 dist를 같은 등록 인수 `--autostart`로 실행해 정확한 경로·프로세스 한 개·`Responding=True`를 확인했다. Computer Use에 새 트레이/창도 노출되지 않아 실제 화면은 사용자에게 확인을 요청했다. **사용자가 “1시간으로 표시됨. 나머지 이상 없음”이라고 확인하여 트레이·상태 창·회복 알림 다음/자동 시작 이전의 조기 초기화 메뉴 OFF·Provider 상세 기본 1시간 정상을 사용자 확인으로 기록**한다. 합성 native smoke의 기본 OFF·메뉴 위치·정책 안내 검사와 실제 사용자 화면 확인을 구분하며 실제 계정 값·캡처는 받지 않았다.
+8. 현재 앱 오류는 확인되지 않아 **2.7.0으로 복원하지 않았다.** 실제 계정 사용률·리셋 시각·원본 진단은 게시하지 않는다. 일반 앱 시작에 따른 평소 조회/캐시 저장까지 전체 작업 동안 없었다고 주장하지 않는다.
+
+### 실제 최종 단일 EXE
+
+| 항목 | 실제 결과 |
+|---|---|
+| 배포일 / 첫 실행 | **2026-10-18 KST / 15:10경** |
+| 소스 커밋 | **`01d82bf3bf26d28b7e9bfac02b2b0e684a051b1f`** |
+| 경로 | `dist/win-x64/AI Burger Clock.exe` |
+| FileVersion | **`2.8.0.0`** |
+| ProductVersion | **`2.8.0+01d82bf3bf26d28b7e9bfac02b2b0e684a051b1f`** |
+| 크기 | **3,921,131 bytes** |
+| SHA-256 | **`233A197498A7F88C9D68C7D6EDCAA3E957665CEBE4BF6A6E516575B1D92D0041`** |
+| 보존한 새 EXE | 아래 백업의 `published-2.8.0.exe`, 해시 동일 |
+
+### 실제 백업
+
+**`../backups/release-2.8.0-20261018/`**, 15:04경 생성했다. 절대 위치는 `C:\Users\mc_bl\.codex\.chatgpt-projects\g-p-6aa5eb198fd88191b7382af0eb114af4\backups\release-2.8.0-20261018\`이며 GitHub에는 올리지 않는다.
+
+| 파일 | SHA-256 / 확인 |
+|---|---|
+| `replaced-2.7.0.exe` | `410B0CDDCEE0BCED6072B04D3ADAAE88AD21A6E585859BBFEC2EA0DC8F202BD3` |
+| `dist-2.7.0.zip` | `4D422573B5602947230EB63295FE8A793D67887B40186ACA4A679F357B0F427A` — 안의 EXE도 이전 해시와 같음 |
+| `source-2.7.0-2d5fe62.zip` | `665190080912BC003EB02B06E9F98946BE3F576A6A77B8874B0295E20B0378A8` — 실제 이전 EXE 소스의 git archive |
+| `burgerclock.db`, `manifest-private.json`, 기존 로그 사본 | 비공개. DB 원본/복사본 해시 일치, DB 내용·해시 미게시 |
+| `published-2.8.0.exe` | 위 최종 2.8.0 EXE SHA-256과 동일 |
+
+### 자동 시작 대조 헬퍼의 오탐 — 앱/등록 변경 아님
+
+첫 실행 전 검증이 한 번 멈췄다. 백업용 PowerShell 헬퍼가 `if` 식에서 반환된 `byte[]`를 `object[]`로 열거한 뒤 타입을 `byte[]`로만 검사하여, 비공개 manifest의 `ApprovedHex`를 null로 남겼다. 현재 바이트와 이 null을 비교한 **검증 도구의 오탐**이었다. 직접 반환은 `System.Byte[]`, `if` 식은 `System.Object[]`지만 명시적 `[byte[]]` 변환 후 두 값이 같은 것을 확인했다.
+
+원래 manifest의 null은 사후 수정하지 않고 감사용으로 보존했다. Run 값·종류와 승인 종류는 백업 값 그대로였고, 올바르게 읽은 현재 승인 바이트는 준비 단계의 기준 `02` + 0 바이트 11개와 같았다. **원본 백업 manifest의 바이트 전후 비교까지 성공했다고 과장하지 않는다.** 읽기 전용 검증을 보완한 뒤 정상 실행했으며 앱 C#·레지스트리는 바꾸지 않았다.
+
+로컬 최종 증거(ignored):
+
+- 빌드/publish/self-test: `artifacts/release-2-8-0-final/build/20261018-150513-617/`
+- 최종 단일 EXE smoke: `artifacts/release-2-8-0-final/windows-tests/after/20261018-150642-541-aef034/`
+- 백업·native 파일 대조·비공개 manifest: `artifacts/release-2.8.0-deployment-20261018/` 및 위 새 백업 폴더.
+
+## 승인한 교체 절차 — 계획 이력
+
+아래는 승인 전에 정리한 절차다. 실제 수행 결과는 위 절에 별도로 기록하며 준비 후보·최종 단일 EXE·사용자 화면 확인을 구분한다.
 
 1. 준비 PR 승인 뒤 Draft 해제·병합, main에서 `git pull --ff-only`. 작업 폴더·병합 트리를 확인하고 **병합 main 전체 커밋 해시**를 최종 배포 기준으로 기록한다. 준비 bin 후보를 복사해 배포하지 않는다.
 2. 기존 2.7.0을 트레이 → 종료로 정상 종료하고 앱 프로세스가 없는지 확인한다. 실제 사용자 DB 경로를 확인한 뒤 **WAL/SHM이 없는지** 읽기 전용으로 확인한다. 패키지 가상화 사본을 실제 DB로 오인하지 않는다. sidecar가 남으면 지우지 않고 중단·원인을 확인한다. 강제 종료는 별도 승인 없이 하지 않는다.
@@ -131,6 +182,7 @@ bin apphost는 주변 DLL이 필요한 **검사 빌드이며 배포용 단일 EX
 
 ## 수행하지 않은 확인
 
-- 준비 PR 병합·단일 EXE publish·새 백업·실제 DB/WAL 검사·배포 교체·복원.
+- EXE-only 복원 시험. 배포 교체·백업·WAL 확인·최종 단일 EXE 제작/검사는 위와 같이 수행했다.
+- 실제 트레이·상태 창·조기 초기화 메뉴 OFF·Provider 상세 기본 1시간은 위와 같이 **사용자 확인 완료**다. 자동 도구가 실제 화면을 관찰한 것으로 적지 않는다.
 - 실제 계정 조회 실험·실제 조기 초기화 발생/OS 배너 육안·장시간 1시간 운영·재부팅·재로그인·절전·실제 네트워크 단절.
 - Mac의 새 알림 연결·실기 검사. 위 Mac 결과는 담당자의 기존 #68/#70 확인이며 이번 Windows 준비에서 새로 실행한 것이 아니다.
