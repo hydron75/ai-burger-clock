@@ -31,13 +31,37 @@
 
 ## Windows 검증
 
-검증 완료 후 실제 실행 결과와 기준/변경 검사 수를 기록한다. 테스트 EXE는 #66의 고정 before/after 경로에서 실행하고 로그·합성 PNG는 `artifacts/quota-default-hourly-20261018/`에 보관한다. `build.ps1` 결과는 같은 이름의 before/after build report group 아래에 보관한다. 실제 계정 조회·배포 publish는 하지 않는다.
+2026-10-18 KST, .NET SDK **10.0.402**. 변경 전 main은 `fa693aa03382940e8e863d48454cacf71c0409a1` (#67 포함), 변경 후 실제 빌드·검사 소스는 `38728da3af04ec69fc80bb1628ca1719b720d1ad`다. 이후 결과 문서만 갱신한 커밋은 별도이며 EXE 소스와 혼동하지 않는다.
 
-변경 전 main: `fa693aa03382940e8e863d48454cacf71c0409a1` (#67 포함). 변경 전 self-test는 **252,869건(공통 252,562 + Windows 전용 307)**이다.
+| 항목 | 변경 전 | 변경 후 |
+|---|---:|---:|
+| `build.ps1` 경고 / 오류 | 0 / 0 | 0 / 0 |
+| Windows `--self-test` | 252,869 PASS | **253,548 PASS** |
+| 공통 검사 | 252,562 | **253,241** (`Shared.Tests` 별도 실행도 PASS) |
+| Windows 전용 검사 | 307 | **307** |
+| `--smoke-test` | 1회, 574 PASS | **1회, 574 PASS** |
+| 실제 프로세스 종료 코드 | self-test·smoke 모두 0 | self-test·Shared.Tests·smoke 모두 **0** |
+
+검사 증가는 공통 **+679건**이다. `QuotaSchedulingTests`의 순수 예약 이유 +55·모니터→진단 JSON +204로 **107→366건(+259)**, Gemini 합성 7일 반복의 반복 수 증가로 **246→666건(+420)**이다. 나머지 그룹·Windows 전용 수는 변하지 않았다. +420을 새 시나리오 420개로 세지 않는다.
+
+- #66의 고정 before/after 경로에서 각각 실행했다. 양쪽 smoke에서 트레이 기록 신규 생성 **0건**, 각 슬롯 기록 1개를 유지했다.
+- 합성 PNG **20개 중 15개 동일**. 달라진 것은 Provider 상세 3개(기본 1시간 안내와 해당하는 다음 시각)·한도 화면 2개(Gemini 다음 조회가 더 이른 기본 1시간으로 변경)다. 레이아웃 JSON은 문구까지 포함하면 11/14 동일하며 차이는 Gemini 메타데이터의 다음 시각뿐이다. **문구를 제외한 기하 배치·창 크기·행 수·막대 수는 14/14 동일**하다. 숨겨진 Gemini 메타데이터가 달라져도 보이는 픽셀이 같은 한도 PNG 1개가 있다. 팝업의 흰 배경·줄바꿈·포인터 위치·닫기 동작은 기존 smoke를 그대로 통과했다.
+- 최초 변경 전 self-test 2회에서 임시 SQLite 백업 열기 오류가 있었다. 앱 코드를 바꾸지 않은 채 이 실행의 `TEMP`/`TMP`만 짧은 소유 테스트 경로로 바꾸자 기준 self-test가 통과했고, 같은 환경에서 변경 후 검사도 통과했다. 영구 환경·저장소 코드는 수정하지 않았으며 원래 실패의 상세 환경 원인까지 확정하지 않는다.
+- 최초 변경 후 self-test 1회는 `Gemini enters the reset band before a long wait ends` 기대값에서 실패했다. 2시간 뒤 리셋의 진입보다 새 기본 1시간 조회가 먼저인데, 기존 검사가 리셋 진입을 기대한 것이었다. 리셋 fixture를 1시간 뒤로 조정하고 다른 Provider의 기한 경과와 Gemini 실패 격리 검사를 분리한 뒤 최종 빌드·전체 검사가 통과했다. 대기 시간·앱 동작을 더 바꿔 실패를 숨기지 않았다.
+- 실제 계정 조회·장기 1시간 운영·Mac 실행은 하지 않았다. 사용자 정상 종료 뒤 합성 검사를 진행했고, 끝나고 **기존 2.7.0 배포본을 재실행**했다. 배포 EXE 해시는 변경 전과 같고 정상 프로세스 응답을 확인했다. 실제 트레이 화면을 직접 관찰한 결과로 확대하지 않는다.
+
+로컬 증거(공개 업로드하지 않음):
+
+- 변경 전 빌드·self-test: `artifacts/quota-default-hourly-20261018-before-short-temp/build/20261018-102441-809/`
+- 최종 변경 후 빌드·self-test: `artifacts/quota-default-hourly-20261018-after/build/20261018-103118-904/`
+- 공통 검사: `artifacts/quota-default-hourly-20261018/shared-tests-after.txt`
+- before smoke·PNG: `artifacts/quota-default-hourly-20261018/windows-tests/before/20261018-102830-846-0c69fd/`
+- after smoke·PNG: `artifacts/quota-default-hourly-20261018/windows-tests/after/20261018-103157-793-db5002/`
+- 최초 환경 실패와 수정 전 fixture 실패 로그도 각 before/after report group에 보존했다.
 
 ## Mac에서 확인할 항목
 
-1. 이 PR HEAD에서 `Shared.Tests`·`Mac/build.sh`·native `--smoke-test`를 실행하고 결과를 코멘트로 남긴다.
+1. 이 PR HEAD에서 `Shared.Tests` **253,241건**·`Mac/build.sh`·native `--smoke-test`를 실행하고 결과를 코멘트로 남긴다.
 2. `MacPollingDiagnosticSmoke`의 정상 기본 예약 `T().AddHours(6)` 기대값을 **+1시간**으로 바꾼다. 기본 `Regular`와 사용 90% 초과 `LowRemaining`이 둘 다 1시간이어도 이유가 다른지, 실제 파일 기록·재시작 읽기·보관 제한이 유지되는지 확인한다.
 3. Provider 상세의 기본 1시간·기존 Gemini 0% 예외 문구, 기본/높은 사용/소진/리셋/실패 예약, 기존 회복 알림을 확인한다. Mac 현재 사용 안내의 6시간 정책도 새 기준으로 갱신하되 `MACOS_PORT.md`의 과거 검증은 고쳐 쓰지 않는다.
 4. 한도 행·막대 수·팝오버 높이·VoiceOver 설명은 정책 문구 외 불변이어야 한다. `MacApplication`·`MacGeminiModelRowSmoke` 등에 남은 +6시간은 직접 생성한 표시 fixture인지 실제 정책 기대값인지 구분해 필요한 것만 바꾼다.
