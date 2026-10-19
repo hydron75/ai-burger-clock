@@ -42,14 +42,14 @@ internal sealed class MacStatusPanel : IDisposable
     private readonly NSStackView quotaStack;
     private readonly Dictionary<ProviderKind, Card> cards = [];
     private readonly Dictionary<QuotaProvider, QuotaViews> quotas = [];
-    // Row text fields hidden from accessibility because their bar speaks the whole row.
-    private readonly HashSet<NSTextField> spokenByBar = [];
+    // Rows hidden from accessibility because their bar speaks the whole row.
+    private readonly HashSet<QuotaRowView> spokenByBar = [];
     private string quotaLayoutKey = "";
     private string shownStorageError = "";
 
     private sealed record Card(CardView View, NSTextField Heading, NSTextField Official, NSTextField Reason, NSMenu Menu);
     private sealed record QuotaViews(CardView Box, NSTextField Heading, NSTextField? Scope,
-        Dictionary<string, NSTextField> Rows, Dictionary<string, UsageBarView> Bars, NSTextField Metadata);
+        Dictionary<string, QuotaRowView> Rows, Dictionary<string, UsageBarView> Bars, NSTextField Metadata);
 
     internal MacStatusPanel(Action requestRefresh, Action showStatistics, Action<bool> changeHoliday,
         Action<bool> changeAutoStart, Action<ProviderKind> openPage,
@@ -244,16 +244,17 @@ internal sealed class MacStatusPanel : IDisposable
                 var heading = QuotaLine(lines, 12, bold: true);
                 var scope = section.Scope is null ? null : QuotaLine(lines, 11);
                 // One usage bar under each row that has a value; a waiting or failed row has none.
-                var rows = new Dictionary<string, NSTextField>();
+                var rows = new Dictionary<string, QuotaRowView>();
                 var bars = new Dictionary<string, UsageBarView>();
                 foreach (QuotaLine row in section.Rows)
                 {
-                    NSTextField rowField = rows[row.WindowId] = QuotaLine(lines, 11);
+                    var rowField = rows[row.WindowId] = new QuotaRowView(ContentWidth - CardPadding * 2);
+                    lines.AddArrangedSubview(rowField);
                     if (row.UsedPercent is null) continue;
                     // The bar is this row's single accessibility element (see UsageBarView); hide the text
-                    // field explicitly, once per layout: a standard text field reads as not-an-element
+                    // fields explicitly, once per layout: a standard text field reads as not-an-element
                     // through the property by default, so the default cannot be relied on.
-                    rowField.AccessibilityElement = false;
+                    rowField.HideFromAccessibility();
                     spokenByBar.Add(rowField);
                     var bar = new UsageBarView(ContentWidth - CardPadding * 2);
                     lines.AddArrangedSubview(bar);
@@ -277,7 +278,7 @@ internal sealed class MacStatusPanel : IDisposable
             if (views.Scope is not null && section.Scope is not null) Apply(views.Scope, section.Scope, detail);
             foreach (QuotaLine row in section.Rows)
             {
-                Apply(views.Rows[row.WindowId], row, detail);
+                views.Rows[row.WindowId].Apply(row, MacControls.Color(row.Tone), detail);
                 if (views.Bars.TryGetValue(row.WindowId, out UsageBarView? bar) && row.UsedPercent is { } used)
                 {
                     // One element per row: the bar speaks "row text. comparison"; its text field is hidden.
@@ -621,10 +622,147 @@ internal sealed class MacStatusPanel : IDisposable
         }
     }
 
-    // What VoiceOver reads for a quota row: the row text, then the shared comparison and its age. A
-    // row without a comparison (hidden state) reads just its text, so no stale comparison lingers.
-    internal static string SpokenRow(QuotaLine row) =>
-        row.ComparisonText is { Length: > 0 } comparison ? row.Text + ". " + comparison : row.Text;
+    // One quota row. The value (usage, previous mark, reset) keeps its full width, measured in the real 11pt
+    // font first; only the name is shortened, in the middle, with the shared DisplayFormatting.MiddleEllipsis
+    // and the same font measure. A row without a split (a waiting or failed row) is one tail-truncated text.
+    internal sealed class QuotaRowView : NSView
+    {
+        private const double NameValueGap = 6;
+        private readonly NSTextField name = RowText();
+        private readonly NSTextField value = RowText();
+        private readonly NSTextField scratch = RowText();
+        private readonly NSLayoutConstraint nameWidth;
+        private readonly NSLayoutConstraint valueWidth;
+        private readonly double width;
+        private string? shownName;
+        private string? shownValue;
+
+        internal string FullText { get; private set; } = "";
+        internal bool Split { get; private set; }
+        internal bool ValueFits { get; private set; } = true;
+        internal string VisibleName => name.StringValue;
+        internal string VisibleValue => value.Hidden ? "" : value.StringValue;
+        internal double NameWidth => nameWidth.Constant;
+        internal double ValueWidth => valueWidth.Constant;
+        internal bool HasAccessibilityLabel => !string.IsNullOrEmpty(AccessibilityLabel) ||
+            !string.IsNullOrEmpty(name.AccessibilityLabel) || !string.IsNullOrEmpty(value.AccessibilityLabel);
+        internal bool IsAccessibilityElement => AccessibilityElement || name.AccessibilityElement || value.AccessibilityElement;
+
+        private static NSTextField RowText() => new()
+        {
+            StringValue = "", Editable = false, Selectable = false, Bordered = false, Bezeled = false,
+            DrawsBackground = false, Font = MacControls.Font(11, false), TextColor = NSColor.Label,
+            UsesSingleLineMode = true, MaximumNumberOfLines = 1, LineBreakMode = NSLineBreakMode.Clipping,
+            TranslatesAutoresizingMaskIntoConstraints = false
+        };
+
+        internal QuotaRowView(double width)
+        {
+            this.width = width;
+            TranslatesAutoresizingMaskIntoConstraints = false;
+            value.Alignment = NSTextAlignment.Right;
+            value.LineBreakMode = NSLineBreakMode.TruncatingTail;
+            AddSubview(name);
+            AddSubview(value);
+            nameWidth = name.WidthAnchor.ConstraintEqualTo((nfloat)width);
+            valueWidth = value.WidthAnchor.ConstraintEqualTo(0);
+            scratch.StringValue = "Ag가";
+            // Same height a plain one-line label of this font has, so the popover height is unchanged.
+            nfloat height = (nfloat)Math.Ceiling(scratch.IntrinsicContentSize.Height);
+            NSLayoutConstraint.ActivateConstraints([
+                WidthAnchor.ConstraintEqualTo((nfloat)width), HeightAnchor.ConstraintEqualTo(height),
+                name.LeadingAnchor.ConstraintEqualTo(LeadingAnchor), name.TopAnchor.ConstraintEqualTo(TopAnchor),
+                name.BottomAnchor.ConstraintEqualTo(BottomAnchor), nameWidth,
+                value.TrailingAnchor.ConstraintEqualTo(TrailingAnchor), value.TopAnchor.ConstraintEqualTo(TopAnchor),
+                value.BottomAnchor.ConstraintEqualTo(BottomAnchor), valueWidth]);
+        }
+
+        // The real width of a candidate text in this row's font (what AppKit lays out for one line).
+        private double Measure(string text)
+        {
+            scratch.StringValue = text;
+            return (double)scratch.IntrinsicContentSize.Width;
+        }
+
+        internal void HideFromAccessibility()
+        {
+            name.AccessibilityElement = false;
+            value.AccessibilityElement = false;
+        }
+
+        internal void Apply(QuotaLine line, NSColor color, string detail)
+        {
+            FullText = line.Text;
+            if (line.NameText is { } nameText && line.ValueText is { } valueText)
+            {
+                // Text unchanged: keep the layout, reassigning it every tick would only cost time.
+                if (!Split || nameText != shownName || valueText != shownValue)
+                {
+                    Split = true;
+                    shownName = nameText;
+                    shownValue = valueText;
+                    double wanted = Math.Ceiling(Measure(valueText));
+                    ValueFits = wanted <= width;
+                    value.Hidden = false;
+                    if (value.StringValue != valueText) value.StringValue = valueText;
+                    valueWidth.Constant = (nfloat)Math.Min(width, wanted);
+                    double room = Math.Max(0, width - valueWidth.Constant - NameValueGap);
+                    string visible = DisplayFormatting.MiddleEllipsis(nameText, room, Measure);
+                    name.LineBreakMode = NSLineBreakMode.Clipping;
+                    if (name.StringValue != visible) name.StringValue = visible;
+                    nameWidth.Constant = (nfloat)room;
+                    name.Hidden = room <= 0 || visible.Length == 0;
+                }
+            }
+            else if (Split || shownName is null)
+            {
+                Split = false;
+                shownName = shownValue = null;
+                ValueFits = true;
+                value.Hidden = true;
+                value.StringValue = "";
+                valueWidth.Constant = 0;
+                nameWidth.Constant = (nfloat)width;
+                name.Hidden = false;
+                name.LineBreakMode = NSLineBreakMode.TruncatingTail;
+            }
+            if (!Split && name.StringValue != line.Text) name.StringValue = line.Text;
+            if (!name.TextColor!.Equals(color)) name.TextColor = color;
+            if (!value.TextColor!.Equals(color)) value.TextColor = color;
+            if (ToolTip != detail) ToolTip = detail;
+            if (name.ToolTip != detail) name.ToolTip = detail;
+            if (value.ToolTip != detail) value.ToolTip = detail;
+        }
+
+        // Smoke: the painted row is exactly the shared split, the value is whole and the name fits its room.
+        internal void VerifyAgainst(QuotaLine row, string owner)
+        {
+            void Fail(string reason) => throw new InvalidOperationException($"{owner} quota row '{row.WindowId}': {reason}");
+            if (Split != (row.NameText is not null && row.ValueText is not null)) Fail("split state differs from the shared model.");
+            if (!Split)
+            {
+                if (name.StringValue != row.Text || !value.Hidden) Fail("an unsplit row must show the plain shared text only.");
+                return;
+            }
+            if (value.StringValue != row.ValueText || value.Hidden) Fail("the value is not shown as the shared value text.");
+            double wanted = Math.Ceiling(Measure(row.ValueText!));
+            if (wanted <= width && Math.Abs(ValueWidth - wanted) > 0.01) Fail("the value did not get its full measured width.");
+            if (ValueFits != (wanted <= width)) Fail("the value fit flag is wrong.");
+            double room = Math.Max(0, width - ValueWidth - NameValueGap);
+            string expected = DisplayFormatting.MiddleEllipsis(row.NameText!, room, Measure);
+            if (name.StringValue != expected || Math.Abs(NameWidth - room) > 0.01) Fail("the name is not the shared middle ellipsis of the room left by the value.");
+            if (!name.Hidden && Measure(name.StringValue) > NameWidth + 0.01) Fail("the shown name is wider than its room.");
+            if (name.StringValue.Length > 0 && name.StringValue != row.NameText && !name.StringValue.Contains('…') && !name.Hidden)
+                Fail("a shortened name must show the ellipsis.");
+            if (ValueWidth + NameValueGap + NameWidth > width + 0.01 && NameWidth > 0) Fail("name, gap and value are wider than the row.");
+            if (Math.Abs(Frame.Width - width) > 0.5) Fail("the row is not as wide as the box text area.");
+        }
+    }
+
+    // What VoiceOver reads for a quota row: the shared reading text once (the whole row text, and the
+    // comparison with its age when there is one). It is never rebuilt from the visible, shortened name
+    // and never gets the comparison appended again.
+    internal static string SpokenRow(QuotaLine row) => row.ReadingText ?? row.Text;
 
     // ---- Native smoke checks (no user data, network or settings) ----
 
@@ -666,20 +804,21 @@ internal sealed class MacStatusPanel : IDisposable
             QuotaViews views = quotas[section.Provider];
             if (views.Heading.StringValue != section.Heading.Text || views.Metadata.StringValue != section.Metadata.Text ||
                 (views.Scope?.StringValue ?? "") != (section.Scope?.Text ?? "") ||
-                section.Rows.Any(row => views.Rows[row.WindowId].StringValue != row.Text))
+                section.Rows.Any(row => views.Rows[row.WindowId].FullText != row.Text))
                 throw new InvalidOperationException($"{section.Provider} quota lines differ from the shared panel model.");
             // VoiceOver: one element per row. A row with a bar is spoken by the bar (row text, then the
             // shared comparison; no comparison, no suffix) and its text field is hidden, so the visible
             // text is never announced twice; a row without a bar keeps its plain text field untouched.
             foreach (QuotaLine row in section.Rows)
             {
-                NSTextField field = views.Rows[row.WindowId];
+                QuotaRowView field = views.Rows[row.WindowId];
                 bool hasSpokenBar = views.Bars.TryGetValue(row.WindowId, out UsageBarView? spokenBar);
-                if (hasSpokenBar != spokenByBar.Contains(field) || !string.IsNullOrEmpty(field.AccessibilityLabel))
+                if (hasSpokenBar != spokenByBar.Contains(field) || field.HasAccessibilityLabel)
                     throw new InvalidOperationException($"{section.Provider} row '{row.WindowId}' text field accessibility is inconsistent " +
-                        $"(hidden {spokenByBar.Contains(field)}, bar {hasSpokenBar}, label '{field.AccessibilityLabel}').");
-                if (hasSpokenBar && (field.AccessibilityElement || spokenBar!.AccessibilityLabel != SpokenRow(row)))
-                    throw new InvalidOperationException($"{section.Provider} row {row.WindowId} is not spoken once as row text + comparison.");
+                        $"(hidden {spokenByBar.Contains(field)}, bar {hasSpokenBar}, label set {field.HasAccessibilityLabel}).");
+                if (hasSpokenBar && (field.IsAccessibilityElement || spokenBar!.AccessibilityLabel != SpokenRow(row)))
+                    throw new InvalidOperationException($"{section.Provider} row {row.WindowId} is not spoken once as the shared reading text.");
+                field.VerifyAgainst(row, section.Provider.ToString());
             }
             // One Provider detail per box: the box, every line and every bar carry the same shared text.
             NSView[] tipped = new NSView?[] { views.Box, views.Heading, views.Scope, views.Metadata }
@@ -742,20 +881,27 @@ internal sealed class MacStatusPanel : IDisposable
         if (Math.Abs(X(quotaTitle) - titleX) > 0.5)
             throw new InvalidOperationException($"Quota title x {X(quotaTitle)} differs from the panel title x {titleX}.");
         NSView[] boxed = cards.Values.SelectMany(card => new NSView[] { card.Heading, card.Official, card.Reason })
-            .Concat(quotas.Values.SelectMany(q => new NSView?[] { q.Heading, q.Scope, q.Metadata }.OfType<NSView>().Concat(q.Rows.Values)))
+            .Concat(quotas.Values.SelectMany(q => new NSView?[] { q.Heading, q.Scope, q.Metadata }.OfType<NSView>()))
             .ToArray();
         // A label's frame sits a couple of points left of where its text starts (its alignment rect), so
         // a bar must start at its row's alignment-rect x, i.e. exactly where that row's text starts, and
-        // span the text width.
+        // span the text width. A quota row view starts exactly where its name text starts, so its frame x
+        // must equal the heading's text start, and the bar starts there too.
         foreach (QuotaViews q in quotas.Values)
+        {
+            nfloat headingTextStart = X(q.Heading) + (q.Heading.GetAlignmentRectForFrame(q.Heading.Frame).X - q.Heading.Frame.X);
+            foreach (QuotaRowView rowView in q.Rows.Values)
+                if (Math.Abs(X(rowView) - headingTextStart) > 0.5)
+                    throw new InvalidOperationException($"A quota row starts at x {X(rowView)}, not at the heading text start {headingTextStart}.");
             foreach (var (windowId, bar) in q.Bars)
             {
-                NSTextField rowField = q.Rows[windowId];
-                nfloat textStart = rowField.GetAlignmentRectForFrame(rowField.Frame).X;
+                QuotaRowView rowField = q.Rows[windowId];
+                nfloat textStart = rowField.Frame.X;
                 if (Math.Abs(bar.Frame.X - textStart) > 0.5 || Math.Abs(bar.Frame.Width - (ContentWidth - CardPadding * 2)) > 0.5)
                     throw new InvalidOperationException(
                         $"A usage bar does not line up with its row text (bar x {bar.Frame.X}, text x {textStart}, width {bar.Frame.Width}).");
             }
+        }
         nfloat boxX = X(cards[ProviderKind.OpenAI].Heading);
         if (boxed.Any(view => Math.Abs(X(view) - boxX) > 0.5) || Math.Abs(boxX - titleX - CardPadding) > 0.5)
             throw new InvalidOperationException("Card and quota box text do not start at the same x: " +
@@ -785,6 +931,16 @@ internal sealed class MacStatusPanel : IDisposable
         return new(size, titleX, boxX, availableHeight, ContentWidth - CardPadding * 2);
     }
 
+    // Smoke: the popover content as a PNG, only to save synthetic review images when a smoke run is asked to.
+    internal NSData? SnapshotPng()
+    {
+        content.LayoutSubtreeIfNeeded();
+        NSBitmapImageRep? bitmap = content.BitmapImageRepForCachingDisplayInRect(content.Bounds);
+        if (bitmap is null) return null;
+        content.CacheDisplay(content.Bounds, bitmap);
+        return bitmap.RepresentationUsingTypeProperties(NSBitmapImageFileType.Png, new NSDictionary());
+    }
+
     // Smoke: the visible quota area height (shrinks and scrolls on a short screen).
     internal nfloat QuotaAreaHeight => quotaScroll.Frame.Height;
     internal nfloat QuotaRowsHeight => (nfloat)Math.Ceiling(quotaStack.FittingSize.Height);
@@ -792,12 +948,20 @@ internal sealed class MacStatusPanel : IDisposable
     // Smoke: press a card as VoiceOver or a click would.
     internal bool PressCard(ProviderKind provider) => cards[provider].View.AccessibilityPerformPress();
 
-    internal string QuotaRowText(QuotaProvider provider, string windowId) => quotas[provider].Rows[windowId].StringValue;
+    // The shared row text (name and value together, as before the split), not what is painted.
+    internal string QuotaRowText(QuotaProvider provider, string windowId) => quotas[provider].Rows[windowId].FullText;
+
+    // Smoke: what the row paints: the (possibly shortened) name, the value, and how wide each field is.
+    internal (string Name, string Value, double NameWidth, double ValueWidth, bool ValueFits) QuotaRowParts(QuotaProvider provider, string windowId)
+    {
+        QuotaRowView row = quotas[provider].Rows[windowId];
+        return (row.VisibleName, row.VisibleValue, row.NameWidth, row.ValueWidth, row.ValueFits);
+    }
 
     // Smoke: spoken value of a row and the time layer of its bar.
     internal string QuotaRowSpoken(QuotaProvider provider, string windowId) =>
         quotas[provider].Bars.TryGetValue(windowId, out UsageBarView? bar) ? bar.AccessibilityLabel ?? ""
-            : quotas[provider].Rows[windowId].StringValue;
+            : quotas[provider].Rows[windowId].FullText;
     internal (double? Elapsed, nfloat MarkerLeft, nfloat MarkerWidth, nfloat ElapsedWidth) QuotaBarTime(QuotaProvider provider, string windowId)
     {
         UsageBarView bar = quotas[provider].Bars[windowId];
