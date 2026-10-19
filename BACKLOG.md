@@ -90,7 +90,7 @@
 - 기록일: 2026-10-18 KST(Mac 담당), 완료 상태 갱신: **2026-10-20 KST**. Mac 0.8.0 PR #73의 리뷰 지적을 계기로 Windows가 공통 `QuotaPendingAlertPolicy`·합성 검사와 Windows 호출 전환을 만들었다. Mac의 확인·호출 전환 커밋 `42ff9ae`를 포함한 **#74를 사용자 승인으로 main `8529df48d75bafe0e136e5a894e70bcb1364509c`에 병합 완료**했다. [PR #74](https://github.com/hydron75/ai-burger-clock/pull/74), [Mac 반영·검사 기록](MACOS_PORT.md#53-081-정리).
 - **공통화 전 배경:** 표시 직전의 순수 재검증이 Windows `TrayApplicationContext`와 Mac `MacQuotaNotifications`에 따로 있어 같은 응답에서 판정이 달라질 위험이 있었다. 회복 알림은 대상 창의 재소진·리셋 경과·기간을, 조기 초기화 알림은 연속성 ID·90분·창 집합/기간·재소진·리셋 시각 1분 허용 오차를 확인했다.
 - **완료 범위:** 두 판정을 `QuotaPendingAlertPolicy.RecoveryStillCurrent` / `EarlyResetStillCurrent`로 옮기고, Windows와 Mac `MacQuotaNotifications.Current` 모두 이 공통 원본을 호출한다. 공통 합성 검사로 경계를 고정했다. 판정 임계값·알림 문구·흐름은 그대로이며 **조기 초기화 전용 조건을 회복 알림에 새로 적용하지 않았다.**
-- **배포 구분:** Mac은 **0.8.1에 반영**했고 후속 0.8.2의 검사는 [Mac 기록](MACOS_PORT.md#54-082-정리)에서 구분한다. **현재 Windows 2.8.0 배포 EXE에는 #74가 포함되지 않았으며 다음 Windows 배포에 함께 넣는다. 이 공통화만으로 별도 배포하지 않는다.**
+- **배포 구분:** Mac은 **0.8.2에 반영**됐으며, 소스 `b4d2a01`에 #74 병합 커밋 `8529df4`가 포함된다. [Mac 기록](MACOS_PORT.md#54-082-정리). **현재 Windows 2.8.0 배포 EXE에는 #74가 포함되지 않았으며 다음 Windows 배포에 함께 넣는다. 이 공통화만으로 별도 배포하지 않는다.**
 - **그대로 둔 범위:** 6.5초 간격·Provider별 최신 1건·설정 토글 격리·큐와 전달 흐름은 각 OS가 관리한다. 트레이·메뉴바 메뉴 구성은 각 OS가 정하고 문구 상수만 공통이라는 규칙, 7b·7c 및 조회 트리거 진단의 보류도 유지한다. 과거 빌드·검사 수치와 Xcode 우회 조건은 당시 기록으로 보존한다.
 
 ## 후보: 조회 트리거 진단 기록 (진단 보완 후보)
