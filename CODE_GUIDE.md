@@ -4,13 +4,17 @@
 
 최종 SDK 10.0.402·빌드/publish **경고 0/오류 0**, 단일 EXE self-test **254,609건(공통 254,302 + Windows 307)·ExitCode 0**, 최종 별도 smoke **1회 634 PASS·ExitCode 0**입니다. 승인 전 준비 후보의 **5회 모두 634 PASS·ExitCode 0**, PNG 20개/layout 14개 동일과 구분합니다. 자동 시작 경로·값·종류는 그대로이며 바이트 대조 헬퍼 오탐은 읽기 전용 검증으로 해결했습니다. 실제 EXE 소스와 뒤의 결과 문서 커밋을 혼동하지 않습니다.
 
-**#70 병합·Mac 사후 확인 완료:** 공통 [QuotaEarlyResetNotifications.cs](QuotaEarlyResetNotifications.cs)는 연속 성공으로 확인된 비교에 한해 조기 초기화를 추정하고, 별도 기본 꺼짐 설정과 같은 응답의 회복 알림 통합을 맡습니다. Windows의 메뉴·알림·Provider 상세가 연결됐고 Mac 연결은 후속 PR입니다. Mac 확인 전에 병합됐으나 병합 main의 사후 검사에서 문제없음을 확인한 뒤 사용자가 유지하기로 했습니다. Xcode 검사 우회 조건은 정상 지원 환경과 구분합니다. [조건·연속성·양쪽 검사·Mac 후속](QUOTA_EARLY_RESET_NOTIFICATIONS.md).
+**#70 병합·Mac 후속 #73 연결 완료:** 공통 [QuotaEarlyResetNotifications.cs](QuotaEarlyResetNotifications.cs)는 연속 성공으로 확인된 비교에 한해 조기 초기화를 추정하고, 별도 기본 꺼짐 설정과 같은 응답의 회복 알림 통합을 맡습니다. Windows의 메뉴·알림·Provider 상세는 2.8.0에, Mac 연결은 후속 #73의 0.8.0에 반영됐습니다. #70은 Mac 확인 전에 병합됐으나 병합 main의 사후 검사에서 문제없음을 확인한 뒤 사용자가 유지하기로 했습니다. 당시 Xcode 검사 우회 조건은 후속 정상 지원 환경의 검증과 구분합니다. [조건·연속성·양쪽 검사·Mac 연결 완료](QUOTA_EARLY_RESET_NOTIFICATIONS.md).
+
+**#74 공통화 완료(2026-10-20 상태 정리):** Windows와 Mac은 대기 알림의 표시 직전 재검증에 공통 [QuotaPendingAlertPolicy.cs](QuotaPendingAlertPolicy.cs)를 사용합니다. Mac 호출 전환 `42ff9ae`와 양쪽 확인 뒤 main `8529df48d75bafe0e136e5a894e70bcb1364509c`에 병합했습니다. 기존 판정·문구·화면과 호스트별 큐/전달 흐름은 그대로입니다. **Windows 2.8.0 배포 EXE에는 미포함이며 다음 배포에 함께 넣습니다. 이 변경만으로 별도 배포하지 않습니다.** Mac은 0.8.1부터 포함합니다.
 
 **#68 병합 완료·Windows 2.8.0에 반영:** 공통 계정 한도의 기본 간격과 모니터 fallback은 **1시간**입니다. 사용 90% 초과~100% 미만도 1시간이지만 진단 이유는 `LowRemaining`, 정상 기본은 `Regular`로 구분합니다. 소진 15분·리셋 구간 5분·Gemini 원본 사용 0% 리셋 제외와 실패 재시도 15분→30분→최대 1시간을 유지합니다. Mac 확인 뒤 main **`2bf188e`**에 병합했고 Windows 2.8.0에 반영·배포했습니다. 이전 2.7.0은 기본 6시간이었습니다. [공통 변경·양쪽 확인](QUOTA_HOURLY_POLLING.md).
 
 **이전 Windows 2.7.0 배포 이력:** #62·#63의 양쪽 확인 뒤 #64를 사용자 승인으로 병합하고 깨끗한 main **`2d5fe6220821a8c40bd17e5a78d5e093053e892f`**에서 단일 EXE를 만들었습니다. 정상 종료·WAL/SHM 확인·새 백업 뒤 **2.7.0으로 교체·실행 완료**했습니다. 당시 SDK 10.0.402·빌드/publish 경고 0/오류 0·self-test **252,869건·ExitCode 0**, 별도 smoke **1회 574 PASS·ExitCode 0**이며 당시 승인 전 준비 후보 5회와 구분합니다. 실제 EXE 해시·소스/백업·사용자 화면 확인·진단 파일 생성과 2.6.0 EXE만 복원하는 방법은 [2.7.0 배포 기록](MAINTENANCE_2_7_0.md)에 보존합니다. 현재 2.8.0 EXE의 소스는 위 `01d82bf`이며 과거 EXE 소스나 결과 기록 커밋과 다릅니다. Windows 사용법은 [README](README.md), 최신 Mac 버전·검증은 [Mac 안내](Mac/README.md)로 이동하세요.
 
-코드를 한 줄씩 번역한 문서는 아닙니다. **각 파일이 무엇을 맡고, 서로 어떻게 연결되는지** 설명합니다. 아래 지도는 **Windows 2.8.0 배포 소스 기준** 루트·Properties C# **89개(앱 기능 43 + 검사·진단 45 + 명찰 1)**, Mac 호스트·검사 11개, 공통 검사 입구 1개로 총 **101개**와 빌드 설정을 다룹니다. `SharedTestSuite.cs`는 루트 검사에 이미 포함하고 별도 입구는 `Shared.Tests/Program.cs`만 셉니다. 공통 제품 원본 목록은 **31개**입니다. #70의 조기 초기화 엔진 1개·공통 검사 2개·Windows UI 검사 1개를 포함하며 이번 버전 준비/배포에서 C#를 추가하거나 2.7.0 당시 결과를 바꾼 것이 아닙니다. 생성된 `bin`·`obj`·검증 `artifacts`는 제외합니다.
+코드를 한 줄씩 번역한 문서는 아닙니다. **각 파일이 무엇을 맡고, 서로 어떻게 연결되는지** 설명합니다. **Windows 2.8.0 배포 당시 소스 기준** 루트·Properties C#는 **89개(앱 기능 43 + 검사·진단 45 + 명찰 1)**, Mac 호스트·검사 11개, 공통 검사 입구 1개로 총 **101개**였고 공통 제품 원본 목록은 **31개**였습니다. #70의 조기 초기화 엔진 1개·공통 검사 2개·Windows UI 검사 1개를 포함하며 당시 버전 준비/배포에서 C#를 추가하거나 2.7.0 당시 결과를 바꾼 것이 아닙니다.
+
+아래 파일 지도는 **#73·#74 병합 뒤 main 기준**으로 갱신했습니다. 루트·Properties C# **91개(앱 기능 44 + 검사·진단 46 + 명찰 1)**, Mac 호스트·검사 **12개**, 공통 검사 입구 **1개**로 총 **104개**이며 공통 제품 원본 목록은 **32개**입니다. `SharedTestSuite.cs`는 루트 검사에 이미 포함하고 별도 입구는 `Shared.Tests/Program.cs`만 셉니다. 생성된 `bin`·`obj`·검증 `artifacts`는 제외합니다. 이 파일 수 갱신은 배포 당시의 검사·빌드를 새로 실행했다는 뜻이 아닙니다.
 
 **#62·#63 병합 완료·2.7.0에 반영·배포 완료:** 공통 Gemini 파서는 `5시간` → `주간` → `주간 {묶음 이름}`을 만들고 원본 묶음명+bucket ID를 기존 시간 비교·회복 엔진·캐시에 연결합니다. 정확한 사용 0% 창은 새 리셋 후보에서 제외하고 구형 Gemini 캐시의 출처 불명 기준을 한 번 정리합니다. 모든 Provider의 예약 이유·선택 리셋·다음 조회를 최근 256건/128KiB로 기록하며 1분 이내 흔들림은 구간 양끝만 보존합니다. [구조·전환 제약·진단 위치·양쪽 확인](GEMINI_ANTIGRAVITY_QUOTAS.md). 이번 버전·배포 기록 작업은 공통 C#·Mac 파일을 다시 고치지 않았습니다.
 
@@ -335,7 +339,7 @@ Windows 내부 승인 형식은 알려진 경우만 해석합니다. 낯선 값�
 
 이름을 눌러 소스를 열 수 있습니다. 역할을 알고 필요한 파일부터 읽으면 됩니다.
 
-### 실제 앱 기능: 43개
+### 실제 앱 기능: 44개
 
 | 파일 | 맡은 일 |
 |---|---|
@@ -357,6 +361,7 @@ Windows 내부 승인 형식은 알려진 경우만 해석합니다. 낯선 값�
 | [RecommendationNotifications.cs](RecommendationNotifications.cs) | 마지막 확정 권고 기억, 중복 알림 방지 |
 | [QuotaRecoveryNotifications.cs](QuotaRecoveryNotifications.cs) | 검증된 성공 관측의 창별 소진→회복 판정·중복 방지와 공통 설정/알림 문구. 조회·네이티브 표시는 호스트가 맡음 |
 | [QuotaEarlyResetNotifications.cs](QuotaEarlyResetNotifications.cs) | 연속 성공의 예정 전 사용량 감소·리셋 변경 추정, 실행 중 최신 1건·상세 문구·독립 설정과 회복/조기 초기화 배너 통합. 조회·표시는 호스트 담당 |
+| [QuotaPendingAlertPolicy.cs](QuotaPendingAlertPolicy.cs) | #74의 회복·조기 초기화 대기 알림 표시 직전 공통 재검증. 각 알림의 기존 조건을 유지하며 큐·OS 전달은 호스트 담당. 다음 Windows 배포에 포함 예정 |
 | [TrayPresentation.cs](TrayPresentation.cs) | 트레이 문자·색상·짧은 도움말 결정. 두 OS가 함께 쓰는 전환·Provider 알림 문구 |
 | [WindowsProviderNames.cs](WindowsProviderNames.cs) | Windows 화면·메뉴·기록·통계·Tooltip·알림에서 OpenAI를 ChatGPT로 표시. 저장 식별자와 공식 URL은 유지 |
 | [ProviderNames.cs](ProviderNames.cs) | 두 OS의 공통 제품 표시 이름. 식별자·DB 값과 구분 |
@@ -383,7 +388,7 @@ Windows 내부 승인 형식은 알려진 경우만 해석합니다. 낯선 값�
 | [QuotaBarPalette.cs](QuotaBarPalette.cs) | Windows 막대의 실제 합성색 대비로 시간층 농도와 경계선 색을 선택. 고대비 시스템색·경계선 보완 |
 | [QuotaDetailPopup.cs](QuotaDetailPopup.cs) | Windows 비활성화 상세 팝업. 흰색·고정 폭·줄바꿈·포인터 근처/화면 경계 보정·긴 상세 세로 스크롤 |
 
-### 검사와 진단: 45개
+### 검사와 진단: 46개
 
 미완성 임시 코드가 아닙니다. **특별한 검사 명령 때만 쓰는 정식 검사 코드**입니다.
 
@@ -406,6 +411,7 @@ Windows 내부 승인 형식은 알려진 경우만 해석합니다. 낯선 값�
 | [QuotaEarlyResetNotificationTests.cs](QuotaEarlyResetNotificationTests.cs) | 합성 응답으로 세 Provider·5시간/주간/모델 주간의 경계·연속성·오탐 제외·최신 기록·문구 개인정보·회복 배너 통합 912건 |
 | [QuotaEarlyResetSettingsTests.cs](QuotaEarlyResetSettingsTests.cs) | 임시 SQLite에서 독립 기본 OFF·저장/읽기 오류·취소·schema/기존 캐시 보존 50건 |
 | [QuotaEarlyResetUiChecks.cs](QuotaEarlyResetUiChecks.cs) | 실제 Windows 메시지 루프의 독립 메뉴·성공 비교·통합 배너·최근 상세·대기 취소·설정 오류/종료 검사 |
+| [QuotaPendingAlertPolicyTests.cs](QuotaPendingAlertPolicyTests.cs) | 공통 대기 재검증의 90분·1분 경계, 창 구성/기간·연속성·재소진과 회복 전용 기존 조건 보존을 합성 데이터로 확인 |
 | [QuotaBarUiChecks.cs](QuotaBarUiChecks.cs) | 합성 라이트·다크·고대비 팔레트와 96/144/192 DPI의 겹침·경계선 픽셀 83건. Windows smoke에서 호출 |
 | [RecordingTests.cs](RecordingTests.cs) | 공통 기록 캡처·메뉴·메모 제한·피드백 골든 검사 |
 | [StatisticsTextTests.cs](StatisticsTextTests.cs) | 공통 통계 본문·표 제목·기간·주의 문구 골든 검사 |
@@ -441,7 +447,7 @@ Windows 내부 승인 형식은 알려진 경우만 해석합니다. 낯선 값�
 
 [Properties/AssemblyInfo.cs](Properties/AssemblyInfo.cs)는 프로그램 식별 정보 일부를 담습니다. 버전은 여기 아닌 프로젝트 파일에서 관리하고, 나머지 정보는 SDK가 생성합니다.
 
-### Mac 호스트·검사: 11개 / 공통 검사 입구: 1개
+### Mac 호스트·검사: 12개 / 공통 검사 입구: 1개
 
 | 파일 | 맡은 일 |
 |---|---|
@@ -452,8 +458,9 @@ Windows 내부 승인 형식은 알려진 경우만 해석합니다. 낯선 값�
 | [Mac/MacControls.cs](Mac/MacControls.cs) | Mac 네이티브 컨트롤·글꼴·톤 색·카드 표현 도우미 |
 | [Mac/MacStatisticsWindow.cs](Mac/MacStatisticsWindow.cs) | 공통 계산 결과를 보여주는 Mac 통계 창 |
 | [Mac/MacServices.cs](Mac/MacServices.cs) | macOS 알림 권한과 로그인 항목 등록 |
-| [Mac/MacQuotaRecovery.cs](Mac/MacQuotaRecovery.cs) | Mac의 공통 회복 엔진 연결·메뉴 설정·메인 스레드 알림 대기열·종료 수명 |
-| [Mac/MacQuotaRecoverySmoke.cs](Mac/MacQuotaRecoverySmoke.cs) | Mac native smoke의 합성 회복 알림·설정·수명 시나리오 |
+| [Mac/MacQuotaNotifications.cs](Mac/MacQuotaNotifications.cs) | Mac의 회복·조기 초기화 공통 엔진/재검증 연결·독립 메뉴 설정·메인 스레드 대기열·종료 수명 |
+| [Mac/MacQuotaRecoverySmoke.cs](Mac/MacQuotaRecoverySmoke.cs) | Mac native smoke의 합성 회복·조기 초기화 알림, 독립 메뉴·설정·큐·수명 시나리오 |
+| [Mac/MacEarlyResetSmoke.cs](Mac/MacEarlyResetSmoke.cs) | #73의 Mac native smoke 조기 초기화 엔진·모니터·배너 통합·최근 상세/패널 합성 검사 |
 | [Mac/MacGeminiModelRowSmoke.cs](Mac/MacGeminiModelRowSmoke.cs) | Mac native smoke의 Gemini 모델 행·막대 수·팝오버/스크롤·행별 설명 시나리오 |
 | [Mac/MacPollingDiagnosticSmoke.cs](Mac/MacPollingDiagnosticSmoke.cs) | Mac Release의 예약 진단·256건 상한·리셋 흔들림/연속 이동 시나리오 |
 | [Shared.Tests/Program.cs](Shared.Tests/Program.cs) | OS UI 없이 SharedTestSuite.RunAllAsync를 한 번 실행하는 입구 |
@@ -468,7 +475,7 @@ Windows 내부 승인 형식은 알려진 경우만 해석합니다. 낯선 값�
 | [build.ps1](build.ps1) | 빌드와 자체 검사를 실행하는 순서 |
 | [Portable.pubxml](Properties/PublishProfiles/Portable.pubxml) | 배포용 단일 EXE 설정 |
 | [app.manifest](app.manifest) | Windows 권한·호환 설정. 관리자 권한으로 자동 상승하지 않음 |
-| [Shared/SharedSources.props](Shared/SharedSources.props) | 공통 C# 원본 31개를 Mac과 검사 프로젝트에 연결하는 목록. 검사 실행 목록은 SharedTestSuite에 별도 관리 |
+| [Shared/SharedSources.props](Shared/SharedSources.props) | 공통 C# 원본 32개를 Mac과 검사 프로젝트에 연결하는 목록. 검사 실행 목록은 SharedTestSuite에 별도 관리 |
 | [Shared.Tests/AiBurgerClock.Shared.Tests.csproj](Shared.Tests/AiBurgerClock.Shared.Tests.csproj) | net10.0 공통 검사, 임시 DB와 가짜 HTTP·CLI 사용 |
 | [Mac/AiBurgerClock.Mac.csproj](Mac/AiBurgerClock.Mac.csproj) | native AppKit, net10.0-macos27.0, osx-arm64, preview 버전과 bundle 버전(`ApplicationDisplayVersion`/`ApplicationVersion`) 지정 |
 | [Mac/tools/make-app-icon.swift](Mac/tools/make-app-icon.swift) | Mac 앱 아이콘 10개 크기를 코드로 생성해 `Mac/Assets.xcassets/AppIcon.appiconset`에 저장. 아이콘을 바꿀 때만 실행 |
@@ -495,7 +502,7 @@ Mac의 시간대 ID는 `America/New_York`, `America/Los_Angeles`, `Asia/Seoul`�
 
 Mac은 `~/Library/Application Support/AIBurgerClock`에 별도 DB를 쓰고 `SMAppService.MainApp`으로 로그인 항목을 관리합니다. CLI는 절대 실행 경로와 실행 권한을 확인하고, shell 프로필·Keychain·인증 파일은 읽지 않습니다. 기능 규칙을 함께 써도 **두 컴퓨터의 DB와 로그인은 자동 동기화되지 않습니다.**
 
-현재 Windows 배포 EXE는 **2.7.0**입니다. #59 공통 회복 판정의 Mac 확인과 Mac 네이티브 연결 #60은 병합 완료했습니다. #52의 공통 시간 비교와 #53·#55·#56의 Mac 후속도 각각의 기록으로 구분합니다. 이번 Windows 버전·배포 결과 문서는 공통 원본이나 Mac 버전을 바꾸지 않습니다. `MacCliPaths`는 GUI 앱의 PATH와 `~/.local/bin`, `/opt/homebrew/bin`, `/usr/local/bin`에서 실행 가능한 공식 명령을 찾으며 앱이 인증 파일을 직접 읽지는 않습니다. 현재 Mac 빌드·아이콘·실기 검증은 [Mac 안내](Mac/README.md)·[Mac 기록](MACOS_PORT.md)에서 관리합니다. 기존 Mac 결과를 이번 Windows 준비·배포에서 새로 실행한 검사로 적지 않습니다.
+현재 Windows 배포 EXE는 **2.8.0**입니다. #59 공통 회복 판정의 Mac 확인과 Mac 네이티브 연결 #60, 조기 초기화 연결 #73은 병합 완료했습니다. #74의 공통 대기 재검증도 양쪽 호출 전환까지 병합했지만 Windows EXE 반영은 다음 배포로 남겨 둡니다. #52의 공통 시간 비교와 #53·#55·#56의 Mac 후속도 각각의 기록으로 구분합니다. 이번 문서 정리는 공통 원본이나 Mac 버전을 바꾸지 않습니다. `MacCliPaths`는 GUI 앱의 PATH와 `~/.local/bin`, `/opt/homebrew/bin`, `/usr/local/bin`에서 실행 가능한 공식 명령을 찾으며 앱이 인증 파일을 직접 읽지는 않습니다. 현재 Mac 빌드·아이콘·실기 검증은 [Mac 안내](Mac/README.md)·[Mac 기록](MACOS_PORT.md)에서 관리합니다. 기존 Mac 결과를 이번 문서 작업에서 새로 실행한 검사로 적지 않습니다.
 
 Mac의 상태 UI는 `MacStatusPanel`과 `MacControls`를 쓰는 팝오버입니다. Windows는 `StatusWindow` 안에서 ‘한도 보기 ↔ 상태 보기’로 카드 영역을 전환합니다. 한도 박스·제목 기준선·클릭되는 카드만 hover라는 규칙은 [결정 9](MACOS_UI_PLAN.md)에 따르며, Mac 한도 항상 표시와 Windows 전환 방식의 차이는 결정 10에 남깁니다. 두 호스트의 실제 창 배치·픽셀 검사는 각각의 native smoke가 맡습니다.
 
@@ -553,6 +560,6 @@ Mac native smoke는 실제 Mac에서만 실행하며 Windows의 옵션을 그대
 - **기록이 어떻게 쌓이는지:** Phase2Models → UsageStore → StatisticsAnalysis → OS별 통계 창.
 - **버튼이 하는 일:** StatusWindow → TrayApplicationContext.
 - **잔여량 조회와 다음 갱신:** AccountQuotaClient → AccountQuotaParsers → AccountQuotaMonitor / AccountQuotaPolicy → QuotaPanelModel → AccountQuotaView. 사용자 실측 통계와는 별개이며 캐시는 UsageStore의 AppMetadata에 Provider별 한 항목을 사용합니다. 2.3.0의 Gemini 연결은 기존 schema 2를 유지하며 `AccountQuota.v1.Gemini`만 추가합니다.
-- **조기 초기화 추정과 회복 알림:** AccountQuotaMonitor.Succeeded → QuotaRecoveryNotifications / QuotaEarlyResetNotifications → QuotaNotificationText.Combine → Windows 알림 대기열. 최근 확인 기록은 QuotaPanelModel의 선택적 상세에만 연결하고 Mac 알림 연결은 후속 PR에서 진행합니다.
+- **조기 초기화 추정과 회복 알림:** AccountQuotaMonitor.Succeeded → QuotaRecoveryNotifications / QuotaEarlyResetNotifications → QuotaNotificationText.Combine → OS별 알림 대기열. #73으로 Mac의 MacQuotaNotifications 연결도 완료했고 #74로 Windows·Mac의 표시 직전 재검증을 QuotaPendingAlertPolicy로 공통화했습니다. 큐·설정 토글 격리·네이티브 전달은 호스트에 남기며 최근 확인 기록은 QuotaPanelModel의 선택적 상세에 연결합니다. Windows 2.8.0 배포 EXE의 재검증은 #74 전 호스트 구현이고, 공통 호출은 다음 배포에 포함합니다.
 
 색상은 표시 문제, 공휴일은 시간표 정책, 경험 기록은 관찰 데이터, 추천 점수는 데이터 해석 문제입니다. 이 구분이 작은 앱의 가장 중요한 구조입니다.
