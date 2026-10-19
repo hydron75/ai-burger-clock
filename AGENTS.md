@@ -25,6 +25,7 @@ AI Burger Clock 저장소에서 코드를 고치는 사람과 에이전트를 �
 - WinExe는 `$LASTEXITCODE`가 신뢰할 수 없으므로 `Start-Process -Wait -PassThru`로 실제 프로세스의 `ExitCode`를 봅니다.
 - `-Publish`는 `dist`의 EXE를 덮어씁니다. 실행 중인 앱을 먼저 종료합니다.
 - `bin/`, `obj/`, `dist/`, `artifacts/`, `*.db`는 `.gitignore` 대상입니다. 커밋하지 않습니다.
+- **Mac 빌드:** 저장소 경로에서 `dotnet build Mac/AiBurgerClock.Mac.csproj`를 직접 실행하지 않습니다. 같은 bundle(`Mac/bin/Release/…`)로 실행 중인 앱의 디스크 번들이 덮어써집니다. Mac 컴파일·빌드·`--smoke-test` 확인은 임시 사본(`git worktree`·`rsync`)에서 `Mac/build.sh`로 하고, 실제로 쓸 앱만 사용자 허락 뒤 저장소 경로에서 `Mac/build.sh`(실행 중이면 `--quit-running`)로 빌드합니다. 자세한 내용은 [Mac/README](Mac/README.md)의 "실행 중인 앱이 있을 때"를 봅니다.
 
 ## 검사
 
