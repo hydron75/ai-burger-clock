@@ -1760,7 +1760,7 @@ CLI 자동 업데이트 스크립트(launchd 매일 06:10)가 .NET SDK 새 버�
 
 | 항목 | 결과 |
 |---|---|
-| 도구 | Xcode 27.1(27A9275), **.NET SDK 10.0.402**, 런타임 10.0.13, **.NET macOS 워크로드 27.0.10742/10.0.100**(설치 원본 SDK 10.0.400 표시, 요구 Xcode 27.1) |
+| 도구 | Xcode 27.1(27A9275), **.NET SDK 10.0.402**, 런타임 10.0.13, **.NET macOS 워크로드 27.0.10742/10.0.100**(워크로드 세트 10.0.402.1, 설치 원본 SDK 10.0.400 표시, 요구 Xcode 27.1; Microsoft의 [Xcode 27.1 지원 릴리스](https://github.com/dotnet/macios/releases/tag/dotnet-10.0.1xx-xcode27.1-10018)가 이 macOS 팩 버전을 포함) |
 | **빌드 방식** | **옵션 없이 `bash Mac/build.sh --quit-running`**. `--allow-xcode-mismatch`를 쓰지 않았고 Xcode 불일치 경고·E0191 없음. `artifacts/mac-build/xcode-mismatch.log`에 이번 빌드의 항목이 추가되지 않았다(마지막 항목은 0.8.1 때의 것). 사용자 허락으로 실행 중이던 0.8.1 앱에 종료 요청해 닫은 뒤 저장소 경로에서 빌드(정상 종료) |
 | 임시 사본 선검증 | main `8cab110`을 저장소 밖 임시 사본에서 **옵션 없이** 먼저 검증: `build.sh` 종료 코드 0, 경고 0/오류 0, Shared.Tests 254,388 PASS, 서명 통과, `--smoke-test` 종료 코드 0, 팝오버 380×821pt(실행 중이던 앱은 그대로) |
 | 앱 소스 | `b4d2a01ce5b76e9284fb03e5141bafd47eb2c245`(버전 변경 커밋, main `8cab110` 기반) |

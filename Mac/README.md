@@ -19,7 +19,7 @@ Apple Silicon / macOS 27을 위한 C# AppKit 메뉴바 앱입니다. 함께 쓰�
 - **공통 대기 알림 판정(#74):** 회복·조기 초기화 대기 알림을 표시 직전에 다시 확인하는 판정을 공통 `QuotaPendingAlertPolicy`로 옮겼고, Mac은 `Current`에서 그 함수만 호출합니다. 큐·종류별 토글·6.5초 간격·전달은 그대로입니다.
 - **.NET 10.0.402 / 런타임 10.0.13:** 이 번들에 들어가는 .NET 런타임이 10.0.12에서 10.0.13으로 올라갔습니다(번들의 `System.Private.CoreLib` 버전으로 확인).
 - 문서만 바뀐 #75(조회 트리거 진단 후보 정리)는 코드에 영향이 없습니다.
-- 빌드는 지금도 Xcode 27.1과 .NET macOS 워크로드 27.0.10722의 지원되지 않는 조합이라 `--allow-xcode-mismatch`로 만들었습니다. [기록](../MACOS_PORT.md#53-081-정리)
+- 이 빌드는 Xcode 27.1과 .NET macOS 워크로드 27.0.10722의 지원되지 않는 조합이라 `--allow-xcode-mismatch`로 만들었습니다(0.8.2부터는 옵션 없이 빌드). [기록](../MACOS_PORT.md#53-081-정리)
 
 ## 0.8.0: 한도 조기 초기화 알림 연결과 기본 조회 1시간
 
@@ -198,18 +198,18 @@ xcodebuild -version
 command -v dotnet
 ```
 
-기준 도구는 .NET SDK **10.0.401**, Xcode **27.0**, macos workload set **10.0.401.1**입니다. [Microsoft 공식 Xcode 27 지원 릴리스](https://github.com/dotnet/macios/releases/tag/dotnet-10.0.1xx-xcode27.0-10722)에 맞춘 조합입니다. 프로젝트는 `net10.0-macos27.0` / `osx-arm64`를 대상으로 합니다.
+기준 도구는 .NET SDK **10.0.402**, Xcode **27.1**, macos workload set **10.0.402.1**(macOS 워크로드 27.0.10742)입니다. [Microsoft 공식 Xcode 27.1 지원 릴리스](https://github.com/dotnet/macios/releases/tag/dotnet-10.0.1xx-xcode27.1-10018)에 맞춘 조합입니다. 프로젝트는 `net10.0-macos27.0` / `osx-arm64`를 대상으로 합니다.
 
-`dotnet`을 찾지 못한다면 [.NET SDK 10.0.401 macOS Arm64 설치 파일](https://dotnet.microsoft.com/en-us/download/dotnet/thank-you/sdk-10.0.401-macos-arm64-installer)을 수동 설치하세요. Runtime만 설치하거나 x64 버전을 선택하지 않습니다. 설치 후 새 터미널에서 버전을 확인합니다.
+`dotnet`을 찾지 못한다면 [.NET SDK 10.0.402 macOS Arm64 설치 파일](https://dotnet.microsoft.com/en-us/download/dotnet/thank-you/sdk-10.0.402-macos-arm64-installer)을 수동 설치하세요. Runtime만 설치하거나 x64 버전을 선택하지 않습니다. 설치 후 새 터미널에서 버전을 확인합니다.
 
 ```sh
 dotnet --version
 ```
 
-`10.0.401`이 확인되면 macOS 앱 빌드에 필요한 workload만 설치합니다. 이 명령은 개발 도구를 설치하며 계정 로그인이나 앱 자동 실행 설정을 바꾸지 않습니다. 시스템에 설치한 SDK는 관리자 권한이 필요할 수 있어 `sudo`를 사용합니다.
+`10.0.402`가 확인되면 macOS 앱 빌드에 필요한 workload만 설치합니다. 이 명령은 개발 도구를 설치하며 계정 로그인이나 앱 자동 실행 설정을 바꾸지 않습니다. 시스템에 설치한 SDK는 관리자 권한이 필요할 수 있어 `sudo`를 사용합니다.
 
 ```sh
-sudo dotnet workload install macos --version 10.0.401.1
+sudo dotnet workload install macos --version 10.0.402.1
 dotnet workload list
 ```
 
@@ -238,7 +238,7 @@ bash Mac/build.sh
 
 ### Xcode와 워크로드가 요구하는 버전이 다를 때 (`--allow-xcode-mismatch`)
 
-.NET macOS 워크로드는 자신이 요구하는 Xcode의 major.minor와 설치된 Xcode가 다르면 `E0191`(예: `requires Xcode 27.0. The current version of Xcode is 27.1`)로 빌드를 멈춥니다. Xcode가 먼저 올라가고 워크로드가 늦게 따라오는 기간에 생기며, 새 워크로드가 나오기 전에는 워크로드 갱신으로 해결되지 않습니다.
+.NET macOS 워크로드는 자신이 요구하는 Xcode의 major.minor와 설치된 Xcode가 다르면 `E0191`(예: `requires Xcode 27.0. The current version of Xcode is 27.1`)로 빌드를 멈춥니다. Xcode가 먼저 올라가고 워크로드가 늦게 따라오는 기간에 생기며, 새 워크로드가 나오기 전에는 워크로드 갱신으로 해결되지 않습니다. Xcode 27.1은 워크로드 27.0.10742(0.8.2)에서 지원되어 이 오류 없이 빌드됩니다.
 
 `bash Mac/build.sh --allow-xcode-mismatch`는 **이 버전 검사 하나만** 건너뜁니다(`-p:ValidateXcodeVersion=false`). 다른 검사와 경고를 오류로 취급하는 설정, 서명 검증은 그대로입니다. `--quit-running`과 함께 쓸 수 있습니다.
 
@@ -419,8 +419,8 @@ done
 
 UI와 시스템 연결은 다음 공식 바인딩을 사용합니다.
 
-- [AppKit 바인딩](https://github.com/dotnet/macios/blob/dotnet-10.0.1xx-xcode27.0-10722/src/appkit.cs): NSStatusItem·NSWindow·NSWorkspace.
-- [ServiceManagement 바인딩](https://github.com/dotnet/macios/blob/dotnet-10.0.1xx-xcode27.0-10722/src/servicemanagement.cs): SMAppService.
-- [UserNotifications 바인딩](https://github.com/dotnet/macios/blob/dotnet-10.0.1xx-xcode27.0-10722/src/usernotifications.cs): UNUserNotificationCenter.
+- [AppKit 바인딩](https://github.com/dotnet/macios/blob/dotnet-10.0.1xx-xcode27.1-10018/src/appkit.cs): NSStatusItem·NSWindow·NSWorkspace.
+- [ServiceManagement 바인딩](https://github.com/dotnet/macios/blob/dotnet-10.0.1xx-xcode27.1-10018/src/servicemanagement.cs): SMAppService.
+- [UserNotifications 바인딩](https://github.com/dotnet/macios/blob/dotnet-10.0.1xx-xcode27.1-10018/src/usernotifications.cs): UNUserNotificationCenter.
 
 공통 기능 개선은 루트의 원본 소스에서 반영하며 Mac 고유 UI·로그인 항목·알림 코드는 이 폴더에서 관리합니다. 이 preview는 Windows 기능 변경이나 기존 배포본 교체를 동반하지 않습니다.
