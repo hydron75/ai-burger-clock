@@ -1782,3 +1782,32 @@ CLI 자동 업데이트 스크립트(launchd 매일 06:10)가 .NET SDK 새 버�
 
 ### 개발 환경 점검 자동화
 CLI 자동 업데이트 스크립트의 .NET 점검(저장소 밖, 06:10)이 2026-10-20 실행에서 이 워크로드를 `Xcode 지원 워크로드`로 알렸고(알림 종류가 로그에 기록됨), 같은 버전은 다시 알리지 않는다.
+
+## 55. 한도 행 이름/값 분리(#80) Mac 전환
+
+2026-10-20 KST. 범위: **Mac 전환(코드·검사·문서)**. 공통 원본은 Windows가 #80에서 바꾼 것을 그대로 쓰고 Mac이 공통 파일을 고치지 않았다. Mac 버전(0.8.2)과 배포 앱은 바꾸지 않았다. 공통 `QuotaLine.NameText`·`ValueText`·`ReadingText`와 `DisplayFormatting.MiddleEllipsis`를 Mac 행에 연결한다.
+
+### 변경
+
+| 항목 | 내용 |
+|---|---|
+| 행 | `MacStatusPanel`의 한도 행을 한 줄 텍스트 대신 `QuotaRowView`(이름·값 두 텍스트)로 바꿈. 값은 AppKit 11pt 글꼴로 실제 폭(`IntrinsicContentSize`)을 먼저 재서 전체 폭을 확보하고, 남은 폭(6pt 간격 제외)과 같은 측정 함수를 공통 `MiddleEllipsis`에 넘겨 **이름만** 줄임. 기존 `Text`·Provider 상세는 파싱하지 않음. 분리 값이 없는 행(대기·실패)은 기존처럼 한 줄 말줄임 |
+| VoiceOver | 막대가 행 하나의 접근성 요소이고 이름·값 텍스트는 숨김. 읽기 문구는 `ReadingText ?? Text`를 **한 번**만 쓰고 `ComparisonText`를 다시 붙이지 않음(`SpokenRow`) |
+| 크기 | 행 높이는 기존 한 줄 라벨과 같게 맞춤. 행·막대 수와 팝오버 크기(821pt)는 그대로 |
+| smoke | 새 `MacQuotaRowSmoke`: 값 전체 보존, 이름 가운데 생략(앞·뒤 보존), 이모지/ZWJ/국기/결합문자의 요소 경계, 99.9·100%·이전 표시·리셋 미제공 값, 읽기 문구 한 번·전체 이름 포함, 팝오버 높이·행·막대 수 불변. 패널 `Verify`가 행마다 분리·측정을 다시 확인. 폴더를 환경 변수(`AIBURGERCLOCK_SMOKE_IMAGES`)로 줄 때만 합성 PNG 저장(`MacQuotaRowImages`) |
+
+### 검증 (이 Mac, 옵션 없는 빌드, 임시 사본, 소스 `4dc2043`)
+
+| 항목 | 결과 |
+|---|---|
+| 도구 | Xcode 27.1(27A9275), .NET SDK 10.0.402, .NET macOS 워크로드 27.0.10742(요구 Xcode 27.1). `--allow-xcode-mismatch` 사용 안 함 |
+| Shared.Tests | `PASS ALL SHARED: 254,543 assertions` |
+| `Mac/build.sh` | 경고 0 / 오류 0, `codesign --verify --deep --strict` 통과 |
+| `--smoke-test` | PASS / 종료 코드 0, FAIL 0. 팝오버 380×821pt 그대로, 새 시나리오 12행(값 전체 보존·이름 7건 가운데 생략) 포함 |
+| 변이 검사 | `SpokenRow`에 비교 문장을 다시 붙이면 "읽기 문구와 다름"으로, 이름이 값 폭을 빼지 않으면 "이름이 값을 뺀 남은 폭의 중간 생략이 아님"으로 smoke가 종료 코드 1로 실패 |
+| 화면 | 합성 이름의 전후 PNG 6개(`docs/reviews/quota-row-name-layout-20261020/mac-{before,after}-{short,long,unicode}.png`). 같은 합성 데이터, 같은 하니스 |
+
+### 수행하지 않은 검증
+- 실제 VoiceOver 낭독, 실제 계정 화면, 글꼴 배율·화면 배율 변경(팝오버 폭과 글꼴이 고정이라 코드에서 바뀌는 입력이 없어 합성 검사만), 시스템 설정의 큰 글자.
+- 스크롤 막대 폭이 다른 환경(overlay가 아닌 항상 표시 스크롤러): 행 폭은 상자 텍스트 폭으로 고정돼 있어 코드상 영향이 없지만 별도 화면 확인은 하지 않았다.
+- 이 변경은 배포 앱에 반영하지 않았다(실행 중인 앱은 이전 빌드).
