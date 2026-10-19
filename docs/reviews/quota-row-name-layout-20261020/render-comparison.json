@@ -1,0 +1,302 @@
+[
+  {
+    "Image": "account-quotas-exhausted.png",
+    "Width": 774,
+    "Height": 1209,
+    "SameSHA256": false,
+    "LayoutIdentical": true,
+    "ChangedPixels": 4242,
+    "ChangedOutsideQuotaText": 0,
+    "ChangedBounds": [
+      62,
+      404,
+      711,
+      425
+    ]
+  },
+  {
+    "Image": "account-quotas-gemini-previous.png",
+    "Width": 774,
+    "Height": 1209,
+    "SameSHA256": false,
+    "LayoutIdentical": true,
+    "ChangedPixels": 16738,
+    "ChangedOutsideQuotaText": 0,
+    "ChangedBounds": [
+      62,
+      350,
+      677,
+      699
+    ]
+  },
+  {
+    "Image": "account-quotas-gemini.png",
+    "Width": 774,
+    "Height": 1209,
+    "SameSHA256": false,
+    "LayoutIdentical": true,
+    "ChangedPixels": 15040,
+    "ChangedOutsideQuotaText": 0,
+    "ChangedBounds": [
+      62,
+      350,
+      677,
+      699
+    ]
+  },
+  {
+    "Image": "account-quotas-note-truncated.png",
+    "Width": 774,
+    "Height": 1209,
+    "SameSHA256": false,
+    "LayoutIdentical": true,
+    "ChangedPixels": 16377,
+    "ChangedOutsideQuotaText": 0,
+    "ChangedBounds": [
+      62,
+      444,
+      677,
+      769
+    ]
+  },
+  {
+    "Image": "account-quotas-previous.png",
+    "Width": 774,
+    "Height": 1209,
+    "SameSHA256": false,
+    "LayoutIdentical": true,
+    "ChangedPixels": 15148,
+    "ChangedOutsideQuotaText": 0,
+    "ChangedBounds": [
+      62,
+      350,
+      677,
+      699
+    ]
+  },
+  {
+    "Image": "account-quotas-two-providers.png",
+    "Width": 774,
+    "Height": 1209,
+    "SameSHA256": false,
+    "LayoutIdentical": true,
+    "ChangedPixels": 16377,
+    "ChangedOutsideQuotaText": 0,
+    "ChangedBounds": [
+      62,
+      444,
+      677,
+      769
+    ]
+  },
+  {
+    "Image": "account-quotas.png",
+    "Width": 774,
+    "Height": 1209,
+    "SameSHA256": false,
+    "LayoutIdentical": true,
+    "ChangedPixels": 16377,
+    "ChangedOutsideQuotaText": 0,
+    "ChangedBounds": [
+      62,
+      444,
+      677,
+      769
+    ]
+  },
+  {
+    "Image": "burger-time.png",
+    "Width": 774,
+    "Height": 1209,
+    "SameSHA256": true,
+    "LayoutIdentical": true,
+    "ChangedPixels": 0,
+    "ChangedOutsideQuotaText": 0,
+    "ChangedBounds": [
+      774,
+      1209,
+      -1,
+      -1
+    ]
+  },
+  {
+    "Image": "full-throttle.png",
+    "Width": 774,
+    "Height": 1209,
+    "SameSHA256": true,
+    "LayoutIdentical": true,
+    "ChangedPixels": 0,
+    "ChangedOutsideQuotaText": 0,
+    "ChangedBounds": [
+      774,
+      1209,
+      -1,
+      -1
+    ]
+  },
+  {
+    "Image": "holiday-midweek.png",
+    "Width": 774,
+    "Height": 1209,
+    "SameSHA256": true,
+    "LayoutIdentical": true,
+    "ChangedPixels": 0,
+    "ChangedOutsideQuotaText": 0,
+    "ChangedBounds": [
+      774,
+      1209,
+      -1,
+      -1
+    ]
+  },
+  {
+    "Image": "holiday-weekend.png",
+    "Width": 774,
+    "Height": 1209,
+    "SameSHA256": true,
+    "LayoutIdentical": true,
+    "ChangedPixels": 0,
+    "ChangedOutsideQuotaText": 0,
+    "ChangedBounds": [
+      774,
+      1209,
+      -1,
+      -1
+    ]
+  },
+  {
+    "Image": "measurement-dialog.png",
+    "Width": 746,
+    "Height": 561,
+    "SameSHA256": true,
+    "LayoutIdentical": null,
+    "ChangedPixels": 0,
+    "ChangedOutsideQuotaText": 0,
+    "ChangedBounds": [
+      746,
+      561,
+      -1,
+      -1
+    ]
+  },
+  {
+    "Image": "note-truncated.png",
+    "Width": 774,
+    "Height": 1209,
+    "SameSHA256": true,
+    "LayoutIdentical": true,
+    "ChangedPixels": 0,
+    "ChangedOutsideQuotaText": 0,
+    "ChangedBounds": [
+      774,
+      1209,
+      -1,
+      -1
+    ]
+  },
+  {
+    "Image": "provider-outage.png",
+    "Width": 774,
+    "Height": 1209,
+    "SameSHA256": true,
+    "LayoutIdentical": true,
+    "ChangedPixels": 0,
+    "ChangedOutsideQuotaText": 0,
+    "ChangedBounds": [
+      774,
+      1209,
+      -1,
+      -1
+    ]
+  },
+  {
+    "Image": "provider-unscoped.png",
+    "Width": 774,
+    "Height": 1209,
+    "SameSHA256": true,
+    "LayoutIdentical": true,
+    "ChangedPixels": 0,
+    "ChangedOutsideQuotaText": 0,
+    "ChangedBounds": [
+      774,
+      1209,
+      -1,
+      -1
+    ]
+  },
+  {
+    "Image": "quota-tooltip-chatgpt.png",
+    "Width": 640,
+    "Height": 799,
+    "SameSHA256": true,
+    "LayoutIdentical": null,
+    "ChangedPixels": 0,
+    "ChangedOutsideQuotaText": 0,
+    "ChangedBounds": [
+      640,
+      799,
+      -1,
+      -1
+    ]
+  },
+  {
+    "Image": "quota-tooltip-claude.png",
+    "Width": 640,
+    "Height": 831,
+    "SameSHA256": true,
+    "LayoutIdentical": null,
+    "ChangedPixels": 0,
+    "ChangedOutsideQuotaText": 0,
+    "ChangedBounds": [
+      640,
+      831,
+      -1,
+      -1
+    ]
+  },
+  {
+    "Image": "quota-tooltip-gemini.png",
+    "Width": 640,
+    "Height": 1022,
+    "SameSHA256": true,
+    "LayoutIdentical": null,
+    "ChangedPixels": 0,
+    "ChangedOutsideQuotaText": 0,
+    "ChangedBounds": [
+      640,
+      1022,
+      -1,
+      -1
+    ]
+  },
+  {
+    "Image": "quota-tooltip-overflow-bottom.png",
+    "Width": 606,
+    "Height": 2032,
+    "SameSHA256": true,
+    "LayoutIdentical": null,
+    "ChangedPixels": 0,
+    "ChangedOutsideQuotaText": 0,
+    "ChangedBounds": [
+      606,
+      2032,
+      -1,
+      -1
+    ]
+  },
+  {
+    "Image": "statistics.png",
+    "Width": 1746,
+    "Height": 1121,
+    "SameSHA256": true,
+    "LayoutIdentical": null,
+    "ChangedPixels": 0,
+    "ChangedOutsideQuotaText": 0,
+    "ChangedBounds": [
+      1746,
+      1121,
+      -1,
+      -1
+    ]
+  }
+]

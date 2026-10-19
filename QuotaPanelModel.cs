@@ -4,9 +4,13 @@ namespace AiBurgerClock;
 
 // WindowId is the quota window's Id, or "" for the placeholder row shown before any reading.
 // ComparisonText is row-specific accessibility text; null when its time comparison is hidden.
+// Real quota rows split their existing text into NameText and ValueText for host-owned layout.
+// ReadingText keeps the unsqueezed Text and optional comparison together for accessibility.
+// These fields do not restore names already normalized by a parser or change Text/Detail.
 // Detail remains the unchanged, whole-Provider tooltip and must not be parsed by either host.
 internal sealed record QuotaLine(string Text, PanelTone Tone, string Detail, string WindowId = "", double? UsedPercent = null,
-    double? ElapsedPercent = null, string? ComparisonText = null);
+    double? ElapsedPercent = null, string? ComparisonText = null, string? NameText = null, string? ValueText = null,
+    string? ReadingText = null);
 
 internal sealed record QuotaSectionText(
     QuotaProvider Provider, QuotaLine Heading, QuotaLine? Scope, IReadOnlyList<QuotaLine> Rows, QuotaLine Metadata)
@@ -65,10 +69,13 @@ internal static class QuotaPanelModel
             {
                 bool elapsed = window.ResetsAtUtc is { } reset && reset <= now;
                 string used = window.UsedPercent.ToString("0.#", CultureInfo.InvariantCulture);
+                string value = $"{used}% 사용{(previous || elapsed ? " (이전)" : "")} · {DisplayFormatting.CompactResetCountdown(window.ResetsAtUtc, now, window.WindowMinutes)}";
+                string text = $"{window.Label}  {value}";
+                string? comparison = QuotaPacing.RowComparison(paces[index], state.LastSuccessfulCheckUtc, now);
                 return new QuotaLine(
-                    $"{window.Label}  {used}% 사용{(previous || elapsed ? " (이전)" : "")} · {DisplayFormatting.CompactResetCountdown(window.ResetsAtUtc, now, window.WindowMinutes)}",
+                    text,
                     Tone(window, previous, now), note, window.Id, window.UsedPercent, paces[index].ElapsedPercent,
-                    QuotaPacing.RowComparison(paces[index], state.LastSuccessfulCheckUtc, now));
+                    comparison, window.Label, value, comparison is null ? text : text + ". " + comparison);
             }).ToArray();
         return new(state.Provider, heading, scope, rows, metadata);
     }
