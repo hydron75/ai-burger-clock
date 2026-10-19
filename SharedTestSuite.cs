@@ -42,6 +42,7 @@ internal static class SharedTestSuite
             Report("paths/IANA/formatting/CLI candidates", PortablePlatformTests.Run());
             Report("panel text/tones (Windows golden)", PanelModelTests.Run());
             Report("quota usage/countdown/provider detail (portable)", QuotaPresentationTests.Run());
+            Report("quota split row text/middle ellipsis (synthetic)", QuotaRowTextTests.Run());
             Report("quota snapshot time/usage comparison (portable)", QuotaPacingTests.Run());
             Report("quota recovery notification decisions/text (synthetic)", QuotaRecoveryNotificationTests.Run());
             Report("quota recovery notification settings (temporary SQLite)", await QuotaRecoverySettingsTests.RunAsync(directory));

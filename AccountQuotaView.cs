@@ -284,7 +284,7 @@ internal sealed class AccountQuotaView : Panel, IMessageFilter
                 }
                 foreach (var line in section.Rows)
                 {
-                    rows[(section.Provider, line.WindowId)] = AddRow(box, rowY, rowFont); rowY += 20;
+                    rows[(section.Provider, line.WindowId)] = AddRow(box, rowY, rowFont, quotaRow: true); rowY += 20;
                     if (line.WindowId.Length == 0) continue;
                     var bar = new QuotaBalanceBar { Location = new Point(Scale(8), Scale(rowY)),
                         Size = new Size(box.Width - Scale(16), Scale(6)), Name = section.Provider + "-" + line.WindowId + "BalanceBar" };
@@ -315,7 +315,7 @@ internal sealed class AccountQuotaView : Panel, IMessageFilter
                 ApplyLine(label, line);
                 if (line.UsedPercent is not { } used) continue;
                 bars[(section.Provider, line.WindowId)].UpdateBalance(section.Provider, used, line.Tone,
-                    section.Heading.Text + " · " + label.Text, line.ComparisonText ?? "", line.ElapsedPercent);
+                    section.Heading.Text + " · " + (line.ReadingText ?? line.Text), "", line.ElapsedPercent);
             }
         }
         if (details.Visible && pendingDetail is { } shown && ProviderAt(pointerPosition()) == shown)
@@ -336,9 +336,10 @@ internal sealed class AccountQuotaView : Panel, IMessageFilter
             PanelTone.Muted => Color.DimGray,
             _ => SystemColors.ControlText
         };
-        // The visible label already supplies usage/reset text. Only this row's comparison belongs
-        // in its screen-reader description; Provider tooltips still use detailOwners/providerDetails.
-        label.AccessibleDescription = line.UsedPercent.HasValue ? line.ComparisonText ?? "" : line.Detail;
+        // The shared reading includes the unellipsized name, values and this row's comparison once.
+        // Whole-Provider tooltips remain independent of the two painted text regions.
+        if (label is RowLabel row) row.UpdateRow(line);
+        else label.AccessibleDescription = line.Detail;
     }
 
     internal static string ResetCountdown(DateTimeOffset? reset, DateTimeOffset now) =>
@@ -367,19 +368,68 @@ internal sealed class AccountQuotaView : Panel, IMessageFilter
         finally { sizingBoxes = false; }
     }
 
-    private Label AddRow(Panel box, int y, Font font)
+    private Label AddRow(Panel box, int y, Font font, bool quotaRow = false)
     {
-        var label = new Label
-        {
-            Location = new Point(Scale(8), Scale(y)),
-            Size = new Size(box.Width - Scale(16), Scale(19)),
-            Font = font,
-            AutoEllipsis = true,
-            Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right
-        };
+        Label label = quotaRow ? new RowLabel() : new Label();
+        label.Location = new Point(Scale(8), Scale(y));
+        label.Size = new Size(box.Width - Scale(16), Scale(19));
+        label.Font = font;
+        label.AutoEllipsis = !quotaRow;
+        label.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
         box.Controls.Add(label);
         BindDetail(label, detailOwners[box]);
         return label;
+    }
+
+    // Keep the original Label/Text/control bounds for compatibility. Only its painting is split:
+    // reserve the native-measured value width first, then fit the name with the shared policy.
+    internal sealed class RowLabel : Label
+    {
+        private const TextFormatFlags RowFlags = TextFormatFlags.SingleLine | TextFormatFlags.NoPrefix |
+            TextFormatFlags.NoPadding;
+        internal string? NameText { get; private set; }
+        internal string? ValueText { get; private set; }
+        internal string VisibleName { get; private set; } = "";
+        internal Rectangle NameBounds { get; private set; }
+        internal Rectangle ValueBounds { get; private set; }
+        internal bool ValueFits { get; private set; }
+
+        public RowLabel() => SetStyle(ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
+
+        internal void UpdateRow(QuotaLine line)
+        {
+            bool changed = NameText != line.NameText || ValueText != line.ValueText;
+            NameText = line.NameText;
+            ValueText = line.ValueText;
+            AutoEllipsis = NameText is null || ValueText is null;
+            AccessibleName = line.ReadingText ?? line.Text;
+            AccessibleDescription = line.UsedPercent.HasValue ? "" : line.Detail;
+            if (changed) Invalidate();
+        }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            if (NameText is null || ValueText is null) { base.OnPaint(e); return; }
+            DrawRow(e.Graphics, DeviceDpi);
+        }
+
+        // The smoke bitmap checks use the same painter, with explicit DPI and synthetic text only.
+        internal void DrawRow(Graphics graphics, int dpi)
+        {
+            if (NameText is null || ValueText is null || ClientSize.Width <= 0 || ClientSize.Height <= 0) return;
+            Size Measure(string text) => TextRenderer.MeasureText(graphics, text, Font,
+                new Size(int.MaxValue, int.MaxValue), RowFlags);
+            Size valueSize = Measure(ValueText);
+            ValueFits = valueSize.Width <= ClientSize.Width && valueSize.Height <= ClientSize.Height;
+            int gap = Math.Max(1, (int)Math.Round(6.0 * dpi / 96));
+            int valueWidth = Math.Min(ClientSize.Width, valueSize.Width);
+            ValueBounds = new Rectangle(ClientSize.Width - valueWidth, 0, valueWidth, ClientSize.Height);
+            NameBounds = new Rectangle(0, 0, Math.Max(0, ValueBounds.Left - gap), ClientSize.Height);
+            VisibleName = DisplayFormatting.MiddleEllipsis(NameText, NameBounds.Width, text => Measure(text).Width);
+            if (NameBounds.Width > 0)
+                TextRenderer.DrawText(graphics, VisibleName, Font, NameBounds, ForeColor, RowFlags);
+            TextRenderer.DrawText(graphics, ValueText, Font, ValueBounds, ForeColor, RowFlags);
+        }
     }
 
     private int Scale(int value) => (int)Math.Round(value * DeviceDpi / 96.0);

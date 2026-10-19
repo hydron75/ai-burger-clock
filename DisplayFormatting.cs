@@ -1,8 +1,36 @@
+using System.Globalization;
+
 namespace AiBurgerClock;
 
 // Text formatting only; shared by WinForms and the native macOS host.
 internal static class DisplayFormatting
 {
+    // The host measures whole candidates in its actual font and coordinate system.
+    // StringInfo boundaries preserve extended grapheme clusters (including ZWJ/flags).
+    // Prefer the most text elements, split evenly with an odd extra element in front.
+    internal static string MiddleEllipsis(string text, double availableWidth, Func<string, double> measure)
+    {
+        ArgumentNullException.ThrowIfNull(text);
+        ArgumentNullException.ThrowIfNull(measure);
+        if (text.Length == 0 || !(availableWidth > 0)) return "";
+        if (measure(text) <= availableWidth) return text;
+        const string ellipsis = "…";
+        if (!(measure(ellipsis) <= availableWidth)) return "";
+
+        int[] starts = StringInfo.ParseCombiningCharacters(text);
+        // Both ends must survive. A smaller budget shows only the ellipsis, never
+        // a misleading tail-only truncation. At least one original element is omitted.
+        // Do not assume real glyph measurement is monotonic (kerning/shaping).
+        for (int kept = starts.Length - 1; kept >= 2; kept--)
+        {
+            int front = (kept + 1) / 2;
+            int back = kept / 2;
+            string candidate = text[..starts[front]] + ellipsis + text[starts[^back]..];
+            if (measure(candidate) <= availableWidth) return candidate;
+        }
+        return ellipsis;
+    }
+
     internal static string FormatRemaining(TimeSpan remaining) =>
         $"{Math.Max(0, (int)remaining.TotalHours):00}:{Math.Max(0, remaining.Minutes):00}:{Math.Max(0, remaining.Seconds):00}";
 

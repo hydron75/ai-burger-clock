@@ -218,7 +218,7 @@ internal static class AccountQuotaUiChecks
             Math.Abs(geminiBox.Controls.OfType<QuotaBalanceBar>().First().UsedPercent - 2.01) < 1e-9,
             "Gemini blue bars retain precise consumed fractions from the verified reading");
         Check(geminiBox.Controls.OfType<QuotaBalanceBar>().Last().ElapsedPercent is > 42 and < 43 &&
-            geminiBox.Controls.OfType<QuotaBalanceBar>().Last().AccessibleDescription!.Contains("균등 사용 기준보다", StringComparison.Ordinal) &&
+            geminiBox.Controls.OfType<QuotaBalanceBar>().Last().AccessibleName!.Contains("균등 사용 기준보다", StringComparison.Ordinal) &&
             context.StatusWindow.QuotaView.DetailFor(geminiBox).Contains("주간 Gemini Synthetic Model:", StringComparison.Ordinal),
             "Gemini model weekly has a time boundary, row accessibility comparison and Provider detail");
         Check(context.StatusWindow.ClientSize == size && context.StatusWindow.QuotaView.VerticalScroll.Visible &&
@@ -230,13 +230,14 @@ internal static class AccountQuotaUiChecks
         foreach (var section in QuotaPanelModel.Sections(monitor.Snapshot(), clock()))
         {
             var providerLabels = ProviderLabels(section.Provider);
-            Check(section.Rows.All(row => providerLabels.Single(label => label.Text == row.Text).AccessibleDescription ==
-                    (row.UsedPercent.HasValue ? row.ComparisonText ?? "" : row.Detail)) &&
+            Check(section.Rows.All(row => providerLabels.Single(label => label.Text == row.Text).AccessibleName == (row.ReadingText ?? row.Text) &&
+                    providerLabels.Single(label => label.Text == row.Text).AccessibleDescription == (row.UsedPercent.HasValue ? "" : row.Detail)) &&
                 providerLabels.Where(label => !section.Rows.Any(row => row.Text == label.Text))
                     .All(label => label.AccessibleDescription == section.Detail) &&
-                Box(section.Provider).Controls.OfType<QuotaBalanceBar>().Select(bar => bar.AccessibleDescription)
-                    .SequenceEqual(section.Rows.Where(row => row.UsedPercent.HasValue).Select(row => row.ComparisonText ?? "")),
-                "Windows quota rows and bars bind shared row comparisons without parsing Provider detail: " + section.Provider);
+                Box(section.Provider).Controls.OfType<QuotaBalanceBar>().Select(bar => bar.AccessibleName)
+                    .SequenceEqual(section.Rows.Where(row => row.UsedPercent.HasValue).Select(row => section.Heading.Text + " · " + row.ReadingText)) &&
+                Box(section.Provider).Controls.OfType<QuotaBalanceBar>().All(bar => bar.AccessibleDescription == ""),
+                "Windows quota rows and bars bind the full shared reading once without parsing Provider detail: " + section.Provider);
             Check(Box(section.Provider).AccessibleDescription == section.Detail &&
                 Box(section.Provider).Controls.Cast<Control>().All(control =>
                     context.StatusWindow.QuotaView.DetailFor(control) == section.Detail),
@@ -255,10 +256,10 @@ internal static class AccountQuotaUiChecks
             "Local time changes Provider reference age without moving usage or time boundaries");
         foreach (var section in QuotaPanelModel.Sections(comparisonSnapshot, clock().AddMinutes(17)))
             Check(section.Rows.All(row => ProviderLabels(section.Provider).Single(label => label.Text == row.Text)
-                    .AccessibleDescription == (row.ComparisonText ?? "")) &&
+                    .AccessibleName == row.ReadingText) &&
                 Box(section.Provider).Controls.OfType<QuotaBalanceBar>().All(bar =>
-                    bar.ElapsedPercent.HasValue ? bar.AccessibleDescription?.EndsWith("17분 전 기준", StringComparison.Ordinal) == true :
-                    bar.AccessibleDescription == ""),
+                    bar.AccessibleDescription == "" && (!bar.ElapsedPercent.HasValue ||
+                        bar.AccessibleName?.EndsWith("17분 전 기준", StringComparison.Ordinal) == true)),
                 "Screen-reader row and bar ages advance using only their own shared comparison: " + section.Provider);
         Check(Enum.GetValues<QuotaProvider>().All(provider => client.Calls(provider) == callsBeforeOpen[provider]) &&
             monitor.Snapshot().Select(state => state.NextCheckUtc).SequenceEqual(dueBeforeOpen),
@@ -423,6 +424,7 @@ internal static class AccountQuotaUiChecks
         finally { CultureInfo.CurrentCulture = culture; }
 
         ClickQuotaButton("Show extra quota rows");
+        QuotaRowUiChecks.Run(context.StatusWindow, monitor.Snapshot(), clock(), reportDirectory, Check);
         var extraWindows = Enumerable.Range(0, 12).Select(index => new QuotaWindow("extra-" + index, "주간 · 모델 " + index,
             index, clock().AddDays(1))).ToArray();
         context.StatusWindow.UpdateQuotas([new QuotaState(QuotaProvider.Claude, new QuotaReading(QuotaProvider.Claude, extraWindows))], clock());
