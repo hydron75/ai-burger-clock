@@ -42,13 +42,19 @@ internal static class WeeklyEarlyResetMonitorTests
         {
             var engine = new QuotaEarlyResetNotifications();
             var recovery = new QuotaRecoveryNotifications();
+            // Provider callbacks run concurrently. The real hosts serialize these
+            // engines on their UI thread; this headless fixture uses the same boundary.
+            var engineGate = new object();
             var observations = new ConcurrentQueue<(QuotaObservation Observation, QuotaEarlyResetEvaluation Evaluation, bool Recovery)>();
             monitor.Succeeded += observation =>
             {
-                var result = engine.Evaluate(observation, true);
-                bool restoredRecovery = recovery.Observe(observation, true) is not null;
-                monitor.RecordEarlyResetDecision(observation, result.Alert is null ? "Excluded" : "Alert", result.Reason);
-                observations.Enqueue((observation, result, restoredRecovery));
+                lock (engineGate)
+                {
+                    var result = engine.Evaluate(observation, true);
+                    bool restoredRecovery = recovery.Observe(observation, true) is not null;
+                    monitor.RecordEarlyResetDecision(observation, result.Alert is null ? "Excluded" : "Alert", result.Reason);
+                    observations.Enqueue((observation, result, restoredRecovery));
+                }
             };
             monitor.Start();
             await MonitorTests.WaitUntilAsync(() => observations.Count == 3 && monitor.Snapshot().All(state => !state.IsRefreshing), 5000);
@@ -72,12 +78,16 @@ internal static class WeeklyEarlyResetMonitorTests
         using (var restarted = new AccountQuotaMonitor(client, store, () => Now.AddHours(3), earlyResetDiagnosticLog: log))
         {
             var engine = new QuotaEarlyResetNotifications();
+            var engineGate = new object();
             var results = new ConcurrentQueue<QuotaEarlyResetEvaluation>();
             restarted.Succeeded += observation =>
             {
-                var result = engine.Evaluate(observation, true);
-                restarted.RecordEarlyResetDecision(observation, result.Alert is null ? "Excluded" : "Alert", result.Reason);
-                results.Enqueue(result);
+                lock (engineGate)
+                {
+                    var result = engine.Evaluate(observation, true);
+                    restarted.RecordEarlyResetDecision(observation, result.Alert is null ? "Excluded" : "Alert", result.Reason);
+                    results.Enqueue(result);
+                }
             };
             restarted.Start();
             await MonitorTests.WaitUntilAsync(() => results.Count == 3 && restarted.Snapshot().All(state => !state.IsRefreshing), 5000);
