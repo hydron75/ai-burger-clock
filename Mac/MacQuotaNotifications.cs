@@ -72,6 +72,7 @@ internal sealed class MacQuotaNotifications
     private readonly Func<DateTimeOffset> utcNow;
     private readonly Func<long> milliseconds;
     private readonly Func<bool> notificationsDenied;
+    private readonly Action<QuotaObservation, string, string>? recordDecision;
     private readonly Setting recovery;
     private readonly Setting earlyReset;
     private readonly Dictionary<QuotaProvider, Pending> pending = [];
@@ -86,7 +87,8 @@ internal sealed class MacQuotaNotifications
     internal MacQuotaNotifications(Func<bool> isStopping, Func<bool, Task> saveRecovery, Func<bool, Task> saveEarlyReset,
         Func<QuotaProvider, QuotaState?> stateOf, Action<QuotaNotificationAlert> show, Action<string, bool> feedback,
         Action<Action> post, Action refreshDisplay, HashSet<Task> pendingWrites, Func<DateTimeOffset>? utcNow = null,
-        Func<long>? milliseconds = null, Func<bool>? notificationsDenied = null)
+        Func<long>? milliseconds = null, Func<bool>? notificationsDenied = null,
+        Action<QuotaObservation, string, string>? recordDecision = null)
     {
         this.isStopping = isStopping;
         this.stateOf = stateOf;
@@ -98,6 +100,7 @@ internal sealed class MacQuotaNotifications
         this.utcNow = utcNow ?? (() => DateTimeOffset.UtcNow);
         this.milliseconds = milliseconds ?? (() => Environment.TickCount64);
         this.notificationsDenied = notificationsDenied ?? (() => false);
+        this.recordDecision = recordDecision;
         recovery = new(QuotaRecoveryText.MenuLabel, QuotaRecoveryText.MenuDetail,
             new(QuotaRecoveryText.Saved, QuotaRecoveryText.SettingReadFailed, QuotaRecoveryText.SettingSaveFailed,
                 QuotaRecoveryText.DeliveryFailed),
@@ -172,15 +175,28 @@ internal sealed class MacQuotaNotifications
         Interlocked.Increment(ref recovery.Epoch);
         Interlocked.Increment(ref earlyReset.Epoch);
         if (monitor is { } attached) attached.Succeeded -= OnSucceeded;
-        monitor = null;
         pending.Clear();
-        while (queue.TryDequeue(out _)) { }
+        // A response that was handed over but not evaluated is closed in the decision log, not left open.
+        while (queue.TryDequeue(out var dropped)) Record(dropped.Observation, "Excluded", "HostUnavailable");
+        monitor = null;
+    }
+
+    // The one row the monitor appended for this read is finished with the decision (no usage, reset time or
+    // name is written). It is a decision record, not proof that macOS showed a banner. Safe if no log exists.
+    private void Record(QuotaObservation observation, string outcome, string reason)
+    {
+        if (recordDecision is not null) recordDecision(observation, outcome, reason);
+        else monitor?.RecordEarlyResetDecision(observation, outcome, reason);
     }
 
     // Polling task, provider gate held, outside the monitor's state lock. Hand-off only.
     internal void OnSucceeded(QuotaObservation observation)
     {
-        if (detached || isStopping()) return;
+        if (detached || isStopping())
+        {
+            Record(observation, "Excluded", "HostUnavailable");
+            return;
+        }
         queue.Enqueue((recovery.CurrentEpoch, earlyReset.CurrentEpoch, observation));
         if (Interlocked.Exchange(ref drainScheduled, 1) == 0) post(Drain);
     }
@@ -197,16 +213,27 @@ internal sealed class MacQuotaNotifications
     {
         // The hand-off can outlive a toggle or shutdown: check again where an alert would be created. A kind
         // whose setting changed since the response was queued is skipped; the other kind is still decided.
-        if (detached || isStopping()) return;
+        if (detached || isStopping())
+        {
+            Record(observation, "Excluded", "HostUnavailable");
+            return;
+        }
         bool recoveryCurrent = observedRecoveryEpoch == recovery.CurrentEpoch;
         bool earlyResetCurrent = observedEarlyResetEpoch == earlyReset.CurrentEpoch;
+        if (!earlyResetCurrent) Record(observation, "Excluded", "SettingChangedBeforeEvaluation");
         if (!recoveryCurrent && !earlyResetCurrent) return;
         // Invalidate at every success, not only at delivery: if a window disappears or changes period and
         // later returns, an alert queued for the earlier state must stay gone.
         if (pending.TryGetValue(observation.Provider, out Pending? queued))
             Keep(observation.Provider, Current(queued, observation.Reading, observation.CheckedAtUtc, observation.ContinuityId));
         QuotaRecoveryAlert? recovered = recoveryCurrent ? recoveryEngine.Observe(observation, recovery.Active) : null;
-        QuotaEarlyResetAlert? early = earlyResetCurrent ? earlyResetEngine.Observe(observation, earlyReset.Active) : null;
+        QuotaEarlyResetAlert? early = null;
+        if (earlyResetCurrent)
+        {
+            QuotaEarlyResetEvaluation evaluation = earlyResetEngine.Evaluate(observation, earlyReset.Active);
+            early = evaluation.Alert;
+            Record(observation, early is null ? "Excluded" : "Alert", evaluation.Reason);
+        }
         if (recovered is not null || early is not null) pending[observation.Provider] = new(recovered, early, observation);
         // The host's normal display pass raises schedule/service alerts first, then ShowPending.
         refreshDisplay();

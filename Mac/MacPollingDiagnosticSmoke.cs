@@ -144,7 +144,12 @@ internal static class MacPollingDiagnosticSmoke
             string[] expected = ["Provider", "AttemptedAtUtc", "RecordedAtUtc", "NextCheckUtc", "Reason", "SelectedResetUtc",
                 "Succeeded", "ConsecutiveFailures", "ResetAnchorCount"];
             Check(keys.SetEquals(expected), "the stored fields are not exactly the nine scheduling fields: " + string.Join(",", keys));
-            Check(Directory.GetFiles(Path.Combine(directory, "logs")).Length == 1, "temporary files were left behind.");
+            // The logs folder holds this scheduling log and, since the early-reset decision log (#82), that log
+            // too; anything else (a leftover temporary file) is a failure.
+            string[] logFiles = Directory.GetFiles(Path.Combine(directory, "logs")).Select(Path.GetFileName).OfType<string>().ToArray();
+            Check(logFiles.Contains("quota-polling-diagnostics.json") &&
+                  logFiles.All(name => name is "quota-polling-diagnostics.json" or "quota-early-reset-decisions-v1.jsonl"),
+                "temporary files were left behind.");
             // Provider detail (what the Mac tooltips show; panel.Verify checks they equal this text): 1 hour default.
             QuotaState Sample(QuotaProvider provider, string id) => new(provider,
                 new(provider, [new QuotaWindow(id, "주간", 10, client.Clock.AddDays(3), 10080)]),
