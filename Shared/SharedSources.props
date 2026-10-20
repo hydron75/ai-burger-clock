@@ -11,6 +11,7 @@
     <Compile Include="$(MSBuildThisFileDirectory)../UsageStore.cs" Link="Shared/UsageStore.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)../QuotaJsonContext.cs" Link="Shared/QuotaJsonContext.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)../QuotaPollingDiagnostics.cs" Link="Shared/QuotaPollingDiagnostics.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)../QuotaEarlyResetDiagnostics.cs" Link="Shared/QuotaEarlyResetDiagnostics.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)../AccountQuotaModels.cs" Link="Shared/AccountQuotaModels.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)../AccountQuotaClient.cs" Link="Shared/AccountQuotaClient.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)../AccountQuotaParsers.cs" Link="Shared/AccountQuotaParsers.cs" />

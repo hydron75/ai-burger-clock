@@ -21,13 +21,13 @@ internal static class QuotaPendingAlertPolicyTests
         QuotaRecoveryAlert Recovery(params string[] ids) =>
             new(QuotaProvider.Claude, 7, "합성 회복 제목", "합성 회복 본문", Array.AsReadOnly(ids));
         QuotaEarlyResetWindow Change(QuotaWindow window) => new(window.Id, window.Label,
-            window.WindowMinutes!.Value, 80, window.UsedPercent, now.AddHours(2), window.ResetsAtUtc!.Value);
+            window.WindowMinutes!.Value, 80, window.UsedPercent, now.AddDays(2), window.ResetsAtUtc!.Value);
         QuotaEarlyResetAlert Early(params QuotaWindow[] rows) =>
             new(QuotaProvider.Claude, 7, continuity, now, Array.AsReadOnly(rows.Select(Change).ToArray()));
 
         QuotaReading expected = Reading(session, weekly);
         QuotaRecoveryAlert recovery = Recovery(session.Id);
-        QuotaEarlyResetAlert early = Early(session);
+        QuotaEarlyResetAlert early = Early(weekly);
         bool RecoveryCurrent(QuotaReading current, DateTimeOffset? at = null) =>
             QuotaPendingAlertPolicy.RecoveryStillCurrent(recovery, expected, current, at ?? now);
         bool EarlyCurrent(QuotaReading current, DateTimeOffset? at = null, long id = continuity) =>
@@ -43,7 +43,7 @@ internal static class QuotaPendingAlertPolicyTests
         }
 
         // Recovery keeps its original, target-row-only contract. In particular,
-        // early-reset age, continuity, whole-key-set and reset-drift rules do not apply.
+        // weekly-only decrease, continuity and whole-key-set rules do not apply.
         Check(RecoveryCurrent(Reading(session, weekly)), "recovery accepts the original target row");
         Check(RecoveryCurrent(Reading(session with { UsedPercent = 99.96 }, weekly)),
             "recovery uses raw usage rather than display-rounded exhaustion");
@@ -105,12 +105,13 @@ internal static class QuotaPendingAlertPolicyTests
             Reading(weekly with { ResetsAtUtc = null }, session), now),
             "grouped recovery permits missing reset metadata and reordered targets");
 
-        Check(EarlyCurrent(expected), "early reset accepts unchanged evidence at the receipt instant");
+        Check(EarlyCurrent(expected), "early reset accepts unchanged weekly evidence at the receipt instant");
         Check(!EarlyCurrent(expected, now.AddTicks(-1)), "a backwards clock invalidates early-reset evidence");
-        Check(EarlyCurrent(expected, now.AddMinutes(90)), "early reset includes the exact ninety-minute age boundary");
-        Check(!EarlyCurrent(expected, now.AddMinutes(90).AddTicks(1)), "one tick beyond ninety minutes invalidates early reset");
+        Check(EarlyCurrent(expected, now.AddMinutes(90)), "early reset no longer imposes a ninety-minute age ceiling");
+        Check(EarlyCurrent(expected, now.AddMinutes(90).AddTicks(1)), "one tick beyond former age ceiling remains valid");
+        Check(EarlyCurrent(expected, now.AddHours(12)), "long sleep may retain future weekly decrease evidence");
         Check(EarlyCurrent(expected, now.AddMinutes(90).ToOffset(TimeSpan.FromHours(-7))),
-            "early-reset age compares instants rather than displayed offsets");
+            "early-reset chronology compares instants rather than displayed offsets");
         foreach (long invalidContinuity in new[] { 0L, -1L, continuity + 1 })
             Check(!EarlyCurrent(expected, id: invalidContinuity), "zero, negative or changed current continuity is rejected");
         Check(!QuotaPendingAlertPolicy.EarlyResetStillCurrent(early with { ContinuityId = 0 }, expected, expected, now, 0),
@@ -122,96 +123,110 @@ internal static class QuotaPendingAlertPolicyTests
 
         Check(EarlyCurrent(Reading(weekly, session)), "early-reset whole-key comparison ignores row order");
         Check(!EarlyCurrent(Reading(session, weekly, extra)), "an unrelated added key invalidates early reset");
-        Check(!EarlyCurrent(Reading(session)), "an unrelated removed key invalidates early reset");
-        Check(!EarlyCurrent(Reading(session, weekly with { Id = "synthetic-other-weekly" })),
+        Check(!EarlyCurrent(Reading(weekly)), "an unrelated removed key invalidates early reset");
+        Check(!EarlyCurrent(Reading(session with { Id = "synthetic-other-session" }, weekly)),
             "an unrelated changed identity invalidates the early-reset whole-key set");
-        Check(!EarlyCurrent(Reading(session, weekly with { WindowMinutes = 300 })),
+        Check(!EarlyCurrent(Reading(session with { WindowMinutes = 10080 }, weekly)),
             "an unrelated changed duration invalidates the early-reset whole-key set");
-        Check(!EarlyCurrent(Reading(session, weekly with { WindowMinutes = null })),
+        Check(!EarlyCurrent(Reading(session with { WindowMinutes = null }, weekly)),
             "an unrelated newly unknown duration invalidates the early-reset whole-key set");
-        QuotaReading unknownUnrelated = Reading(session, weekly with { WindowMinutes = null });
+        QuotaReading unknownUnrelated = Reading(session with { WindowMinutes = null }, weekly);
         Check(QuotaPendingAlertPolicy.EarlyResetStillCurrent(early, unknownUnrelated, unknownUnrelated, now, continuity),
             "unchanged unknown duration on an unrelated row is allowed in the whole-key set");
-        Check(!EarlyCurrent(Reading(weekly)), "a missing early-reset target invalidates the candidate");
-        Check(!EarlyCurrent(Reading(session with { WindowMinutes = 10080 }, weekly)),
+        Check(!EarlyCurrent(Reading(session)), "a missing early-reset target invalidates the candidate");
+        Check(!EarlyCurrent(Reading(session, weekly with { WindowMinutes = 300 })),
             "a changed early-reset target duration invalidates the candidate");
-        QuotaReading changedDuration = Reading(session with { WindowMinutes = 10080 }, weekly);
+        QuotaReading changedDuration = Reading(session, weekly with { WindowMinutes = 300 });
         Check(!QuotaPendingAlertPolicy.EarlyResetStillCurrent(early, changedDuration, changedDuration, now, continuity),
             "target duration must also match the alert even when expected and current key sets match each other");
-        QuotaReading changedScope = Reading(session with { Id = "synthetic-replacement" }, weekly);
+        QuotaReading changedScope = Reading(session, weekly with { Id = "synthetic-replacement" });
         Check(!QuotaPendingAlertPolicy.EarlyResetStillCurrent(early, changedScope, changedScope, now, continuity),
             "an alert target cannot be replaced by a different matching expected/current scope");
-        Check(EarlyCurrent(Reading(session with { Label = "다른 합성 표시 이름" }, weekly)),
+        Check(EarlyCurrent(Reading(session, weekly with { Label = "다른 합성 표시 이름" })),
             "early reset uses target identity rather than its display label");
-        Check(EarlyCurrent(Reading(session, weekly with { UsedPercent = 100, ResetsAtUtc = now.AddTicks(-1) })),
+        Check(EarlyCurrent(Reading(session with { UsedPercent = 100, ResetsAtUtc = now.AddTicks(-1) }, weekly)),
             "unrelated exhausted or expired usage does not invalidate unchanged early-reset keys");
 
-        Check(!EarlyCurrent(Reading(session with { UsedPercent = 100 }, weekly)), "target reexhaustion invalidates early reset");
-        Check(EarlyCurrent(Reading(session with { UsedPercent = 99.96 }, weekly)),
-            "pending early reset uses raw exhaustion rather than display rounding");
-        Check(EarlyCurrent(Reading(session with { UsedPercent = Math.BitDecrement(100.0) }, weekly)),
-            "pending early reset accepts the smallest representable amount below exhaustion");
-        Check(!EarlyCurrent(Reading(session with { ResetsAtUtc = null }, weekly)),
+        Check(!EarlyCurrent(Reading(session, weekly with { UsedPercent = 100 })), "target reexhaustion invalidates early reset");
+        Check(!EarlyCurrent(Reading(session, weekly with { UsedPercent = 80 })), "usage returning exactly to pre-reset level invalidates early reset");
+        Check(!EarlyCurrent(Reading(session, weekly with { UsedPercent = Math.BitIncrement(80.0) })),
+            "usage above the pre-reset level invalidates early reset before full exhaustion");
+        Check(EarlyCurrent(Reading(session, weekly with { UsedPercent = Math.BitDecrement(80.0) })),
+            "the smallest raw decrease below the recorded previous usage remains evidence");
+        Check(EarlyCurrent(Reading(session, weekly with { UsedPercent = 79.96 })),
+            "pending decrease uses raw usage rather than display rounding");
+        Check(!EarlyCurrent(Reading(session, weekly with { ResetsAtUtc = null })),
             "an early-reset target requires a provided reset timestamp");
-        Check(!EarlyCurrent(Reading(session with { ResetsAtUtc = now }, weekly)),
+        Check(!EarlyCurrent(Reading(session, weekly with { ResetsAtUtc = now })),
             "an early-reset target reset exactly at now has expired");
-        Check(!EarlyCurrent(Reading(session with { ResetsAtUtc = now.AddTicks(-1) }, weekly)),
+        Check(!EarlyCurrent(Reading(session, weekly with { ResetsAtUtc = now.AddTicks(-1) })),
             "an early-reset target reset before now has expired");
 
-        DateTimeOffset recordedReset = session.ResetsAtUtc!.Value;
-        foreach (TimeSpan shift in new[] { TimeSpan.FromMinutes(-1), TimeSpan.FromMinutes(1) })
+        DateTimeOffset recordedReset = weekly.ResetsAtUtc!.Value;
+        foreach (TimeSpan shift in new[] { TimeSpan.FromMinutes(-1), TimeSpan.FromMinutes(1), TimeSpan.FromHours(-12), TimeSpan.FromHours(12) })
         {
-            Check(EarlyCurrent(Reading(session with { ResetsAtUtc = recordedReset + shift }, weekly)),
-                "early reset accepts both exact sixty-second tolerance boundaries");
+            Check(EarlyCurrent(Reading(session, weekly with { ResetsAtUtc = recordedReset + shift })),
+                "future weekly reset may drift without a tolerance ceiling");
             TimeSpan inside = shift < TimeSpan.Zero ? shift.Add(TimeSpan.FromTicks(1)) : shift.Subtract(TimeSpan.FromTicks(1));
-            Check(EarlyCurrent(Reading(session with { ResetsAtUtc = recordedReset + inside }, weekly)),
-                "early reset accepts one tick inside either tolerance boundary");
+            Check(EarlyCurrent(Reading(session, weekly with { ResetsAtUtc = recordedReset + inside })),
+                "reset movement just inside a former tolerance boundary remains valid");
             TimeSpan outside = shift < TimeSpan.Zero ? shift.Subtract(TimeSpan.FromTicks(1)) : shift.Add(TimeSpan.FromTicks(1));
-            Check(!EarlyCurrent(Reading(session with { ResetsAtUtc = recordedReset + outside }, weekly)),
-                "early reset rejects one tick outside either tolerance boundary");
+            Check(EarlyCurrent(Reading(session, weekly with { ResetsAtUtc = recordedReset + outside })),
+                "reset movement just outside a former tolerance boundary remains valid");
         }
-        Check(EarlyCurrent(Reading(session with { ResetsAtUtc = recordedReset.ToOffset(TimeSpan.FromHours(9)) }, weekly)),
-            "reset tolerance compares instants rather than displayed offsets");
+        Check(EarlyCurrent(Reading(session, weekly with { ResetsAtUtc = recordedReset.ToOffset(TimeSpan.FromHours(9)) })),
+            "reset validity compares instants rather than displayed offsets");
+        Check(EarlyCurrent(Reading(session, weekly with { ResetsAtUtc = now.AddDays(7) })),
+            "exact full weekly duration is consistent");
+        Check(!EarlyCurrent(Reading(session, weekly with { ResetsAtUtc = now.AddDays(7).AddTicks(1) })),
+            "a future reset beyond the weekly duration is contradictory");
+        foreach (long ticks in new[] { -1L, 0L, 1L })
+            Check(EarlyCurrent(expected, now.AddDays(2).AddMinutes(-5).AddTicks(-ticks)) == (ticks > 0),
+                "original scheduled reset must remain over five minutes away, tick " + ticks);
+        Check(!EarlyCurrent(expected, now.AddDays(2)), "normal original scheduled reset expiry ends queued evidence");
         QuotaEarlyResetAlert nearReset = early with
         {
             Windows = Array.AsReadOnly(new[] { early.Windows[0] with { ResetUtc = now.AddSeconds(30) } })
         };
         Check(QuotaPendingAlertPolicy.EarlyResetStillCurrent(nearReset, expected,
-            Reading(session with { ResetsAtUtc = now.AddTicks(1) }, weekly), now, continuity),
-            "a reset one tick in the future is valid when it also remains within tolerance");
+            Reading(session, weekly with { ResetsAtUtc = now.AddTicks(1) }), now, continuity),
+            "a currently provided reset one tick in the future is not expired");
         Check(!QuotaPendingAlertPolicy.EarlyResetStillCurrent(nearReset, expected,
-            Reading(session with { ResetsAtUtc = now }, weekly), now, continuity),
-            "reset tolerance does not make an exactly expired reset valid");
+            Reading(session, weekly with { ResetsAtUtc = now }), now, continuity),
+            "past candidate reset metadata does not make a currently expired reset valid");
+        Check(!QuotaPendingAlertPolicy.EarlyResetStillCurrent(Early(session), expected, expected, now, continuity),
+            "a legacy five-hour early-reset candidate is no longer current");
 
-        QuotaEarlyResetAlert multiEarly = Early(session, weekly);
-        Check(QuotaPendingAlertPolicy.EarlyResetStillCurrent(multiEarly, expected, Reading(weekly, session), now, continuity),
+        QuotaReading groupExpected = Reading(session, weekly, extra);
+        QuotaEarlyResetAlert multiEarly = Early(weekly, extra);
+        Check(QuotaPendingAlertPolicy.EarlyResetStillCurrent(multiEarly, groupExpected, Reading(extra, weekly, session), now, continuity),
             "all early-reset targets valid preserves a grouped candidate despite reordered rows");
-        Check(!QuotaPendingAlertPolicy.EarlyResetStillCurrent(multiEarly, expected,
-            Reading(session with { UsedPercent = 100 }, weekly), now, continuity),
+        Check(!QuotaPendingAlertPolicy.EarlyResetStillCurrent(multiEarly, groupExpected,
+            Reading(session, weekly with { UsedPercent = 100 }, extra), now, continuity),
             "first grouped early-reset target reexhaustion invalidates all");
-        Check(!QuotaPendingAlertPolicy.EarlyResetStillCurrent(multiEarly, expected,
-            Reading(session, weekly with { UsedPercent = 100 }), now, continuity),
+        Check(!QuotaPendingAlertPolicy.EarlyResetStillCurrent(multiEarly, groupExpected,
+            Reading(session, weekly, extra with { UsedPercent = 100 }), now, continuity),
             "last grouped early-reset target reexhaustion invalidates all");
-        Check(!QuotaPendingAlertPolicy.EarlyResetStillCurrent(multiEarly, expected,
-            Reading(session, weekly with { ResetsAtUtc = null }), now, continuity),
+        Check(!QuotaPendingAlertPolicy.EarlyResetStillCurrent(multiEarly, groupExpected,
+            Reading(session, weekly, extra with { ResetsAtUtc = null }), now, continuity),
             "one missing grouped early-reset timestamp invalidates all");
-        Check(!QuotaPendingAlertPolicy.EarlyResetStillCurrent(multiEarly, expected,
-            Reading(session, weekly with { ResetsAtUtc = weekly.ResetsAtUtc!.Value.AddMinutes(1).AddTicks(1) }), now, continuity),
-            "one grouped early-reset target drifting outside tolerance invalidates all");
-        Check(QuotaPendingAlertPolicy.EarlyResetStillCurrent(multiEarly, expected,
-            Reading(session with { UsedPercent = 99.96 }, weekly with { UsedPercent = 99.96 }), now, continuity),
-            "a grouped early-reset candidate remains usable while every raw usage is below exhaustion");
+        Check(!QuotaPendingAlertPolicy.EarlyResetStillCurrent(multiEarly, groupExpected,
+            Reading(session, weekly, extra with { ResetsAtUtc = now.AddDays(7).AddTicks(1) }), now, continuity),
+            "one grouped early-reset target with contradictory duration invalidates all");
+        Check(QuotaPendingAlertPolicy.EarlyResetStillCurrent(multiEarly, groupExpected,
+            Reading(session, weekly with { UsedPercent = 79.96 }, extra with { UsedPercent = 79.96 }), now, continuity),
+            "a grouped early-reset candidate remains current while each raw usage stays below its previous value");
 
-        Check(RecoveryCurrent(Reading(session with { ResetsAtUtc = null }, weekly)) &&
-            !EarlyCurrent(Reading(session with { ResetsAtUtc = null }, weekly)),
+        Check(RecoveryCurrent(Reading(session, weekly with { ResetsAtUtc = null })) &&
+            !EarlyCurrent(Reading(session, weekly with { ResetsAtUtc = null })),
             "only the invalid early-reset kind is discarded when recovery still has numeric evidence");
         Check(RecoveryCurrent(Reading(session, weekly, extra)) && !EarlyCurrent(Reading(session, weekly, extra)),
             "whole-key changes can invalidate early reset without invalidating the recovery kind");
-        QuotaReading weeklyExhausted = Reading(session, weekly with { UsedPercent = 100 });
-        Check(!QuotaPendingAlertPolicy.RecoveryStillCurrent(Recovery(weekly.Id), expected, weeklyExhausted, now) &&
-            EarlyCurrent(weeklyExhausted), "an invalid recovery kind does not discard a distinct still-valid early-reset target");
+        QuotaReading sessionExhausted = Reading(session with { UsedPercent = 100 }, weekly);
+        Check(!QuotaPendingAlertPolicy.RecoveryStillCurrent(Recovery(session.Id), expected, sessionExhausted, now) &&
+            EarlyCurrent(sessionExhausted), "an invalid recovery kind does not discard a distinct still-valid early-reset target");
         Check(expected.Windows.SequenceEqual(new[] { session, weekly }) && recovery.WindowIds.SequenceEqual(new[] { session.Id }) &&
-            early.Windows.Count == 1 && early.Windows[0] == Change(session), "policy evaluation leaves expected reading and alert evidence unchanged");
+            early.Windows.Count == 1 && early.Windows[0] == Change(weekly), "policy evaluation leaves expected reading and alert evidence unchanged");
 
         return count;
     }

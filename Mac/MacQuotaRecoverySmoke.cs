@@ -22,10 +22,12 @@ internal static class MacQuotaRecoverySmoke
         internal int Refreshes;
         internal bool Stopping;
         internal bool ThrowOnShow;
+        // What the controller wrote to the early-reset decision log (outcome and fixed reason only).
+        internal readonly List<(long Sequence, string Outcome, string Reason)> Decisions = [];
         internal Func<QuotaProvider, QuotaState?>? StateSource;
         // Added to the real clock for the controller's "now". Obs() stamps responses up to a few minutes after the
         // process start, and a queued alert is never validated against a clock earlier than its own response,
-        // so "now" starts a few minutes ahead (BaseClockOffset); the 90 minute age checks add to it.
+        // so "now" starts a few minutes ahead (BaseClockOffset); later checks add to it.
         internal static readonly TimeSpan BaseClockOffset = TimeSpan.FromMinutes(5);
         internal TimeSpan ClockOffset = BaseClockOffset;
 
@@ -42,7 +44,8 @@ internal static class MacQuotaRecoverySmoke
                 (text, error) => Feedback.Add((text, error)), post,
                 // The app's display pass: existing alerts first, then the pending quota alert.
                 () => { Refreshes++; Recovery!.ShowPending(); },
-                Writes, utcNow: () => DateTimeOffset.UtcNow + ClockOffset, milliseconds: () => Clock, notificationsDenied: () => denied);
+                Writes, utcNow: () => DateTimeOffset.UtcNow + ClockOffset, milliseconds: () => Clock, notificationsDenied: () => denied,
+                recordDecision: (observation, outcome, reason) => Decisions.Add((observation.Sequence, outcome, reason)));
         }
 
         // A verified live response: what the monitor would publish and what the snapshot would then show.
@@ -354,6 +357,12 @@ internal static class MacQuotaRecoverySmoke
         new(provider, earlySequences[provider] = earlySequences.GetValueOrDefault(provider) + 1, at,
             new QuotaReading(provider, windows), continuity);
 
+    // A live success that carries the previous successful reading (a restart with a cache, or the monitor's own).
+    private static QuotaObservation EOP(QuotaProvider provider, DateTimeOffset at, long continuity, QuotaPreviousSuccess previous,
+        params QuotaWindow[] windows) =>
+        new(provider, earlySequences[provider] = earlySequences.GetValueOrDefault(provider) + 1, at,
+            new QuotaReading(provider, windows), continuity, previous);
+
     // Two verified successes 30 minutes apart, then the early reset: before = baseline, after = decision.
     private static void EBefore(Harness harness, QuotaProvider provider, long continuity = 1, params QuotaWindow[] windows) =>
         Send(harness, EO(provider, DateTimeOffset.UtcNow.AddMinutes(-30), continuity, windows));
@@ -367,6 +376,8 @@ internal static class MacQuotaRecoverySmoke
         DateTimeOffset origin = DateTimeOffset.UtcNow;
         DateTimeOffset reset0 = origin.AddDays(3);
         DateTimeOffset reset1 = origin.AddDays(6.9);
+        // A 5 hour window never produces an early reset (#82); recovery still treats it as before.
+        DateTimeOffset five = origin.AddHours(2);
         const QuotaProvider P = QuotaProvider.Claude;
         Harness NewHarness(bool denied = false, Func<bool, Task>? saveEarly = null, Func<bool, Task>? saveRecovery = null) =>
             new(saveRecovery ?? (enabled => store.SetQuotaRecoveryNotificationsEnabledAsync(enabled, cancellationToken)), post, denied,
@@ -393,6 +404,8 @@ internal static class MacQuotaRecoverySmoke
         EAfter(h, P, 1, EW("weekly_all", 4, reset1));
         Check(h.Shown.Count == 0 && h.Recovery.PendingCount == 0 && h.Recovery.RecentEarlyResets().Count == 0,
             "OFF must not queue, show or remember an early reset");
+        Check(h.Decisions.Count == 2 && h.Decisions.All(d => d is { Outcome: "Excluded", Reason: "Disabled" }),
+            "while OFF every success must be closed in the decision log as Excluded/Disabled");
 
         // ---- Turn ON: persisted, independent of recovery, new baseline, feedback ----
         int recoveryEpoch = h.Recovery.Epoch;
@@ -405,21 +418,24 @@ internal static class MacQuotaRecoverySmoke
               h.Feedback[^1] == (QuotaEarlyResetText.Saved(true), false) && h.Writes.Count == 0,
             "turning early reset ON must persist, check its item, advance only its epoch and leave recovery OFF");
         EBefore(h, P, 1, EW("weekly_all", 60, reset0));          // first success after enabling: baseline only
-        Check(h.Shown.Count == 0 && h.Recovery.PendingCount == 0, "the first success after enabling must stay silent");
+        Check(h.Shown.Count == 0 && h.Recovery.PendingCount == 0 && h.Decisions[^1] is { Outcome: "Excluded", Reason: "NoPreviousSuccess" },
+            "the first success after enabling must stay silent and be recorded as NoPreviousSuccess");
         EAfter(h, P, 1, EW("weekly_all", 4, reset1));            // 60% -> 4%, reset moved later
         Check(h.Shown.Count == 1 && h.Shown[0].EarlyReset is not null && h.Shown[0].Recovery is null &&
               h.Shown[0].Title == QuotaEarlyResetText.Title(P) && !h.Shown[0].Body.Any(char.IsDigit) &&
               !h.Shown[0].Body.Contains('%') && h.Recovery.PendingCount == 0 &&
               h.Recovery.RecentEarlyResets().TryGetValue(P, out QuotaEarlyResetAlert? recent) && recent.Windows.Count == 1,
             "an early reset must request exactly one banner with the shared title, no numbers, and be remembered for the detail");
+        Check(h.Decisions[^1] is { Outcome: "Alert", Reason: "Alert" }, "the alert must be recorded once as Alert/Alert");
         EAfter(h, P, 1, EW("weekly_all", 4, reset1));            // the next success with unchanged values
-        Check(h.Shown.Count == 1, "an unchanged value after the early reset must not notify again");
+        Check(h.Shown.Count == 1 && h.Decisions[^1] is { Outcome: "Excluded", Reason: "UsageNotDecreased" },
+            "an unchanged value after the early reset must not notify again (UsageNotDecreased)");
 
         // ---- Early reset and recovery on the same response: one banner ----
         await h.Recovery.ChangeAsync(true);
         h.Tick(MacQuotaNotifications.DeferMilliseconds);
-        EBefore(h, P, 1, EW("weekly_all", 100, reset0), EW("other", 100, reset0));
-        EAfter(h, P, 1, EW("weekly_all", 4, reset1), EW("other", 50, reset0));
+        EBefore(h, P, 1, EW("weekly_all", 100, reset0), EW("other", 100, five, 300));
+        EAfter(h, P, 1, EW("weekly_all", 4, reset1), EW("other", 50, five, 300));
         Check(h.Shown.Count == 2 && h.Shown[1].Recovery is not null && h.Shown[1].EarlyReset is not null &&
               h.Shown[1].Title == QuotaEarlyResetText.Title(P) &&
               h.Shown[1].Body.Contains("다른 한도에도 잔여량이 확인되었습니다", StringComparison.Ordinal),
@@ -431,8 +447,8 @@ internal static class MacQuotaRecoverySmoke
               !h.Shown[2].Body.Contains("다른 한도에도 잔여량이 확인되었습니다", StringComparison.Ordinal),
             "the same window in both must not be listed twice");
         h.Tick(MacQuotaNotifications.DeferMilliseconds);
-        EBefore(h, P, 1, EW("weekly_all", 100, reset1));
-        EAfter(h, P, 1, EW("weekly_all", 55, reset1));                  // recovery without a reset change
+        EBefore(h, P, 1, EW("other", 100, five, 300));
+        EAfter(h, P, 1, EW("other", 55, five, 300));                    // a 5 hour recovery: never an early reset
         Check(h.Shown.Count == 4 && h.Shown[3].Recovery is not null && h.Shown[3].EarlyReset is null &&
               h.Shown[3].Title == QuotaRecoveryText.Title(P), "a recovery alone must keep the recovery title and text");
 
@@ -475,11 +491,24 @@ internal static class MacQuotaRecoverySmoke
         Check(h.Recovery.PendingCount == 0, "re-exhaustion must drop the queued banner");
         h.Tick(MacQuotaNotifications.DeferMilliseconds);
         Check(h.Shown.Count == shown, "a dropped banner must not be shown later");
+        // #82: there is no 90 minute expiry any more (a banner stays true while its conditions hold) ...
         Queue();
-        h.ClockOffset = Harness.BaseClockOffset + TimeSpan.FromMinutes(91);                // older than 90 minutes
+        h.ClockOffset = Harness.BaseClockOffset + TimeSpan.FromMinutes(91);
         h.Tick(MacQuotaNotifications.DeferMilliseconds);
-        Check(h.Shown.Count == shown && h.Recovery.PendingCount == 0, "a banner older than 90 minutes must be dropped");
+        Check(h.Shown.Count == shown + 1 && h.Recovery.PendingCount == 0, "a banner older than 90 minutes must still be shown while it is true");
         h.ClockOffset = Harness.BaseClockOffset;
+        shown = h.Shown.Count;
+        // ... but it is dropped once the previous scheduled reset has passed or the usage is not below the earlier value again.
+        Queue();
+        h.ClockOffset = Harness.BaseClockOffset + TimeSpan.FromDays(3);
+        h.Tick(MacQuotaNotifications.DeferMilliseconds);
+        Check(h.Shown.Count == shown && h.Recovery.PendingCount == 0, "a banner whose previous scheduled reset has passed must be dropped");
+        h.ClockOffset = Harness.BaseClockOffset;
+        Queue();
+        EAfter(h, P, 1, EW("weekly_all", 61, reset1));                                   // back above the earlier 60%
+        Check(h.Recovery.PendingCount == 0, "a usage that is no longer below the earlier value must drop the queued banner");
+        h.Tick(MacQuotaNotifications.DeferMilliseconds);
+        Check(h.Shown.Count == shown, "a dropped banner must not be shown later");
         Queue();
         h.States[P] = h.States[P] with { IsRefreshing = true };                          // a read is in flight
         h.Tick(MacQuotaNotifications.DeferMilliseconds);
@@ -503,8 +532,8 @@ internal static class MacQuotaRecoverySmoke
         // ---- Each kind is invalidated by its own setting only ----
         h.Tick(MacQuotaNotifications.DeferMilliseconds);
         h.Existing();
-        EBefore(h, P, 1, EW("weekly_all", 100, reset0), EW("other", 100, reset0));
-        EAfter(h, P, 1, EW("weekly_all", 4, reset1), EW("other", 50, reset0));
+        EBefore(h, P, 1, EW("weekly_all", 100, reset0), EW("other", 100, five, 300));
+        EAfter(h, P, 1, EW("weekly_all", 4, reset1), EW("other", 50, five, 300));
         Check(h.Recovery.PendingCount == 1, "the combined banner was not queued");
         await h.Recovery.ChangeEarlyResetAsync(false);                                   // early OFF: recovery part survives
         Check(h.Recovery.PendingCount == 1 && h.Recovery.Enabled && !h.Recovery.EarlyResetEnabled &&
@@ -516,8 +545,8 @@ internal static class MacQuotaRecoverySmoke
         await h.Recovery.ChangeEarlyResetAsync(true);
         h.Tick(MacQuotaNotifications.DeferMilliseconds);
         h.Existing();
-        EBefore(h, P, 1, EW("weekly_all", 100, reset0), EW("other", 100, reset0));
-        EAfter(h, P, 1, EW("weekly_all", 4, reset1), EW("other", 50, reset0));
+        EBefore(h, P, 1, EW("weekly_all", 100, reset0), EW("other", 100, five, 300));
+        EAfter(h, P, 1, EW("weekly_all", 4, reset1), EW("other", 50, five, 300));
         await h.Recovery.ChangeAsync(false);                                             // recovery OFF: early part survives
         Check(h.Recovery.PendingCount == 1 && !h.Recovery.Enabled && h.Recovery.EarlyResetEnabled,
             "turning recovery OFF must keep the early-reset part");
@@ -534,6 +563,7 @@ internal static class MacQuotaRecoverySmoke
         h.Deliver(inFlight);                                                             // enqueued, not yet drained
         await h.Recovery.ChangeEarlyResetAsync(false);
         Pump(h);
+        Check(h.Decisions.Any(d => d.Reason == "SettingChangedBeforeEvaluation"), "a response handed over before a toggle must be closed as SettingChangedBeforeEvaluation");
         Check(h.Recovery.PendingCount == 0 && !h.Recovery.EarlyResetEnabled && !h.Recovery.EarlyResetChecked &&
               !await store.GetQuotaEarlyResetNotificationsEnabledAsync(cancellationToken) &&
               h.Feedback[^1] == (QuotaEarlyResetText.Saved(false), false), "turning early reset OFF must persist and clear its queued banner");
@@ -543,6 +573,57 @@ internal static class MacQuotaRecoverySmoke
         EAfter(h, P, 1, EW("weekly_all", 3, reset1.AddHours(1)));                        // first success after re-enabling
         Check(h.Shown.Count == shown, "re-enabling must not replay an earlier early reset");
 
+        // ---- #82 weekly rule in the controller: any strict decrease of the weekly window, never the 5 hour window ----
+        var w = NewHarness();
+        await w.Recovery.LoadEarlyResetAsync(() => Task.FromResult(true));
+        EBefore(w, P, 1, EW("weekly_all", 17, reset0));
+        EAfter(w, P, 1, EW("weekly_all", 16, reset0));                                   // 1 point, same reset time
+        Check(w.Shown.Count == 1 && w.Shown[0].EarlyReset is not null && w.Decisions[^1] is { Outcome: "Alert", Reason: "Alert" },
+            "a 1 point decrease of the weekly window must notify even with an unchanged reset time (no 20 point / 10% / reset-change rule)");
+        w.Tick(MacQuotaNotifications.DeferMilliseconds);
+        EBefore(w, P, 1, EW("five_hour", 60, five, 300));
+        EAfter(w, P, 1, EW("five_hour", 4, five.AddHours(5), 300));
+        Check(w.Shown.Count == 1 && w.Decisions[^1] is { Outcome: "Excluded", Reason: "NoWeeklyWindow" }, "a 5 hour window must never be an early reset");
+        EBefore(w, P, 1, EW("weekly_all", 0, reset0));
+        EAfter(w, P, 1, EW("weekly_all", 0, reset1));                                    // an unused window whose reset moves
+        Check(w.Shown.Count == 1 && w.Decisions[^1] is { Outcome: "Excluded", Reason: "UsageNotDecreased" }, "an unused 0% window with a moving reset must not notify");
+        EBefore(w, P, 1, EW("weekly_all", 60, origin.AddMinutes(4)));
+        EAfter(w, P, 1, EW("weekly_all", 5, reset1));                                    // the previous reset was about to happen: normal reset
+        Check(w.Shown.Count == 1 && w.Decisions[^1] is { Outcome: "Excluded", Reason: "NotBeforeScheduledReset" }, "a normal scheduled reset must not notify");
+        EBefore(w, P, 1, EW("weekly_all", 60, reset0));
+        EAfter(w, P, 2, EW("weekly_all", 5, reset1));                                    // another continuity id: a read failed in between
+        Check(w.Shown.Count == 1 && w.Decisions[^1] is { Outcome: "Excluded", Reason: "ContinuityChanged" }, "a changed continuity id must not notify");
+
+        // ---- #82 restart cache vs setting toggle: the cache is compared on a restart, never after a toggle ----
+        DateTimeOffset nowUtc = DateTimeOffset.UtcNow;
+        QuotaPreviousSuccess cached = new(new QuotaReading(P, [EW("weekly_all", 17, reset0)]), nowUtc.AddDays(-2), 1);
+        var restartedWithCache = NewHarness();
+        await restartedWithCache.Recovery.LoadEarlyResetAsync(() => Task.FromResult(true));
+        Send(restartedWithCache, EOP(P, nowUtc, 1, cached, EW("weekly_all", 0, reset1)));
+        Check(restartedWithCache.Shown.Count == 1 && restartedWithCache.Shown[0].EarlyReset is not null &&
+              restartedWithCache.Decisions[^1] is { Outcome: "Alert", Reason: "Alert" },
+            "a restart with a cached 17% must notify for a 0% first success");
+        var toggled = NewHarness();
+        await toggled.Recovery.LoadEarlyResetAsync(() => Task.FromResult(true));
+        await toggled.Recovery.ChangeEarlyResetAsync(false);
+        await toggled.Recovery.ChangeEarlyResetAsync(true);
+        Send(toggled, EOP(P, nowUtc, 1, cached, EW("weekly_all", 0, reset1)));
+        Check(toggled.Shown.Count == 0 && toggled.Decisions[^1] is { Outcome: "Excluded", Reason: "NoPreviousSuccess" },
+            "the first success after OFF -> ON must only set the baseline, not compare with the cache");
+        var cachedZero = NewHarness();
+        await cachedZero.Recovery.LoadEarlyResetAsync(() => Task.FromResult(true));
+        Send(cachedZero, EOP(P, nowUtc, 1, new(new QuotaReading(P, [EW("weekly_all", 0, reset0)]), nowUtc.AddDays(-2), 1), EW("weekly_all", 0, reset0)));
+        Check(cachedZero.Shown.Count == 0 && cachedZero.Decisions[^1] is { Reason: "UsageNotDecreased" }, "a 0% cache and a 0% first success must not notify");
+
+        // ---- #82 decision log: a response handed over but dropped at shutdown is closed too ----
+        var detaching = NewHarness();
+        await detaching.Recovery.LoadEarlyResetAsync(() => Task.FromResult(true));
+        detaching.Deliver(EO(P, DateTimeOffset.UtcNow, 1, EW("weekly_all", 4, reset1)));      // handed over, not yet drained
+        detaching.Recovery.Detach();
+        Pump(detaching);
+        Check(detaching.Decisions.Count == 1 && detaching.Decisions[0] is { Outcome: "Excluded", Reason: "HostUnavailable" } &&
+              detaching.Shown.Count == 0, "a response dropped by Detach must be closed as HostUnavailable");
+
         // ---- Restart: the stored ON is read back, memory (including the record for the detail) starts fresh ----
         var restarted = NewHarness();
         await restarted.Recovery.LoadAsync(readRecovery);
@@ -550,7 +631,8 @@ internal static class MacQuotaRecoverySmoke
         Check(restarted.Recovery.EarlyResetEnabled && restarted.Recovery.EarlyResetChecked && restarted.Recovery.EarlyResetMenuItem.Enabled &&
               restarted.Recovery.RecentEarlyResets().Count == 0, "the stored ON was not restored, or the record survived a restart");
         EAfter(restarted, P, 1, EW("weekly_all", 4, reset1));                            // already low: first success is only a baseline
-        Check(restarted.Shown.Count == 0, "the first success after a restart must be silent");
+        Check(restarted.Shown.Count == 0 && restarted.Decisions[^1] is { Outcome: "Excluded", Reason: "NoPreviousSuccess" },
+            "the first success after a restart without a cache must be silent");
 
         // ---- Shutdown: nothing is accepted, queued, toggled or shown once the app is stopping ----
         restarted.Stopping = true;
@@ -559,6 +641,7 @@ internal static class MacQuotaRecoverySmoke
         EAfter(restarted, P, 1, EW("weekly_all", 4, reset1));
         await restarted.Recovery.ChangeEarlyResetAsync(false);
         restarted.Tick(MacQuotaNotifications.DeferMilliseconds);
+        Check(restarted.Decisions.Count(d => d.Reason == "HostUnavailable") == 2, "observations ignored while stopping must be closed as HostUnavailable");
         Check(restarted.Refreshes == accepted && restarted.Shown.Count == 0 && restarted.Recovery.Idle && restarted.Recovery.EarlyResetEnabled &&
               await store.GetQuotaEarlyResetNotificationsEnabledAsync(cancellationToken),
             "a stopping app must ignore observations and toggles and show nothing");
@@ -601,7 +684,8 @@ internal static class MacQuotaRecoverySmoke
         await store.SetQuotaRecoveryNotificationsEnabledAsync(false, cancellationToken);
         return "early reset controller (second menu item right after recovery + default OFF, independent persisted toggle, first success silent, " +
                "one banner, recovery+early merged once and same window not listed twice, recovery/early alone, existing alerts first + 6.5 s, " +
-               "queued banner dropped on failed query/broken sequence/window change/re-exhaustion/90 min, held while a read is in flight, latest only, " +
+               "queued banner dropped on failed query/broken sequence/window change/re-exhaustion/passed reset/usage back up (no 90 min limit), held while a read is in flight, latest only, " +
+               "weekly-only 1 point decrease and 5 hour exclusion, restart cache vs toggle, decision log reasons, " +
                "kind-isolated toggles, restart clears the record, shutdown, save/read failure, denied/delivery failure)";
     }
 }

@@ -24,6 +24,7 @@ internal static class GeminiPollingPolicyTests
         PolicyTests(Check);
         await MovingResetTestsAsync(Check);
         await FailureTestsAsync(Check);
+        await CompletionWaitTestsAsync(Check);
         await LegacyCacheTestsAsync(directory, Check);
         await TrustedCacheTestsAsync(directory, Check);
         CacheJsonTests(Check);
@@ -277,11 +278,58 @@ internal static class GeminiPollingPolicyTests
         }
     }
 
+    private static async Task CompletionWaitTestsAsync(Action<bool, string> check)
+    {
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var client = new FakeClient(provider => new(provider, [Window(0, null)]));
+        using var monitor = new AccountQuotaMonitor(client, utcNow: () => Now);
+        monitor.Succeeded += observation =>
+        {
+            if (observation.Provider != QuotaProvider.Gemini) return;
+            entered.TrySetResult();
+            if (!release.Task.Wait(TimeSpan.FromSeconds(5))) throw new TimeoutException("Synthetic callback release was not signalled.");
+        };
+        monitor.Start();
+        try
+        {
+            await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            await MonitorTests.WaitUntilAsync(() => monitor.Snapshot().All(state => state.CheckedAtUtc.HasValue && !state.IsRefreshing));
+            check(client.Calls == 3, "all initial reads have returned while the synthetic success callback still holds its provider gate");
+            Task completed = WaitForInitialReadsAsync(monitor);
+            check(!completed.IsCompleted, "the fixture must not mistake idle display state for completed success callbacks");
+            release.TrySetResult();
+            await completed.WaitAsync(TimeSpan.FromSeconds(5));
+            check(completed.IsCompletedSuccessfully, "the fixture completes promptly after the provider callback releases its gate");
+            int calls = client.Calls;
+            await monitor.RefreshOnceAsync(QuotaProvider.Gemini).WaitAsync(TimeSpan.FromSeconds(5));
+            check(client.Calls == calls + 1 && State(monitor).NextCheckUtc == Now.AddHours(1),
+                "the next direct read executes instead of being skipped by an unfinished initial callback");
+        }
+        finally
+        {
+            release.TrySetResult();
+            await monitor.StopAsync().WaitAsync(TimeSpan.FromSeconds(5));
+        }
+    }
+
     private static QuotaWindow Window(double used, DateTimeOffset? reset, string id = "gemini-5h", int minutes = 300) =>
         new(id, id == "gemini-5h" ? "5시간" : "주간 합성", used, reset, minutes);
     private static QuotaState State(AccountQuotaMonitor monitor) => monitor.Snapshot().Single(s => s.Provider == QuotaProvider.Gemini);
-    private static Task WaitForInitialReadsAsync(AccountQuotaMonitor monitor) => MonitorTests.WaitUntilAsync(
-        () => monitor.Snapshot().All(s => s.CheckedAtUtc.HasValue && !s.IsRefreshing), milliseconds: 5000);
+    private static async Task WaitForInitialReadsAsync(AccountQuotaMonitor monitor)
+    {
+        await MonitorTests.WaitUntilAsync(
+            () => monitor.Snapshot().All(s => s.CheckedAtUtc.HasValue && !s.IsRefreshing), milliseconds: 5000);
+        // IsRefreshing is already false inside Succeeded, before the gate is released.
+        // Wait for actual completion in this fixture, without a sleep or another read.
+        var gates = (Dictionary<QuotaProvider, SemaphoreSlim>)typeof(AccountQuotaMonitor)
+            .GetField("gates", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.GetValue(monitor)!;
+        foreach (SemaphoreSlim gate in gates.Values)
+        {
+            if (!await gate.WaitAsync(TimeSpan.FromSeconds(5))) throw new TimeoutException("Initial quota callback did not finish.");
+            gate.Release();
+        }
+    }
     private static long Scalar(string path, string sql)
     {
         using var connection = new SqliteConnection(new SqliteConnectionStringBuilder

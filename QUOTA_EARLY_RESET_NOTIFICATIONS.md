@@ -6,7 +6,78 @@
 
 이 문서의 비율·시각·라벨은 모두 **합성 예시**다. 실제 계정 값·식별자·CLI 원문·실제 진단 파일은 게시하지 않는다. 이 기능은 계정 한도 변화를 비교하며 공식 서비스 상태 장애·복구와는 별개다.
 
-## 확정 판정
+## 후속 Draft: 주간 조기 초기화 조건 단순화 (2026-10-20)
+
+범위는 **공통 코드 변경 + Windows 연결**이다. 시작 main은 `edf9cc3c17d4e125fc638cc18cf08d5b7cd9b5dd`이며 Mac 소스·버전·배포 EXE는 변경하지 않는다. Mac 확인 전에는 병합하지 않는다. 아래 #70 설계·검사 기록은 당시 결과로 보존한다. 이 Draft가 기존 Windows 2.8.0 배포본을 바꿨다는 뜻은 아니다.
+
+### 새 판정과 보존하는 조건
+
+- **주간(10,080분)만** 대상이다. 세 Provider의 공통 주간·모델 전용 주간에 같은 규칙을 적용하고 이름/ID 문자열에서 기간을 추측하지 않는다. 5시간·기간 미제공·다른 기간은 제외한다.
+- 같은 Provider·창 ID·기간 집합의 **직전 성공 응답**과 비교한다. 새 성공 시각이 이전 `resets_at`보다 **5분 초과 앞서 있고**, 원본 `UsedPercent`가 **엄격하게 감소**하면 후보다. 합성 `17% → 0%`, 이전 예정까지 4.6일인 경우도 포함한다.
+- **20%p 감소·새 사용률 10% 이하·90분 간격 상한·리셋 시각 변경 조건은 없다.** 양쪽 리셋이 각 응답 시각보다 미래이고 주간 길이 안이라는 유효성, 시계 순서, 양의 동일 `ContinuityId`, 창 집합/기간 확인은 유지한다.
+- 이전 예정까지 정확히 5분 또는 그 이하이면 제외한다. 예정 시각을 지난 정상 리셋, `0 → 0`, 증가/동일 수치/잘못된 원본은 후보가 아니다. 화면 반올림 전 원본을 쓴다.
+- 표시 직전 `EarlyResetStillCurrent`도 주간·동일 연속성·창 집합·이전 예정까지 5분 초과·이전 사용률보다 낮음·현재 미래 리셋/기간 정합성을 재확인한다. 90분 만료와 리셋 시각 1분 drift 조건은 제거한다. 호스트의 실패/이전 값/조회 중/설정 토글 방어는 유지한다.
+- **회복 알림 판정은 바꾸지 않는다.** 5시간 회복, 실패 뒤 소진→회복, 기본 OFF·별도 설정, 같은 응답의 배너 통합, 큐·우선순위·6.5초 간격·표시 실패 처리는 그대로다. 배너·제목·저장 피드백·Provider 상세 문구도 유지한다. 메뉴의 정책 설명 한 줄만 새 주간 규칙으로 바로잡는다.
+
+### 재시작·직전 성공·연속성
+
+`QuotaObservation`의 선택적 `PreviousSuccess`는 조회 **전** 마지막 검증 성공 값/시각/세대를 담는다. 지연된 UI 콜백의 메모리 기준보다 이 스냅샷을 우선한다. 시작 시 캐시가 있으면 첫 새 성공도 비교하며 절전·종료 공백에 상한을 두지 않는다. 캐시만 읽을 때에는 알리지 않고 회복 엔진에 캐시를 성공 이벤트로 보내지도 않는다.
+
+**Provider별 한 계정 사용 전제**다. 기존 `ContinuityId`는 실패·취소를 구분하는 실행 중 세대이지 로그인·요금제 식별자가 아니다. 캐시 v1에는 실제 계정 정보/세대가 없어 재시작 때 캐시를 새 세대에 맞춰 비교한다. 같은 ID·기간으로 로그인·요금제를 바꾼 경우를 자동 검출한다고 주장하지 않는다. 실행 중 실패/취소 후에는 기존 세대 검사로 첫 성공 비교를 제외하고 그 성공부터 다시 기준이 생긴다. 재시작 전 실패 세대는 복원하지 않는다.
+
+OFF에서는 후보가 없고 설정 전환 후 첫 성공은 기존처럼 무알림 기준만 잡는다. 새 프로세스가 저장된 ON 설정으로 시작하는 경우와 구분한다. 최근 기록은 여전히 Provider별 최신 1건만 실행 중 보관한다. 캐시 v1·SQLite schema 2·기존 polling JSON은 변경하지 않는다.
+
+같은/이전 Sequence, 동일 수치 재조회, 정상 저장된 `0%` 캐시로 재시작한 뒤 `0 → 0`은 반복 알림이 없다. 발송 영속 ledger는 추가하지 않는다. **동일 reset 시각이어도 `17 → 5 → 0`처럼 별개의 성공에서 다시 감소하면 새 후보가 될 수 있다.** 매 직전 성공 대비 감소라는 새 규칙만으로 같은 실제 초기화인지 서버 조정인지 확정할 수 없다. 캐시 저장 실패·종료 직전 발송 미완료에서 정확히 한 번의 배너 전달까지 보장하지 않는다.
+
+### 원인 오인의 공식 자료 검토
+
+2026-10-20 공개 자료 확인이며 실제 계정 실험이 아니다.
+
+| 대상 | 공식 근거와 확인 한계 |
+|---|---|
+| Claude | [요금제 변경](https://support.claude.com/en/articles/11049752-how-do-i-sign-up-for-the-max-plan)은 상향 시 사용량이 새로 시작한다고 설명한다. 시스템 일괄 초기화만의 신호가 아니다. [리셋권](https://support.claude.com/en/articles/17007452-what-is-a-limit-reset)은 주간 예정 시각을 유지한 채 사용량을 복원할 수 있다. |
+| ChatGPT (Work/Codex) | [공식 한도 안내](https://learn.chatgpt.com/docs/pricing)는 요금제·작업별 한도와 대시보드를 설명한다. 조사한 문서에서 개인 계정 `used_percent`의 단조 증가·서버 재계산 오차·최소 감소폭 보장은 확인하지 못했다. 실제 재계산이 있었다고 단정하지 않는다. |
+| Gemini (Antigravity) | [공식 Plans](https://www.antigravity.google/docs/plans)는 요금제/용량별 한도와 한도 변경 가능성을 설명하고, [공식 /usage](https://www.agy.dev/docs/cli/commands/usage/)는 백엔드 한도를 새로 읽는다. 일정한 분모·원본 비율의 단조성/고정 정밀도 보장은 확인하지 못했다. 특정 재계산 발생을 확인한 것은 아니다. |
+
+화면 정수 반올림만으로 단조 증가하는 원본 비율이 감소하지는 않는다. 공급자가 원본을 재계산하거나 한도 분모를 바꾸는 경우는 현재 응답으로 구별할 수 없다. 공식적으로 안전한 최소 감소폭은 확인되지 않았다. 노이즈가 관측되면 **1%p 이상**을 후속 후보로 검토할 수 있지만 안전한 보장이 아니며 작은 실제 초기화를 놓친다. 이번에는 사용자 결정대로 **최소 감소폭을 추가하지 않는다.** 기존 “예정보다 일찍 초기화된 것으로 보입니다 / 초기화 원인은 확인되지 않았습니다” 문구를 유지한다.
+
+### 조회별 판정 진단
+
+- 실제 DB 폴더 옆 `logs/quota-early-reset-decisions-v1.jsonl`, 최근 **256건·128KiB** 제한이다. 기본 위치는 `%LOCALAPPDATA%\AIBurgerClock\logs\quota-early-reset-decisions-v1.jsonl`이나 격리 실행에서는 해당 DB 옆에 생긴다. 배포본 실제 경로와 Codex 패키지 사본을 혼동하지 않는다.
+- **실제로 시작한 조회 한 번당 JSON 한 줄**이다. `AttemptId`는 조회별 임의 GUID(계정 ID 아님), `Provider`, `AttemptedAtUtc`, `RecordedAtUtc`, `Succeeded`, `Sequence`, `ContinuityId`, `Outcome`, `Reason`만 기록한다. 사용률·리셋 시각·창 이름/ID·계정·예외 원문은 없다.
+- 성공 완료 때 `Excluded/NotEvaluated`를 쓰고 UI 판정이 **같은 줄**을 `Alert/Alert` 또는 `Excluded/사유`로 갱신한다. 실패/시작된 취소는 `ReadFailed/ReadCancelled`, 종료/콜백 불가는 `HostUnavailable`, 설정 epoch 변경은 `SettingChangedBeforeEvaluation`이다. 게이트로 건너뛴 중복 요청은 새 줄을 만들지 않는다.
+- 엔진 사유는 `Disabled`, `InvalidObservation`, `DuplicateObservation`, `NoPreviousSuccess`, `ContinuityChanged`, `ClockNotForward`, `WindowSetChanged`, `NoWeeklyWindow`, `ResetUnavailable`, `InvalidResetWindow`, `NotBeforeScheduledReset`, `UsageNotDecreased`, `Alert`다. 주간 행 중 하나라도 성립하면 `Alert`; 전부 제외면 표시 순서상 첫 주간 행의 제외 사유다. `Disabled`에는 직전 기준 미무장에 따른 첫 성공 억제도 포함한다.
+- `Alert`는 **후보 판정**이지 큐 통과·OS 발송·실제 화면 노출 증명이 아니다. 구독자가 없거나 전달 전 종료·모든 콜백 예외이면 `HostUnavailable`로 갱신한다. UI에 전달됐지만 미판정이거나 최종 기록을 연결하지 않은 호스트는 `NotEvaluated`가 남을 수 있다. 쓰기 실패가 조회/알림을 막지 않고, 손상·미지 형식·과대 파일은 보존한다. sibling 임시 파일 원자 교체와 자신의 임시 파일 정리만 수행한다.
+- 로컬 확인: `Get-Content -LiteralPath '<실제 DB 폴더>\logs\quota-early-reset-decisions-v1.jsonl' -Tail 12 | ForEach-Object { $_ | ConvertFrom-Json } | Select-Object Provider,Succeeded,Outcome,Reason`. 실제 파일과 원문은 PR에 첨부하지 않는다.
+
+### Windows 검증과 Mac 요청
+
+2026-10-20 KST, SDK 10.0.402. 변경 전은 위 main, 최종 C# 검증 소스는 `f69cdfd8ce688744d3daff6140808960a4bbe7b8`이다. 이후 문서 커밋은 C#·검사를 바꾸지 않는다. 합성 응답·임시 DB로만 검사했고 별도 실제 계정 조회 명령은 실행하지 않았다. 검사 후 해시가 변하지 않은 기존 2.8.0 배포본을 다시 실행했다.
+
+| 항목 | 변경 전 | 변경 후 |
+|---|---:|---:|
+| `build.ps1` | 경고 0 / 오류 0 | 경고 0 / 오류 0 |
+| Windows `--self-test` | 254,850 | **255,348 PASS·ExitCode 0** |
+| 공통 | 254,543 | **255,041 PASS** (별도 `Shared.Tests`도 동일) |
+| Windows 전용 self-test | 307 | **307 (동일)** |
+| native `--smoke-test` | 816 PASS·ExitCode 0 | **830 PASS·ExitCode 0** (최종 1회, 51.32초) |
+| PNG / layout JSON | 22 / 16 | **22 / 16 모두 SHA-256 동일** |
+
+공통 순증 **498건** = 새 진단 **551** + 캐시/모니터 통합 **30** + 대기 판정 **16** − 조기 엔진 교차검사 **99**다. 조기 엔진은 `912 − 237 + 138 = 813`: 5시간 후보를 성공으로 보는 3 Provider ×79 조합 237건을 제외하고, 캐시/장기 공백/Reason 등 136건과 golden 2건을 추가했다. 주간의 과거 임계값 경계는 이제 제한이 아님을 확인하도록 전환했고 5시간 제외를 별도로 검사한다. 회복·문구·Combine 검사는 유지했다. Windows 메시지 루프는 새 주간/진단 9건 + 재시작 캐시 검증 5건으로 14건 증가했다.
+
+임시 symlink 생성 권한이 없어 관련 **fixture 1개는 명시적 SKIP**이며 reparse 보호가 이 환경에서 실물 링크로 검증됐다고 주장하지 않는다. 나머지는 통과했다. 초기 baseline 빌드는 NuGet 취약성 데이터 연결이 막혀 NU1900으로 중단됐고, 공식 복원 성공 뒤 경고를 끄지 않고 통과했다. 개발 중 진단 flush 전에 `IsRefreshing=false`가 노출된 경계는 flush 완료 후로 고쳐 기존 조회 검사를 통과했다. 첫 after smoke의 재시작 무알림 검사는 캐시가 실제로는 비제로인 fixture 오류로 실패했다. 실제 `0 → 0` 캐시를 준비하고 별도 `17 → 0` 첫 조회 알림 검사를 추가해 통과했으며 앱 판정이나 대기시간을 늘려 숨기지 않았다.
+
+로컬 증거는 ignored `artifacts/local-weekly-early-reset-20261020/`와 `artifacts/local-weekly-early-reset-verified-20261020/`에 보관한다. 고정 before/after 슬롯의 아이콘 기록 증가는 관측되지 않았다. smoke의 네이티브 알림 요청 검사는 OS 배너 육안/장시간 전달 확인과 다르다. Mac 빌드·실행은 아래 확인 대기이며 버전·배포 파일은 바꾸지 않았다.
+
+Mac이 확인할 사항:
+
+1. 저장소 밖 임시 소스에서 `Shared.Tests`, `Mac/build.sh`, native `--smoke-test`. 실행 중인 번들/배포본은 덮어쓰지 않는다. 임시 symlink 검사 실행/명시적 SKIP 여부도 보고한다.
+2. 선택적 `PreviousSuccess`/`DiagnosticAttemptId`와 기존 `Observe` 호출이 컴파일되는지, 저장된 ON + 캐시의 첫 새 성공 비교와 OFF→ON 첫 성공 무알림을 구분하는지 확인한다.
+3. 합성 `17 → 0`/4.6일·동일 reset, 2일 종료/장기 절전, 예정 경과·5분 경계·5시간 제외, `0 → 0`·재시작 중복, CID 변경·실패/취소·창 집합 변경. 회복 5시간/실패 뒤 회복은 그대로여야 한다.
+4. Mac 조회별 최종 진단을 연결하려면 기존 `stopping` + `BeginInvokeOnMainThread` 뒤 `Evaluate` 결과를 `RecordEarlyResetDecision`에 한 번 전달한다. 콜백에서 조회/Stop을 동기 대기하지 않는다. 연결 전에는 성공 줄에 `NotEvaluated`가 남을 수 있다. Mac 전환은 담당자가 Draft 검토 뒤 추가하며 이번 작업에서 Mac 소스는 편집하지 않는다.
+5. 독립 설정·배너 결합·우선순위/간격, 공통 표시 직전 판정, 최근 상세 1건·VoiceOver·기존 막대/행/팝오버 높이. 배너·메뉴명·피드백·상세 문구는 그대로이고 메뉴 정책 설명 한 줄만 새 규칙이다.
+
+## #70 당시 확정 판정 — 아래는 과거 설계·검증 기록
 
 같은 Provider의 연속된 검증 성공 응답에서 다음을 **모두** 만족한 창만 후보가 된다.
 

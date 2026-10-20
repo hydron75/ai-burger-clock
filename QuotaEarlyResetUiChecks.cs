@@ -1,4 +1,5 @@
 using Microsoft.Data.Sqlite;
+using System.Text.Json;
 
 namespace AiBurgerClock;
 
@@ -38,10 +39,11 @@ internal static class QuotaEarlyResetUiChecks
                 await Task.Delay(20);
             }
         }
-        QuotaWindow[] Rows(double used, double weeklyUsed, DateTimeOffset? sessionReset = null,
-            DateTimeOffset? weeklyReset = null, int sessionMinutes = 300) =>
+        QuotaWindow[] Rows(double used, double weeklyUsed, DateTimeOffset? modelReset = null,
+            DateTimeOffset? weeklyReset = null, int modelMinutes = 10080) =>
         [
-            new("synthetic-session", "5시간", used, sessionReset ?? now.AddHours(2), sessionMinutes),
+            new("synthetic-weekly-model", modelMinutes == 300 ? "5시간" : "주간 합성 모델", used,
+                modelReset ?? (modelMinutes == 300 ? now.AddHours(2) : now.AddDays(2)), modelMinutes),
             new("synthetic-weekly", "주간", weeklyUsed, weeklyReset ?? now.AddDays(2), 10080)
         ];
         async Task FlushUi()
@@ -105,6 +107,29 @@ internal static class QuotaEarlyResetUiChecks
                 """ : "DROP TRIGGER IF EXISTS early_reset_ui_save_failure;";
             await command.ExecuteNonQueryAsync();
         }
+        JsonElement[] Decisions()
+        {
+            string path = Path.Combine(directory, "logs", "quota-early-reset-decisions-v1.jsonl");
+            if (!File.Exists(path)) return [];
+            var entries = new List<JsonElement>();
+            foreach (string line in File.ReadLines(path))
+            {
+                using JsonDocument entry = JsonDocument.Parse(line);
+                entries.Add(entry.RootElement.Clone());
+            }
+            return entries.ToArray();
+        }
+        bool HasDecision(QuotaProvider provider, string outcome, string? reason = null)
+        {
+            JsonElement[] entries = Decisions().Where(entry =>
+                entry.GetProperty("Provider").GetString() == provider.ToString()).ToArray();
+            if (entries.Length == 0) return false;
+            JsonElement latest = entries[^1];
+            return latest.GetProperty("Succeeded").GetBoolean() &&
+                latest.GetProperty("Outcome").GetString() == outcome &&
+                latest.GetProperty("Reason").GetString() != "NotEvaluated" &&
+                (reason is null || latest.GetProperty("Reason").GetString() == reason);
+        }
         async Task BlockBehindOfficialAlert()
         {
             int count = officialAlerts.Count;
@@ -114,7 +139,7 @@ internal static class QuotaEarlyResetUiChecks
             await FlushUi();
             Check(officialAlerts.Count > count, "A real synthetic service change takes priority before the early reset banner");
         }
-        async Task<QuotaWindow[]> QueueSessionEarlyReset()
+        async Task<QuotaWindow[]> QueueWeeklyEarlyReset()
         {
             await ToggleRecovery(false);
             await ToggleEarly(false);
@@ -130,7 +155,7 @@ internal static class QuotaEarlyResetUiChecks
             await Refresh(QuotaProvider.Claude);
             Check(nativeAlerts.Count == count && context.TrayIcon.BalloonTipTitle == priorityTitle &&
                 context.RecentEarlyReset(QuotaProvider.Claude) is { Windows.Count: 1 },
-                "A session early reset is recorded but queues behind the higher priority service balloon");
+                "A model-specific weekly early reset is recorded but queues behind the higher priority service balloon");
             return changed;
         }
 
@@ -152,6 +177,8 @@ internal static class QuotaEarlyResetUiChecks
                 "Early reset tray preference starts available and OFF with shared wording");
             Check(context.QuotaEarlyResetMenuItem.ToolTipText == QuotaEarlyResetText.MenuDetail && nativeAlerts.Count == 0,
                 "Initial private live successes remain silent and the early reset menu explains opt-in scope");
+            Check(Enum.GetValues<QuotaProvider>().All(provider => HasDecision(provider, "Excluded", "Disabled")),
+                "Windows records the OFF early reset decision for each private successful Provider query");
             var menu = context.TrayIcon.ContextMenuStrip!;
             Check(menu.Items.IndexOf(context.QuotaEarlyResetMenuItem) == menu.Items.IndexOf(context.QuotaRecoveryMenuItem) + 1 &&
                 menu.Items.IndexOf(context.QuotaEarlyResetMenuItem) < menu.Items.IndexOf(context.AutoStartMenuItem),
@@ -182,14 +209,17 @@ internal static class QuotaEarlyResetUiChecks
             }
             finally { await SetSaveFailure(false); }
 
-            client.Set(QuotaProvider.Claude, Rows(30, 30));
+            DateTimeOffset unchangedReset = now.AddDays(4.6);
+            client.Set(QuotaProvider.Claude, Rows(17, 17, unchangedReset, unchangedReset));
             await Refresh(QuotaProvider.Claude);
             Check(nativeAlerts.Count == 0, "First success after early reset opt-in seeds both windows silently");
             Step();
-            client.Set(QuotaProvider.Claude, Rows(10, 10, now.AddHours(3), now.AddDays(3)));
+            client.Set(QuotaProvider.Claude, Rows(0, 0, unchangedReset, unchangedReset));
             await Refresh(QuotaProvider.Claude);
             Check(nativeAlerts.Count == 1 && nativeAlerts[^1] is { Provider: QuotaProvider.Claude, Recovery: null, EarlyReset.Windows.Count: 2 },
-                "Exact twenty percentage point drop to ten percent coalesces two early reset rows into one native banner");
+                "A seventeen-to-zero weekly decrease before the unchanged reset coalesces both weekly rows into one native banner");
+            Check(HasDecision(QuotaProvider.Claude, "Alert", "Alert"),
+                "The UI decision updates the same completed diagnostic row to an alert candidate rather than claiming OS delivery");
             Check(recoveryAlerts.Count == 0 && context.TrayIcon.BalloonTipTitle == nativeAlerts[^1].Title &&
                 context.TrayIcon.BalloonTipText == nativeAlerts[^1].Body && context.TrayIcon.BalloonTipIcon == ToolTipIcon.Info,
                 "Early-only notification uses the exact shared informational native balloon without inventing a recovery event");
@@ -203,7 +233,7 @@ internal static class QuotaEarlyResetUiChecks
             QuotaState state = context.QuotaMonitor!.Snapshot().Single(item => item.Provider == QuotaProvider.Claude);
             string detail = QuotaPanelModel.Section(state, now, firstRecent).Detail;
             Check(detail.Contains(QuotaEarlyResetText.Detail(firstRecent, now), StringComparison.Ordinal) &&
-                detail.Contains("사용 30% → 10%", StringComparison.Ordinal) &&
+                detail.Contains("사용 17% → 0%", StringComparison.Ordinal) &&
                 detail.Contains("이전 리셋 예정", StringComparison.Ordinal) && detail.Contains("다음 리셋 예정", StringComparison.Ordinal),
                 "Provider detail includes the session-only early reset values and both reset times through the shared model");
             var providerBox = context.StatusWindow.QuotaView.Controls.OfType<Panel>()
@@ -225,6 +255,45 @@ internal static class QuotaEarlyResetUiChecks
                 latest.Sequence > firstRecent.Sequence && latest.Windows.All(window => window.UsedPercent == 5) &&
                 context.RecentEarlyReset(QuotaProvider.Gemini) is null,
                 "A later independent early reset replaces the latest one for only its Provider");
+
+            int rulesBefore = nativeAlerts.Count;
+            client.Set(QuotaProvider.Claude, Rows(60, 60, modelMinutes: 300));
+            await Refresh(QuotaProvider.Claude);
+            Step();
+            client.Set(QuotaProvider.Claude, Rows(0, 60, modelMinutes: 300));
+            await Refresh(QuotaProvider.Claude);
+            Check(nativeAlerts.Count == rulesBefore,
+                "A five-hour decrease is excluded while an unchanged weekly window remains silent");
+            Check(HasDecision(QuotaProvider.Claude, "Excluded"),
+                "A five-hour-only decrease records a completed exclusion instead of remaining unevaluated");
+            Step();
+            await Refresh(QuotaProvider.Claude);
+            Check(nativeAlerts.Count == rulesBefore,
+                "An unchanged zero-to-zero five-hour reading and unchanged weekly reading do not infer a reset");
+            Step();
+            client.Set(QuotaProvider.Claude, Rows(1, 61, modelMinutes: 300));
+            await Refresh(QuotaProvider.Claude);
+            Check(nativeAlerts.Count == rulesBefore,
+                "Increasing usage never creates an early reset notification");
+
+            DateTimeOffset longReset = now.AddDays(4.6);
+            client.Set(QuotaProvider.Claude, Rows(60, 60, longReset, longReset));
+            await Refresh(QuotaProvider.Claude);
+            Step();
+            client.Set(QuotaProvider.Claude, Rows(59, 59, longReset, longReset));
+            await Refresh(QuotaProvider.Claude);
+            Check(nativeAlerts.Count == rulesBefore + 1 && nativeAlerts[^1].EarlyReset is { Windows.Count: 2 } small &&
+                small.Windows.All(window => window.PreviousUsedPercent == 60 && window.UsedPercent == 59 &&
+                    window.PreviousResetUtc == window.ResetUtc),
+                "A strict one-point weekly decrease above ten percent alerts without a changed reset timestamp");
+            client.Set(QuotaProvider.Claude, Rows(60, 60, longReset, longReset));
+            await Refresh(QuotaProvider.Claude);
+            now = now.AddHours(2);
+            milliseconds += 2 * 60 * 60000;
+            client.Set(QuotaProvider.Claude, Rows(17, 17, longReset, longReset));
+            await Refresh(QuotaProvider.Claude);
+            Check(nativeAlerts.Count == rulesBefore + 2 && nativeAlerts[^1].EarlyReset is { Windows.Count: 2 },
+                "More than ninety minutes between successes does not suppress a weekly decrease before its scheduled reset");
             await using (var connection = new SqliteConnection(new SqliteConnectionStringBuilder
             {
                 DataSource = store.DatabasePath, Pooling = false
@@ -299,16 +368,19 @@ internal static class QuotaEarlyResetUiChecks
                 context.RecentEarlyReset(QuotaProvider.Claude) == historyBeforeFailure,
                 "Interrupted continuity suppresses inferred early reset while preserving legitimate failure-to-recovery alerts");
 
-            await QueueSessionEarlyReset();
+            QuotaWindow[] stillCurrentWeekly = await QueueWeeklyEarlyReset();
             before = nativeAlerts.Count;
+            now = now.AddMinutes(91);
+            client.Set(QuotaProvider.Claude, stillCurrentWeekly);
+            await Refresh(QuotaProvider.Claude);
             Drain();
             Check(nativeAlerts.Count == before + 1 && nativeAlerts[^1] is { Recovery: null, EarlyReset.Windows.Count: 1 } &&
                 context.TrayIcon.BalloonTipTitle == nativeAlerts[^1].Title,
-                "A still-current queued early reset drains once after the existing service notification spacing");
+                "A freshly revalidated queued weekly early reset survives ninety minutes and drains once after service notification spacing");
             Drain();
             Check(nativeAlerts.Count == before + 1, "An already delivered queued early reset cannot repeat on another UI tick");
 
-            await QueueSessionEarlyReset();
+            await QueueWeeklyEarlyReset();
             before = nativeAlerts.Count;
             client.Set(QuotaProvider.Claude, Rows(0, 60), fail: true);
             await Refresh(QuotaProvider.Claude);
@@ -318,9 +390,9 @@ internal static class QuotaEarlyResetUiChecks
             Check(nativeAlerts.Count == before,
                 "A later failure invalidates a queued early reset and a subsequent success cannot revive it");
 
-            QuotaWindow[] queued = await QueueSessionEarlyReset();
+            QuotaWindow[] queued = await QueueWeeklyEarlyReset();
             before = nativeAlerts.Count;
-            client.Set(QuotaProvider.Claude, queued.Select(window => window.Id == "synthetic-session"
+            client.Set(QuotaProvider.Claude, queued.Select(window => window.Id == "synthetic-weekly-model"
                 ? window with { WindowMinutes = 360 } : window).ToArray());
             await Refresh(QuotaProvider.Claude);
             client.Set(QuotaProvider.Claude, queued);
@@ -329,7 +401,7 @@ internal static class QuotaEarlyResetUiChecks
             Check(nativeAlerts.Count == before,
                 "Changing and restoring a queued row duration cannot revive the earlier inferred reset notification");
 
-            await QueueSessionEarlyReset();
+            await QueueWeeklyEarlyReset();
             before = nativeAlerts.Count;
             calls = client.TotalCalls;
             await ToggleEarly(false);
@@ -343,20 +415,18 @@ internal static class QuotaEarlyResetUiChecks
             Drain();
             Check(nativeAlerts.Count == before, "Re-enabling after a queued opt-out does not replay previous session history");
 
-            queued = await QueueSessionEarlyReset();
+            queued = await QueueWeeklyEarlyReset();
             before = nativeAlerts.Count;
-            client.Set(QuotaProvider.Claude, queued.Select(window => window.Id == "synthetic-session"
+            client.Set(QuotaProvider.Claude, queued.Select(window => window.Id == "synthetic-weekly-model"
                 ? window with { UsedPercent = 100 } : window).ToArray());
-            await Refresh(QuotaProvider.Claude);
-            client.Set(QuotaProvider.Claude, queued);
             await Refresh(QuotaProvider.Claude);
             Drain();
             Check(nativeAlerts.Count == before,
-                "Re-exhausting and restoring a queued row cannot revive an invalidated inferred reset banner");
+                "Re-exhausting a queued weekly row invalidates the earlier inferred reset banner");
 
-            queued = await QueueSessionEarlyReset();
+            queued = await QueueWeeklyEarlyReset();
             before = nativeAlerts.Count;
-            now = queued.Single(window => window.Id == "synthetic-session").ResetsAtUtc!.Value.AddSeconds(1);
+            now = queued.Single(window => window.Id == "synthetic-weekly-model").ResetsAtUtc!.Value.AddSeconds(1);
             Drain();
             Check(nativeAlerts.Count == before,
                 "A queued early reset is discarded after its affected reset time expires rather than presented as current");
@@ -376,7 +446,24 @@ internal static class QuotaEarlyResetUiChecks
             context.Dispose();
             disposed = true;
             Check(context.StatusWindow.IsDisposed, "Private early reset host stops without exiting the outer Windows smoke loop");
+            JsonElement[] decisions = Decisions();
+            Check(decisions.Length > 0 && decisions.Select(entry => entry.GetProperty("AttemptId").GetString())
+                .Distinct(StringComparer.Ordinal).Count() == decisions.Length,
+                "Updating UI candidate and exclusion reasons leaves exactly one local diagnostic line per query attempt");
 
+            // The scenarios above deliberately leave nonzero usage in several cached
+            // weekly windows. Prepare this duplicate-only restart fixture explicitly:
+            // otherwise a fresh zero reading is a legitimate cached early reset now.
+            bool zeroCachesReady = true;
+            foreach (QuotaProvider provider in Enum.GetValues<QuotaProvider>())
+            {
+                await store.SaveQuotaAsync(new(1, new(provider, Rows(0, 0)), now.AddMinutes(-1), []));
+                QuotaCache? cached = await store.ReadQuotaAsync(provider);
+                zeroCachesReady &= cached is not null && cached.SuccessfulAtUtc < now &&
+                    cached.Reading.Windows.All(window => window.UsedPercent == 0);
+            }
+            Check(zeroCachesReady,
+                "The private duplicate-restart fixture has a verified earlier zero-use success cache for every Provider");
             int oldHostAlerts = nativeAlerts.Count;
             var restartedAlerts = new List<QuotaNotificationAlert>();
             var restartedClient = new EarlyResetClient(Rows(0, 0));
@@ -392,12 +479,47 @@ internal static class QuotaEarlyResetUiChecks
                 "Restart reloads the independently persisted early reset preference without enabling recovery");
             Check(Enum.GetValues<QuotaProvider>().All(provider => context.RecentEarlyReset(provider) is null) &&
                 restartedAlerts.Count == 0 && nativeAlerts.Count == oldHostAlerts,
-                "Application restart clears all session-only early reset history and cached values cannot replay notifications");
+                "Application restart clears local early reset history and unchanged zero-use cached values do not create notifications");
             await context.QuotaMonitor!.StopAsync();
             await context.ProviderMonitor!.StopAsync();
             context.Dispose();
             disposed = true;
             Check(context.StatusWindow.IsDisposed, "Restarted private early reset host also disposes without ending the smoke loop");
+
+            DateTimeOffset cachedWeeklyReset = now.AddDays(4.6);
+            await store.SaveQuotaAsync(new(1,
+                new(QuotaProvider.Codex, [new("synthetic-weekly", "주간", 17, cachedWeeklyReset, 10080)]), now, []));
+            now = now.AddMinutes(1);
+            var cacheResetClient = new EarlyResetClient(Rows(0, 0));
+            cacheResetClient.Set(QuotaProvider.Codex,
+                [new("synthetic-weekly", "주간", 0, cachedWeeklyReset, 10080)]);
+            var cacheResetAlerts = new List<QuotaNotificationAlert>();
+            context = new TrayApplicationContext(true, () => now, usageStore: new UsageStore(store.DatabasePath),
+                statusHttpClient: http, accountQuotaClient: cacheResetClient,
+                notificationMilliseconds: () => milliseconds);
+            disposed = false;
+            context.QuotaNotificationRequested += cacheResetAlerts.Add;
+            await InitialRequestsComplete();
+            Drain();
+            Check(context.RecentEarlyReset(QuotaProvider.Codex) is { Windows.Count: 1 } fromCache &&
+                fromCache.Windows[0] is { PreviousUsedPercent: 17, UsedPercent: 0 } &&
+                fromCache.Windows[0].PreviousResetUtc == cachedWeeklyReset &&
+                Enum.GetValues<QuotaProvider>().Where(provider => provider != QuotaProvider.Codex)
+                    .All(provider => context.RecentEarlyReset(provider) is null),
+                "The first live Windows success after restart compares the cached weekly seventeen-to-zero decrease before its reset");
+            Check(cacheResetAlerts.Count == 1 && cacheResetAlerts[0] is
+                { Provider: QuotaProvider.Codex, Recovery: null, EarlyReset.Windows.Count: 1 } &&
+                context.QuotaEarlyResetNotificationsEnabled && !context.QuotaRecoveryNotificationsEnabled &&
+                cacheResetClient.TotalCalls == Enum.GetValues<QuotaProvider>().Length,
+                "A cached weekly early reset delivers one native request from normal startup reads without changing recovery or polling again");
+            Check(HasDecision(QuotaProvider.Codex, "Alert", "Alert"),
+                "The first-live cached early reset candidate is recorded in its completed local diagnostic row");
+            await context.QuotaMonitor!.StopAsync();
+            await context.ProviderMonitor!.StopAsync();
+            context.Dispose();
+            disposed = true;
+            Check(context.StatusWindow.IsDisposed,
+                "The cached-decrease restart host disposes normally and leaves the outer smoke loop running");
         }
         finally
         {
@@ -421,7 +543,7 @@ internal static class QuotaEarlyResetUiChecks
         long milliseconds = 60000;
         var store = new UsageStore(Path.Combine(directory, "delivery-failure.db"));
         QuotaWindow[] Rows(double used, DateTimeOffset reset) =>
-            [new("synthetic-session", "5시간", used, reset, 300)];
+            [new("synthetic-weekly", "주간", used, reset, 10080)];
         var client = new EarlyResetClient(Rows(60, now.AddHours(2)));
         using var handler = new TestStatusHttpHandler();
         using var http = new HttpClient(handler);

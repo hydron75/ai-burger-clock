@@ -8,6 +8,8 @@ internal sealed record QuotaEarlyResetWindow(string Id, string Label, int Window
 internal sealed record QuotaEarlyResetAlert(QuotaProvider Provider, long Sequence, long ContinuityId,
     DateTimeOffset CheckedAtUtc, IReadOnlyList<QuotaEarlyResetWindow> Windows);
 
+internal sealed record QuotaEarlyResetEvaluation(QuotaEarlyResetAlert? Alert, string Reason);
+
 // Pure, session-only comparison state, owned by one host UI thread. No polling, storage,
 // notification delivery, account identity or reset-cause inference takes place here.
 internal sealed class QuotaEarlyResetNotifications
@@ -17,54 +19,75 @@ internal sealed class QuotaEarlyResetNotifications
 
     private readonly Dictionary<QuotaProvider, Baseline> baselines = new();
     private readonly Dictionary<QuotaProvider, QuotaEarlyResetAlert> recent = new();
+    private readonly HashSet<QuotaProvider> seedAfterReset = new();
 
     // Toggling a setting invalidates comparison baselines, not already observed session history.
-    // Constructing a fresh engine (application restart) clears both; nothing is persisted.
-    public void Reset() => baselines.Clear();
+    // Unlike a fresh engine, a toggle must not compare its first success with a cached
+    // PreviousSuccess. The monitor may supply that snapshot on restart under the user's
+    // single-account assumption; neither it nor ContinuityId establishes account identity.
+    public void Reset()
+    {
+        baselines.Clear();
+        seedAfterReset.UnionWith(Enum.GetValues<QuotaProvider>());
+    }
 
     public QuotaEarlyResetAlert? Recent(QuotaProvider provider) =>
         recent.TryGetValue(provider, out QuotaEarlyResetAlert? alert) ? alert : null;
 
-    public QuotaEarlyResetAlert? Observe(QuotaObservation observation, bool enabled)
+    public QuotaEarlyResetAlert? Observe(QuotaObservation observation, bool enabled) => Evaluate(observation, enabled).Alert;
+
+    public QuotaEarlyResetEvaluation Evaluate(QuotaObservation observation, bool enabled)
     {
-        if (!Valid(observation)) return null;
-        baselines.TryGetValue(observation.Provider, out Baseline? previous);
-        if (previous is not null && observation.Sequence <= previous.Sequence) return null;
+        if (!Valid(observation)) return new(null, "InvalidObservation");
+        baselines.TryGetValue(observation.Provider, out Baseline? baseline);
+        if (baseline is not null && observation.Sequence <= baseline.Sequence)
+            return new(null, "DuplicateObservation");
         // A legacy/cache/orphan observation has no proof that failed attempts did not occur.
         // In particular it must not replace a newer monitor's verified continuity baseline.
-        if (observation.ContinuityId == 0 && previous is { ContinuityId: > 0 }) return null;
+        if (observation.ContinuityId == 0 && baseline is { ContinuityId: > 0 })
+            return new(null, "ContinuityChanged");
 
         var windows = observation.Reading.Windows.ToDictionary(window => window.Id, StringComparer.Ordinal);
-        TimeSpan gap = previous is null ? TimeSpan.Zero : observation.CheckedAtUtc - previous.CheckedAtUtc;
-        bool compare = enabled && previous is { Armed: true, ContinuityId: > 0 } &&
-            observation.ContinuityId == previous.ContinuityId && previous.Sequence != long.MaxValue &&
-            observation.Sequence == previous.Sequence + 1 && gap > TimeSpan.Zero && gap <= TimeSpan.FromMinutes(90) &&
-            SameWindows(previous.Windows, windows);
+        Baseline? previous = observation.PreviousSuccess is { } supplied
+            ? new(0, supplied.ContinuityId, supplied.CheckedAtUtc, true,
+                supplied.Reading.Windows.ToDictionary(window => window.Id, StringComparer.Ordinal))
+            : baseline;
+        bool seedSilently = seedAfterReset.Remove(observation.Provider);
 
         // Immutable QuotaWindow records are copied out of the caller's mutable collection.
         baselines[observation.Provider] = new(observation.Sequence, observation.ContinuityId,
             observation.CheckedAtUtc, enabled && observation.ContinuityId > 0, windows);
-        if (!compare) return null;
+        if (!enabled || baseline is { Armed: false }) return new(null, "Disabled");
+        if (seedSilently || previous is null) return new(null, "NoPreviousSuccess");
+        if (previous.ContinuityId <= 0 || observation.ContinuityId <= 0 ||
+            observation.ContinuityId != previous.ContinuityId)
+            return new(null, "ContinuityChanged");
+        if (observation.CheckedAtUtc <= previous.CheckedAtUtc) return new(null, "ClockNotForward");
+        if (!SameWindows(previous.Windows, windows)) return new(null, "WindowSetChanged");
 
         var changed = new List<QuotaEarlyResetWindow>();
+        string? firstFailure = null;
         foreach (QuotaWindow window in observation.Reading.Windows)
         {
-            QuotaWindow old = previous!.Windows[window.Id];
-            if (window.WindowMinutes is not { } minutes ||
-                old.ResetsAtUtc is not { } previousReset || window.ResetsAtUtc is not { } reset ||
-                old.UsedPercent - window.UsedPercent < 20 || window.UsedPercent > 10 ||
-                previousReset - observation.CheckedAtUtc <= TimeSpan.FromMinutes(5) ||
-                (reset - previousReset).Duration() <= TimeSpan.FromMinutes(1) ||
-                !WithinWindow(previousReset, previous.CheckedAtUtc, minutes) ||
-                !WithinWindow(reset, observation.CheckedAtUtc, minutes))
-                continue;
-            changed.Add(new(window.Id, window.Label, minutes, old.UsedPercent, window.UsedPercent, previousReset, reset));
+            if (window.WindowMinutes != 10080) continue;
+            QuotaWindow old = previous.Windows[window.Id];
+            if (old.ResetsAtUtc is not { } previousReset || window.ResetsAtUtc is not { } reset)
+            { firstFailure ??= "ResetUnavailable"; continue; }
+            if (!WithinWindow(previousReset, previous.CheckedAtUtc, 10080) ||
+                !WithinWindow(reset, observation.CheckedAtUtc, 10080))
+            { firstFailure ??= "InvalidResetWindow"; continue; }
+            if (previousReset - observation.CheckedAtUtc <= TimeSpan.FromMinutes(5))
+            { firstFailure ??= "NotBeforeScheduledReset"; continue; }
+            if (old.UsedPercent <= window.UsedPercent)
+            { firstFailure ??= "UsageNotDecreased"; continue; }
+            changed.Add(new(window.Id, window.Label, 10080, old.UsedPercent, window.UsedPercent,
+                previousReset, reset));
         }
-        if (changed.Count == 0) return null;
+        if (changed.Count == 0) return new(null, firstFailure ?? "NoWeeklyWindow");
         var alert = new QuotaEarlyResetAlert(observation.Provider, observation.Sequence, observation.ContinuityId,
             observation.CheckedAtUtc, Array.AsReadOnly(changed.ToArray()));
         recent[observation.Provider] = alert;
-        return alert;
+        return new(alert, "Alert");
     }
 
     private static bool SameWindows(IReadOnlyDictionary<string, QuotaWindow> previous,
@@ -82,11 +105,18 @@ internal sealed class QuotaEarlyResetNotifications
     {
         if (observation is null || !Enum.IsDefined(observation.Provider) || observation.Sequence <= 0 ||
             observation.ContinuityId < 0 || observation.CheckedAtUtc < DateTimeOffset.UnixEpoch ||
-            observation.CheckedAtUtc.Year > 9000 || observation.Reading is null ||
-            observation.Reading.Provider != observation.Provider || observation.Reading.Windows is not { Count: > 0 and <= 64 })
+            observation.CheckedAtUtc.Year > 9000 || !ValidReading(observation.Reading, observation.Provider))
             return false;
+        return observation.PreviousSuccess is not { } previous ||
+            previous.ContinuityId >= 0 && previous.CheckedAtUtc >= DateTimeOffset.UnixEpoch && previous.CheckedAtUtc.Year <= 9000 &&
+            ValidReading(previous.Reading, observation.Provider);
+    }
+
+    private static bool ValidReading(QuotaReading? reading, QuotaProvider provider)
+    {
+        if (reading is null || reading.Provider != provider || reading.Windows is not { Count: > 0 and <= 64 }) return false;
         var ids = new HashSet<string>(StringComparer.Ordinal);
-        foreach (QuotaWindow? window in observation.Reading.Windows)
+        foreach (QuotaWindow? window in reading.Windows)
             if (window is null || string.IsNullOrWhiteSpace(window.Id) || window.Id.Length > 512 ||
                 string.IsNullOrWhiteSpace(window.Label) || window.Label.Length > 180 || !ids.Add(window.Id) ||
                 !double.IsFinite(window.UsedPercent) || window.UsedPercent is < 0 or > 100 ||
@@ -101,7 +131,7 @@ internal static class QuotaEarlyResetText
 {
     public const string SettingKey = "QuotaEarlyResetNotificationsEnabled";
     public const string MenuLabel = "한도 조기 초기화 알림";
-    public const string MenuDetail = "기본 꺼짐 · 연속 성공 조회에서 예정 전 사용량 감소·리셋 변경을 확인하면 알림 · 추가 조회 없음";
+    public const string MenuDetail = "기본 꺼짐 · 주간 한도의 직전 성공과 비교해 예정 전 사용량 감소를 확인하면 알림 · 추가 조회 없음";
     public const string SettingReadFailed = "한도 조기 초기화 알림 설정을 읽지 못했습니다. 알림은 꺼짐으로 유지합니다.";
     public const string SettingSaveFailed = "한도 조기 초기화 알림 설정을 저장하지 못했습니다. 기존 설정을 유지합니다.";
     public const string DeliveryFailed = "한도 조기 초기화 알림을 표시하지 못했습니다. OS 알림 설정을 확인하세요.";

@@ -18,6 +18,7 @@ internal sealed class AccountQuotaMonitor : IDisposable
     private readonly UsageStore? store;
     private readonly Func<DateTimeOffset> utcNow;
     private readonly QuotaPollingDiagnosticLog? pollingLog;
+    private readonly QuotaEarlyResetDiagnosticLog? earlyResetLog;
     private readonly object sync = new();
     private readonly CancellationTokenSource lifetime = new();
     private readonly Dictionary<QuotaProvider, QuotaState> states = Enum.GetValues<QuotaProvider>()
@@ -27,6 +28,9 @@ internal sealed class AccountQuotaMonitor : IDisposable
     private readonly Dictionary<QuotaProvider, DateTimeOffset[]> anchors = Enum.GetValues<QuotaProvider>().ToDictionary(p => p, _ => Array.Empty<DateTimeOffset>());
     private readonly Dictionary<QuotaProvider, int> failures = Enum.GetValues<QuotaProvider>().ToDictionary(p => p, _ => 0);
     private readonly Dictionary<QuotaProvider, long> sequences = Enum.GetValues<QuotaProvider>().ToDictionary(p => p, _ => 0L);
+    // Generation of each last successful reading, not an account identity. Failed
+    // attempts advance the state generation without re-stamping the previous read.
+    private readonly Dictionary<QuotaProvider, long> readingContinuities = Enum.GetValues<QuotaProvider>().ToDictionary(p => p, _ => 1L);
     private Task? runner;
     private bool disposed;
     public event Action? Changed;
@@ -40,12 +44,21 @@ internal sealed class AccountQuotaMonitor : IDisposable
     public event Action<QuotaObservation>? Succeeded;
 
     public AccountQuotaMonitor(IAccountQuotaClient client, UsageStore? store = null, Func<DateTimeOffset>? utcNow = null,
-        QuotaPollingDiagnosticLog? diagnosticLog = null)
+        QuotaPollingDiagnosticLog? diagnosticLog = null, QuotaEarlyResetDiagnosticLog? earlyResetDiagnosticLog = null)
     {
         this.client = client;
         this.store = store;
         this.utcNow = utcNow ?? (() => DateTimeOffset.UtcNow);
         pollingLog = diagnosticLog ?? CreatePollingLog(store);
+        earlyResetLog = earlyResetDiagnosticLog ?? CreateEarlyResetLog(store);
+    }
+
+    // Hosts finish the existing per-query row after dispatching to their UI thread.
+    // This records a decision, not proof that the OS displayed an alert.
+    internal void RecordEarlyResetDecision(QuotaObservation observation, string outcome, string reason)
+    {
+        if (observation.DiagnosticAttemptId is { } attemptId)
+            earlyResetLog?.TryUpdate(attemptId, outcome, reason);
     }
 
     public IReadOnlyList<QuotaState> Snapshot()
@@ -93,8 +106,13 @@ internal sealed class AccountQuotaMonitor : IDisposable
                     if (cached is not null)
                         lock (sync)
                         {
-                            states[provider] = new(provider, cached.Reading, LastSuccessfulCheckUtc: cached.SuccessfulAtUtc,
+                            var reading = cached.Reading with { Windows = Array.AsReadOnly(cached.Reading.Windows.ToArray()) };
+                            states[provider] = new(provider, reading, LastSuccessfulCheckUtc: cached.SuccessfulAtUtc,
                                 IsPrevious: true, ContinuityId: states[provider].ContinuityId);
+                            // Single-account-per-provider assumption: cache v1 has no
+                            // account identity or persisted failure generation. Rebind
+                            // only its early-reset baseline to this monitor's generation.
+                            readingContinuities[provider] = states[provider].ContinuityId;
                             // Legacy Gemini anchors have no window provenance and may
                             // contain a long chain from unused moving resets. Rebuild
                             // only that legacy cache's anchors from verified used windows.
@@ -129,9 +147,13 @@ internal sealed class AccountQuotaMonitor : IDisposable
         QuotaObservation? observation = null;
         QuotaPollingDiagnostic? diagnostic = null;
         bool readStarted = false;
+        string attemptId = "";
+        DateTimeOffset attemptedAtUtc = default;
         try
         {
-            DateTimeOffset attemptedAtUtc = utcNow().ToUniversalTime();
+            // Even an injected clock failure must release the acquired provider gate.
+            attemptId = Guid.NewGuid().ToString("N");
+            attemptedAtUtc = utcNow().ToUniversalTime();
             lock (sync) states[provider] = states[provider] with { IsRefreshing = true, NextCheckUtc = null };
             RaiseChanged();
             QuotaReading? reading = null;
@@ -194,7 +216,10 @@ internal sealed class AccountQuotaMonitor : IDisposable
                 {
                     cache = new(1, reading, now, anchors[provider], provider == QuotaProvider.Gemini
                         ? AccountQuotaPolicy.ResetAnchorPolicyVersion : 0);
-                    observation = new(provider, ++sequences[provider], now, reading, old.ContinuityId);
+                    QuotaPreviousSuccess? previous = old.Reading is not null && old.LastSuccessfulCheckUtc is { } previousAt
+                        ? new(old.Reading, previousAt, readingContinuities[provider]) : null;
+                    observation = new(provider, ++sequences[provider], now, reading, old.ContinuityId, previous, attemptId);
+                    readingContinuities[provider] = old.ContinuityId;
                 }
             }
             if (store is not null && cache is not null)
@@ -213,6 +238,7 @@ internal sealed class AccountQuotaMonitor : IDisposable
         finally
         {
             bool publishSuccess;
+            long continuityId;
             lock (sync)
             {
                 // Commit completion once. A valid response whose cache write was
@@ -223,12 +249,27 @@ internal sealed class AccountQuotaMonitor : IDisposable
                 var state = states[provider];
                 states[provider] = state with
                 {
-                    IsRefreshing = false,
                     ContinuityId = readStarted && !publishSuccess ? state.ContinuityId + 1 : state.ContinuityId
                 };
+                continuityId = states[provider].ContinuityId;
             }
             try
             {
+                // Separate versioned file: never extend the older strict polling
+                // schema. Append before callbacks so a fast host can update this row.
+                try
+                {
+                    if (readStarted)
+                        earlyResetLog?.TryAppend(new(attemptId, provider.ToString(), attemptedAtUtc,
+                            utcNow().ToUniversalTime(), publishSuccess, publishSuccess ? observation!.Sequence : null,
+                            continuityId, "Excluded", publishSuccess ? "NotEvaluated" : linked.IsCancellationRequested ? "ReadCancelled" : "ReadFailed"));
+                }
+                finally
+                {
+                    // Logging is part of completion. Do not expose an idle state
+                    // throughout a flush while this provider's gate is still busy.
+                    lock (sync) states[provider] = states[provider] with { IsRefreshing = false };
+                }
                 // Outside the state lock, but before releasing the provider gate:
                 // fast host callbacks see a completed refresh and cannot receive
                 // this provider's later response before the current one.
@@ -260,14 +301,32 @@ internal sealed class AccountQuotaMonitor : IDisposable
         }
     }
 
+    private static QuotaEarlyResetDiagnosticLog? CreateEarlyResetLog(UsageStore? store)
+    {
+        if (store is null) return null;
+        try
+        {
+            string directory = Path.GetDirectoryName(Path.GetFullPath(store.DatabasePath))!;
+            return new(Path.Combine(directory, "logs"));
+        }
+        catch (Exception error) when (error is ArgumentException or IOException or UnauthorizedAccessException
+            or NotSupportedException or System.Security.SecurityException)
+        {
+            return null;
+        }
+    }
+
     private void RaiseSucceeded(QuotaObservation observation)
     {
-        if (Succeeded is not { } handlers) return;
-        foreach (Action<QuotaObservation> handler in handlers.GetInvocationList().Cast<Action<QuotaObservation>>())
-        {
-            if (lifetime.IsCancellationRequested) return;
-            try { handler(observation); } catch { /* Notification failures cannot stop polling. */ }
-        }
+        bool delivered = false;
+        if (Succeeded is { } handlers)
+            foreach (Action<QuotaObservation> handler in handlers.GetInvocationList().Cast<Action<QuotaObservation>>())
+            {
+                if (lifetime.IsCancellationRequested) break;
+                try { handler(observation); delivered = true; } catch { /* Notification failures cannot stop polling. */ }
+            }
+        if (!delivered)
+            RecordEarlyResetDecision(observation, "Excluded", "HostUnavailable");
     }
 
     private void RaiseChanged()

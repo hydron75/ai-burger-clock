@@ -370,7 +370,11 @@ namespace AiBurgerClock
 
         private void OnQuotaSucceeded(QuotaObservation observation)
         {
-            if (exiting || disposed || statusWindow.IsDisposed) return;
+            if (exiting || disposed || statusWindow.IsDisposed)
+            {
+                quotaMonitor?.RecordEarlyResetDecision(observation, "Excluded", "HostUnavailable");
+                return;
+            }
             int epoch = Volatile.Read(ref quotaNotificationEpoch);
             int earlyResetEpoch = Volatile.Read(ref quotaEarlyResetNotificationEpoch);
             try
@@ -379,9 +383,15 @@ namespace AiBurgerClock
                 // reading is needed to distinguish exhaustion and recovery in the right order.
                 statusWindow.BeginInvoke(() =>
                 {
-                    if (exiting || disposed) return;
+                    if (exiting || disposed)
+                    {
+                        quotaMonitor?.RecordEarlyResetDecision(observation, "Excluded", "HostUnavailable");
+                        return;
+                    }
                     bool recoveryCurrent = epoch == Volatile.Read(ref quotaNotificationEpoch);
                     bool earlyResetCurrent = earlyResetEpoch == Volatile.Read(ref quotaEarlyResetNotificationEpoch);
+                    if (!earlyResetCurrent)
+                        quotaMonitor?.RecordEarlyResetDecision(observation, "Excluded", "SettingChangedBeforeEvaluation");
                     if (!recoveryCurrent && !earlyResetCurrent) return;
                     // Invalidate at every success, not just at delivery. If a window disappears
                     // or changes period and later returns, an old queued alert must stay gone.
@@ -390,15 +400,25 @@ namespace AiBurgerClock
                             observation.CheckedAtUtc, observation.ContinuityId));
                     var recovery = recoveryCurrent ? quotaRecoveryNotifications.Observe(observation,
                         quotaRecoveryEnabled && quotaRecoverySettingsReady && !changingQuotaRecoverySetting) : null;
-                    var earlyReset = earlyResetCurrent ? quotaEarlyResetNotifications.Observe(observation,
-                        quotaEarlyResetEnabled && quotaEarlyResetSettingsReady && !changingQuotaEarlyResetSetting) : null;
+                    QuotaEarlyResetAlert? earlyReset = null;
+                    if (earlyResetCurrent)
+                    {
+                        QuotaEarlyResetEvaluation evaluation = quotaEarlyResetNotifications.Evaluate(observation,
+                            quotaEarlyResetEnabled && quotaEarlyResetSettingsReady && !changingQuotaEarlyResetSetting);
+                        earlyReset = evaluation.Alert;
+                        quotaMonitor?.RecordEarlyResetDecision(observation, earlyReset is null ? "Excluded" : "Alert", evaluation.Reason);
+                    }
                     if (recovery is not null || earlyReset is not null)
                         pendingQuotaAlerts[observation.Provider] = new(recovery, earlyReset, observation);
                     // Existing schedule/official alerts always apply before a quota alert.
                     RefreshStatus(TickReason.ProviderChanged);
                 });
             }
-            catch (InvalidOperationException) { /* Marshal target was closed during shutdown. */ }
+            catch (InvalidOperationException)
+            {
+                // Marshal target was closed during shutdown; this observation was not evaluated.
+                quotaMonitor?.RecordEarlyResetDecision(observation, "Excluded", "HostUnavailable");
+            }
         }
 
         private void DeferQuotaNotifications(int milliseconds) =>
