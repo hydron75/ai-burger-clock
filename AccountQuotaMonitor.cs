@@ -315,12 +315,15 @@ internal sealed class AccountQuotaMonitor : IDisposable
 
     private void RaiseSucceeded(QuotaObservation observation)
     {
-        if (Succeeded is not { } handlers) return;
-        foreach (Action<QuotaObservation> handler in handlers.GetInvocationList().Cast<Action<QuotaObservation>>())
-        {
-            if (lifetime.IsCancellationRequested) return;
-            try { handler(observation); } catch { /* Notification failures cannot stop polling. */ }
-        }
+        bool delivered = false;
+        if (Succeeded is { } handlers)
+            foreach (Action<QuotaObservation> handler in handlers.GetInvocationList().Cast<Action<QuotaObservation>>())
+            {
+                if (lifetime.IsCancellationRequested) break;
+                try { handler(observation); delivered = true; } catch { /* Notification failures cannot stop polling. */ }
+            }
+        if (!delivered)
+            RecordEarlyResetDecision(observation, "Excluded", "HostUnavailable");
     }
 
     private void RaiseChanged()

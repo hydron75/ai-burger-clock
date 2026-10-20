@@ -451,6 +451,19 @@ internal static class QuotaEarlyResetUiChecks
                 .Distinct(StringComparer.Ordinal).Count() == decisions.Length,
                 "Updating UI candidate and exclusion reasons leaves exactly one local diagnostic line per query attempt");
 
+            // The scenarios above deliberately leave nonzero usage in several cached
+            // weekly windows. Prepare this duplicate-only restart fixture explicitly:
+            // otherwise a fresh zero reading is a legitimate cached early reset now.
+            bool zeroCachesReady = true;
+            foreach (QuotaProvider provider in Enum.GetValues<QuotaProvider>())
+            {
+                await store.SaveQuotaAsync(new(1, new(provider, Rows(0, 0)), now.AddMinutes(-1), []));
+                QuotaCache? cached = await store.ReadQuotaAsync(provider);
+                zeroCachesReady &= cached is not null && cached.SuccessfulAtUtc < now &&
+                    cached.Reading.Windows.All(window => window.UsedPercent == 0);
+            }
+            Check(zeroCachesReady,
+                "The private duplicate-restart fixture has a verified earlier zero-use success cache for every Provider");
             int oldHostAlerts = nativeAlerts.Count;
             var restartedAlerts = new List<QuotaNotificationAlert>();
             var restartedClient = new EarlyResetClient(Rows(0, 0));
@@ -472,6 +485,41 @@ internal static class QuotaEarlyResetUiChecks
             context.Dispose();
             disposed = true;
             Check(context.StatusWindow.IsDisposed, "Restarted private early reset host also disposes without ending the smoke loop");
+
+            DateTimeOffset cachedWeeklyReset = now.AddDays(4.6);
+            await store.SaveQuotaAsync(new(1,
+                new(QuotaProvider.Codex, [new("synthetic-weekly", "주간", 17, cachedWeeklyReset, 10080)]), now, []));
+            now = now.AddMinutes(1);
+            var cacheResetClient = new EarlyResetClient(Rows(0, 0));
+            cacheResetClient.Set(QuotaProvider.Codex,
+                [new("synthetic-weekly", "주간", 0, cachedWeeklyReset, 10080)]);
+            var cacheResetAlerts = new List<QuotaNotificationAlert>();
+            context = new TrayApplicationContext(true, () => now, usageStore: new UsageStore(store.DatabasePath),
+                statusHttpClient: http, accountQuotaClient: cacheResetClient,
+                notificationMilliseconds: () => milliseconds);
+            disposed = false;
+            context.QuotaNotificationRequested += cacheResetAlerts.Add;
+            await InitialRequestsComplete();
+            Drain();
+            Check(context.RecentEarlyReset(QuotaProvider.Codex) is { Windows.Count: 1 } fromCache &&
+                fromCache.Windows[0] is { PreviousUsedPercent: 17, UsedPercent: 0 } &&
+                fromCache.Windows[0].PreviousResetUtc == cachedWeeklyReset &&
+                Enum.GetValues<QuotaProvider>().Where(provider => provider != QuotaProvider.Codex)
+                    .All(provider => context.RecentEarlyReset(provider) is null),
+                "The first live Windows success after restart compares the cached weekly seventeen-to-zero decrease before its reset");
+            Check(cacheResetAlerts.Count == 1 && cacheResetAlerts[0] is
+                { Provider: QuotaProvider.Codex, Recovery: null, EarlyReset.Windows.Count: 1 } &&
+                context.QuotaEarlyResetNotificationsEnabled && !context.QuotaRecoveryNotificationsEnabled &&
+                cacheResetClient.TotalCalls == Enum.GetValues<QuotaProvider>().Length,
+                "A cached weekly early reset delivers one native request from normal startup reads without changing recovery or polling again");
+            Check(HasDecision(QuotaProvider.Codex, "Alert", "Alert"),
+                "The first-live cached early reset candidate is recorded in its completed local diagnostic row");
+            await context.QuotaMonitor!.StopAsync();
+            await context.ProviderMonitor!.StopAsync();
+            context.Dispose();
+            disposed = true;
+            Check(context.StatusWindow.IsDisposed,
+                "The cached-decrease restart host disposes normally and leaves the outer smoke loop running");
         }
         finally
         {

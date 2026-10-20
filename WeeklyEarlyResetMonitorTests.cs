@@ -18,6 +18,7 @@ internal static class WeeklyEarlyResetMonitorTests
         await LiveComparisonAsync(directory, Check);
         await CancelledReadAsync(directory, Check);
         await UnavailableDiagnosticsAsync(directory, Check);
+        await UndeliveredObservationAsync(directory, Check);
         return assertions;
     }
 
@@ -188,6 +189,23 @@ internal static class WeeklyEarlyResetMonitorTests
             { IsRefreshing: false, Error: "", ContinuityId: 1 }, "Optional diagnostic failure cannot change polling, continuity or success delivery");
         check(Directory.Exists(log.LogPath), "An incompatible diagnostic target is preserved rather than overwritten");
         await monitor.StopAsync();
+    }
+
+    private static async Task UndeliveredObservationAsync(string directory, Action<bool, string> check)
+    {
+        for (int kind = 0; kind < 3; kind++)
+        {
+            var log = new QuotaEarlyResetDiagnosticLog(Path.Combine(directory, "host-decision-" + kind));
+            using var monitor = new AccountQuotaMonitor(new Client((provider, _) => Task.FromResult(Weekly(provider, 17, Now.AddDays(4)))),
+                utcNow: () => Now, earlyResetDiagnosticLog: log);
+            if (kind == 1) monitor.Succeeded += _ => throw new InvalidOperationException("Synthetic unavailable host");
+            if (kind == 2) monitor.Succeeded += _ => { }; // Dispatched host has not yet supplied its decision.
+            await monitor.RefreshOnceAsync(QuotaProvider.Claude);
+            check(Entries(log) is [{ Succeeded: true, Outcome: "Excluded" } row]
+                && row.Reason == (kind == 2 ? "NotEvaluated" : "HostUnavailable"),
+                "A missing/throwing host has a final exclusion, while a successfully dispatched callback may still be pending");
+            await monitor.StopAsync();
+        }
     }
 
     private sealed class Client(Func<QuotaProvider, CancellationToken, Task<QuotaReading>> handler) : IAccountQuotaClient
