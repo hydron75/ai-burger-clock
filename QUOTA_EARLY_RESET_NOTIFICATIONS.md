@@ -47,12 +47,27 @@ OFF에서는 후보가 없고 설정 전환 후 첫 성공은 기존처럼 무�
 - **실제로 시작한 조회 한 번당 JSON 한 줄**이다. `AttemptId`는 조회별 임의 GUID(계정 ID 아님), `Provider`, `AttemptedAtUtc`, `RecordedAtUtc`, `Succeeded`, `Sequence`, `ContinuityId`, `Outcome`, `Reason`만 기록한다. 사용률·리셋 시각·창 이름/ID·계정·예외 원문은 없다.
 - 성공 완료 때 `Excluded/NotEvaluated`를 쓰고 UI 판정이 **같은 줄**을 `Alert/Alert` 또는 `Excluded/사유`로 갱신한다. 실패/시작된 취소는 `ReadFailed/ReadCancelled`, 종료/콜백 불가는 `HostUnavailable`, 설정 epoch 변경은 `SettingChangedBeforeEvaluation`이다. 게이트로 건너뛴 중복 요청은 새 줄을 만들지 않는다.
 - 엔진 사유는 `Disabled`, `InvalidObservation`, `DuplicateObservation`, `NoPreviousSuccess`, `ContinuityChanged`, `ClockNotForward`, `WindowSetChanged`, `NoWeeklyWindow`, `ResetUnavailable`, `InvalidResetWindow`, `NotBeforeScheduledReset`, `UsageNotDecreased`, `Alert`다. 주간 행 중 하나라도 성립하면 `Alert`; 전부 제외면 표시 순서상 첫 주간 행의 제외 사유다. `Disabled`에는 직전 기준 미무장에 따른 첫 성공 억제도 포함한다.
-- `Alert`는 **후보 판정**이지 큐 통과·OS 발송·실제 화면 노출 증명이 아니다. 호스트가 미연결/종료되면 `NotEvaluated`가 남을 수 있다. 쓰기 실패가 조회/알림을 막지 않고, 손상·미지 형식·과대 파일은 보존한다. sibling 임시 파일 원자 교체와 자신의 임시 파일 정리만 수행한다.
+- `Alert`는 **후보 판정**이지 큐 통과·OS 발송·실제 화면 노출 증명이 아니다. 구독자가 없거나 전달 전 종료·모든 콜백 예외이면 `HostUnavailable`로 갱신한다. UI에 전달됐지만 미판정이거나 최종 기록을 연결하지 않은 호스트는 `NotEvaluated`가 남을 수 있다. 쓰기 실패가 조회/알림을 막지 않고, 손상·미지 형식·과대 파일은 보존한다. sibling 임시 파일 원자 교체와 자신의 임시 파일 정리만 수행한다.
 - 로컬 확인: `Get-Content -LiteralPath '<실제 DB 폴더>\logs\quota-early-reset-decisions-v1.jsonl' -Tail 12 | ForEach-Object { $_ | ConvertFrom-Json } | Select-Object Provider,Succeeded,Outcome,Reason`. 실제 파일과 원문은 PR에 첨부하지 않는다.
 
 ### Windows 검증과 Mac 요청
 
-최종 실행 결과는 Draft PR 본문에 기록한다. 합성 응답·임시 DB만 사용하고 실제 계정 조회는 실행하지 않는다. 기존 배포본은 교체하지 않고 검사 뒤 같은 2.8.0 배포본을 다시 실행한다.
+2026-10-20 KST, SDK 10.0.402. 변경 전은 위 main, 최종 C# 검증 소스는 `f69cdfd8ce688744d3daff6140808960a4bbe7b8`이다. 이후 문서 커밋은 C#·검사를 바꾸지 않는다. 합성 응답·임시 DB로만 검사했고 별도 실제 계정 조회 명령은 실행하지 않았다. 검사 후 해시가 변하지 않은 기존 2.8.0 배포본을 다시 실행했다.
+
+| 항목 | 변경 전 | 변경 후 |
+|---|---:|---:|
+| `build.ps1` | 경고 0 / 오류 0 | 경고 0 / 오류 0 |
+| Windows `--self-test` | 254,850 | **255,348 PASS·ExitCode 0** |
+| 공통 | 254,543 | **255,041 PASS** (별도 `Shared.Tests`도 동일) |
+| Windows 전용 self-test | 307 | **307 (동일)** |
+| native `--smoke-test` | 816 PASS·ExitCode 0 | **830 PASS·ExitCode 0** (최종 1회, 51.32초) |
+| PNG / layout JSON | 22 / 16 | **22 / 16 모두 SHA-256 동일** |
+
+공통 순증 **498건** = 새 진단 **551** + 캐시/모니터 통합 **30** + 대기 판정 **16** − 조기 엔진 교차검사 **99**다. 조기 엔진은 `912 − 237 + 138 = 813`: 5시간 후보를 성공으로 보는 3 Provider ×79 조합 237건을 제외하고, 캐시/장기 공백/Reason 등 136건과 golden 2건을 추가했다. 주간의 과거 임계값 경계는 이제 제한이 아님을 확인하도록 전환했고 5시간 제외를 별도로 검사한다. 회복·문구·Combine 검사는 유지했다. Windows 메시지 루프는 새 주간/진단 9건 + 재시작 캐시 검증 5건으로 14건 증가했다.
+
+임시 symlink 생성 권한이 없어 관련 **fixture 1개는 명시적 SKIP**이며 reparse 보호가 이 환경에서 실물 링크로 검증됐다고 주장하지 않는다. 나머지는 통과했다. 초기 baseline 빌드는 NuGet 취약성 데이터 연결이 막혀 NU1900으로 중단됐고, 공식 복원 성공 뒤 경고를 끄지 않고 통과했다. 개발 중 진단 flush 전에 `IsRefreshing=false`가 노출된 경계는 flush 완료 후로 고쳐 기존 조회 검사를 통과했다. 첫 after smoke의 재시작 무알림 검사는 캐시가 실제로는 비제로인 fixture 오류로 실패했다. 실제 `0 → 0` 캐시를 준비하고 별도 `17 → 0` 첫 조회 알림 검사를 추가해 통과했으며 앱 판정이나 대기시간을 늘려 숨기지 않았다.
+
+로컬 증거는 ignored `artifacts/local-weekly-early-reset-20261020/`와 `artifacts/local-weekly-early-reset-verified-20261020/`에 보관한다. 고정 before/after 슬롯의 아이콘 기록 증가는 관측되지 않았다. smoke의 네이티브 알림 요청 검사는 OS 배너 육안/장시간 전달 확인과 다르다. Mac 빌드·실행은 아래 확인 대기이며 버전·배포 파일은 바꾸지 않았다.
 
 Mac이 확인할 사항:
 
