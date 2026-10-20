@@ -18,6 +18,7 @@ internal static class AccountQuotaMonitorTests
         try
         {
             await StateTestsAsync(Check);
+            await ClockFailureReleasesGateTestsAsync(Check);
             await SuccessObservationTestsAsync(directory, Check);
             await SuccessObservationCancellationTestsAsync(Check);
             await SuccessObservationOrderingTestsAsync(Check);
@@ -113,6 +114,32 @@ internal static class AccountQuotaMonitorTests
         check(State(monitor, QuotaProvider.Codex).NextCheckUtc == now.AddMinutes(15),
             "A new failure after recovery restarts backoff at 15 minutes");
         await monitor.StopAsync();
+    }
+
+    private static async Task ClockFailureReleasesGateTestsAsync(Action<bool, string> check)
+    {
+        foreach (QuotaProvider provider in Enum.GetValues<QuotaProvider>())
+        {
+            int clockCalls = 0;
+            var client = new FakeClient((requested, _) => Task.FromResult(Reading(requested, 5)));
+            using var monitor = new AccountQuotaMonitor(client, utcNow: () =>
+                Interlocked.Increment(ref clockCalls) == 1 ? throw new InvalidOperationException("Synthetic clock failure") : Now);
+            var observations = new List<QuotaObservation>();
+            monitor.Succeeded += observations.Add;
+            bool clockFailed = false;
+            try { await monitor.RefreshOnceAsync(provider).WaitAsync(TimeSpan.FromSeconds(5)); }
+            catch (InvalidOperationException error) when (error.Message == "Synthetic clock failure") { clockFailed = true; }
+            check(clockFailed, provider + " reports the original clock exception after acquiring its gate");
+            check(client.Calls(provider) == 0 && observations.Count == 0,
+                "A clock failure before the client call creates neither a fake read nor a success");
+            check(State(monitor, provider) is { IsRefreshing: false, ContinuityId: 1, CheckedAtUtc: null },
+                "An unstarted read leaves the completion state and continuity unchanged");
+            await monitor.RefreshOnceAsync(provider).WaitAsync(TimeSpan.FromSeconds(5));
+            check(client.Calls(provider) == 1 && observations is [{ Sequence: 1, ContinuityId: 1 }],
+                "The same provider can refresh successfully after the failed clock releases its gate");
+            await monitor.StopAsync().WaitAsync(TimeSpan.FromSeconds(5));
+            check(!State(monitor, provider).IsRefreshing, "StopAsync completes without waiting on a leaked gate");
+        }
     }
 
     private static async Task ExhaustedPollingTestsAsync(Action<bool, string> check)

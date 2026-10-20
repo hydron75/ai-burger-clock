@@ -27,6 +27,20 @@ internal static class WeeklyEarlyResetMonitorTests
     private static QuotaReading Weekly(QuotaProvider provider, double used, DateTimeOffset reset) => new(provider,
         [new("synthetic:weekly", "주간", used, reset, 10080)]);
 
+    // Release all three fake Provider reads together, so both restart phases
+    // exercise concurrent delivery rather than depending on accidental SQL timing.
+    private static Client ConcurrentZeroClient()
+    {
+        var ready = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        int arrivals = 0;
+        return new(async (provider, token) =>
+        {
+            if (Interlocked.Increment(ref arrivals) == Enum.GetValues<QuotaProvider>().Length) ready.TrySetResult();
+            await ready.Task.WaitAsync(token).ConfigureAwait(false);
+            return Weekly(provider, 0, Now.AddDays(4.6));
+        });
+    }
+
     private static QuotaEarlyResetDiagnosticEntry[] Entries(QuotaEarlyResetDiagnosticLog log) =>
         File.ReadAllLines(log.LogPath).Select(line => JsonSerializer.Deserialize(line,
             QuotaJsonContext.Default.QuotaEarlyResetDiagnosticEntry)!).ToArray();
@@ -37,7 +51,7 @@ internal static class WeeklyEarlyResetMonitorTests
         foreach (QuotaProvider provider in Enum.GetValues<QuotaProvider>())
             await store.SaveQuotaAsync(new(1, Weekly(provider, 17, Now.AddDays(4.6)), Now.AddDays(-2), []));
         var log = new QuotaEarlyResetDiagnosticLog(Path.Combine(directory, "restart-decisions"));
-        var client = new Client((provider, _) => Task.FromResult(Weekly(provider, 0, Now.AddDays(4.6))));
+        var client = ConcurrentZeroClient();
         using (var monitor = new AccountQuotaMonitor(client, store, () => Now, earlyResetDiagnosticLog: log))
         {
             var engine = new QuotaEarlyResetNotifications();
@@ -45,20 +59,28 @@ internal static class WeeklyEarlyResetMonitorTests
             // Provider callbacks run concurrently. The real hosts serialize these
             // engines on their UI thread; this headless fixture uses the same boundary.
             var engineGate = new object();
+            int activeEngines = 0, overlappingEngines = 0;
             var observations = new ConcurrentQueue<(QuotaObservation Observation, QuotaEarlyResetEvaluation Evaluation, bool Recovery)>();
             monitor.Succeeded += observation =>
             {
                 lock (engineGate)
                 {
-                    var result = engine.Evaluate(observation, true);
-                    bool restoredRecovery = recovery.Observe(observation, true) is not null;
-                    monitor.RecordEarlyResetDecision(observation, result.Alert is null ? "Excluded" : "Alert", result.Reason);
-                    observations.Enqueue((observation, result, restoredRecovery));
+                    if (Interlocked.Increment(ref activeEngines) != 1) Volatile.Write(ref overlappingEngines, 1);
+                    try
+                    {
+                        var result = engine.Evaluate(observation, true);
+                        bool restoredRecovery = recovery.Observe(observation, true) is not null;
+                        monitor.RecordEarlyResetDecision(observation, result.Alert is null ? "Excluded" : "Alert", result.Reason);
+                        observations.Enqueue((observation, result, restoredRecovery));
+                    }
+                    finally { Interlocked.Decrement(ref activeEngines); }
                 }
             };
             monitor.Start();
             await MonitorTests.WaitUntilAsync(() => observations.Count == 3 && monitor.Snapshot().All(state => !state.IsRefreshing), 5000);
             await monitor.StopAsync();
+            check(overlappingEngines == 0 && activeEngines == 0,
+                "Simultaneously released Provider callbacks serialize access to the shared early-reset and recovery engines");
             foreach (var item in observations)
             {
                 check(item.Observation is { Sequence: 1, ContinuityId: 1, PreviousSuccess.ContinuityId: 1 }
@@ -75,23 +97,31 @@ internal static class WeeklyEarlyResetMonitorTests
                 "Each live read has one completed decision row, not a second row from the UI");
         }
 
-        using (var restarted = new AccountQuotaMonitor(client, store, () => Now.AddHours(3), earlyResetDiagnosticLog: log))
+        using (var restarted = new AccountQuotaMonitor(ConcurrentZeroClient(), store, () => Now.AddHours(3), earlyResetDiagnosticLog: log))
         {
             var engine = new QuotaEarlyResetNotifications();
             var engineGate = new object();
+            int activeEngines = 0, overlappingEngines = 0;
             var results = new ConcurrentQueue<QuotaEarlyResetEvaluation>();
             restarted.Succeeded += observation =>
             {
                 lock (engineGate)
                 {
-                    var result = engine.Evaluate(observation, true);
-                    restarted.RecordEarlyResetDecision(observation, result.Alert is null ? "Excluded" : "Alert", result.Reason);
-                    results.Enqueue(result);
+                    if (Interlocked.Increment(ref activeEngines) != 1) Volatile.Write(ref overlappingEngines, 1);
+                    try
+                    {
+                        var result = engine.Evaluate(observation, true);
+                        restarted.RecordEarlyResetDecision(observation, result.Alert is null ? "Excluded" : "Alert", result.Reason);
+                        results.Enqueue(result);
+                    }
+                    finally { Interlocked.Decrement(ref activeEngines); }
                 }
             };
             restarted.Start();
             await MonitorTests.WaitUntilAsync(() => results.Count == 3 && restarted.Snapshot().All(state => !state.IsRefreshing), 5000);
             await restarted.StopAsync();
+            check(overlappingEngines == 0 && activeEngines == 0,
+                "Simultaneously released restart callbacks serialize their shared engine and decision updates");
             check(results.All(result => result.Alert is null && result.Reason == "UsageNotDecreased"),
                 "Successful cache persistence prevents the same zero reading alerting again after restart");
             check(Entries(log).Length == 6 && Entries(log).Count(row => row.Outcome == "Alert") == 3,

@@ -147,10 +147,13 @@ internal sealed class AccountQuotaMonitor : IDisposable
         QuotaObservation? observation = null;
         QuotaPollingDiagnostic? diagnostic = null;
         bool readStarted = false;
-        string attemptId = Guid.NewGuid().ToString("N");
-        DateTimeOffset attemptedAtUtc = utcNow().ToUniversalTime();
+        string attemptId = "";
+        DateTimeOffset attemptedAtUtc = default;
         try
         {
+            // Even an injected clock failure must release the acquired provider gate.
+            attemptId = Guid.NewGuid().ToString("N");
+            attemptedAtUtc = utcNow().ToUniversalTime();
             lock (sync) states[provider] = states[provider] with { IsRefreshing = true, NextCheckUtc = null };
             RaiseChanged();
             QuotaReading? reading = null;
