@@ -5,8 +5,14 @@ namespace AiBurgerClock;
 // A positive ContinuityId identifies consecutive completed live reads in this monitor
 // instance. Any started read ending unsuccessfully, including cancellation, changes it;
 // caches do not carry it. Zero is an unspecified legacy caller, not proof of continuity.
+// PreviousSuccess is a bounded snapshot, not another observation or a recovery baseline.
+// On restart it can come from the last successful cache under the user's single-account
+// assumption; its generation is rebound to this monitor. It is not an account identity.
+internal sealed record QuotaPreviousSuccess(QuotaReading Reading, DateTimeOffset CheckedAtUtc, long ContinuityId);
+
 internal sealed record QuotaObservation(QuotaProvider Provider, long Sequence,
-    DateTimeOffset CheckedAtUtc, QuotaReading Reading, long ContinuityId = 0);
+    DateTimeOffset CheckedAtUtc, QuotaReading Reading, long ContinuityId = 0,
+    QuotaPreviousSuccess? PreviousSuccess = null, string? DiagnosticAttemptId = null);
 
 internal sealed record QuotaRecoveryAlert(QuotaProvider Provider, long Sequence,
     string Title, string Body, IReadOnlyList<string> WindowIds);

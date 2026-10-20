@@ -6,4 +6,5 @@ namespace AiBurgerClock;
 // The Apple SDK's trimming analysis requires explicit serialization metadata.
 [JsonSerializable(typeof(QuotaCache))]
 [JsonSerializable(typeof(QuotaPollingDiagnosticFile))]
+[JsonSerializable(typeof(QuotaEarlyResetDiagnosticEntry))]
 internal partial class QuotaJsonContext : JsonSerializerContext;

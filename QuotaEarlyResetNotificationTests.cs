@@ -12,13 +12,13 @@ internal static class QuotaEarlyResetNotificationTests
             if (!condition) throw new InvalidOperationException("Quota early reset: " + label);
         }
         DateTimeOffset now = new(2026, 1, 15, 12, 0, 0, TimeSpan.Zero);
-        QuotaWindow Row(double used = 60, int? minutes = 300, string id = "synthetic-session", string label = "합성 세션 (5시간)") =>
+        QuotaWindow Row(double used = 60, int? minutes = 10080, string id = "synthetic-weekly", string label = "합성 주간") =>
             new(id, label, used, now.AddHours(2), minutes);
         QuotaObservation Observation(long sequence, DateTimeOffset at, params QuotaWindow[] rows) =>
             new(QuotaProvider.Claude, sequence, at, new(QuotaProvider.Claude, Array.AsReadOnly(rows)), ContinuityId: 1);
         QuotaObservation For(QuotaProvider provider, long sequence, DateTimeOffset at, params QuotaWindow[] rows) =>
             Observation(sequence, at, rows) with { Provider = provider, Reading = new(provider, Array.AsReadOnly(rows)) };
-        QuotaWindow Changed(double used = 0, int? minutes = 300, string id = "synthetic-session", string label = "합성 세션 (5시간)") =>
+        QuotaWindow Changed(double used = 0, int? minutes = 10080, string id = "synthetic-weekly", string label = "합성 주간") =>
             Row(used, minutes, id, label) with { ResetsAtUtc = now.AddHours(4) };
         QuotaEarlyResetNotifications Seed(params QuotaWindow[] rows)
         {
@@ -40,16 +40,20 @@ internal static class QuotaEarlyResetNotificationTests
         Check(QuotaEarlyResetText.SettingKey != QuotaRecoveryText.SettingKey, "recovery consent is not early-reset consent");
         Check(QuotaEarlyResetText.MenuLabel == "한도 조기 초기화 알림", "shared menu label");
         Check(QuotaEarlyResetText.MenuDetail.Contains("기본 꺼짐", StringComparison.Ordinal) &&
-            QuotaEarlyResetText.MenuDetail.Contains("연속 성공 조회", StringComparison.Ordinal) &&
+            QuotaEarlyResetText.MenuDetail.Contains("주간 한도의 직전 성공", StringComparison.Ordinal) &&
             QuotaEarlyResetText.MenuDetail.Contains("추가 조회 없음", StringComparison.Ordinal), "conservative menu scope");
         Check(QuotaEarlyResetText.SettingReadFailed.Contains("꺼짐", StringComparison.Ordinal) &&
             QuotaEarlyResetText.SettingSaveFailed.Contains("기존 설정", StringComparison.Ordinal), "safe setting failure text");
         Check(QuotaEarlyResetText.Saved(true).Contains("다음 성공 조회", StringComparison.Ordinal) &&
             QuotaEarlyResetText.Saved(false) == "한도 조기 초기화 알림을 껐습니다.", "shared setting feedback");
         Check(QuotaEarlyResetText.DeliveryFailed.Contains("OS 알림 설정", StringComparison.Ordinal), "shared delivery failure feedback");
+        Check(QuotaEarlyResetText.MenuDetail == "기본 꺼짐 · 주간 한도의 직전 성공과 비교해 예정 전 사용량 감소를 확인하면 알림 · 추가 조회 없음",
+            "existing menu guidance remains byte-for-byte unchanged");
+        Check(QuotaEarlyResetText.Saved(true) == "한도 조기 초기화 알림을 켰습니다. 다음 성공 조회부터 기준을 설정합니다.",
+            "existing enable feedback remains byte-for-byte unchanged");
 
         foreach (QuotaProvider provider in Enum.GetValues<QuotaProvider>())
-        foreach ((int minutes, string id) in new[] { (300, "synthetic-session"), (10080, "synthetic-weekly"), (10080, "synthetic-model-weekly") })
+        foreach ((int minutes, string id) in new[] { (10080, "synthetic-weekly"), (10080, "synthetic-model-weekly") })
         {
             string name = provider + "/" + id;
             QuotaEarlyResetAlert? alert = Transition(provider, minutes, id);
@@ -58,16 +62,17 @@ internal static class QuotaEarlyResetNotificationTests
                 alert.Windows[0].WindowMinutes == minutes, name + " row and receipt retained");
             Check(alert.Windows[0].PreviousUsedPercent == 60 && alert.Windows[0].UsedPercent == 0 &&
                 alert.Windows[0].PreviousResetUtc == now.AddHours(2) && alert.Windows[0].ResetUtc == now.AddHours(4), name + " local detail values retained");
-            Check(Transition(provider, minutes, id, oldUsed: 30, used: 10) is not null, name + " exact 20-point drop and 10 percent accepted");
-            Check(Transition(provider, minutes, id, oldUsed: Math.BitDecrement(30.0), used: 10) is null, name + " just under 20 points rejected");
-            Check(Transition(provider, minutes, id, oldUsed: Math.BitIncrement(30.0), used: 10) is not null, name + " just over 20 points accepted");
-            Check(Transition(provider, minutes, id, used: Math.BitIncrement(10.0)) is null, name + " just above 10 percent rejected");
-            Check(Transition(provider, minutes, id, used: Math.BitDecrement(10.0)) is not null, name + " just below 10 percent accepted");
-            Check(Transition(provider, minutes, id, oldUsed: 19.999999, used: 0) is null, name + " raw drop does not round to threshold");
-            Check(Transition(provider, minutes, id, oldUsed: 20, used: 0) is not null, name + " exact zero with exact drop accepted");
+            Check(Transition(provider, minutes, id, oldUsed: 30, used: 10) is not null, name + " no old drop threshold remains");
+            Check(Transition(provider, minutes, id, oldUsed: Math.BitDecrement(30.0), used: 10) is not null, name + " below former drop threshold accepted");
+            Check(Transition(provider, minutes, id, oldUsed: Math.BitIncrement(30.0), used: 10) is not null, name + " above former drop threshold accepted");
+            Check(Transition(provider, minutes, id, used: Math.BitIncrement(10.0)) is not null, name + " above former new-usage ceiling accepted");
+            Check(Transition(provider, minutes, id, used: Math.BitDecrement(10.0)) is not null, name + " below former new-usage ceiling accepted");
+            Check(Transition(provider, minutes, id, oldUsed: double.Epsilon, used: 0) is not null, name + " smallest positive raw decrease is not rounded away");
+            Check(Transition(provider, minutes, id, oldUsed: 20, used: 0) is not null, name + " zero after positive usage accepted");
             Check(Transition(provider, minutes, id, oldUsed: 0, used: 0) is null, name + " inactive zero reset drift excluded");
-            Check(Transition(provider, minutes, id, oldUsed: 15, used: 0) is null, name + " small-to-zero reduction deliberately missed");
-            Check(Transition(provider, minutes, id, oldUsed: 60, used: 35) is null, name + " a partial adjustment is not near reset");
+            Check(Transition(provider, minutes, id, oldUsed: 17, used: 0,
+                oldReset: now.AddDays(4.6), reset: now.AddDays(4.6)) is not null, name + " small-to-zero weekly reset with unchanged reset and days remaining");
+            Check(Transition(provider, minutes, id, oldUsed: 60, used: 35) is not null, name + " any strict weekly decrease may indicate early reset");
             Check(Transition(provider, minutes, id, oldUsed: 99.96, used: 0) is not null, name + " raw nonexhaustion may still reset early");
             Check(Transition(provider, minutes, id, oldUsed: 100, used: 0) is not null, name + " exhausted reset also qualifies");
 
@@ -76,17 +81,17 @@ internal static class QuotaEarlyResetNotificationTests
                 DateTimeOffset oldReset = now.AddHours(1).AddMinutes(5).AddTicks(ticks);
                 Check((Transition(provider, minutes, id, oldReset: oldReset) is not null) == (ticks > 0), name + " five-minute margin ticks " + ticks);
                 DateTimeOffset later = now.AddHours(2).AddMinutes(1).AddTicks(ticks);
-                Check((Transition(provider, minutes, id, reset: later) is not null) == (ticks > 0), name + " forward one-minute drift ticks " + ticks);
+                Check(Transition(provider, minutes, id, reset: later) is not null, name + " forward reset drift has no threshold " + ticks);
                 DateTimeOffset earlier = now.AddHours(2).AddMinutes(-1).AddTicks(-ticks);
-                Check((Transition(provider, minutes, id, reset: earlier) is not null) == (ticks > 0), name + " backward one-minute drift ticks " + ticks);
+                Check(Transition(provider, minutes, id, reset: earlier) is not null, name + " backward reset drift has no threshold " + ticks);
                 TimeSpan gap = TimeSpan.FromMinutes(90) + TimeSpan.FromTicks(ticks);
-                Check((Transition(provider, minutes, id, gap: gap) is not null) == (ticks <= 0), name + " ninety-minute continuity ticks " + ticks);
+                Check(Transition(provider, minutes, id, gap: gap) is not null, name + " long success interval has no ninety-minute ceiling " + ticks);
             }
             Check(Transition(provider, minutes, id, gap: TimeSpan.Zero) is null, name + " equal receipts cannot prove chronology");
             Check(Transition(provider, minutes, id, gap: TimeSpan.FromTicks(-1)) is null, name + " backwards clock silent rebase");
             Check(Transition(provider, minutes, id, oldReset: now.AddHours(4), reset: now.AddHours(3)) is not null,
                 name + " reset may move earlier without claiming cause");
-            Check(Transition(provider, minutes, id, reset: now.AddHours(2)) is null, name + " unchanged reset excluded");
+            Check(Transition(provider, minutes, id, reset: now.AddHours(2)) is not null, name + " unchanged reset accepted");
             Check(Transition(provider, minutes, id, oldReset: now.AddHours(1)) is null, name + " normal scheduled reset excluded");
             Check(Transition(provider, minutes, id, oldReset: now.AddMinutes(59)) is null, name + " already elapsed reset excluded");
             Check(Transition(provider, minutes, id, oldReset: now) is null, name + " old expired window excluded");
@@ -139,7 +144,7 @@ internal static class QuotaEarlyResetNotificationTests
         Check(independent.Recent((QuotaProvider)999) is null, "unknown Provider has no history");
 
         var changedPeriod = Seed(Row());
-        Check(changedPeriod.Observe(Observation(2, now.AddHours(1), Changed(minutes: 10080)), true) is null, "duration change rebases");
+        Check(changedPeriod.Observe(Observation(2, now.AddHours(1), Changed(minutes: 300)), true) is null, "duration change rebases");
         Check(changedPeriod.Observe(Observation(3, now.AddMinutes(61), Changed()), true) is null, "returning duration cannot reuse old state");
         var changedScope = Seed(Row());
         Check(changedScope.Observe(Observation(2, now.AddHours(1), Changed(id: "synthetic-other-scope")), true) is null, "scope change rebases");
@@ -152,15 +157,15 @@ internal static class QuotaEarlyResetNotificationTests
         Check(removed.Observe(Observation(3, now.AddMinutes(61), Changed(), Row(id: "synthetic-extra")), true) is null,
             "missing row reappearance suppresses old comparison");
         var otherPeriod = Seed(Row(), Row(id: "synthetic-extra"));
-        Check(otherPeriod.Observe(Observation(2, now.AddHours(1), Changed(), Row(minutes: 10080, id: "synthetic-extra")), true) is null,
+        Check(otherPeriod.Observe(Observation(2, now.AddHours(1), Changed(), Row(minutes: 300, id: "synthetic-extra")), true) is null,
             "unrelated duration change rebases whole Provider");
         var reordered = Seed(Row(), Row(id: "synthetic-extra"));
         Check(reordered.Observe(Observation(2, now.AddHours(1), Changed(id: "synthetic-extra"), Changed()), true)?.Windows
-            .Select(window => window.Id).SequenceEqual(new[] { "synthetic-extra", "synthetic-session" }) == true,
+            .Select(window => window.Id).SequenceEqual(new[] { "synthetic-extra", "synthetic-weekly" }) == true,
             "unchanged keys may reorder and grouped result preserves current display order");
         var unknownOther = Seed(Row(), Row(minutes: null, id: "synthetic-extra"));
         Check(unknownOther.Observe(Observation(2, now.AddHours(1), Changed(), Changed(minutes: null, id: "synthetic-extra")), true)?.Windows
-            .Select(window => window.Id).SequenceEqual(new[] { "synthetic-session" }) == true,
+            .Select(window => window.Id).SequenceEqual(new[] { "synthetic-weekly" }) == true,
             "unchanged unknown-period row stays in key set but cannot itself create a candidate");
 
         var legacy = new QuotaEarlyResetNotifications();
@@ -185,7 +190,7 @@ internal static class QuotaEarlyResetNotificationTests
         Check(skipped.Observe(Observation(2, now.AddMinutes(1), Changed()), true) is not null,
             "skipped busy refresh does not change success sequence or continuity");
         var missingSuccess = Seed(Row());
-        Check(missingSuccess.Observe(Observation(3, now.AddMinutes(1), Changed()), true) is null, "missing delivered success cannot be bridged");
+        Check(missingSuccess.Observe(Observation(3, now.AddMinutes(1), Changed()), true) is not null, "sequence gaps alone do not discard a verified same-generation comparison");
         Check(missingSuccess.Observe(Observation(4, now.AddMinutes(2), Row()), true) is null, "gap rebase establishes current state");
         Check(missingSuccess.Observe(Observation(5, now.AddMinutes(3), Changed()), true) is not null,
             "subsequent adjacent observations work after a sequence gap");
@@ -197,7 +202,7 @@ internal static class QuotaEarlyResetNotificationTests
         Check(offsets.Observe(Observation(2, now.AddHours(1).ToOffset(TimeSpan.FromHours(-7)), Changed()), true) is not null,
             "receipt comparisons use instants, not display offset");
         var stale = Seed(Row());
-        Check(stale.Observe(Observation(2, now.AddMinutes(91), Changed()), true) is null, "long-success-gap rebase silent");
+        Check(stale.Observe(Observation(2, now.AddMinutes(91), Changed()), true) is not null, "long-success-gap weekly decrease may alert");
         Check(stale.Observe(Observation(3, now.AddMinutes(92), Changed()), true) is null, "long gap cannot replay old decrease later");
 
         var enabled = new QuotaEarlyResetNotifications();
@@ -271,7 +276,7 @@ internal static class QuotaEarlyResetNotificationTests
         Check(detail.Contains("현재 한도 값이 아닌 당시의 확인 기록입니다", StringComparison.Ordinal),
             "retained event detail is explicitly historical rather than current quota");
         Check(detail.Contains("실제 초기화 시각·원인이나 전체 계정의 초기화를 확인한 것은 아닙니다", StringComparison.Ordinal) &&
-            !detail.Contains("synthetic-session", StringComparison.Ordinal), "detail explains unsupported cause and hides internal ID");
+            !detail.Contains("synthetic-weekly", StringComparison.Ordinal), "detail explains unsupported cause and hides internal ID");
         Check(QuotaEarlyResetText.Detail(detailAlert, detailAlert.CheckedAtUtc.AddTicks(-1)).Contains("\n확인 시각 확인 필요\n", StringComparison.Ordinal),
             "detail clock reversal has exact safe age wording and no negative duration");
         Check(QuotaEarlyResetText.Detail(detailAlert, detailAlert.CheckedAtUtc).Contains("\n방금 전 확인\n", StringComparison.Ordinal),
@@ -287,9 +292,9 @@ internal static class QuotaEarlyResetNotificationTests
 
         var recovery = new QuotaRecoveryNotifications();
         var early = new QuotaEarlyResetNotifications();
-        QuotaObservation exhausted = Observation(1, now, Row(100), Row(100, 10080, "synthetic-weekly", "합성 주간"));
+        QuotaObservation exhausted = Observation(1, now, Row(100), Row(100, 300, "synthetic-session", "합성 5시간"));
         Check(recovery.Observe(exhausted, true) is null && early.Observe(exhausted, true) is null, "combined engines seed independently");
-        QuotaObservation recovered = Observation(2, now.AddHours(1), Changed(), Row(20, 10080, "synthetic-weekly", "합성 주간"));
+        QuotaObservation recovered = Observation(2, now.AddHours(1), Changed(), Row(20, 300, "synthetic-session", "합성 5시간"));
         QuotaRecoveryAlert? recoveryAlert = recovery.Observe(recovered, true);
         QuotaEarlyResetAlert? earlyAlert = early.Observe(recovered, true);
         Check(recoveryAlert?.WindowIds.Count == 2 && earlyAlert?.Windows.Count == 1, "same response can qualify for both causes");
@@ -300,7 +305,7 @@ internal static class QuotaEarlyResetNotificationTests
             combined.Body.Contains("다른 한도에도 잔여량이 확인되었습니다", StringComparison.Ordinal), "early inference takes precedence with distinct recovered row summary");
         Check(!combined.Body.Contains('%') && !combined.Body.Contains("2026", StringComparison.Ordinal) &&
             !combined.Body.Contains("synthetic-", StringComparison.Ordinal), "combined banner remains privacy-safe");
-        QuotaNotificationAlert? sameRows = QuotaNotificationText.Combine(recoveryAlert! with { WindowIds = Array.AsReadOnly(new[] { "synthetic-session" }) }, earlyAlert);
+        QuotaNotificationAlert? sameRows = QuotaNotificationText.Combine(recoveryAlert! with { WindowIds = Array.AsReadOnly(new[] { "synthetic-weekly" }) }, earlyAlert);
         Check(sameRows is not null && sameRows.Body == QuotaEarlyResetText.Body(earlyAlert!), "same recovered row not duplicated in body");
         QuotaNotificationAlert? legacyOnly = QuotaNotificationText.Combine(recoveryAlert, null);
         Check(legacyOnly is not null && legacyOnly.Title == recoveryAlert!.Title && legacyOnly.Body == recoveryAlert.Body && legacyOnly.EarlyReset is null,
@@ -316,6 +321,139 @@ internal static class QuotaEarlyResetNotificationTests
         QuotaEarlyResetAlert unusableLabel = detailAlert with
             { Windows = Array.AsReadOnly(new[] { detailAlert.Windows[0] with { Label = "\r\n\t" } }) };
         Check(QuotaEarlyResetText.Body(unusableLabel).StartsWith("확인한 한도", StringComparison.Ordinal), "empty sanitized label uses generic subject");
+
+        // A PreviousSuccess snapshot may be supplied by the monitor on the first live
+        // read after restart. It is not an observation, account identity or recovery seed.
+        QuotaObservation Cached(QuotaProvider provider, long sequence = 1, double oldUsed = 17, double used = 0,
+            long previousContinuity = 1, long currentContinuity = 1, DateTimeOffset? checkedAt = null,
+            QuotaWindow? before = null, QuotaWindow? after = null) =>
+            For(provider, sequence, checkedAt ?? now.AddHours(1), after ?? (Changed(used) with { ResetsAtUtc = now.AddDays(4.6) })) with
+            {
+                ContinuityId = currentContinuity,
+                PreviousSuccess = new(new(provider, Array.AsReadOnly(new[]
+                    { before ?? (Row(oldUsed) with { ResetsAtUtc = now.AddDays(4.6) }) })), now, previousContinuity)
+            };
+        void Outcome(QuotaObservation observation, string reason, string label, bool enabled = true)
+        {
+            QuotaEarlyResetEvaluation evaluation = new QuotaEarlyResetNotifications().Evaluate(observation, enabled);
+            Check(evaluation.Reason == reason && (evaluation.Alert is not null) == (reason == "Alert"), label);
+        }
+        foreach (QuotaProvider provider in Enum.GetValues<QuotaProvider>())
+        {
+            QuotaObservation cached = Cached(provider);
+            var startup = new QuotaEarlyResetNotifications();
+            QuotaEarlyResetEvaluation detected = startup.Evaluate(cached, true);
+            Check(detected is { Reason: "Alert", Alert: not null } && detected.Alert.Sequence == 1 &&
+                detected.Alert.Windows[0] is { PreviousUsedPercent: 17, UsedPercent: 0 } &&
+                detected.Alert.Windows[0].PreviousResetUtc == detected.Alert.Windows[0].ResetUtc,
+                provider + " first live weekly drop compares verified cached success with unchanged reset");
+            Check(QuotaEarlyResetText.Body(detected.Alert!) == "합성 주간 한도가 예정보다 일찍 초기화된 것으로 보입니다." +
+                " 초기화 원인은 확인되지 않았습니다. 다른 한도와 서비스 상태에 따라 실제 사용은 제한될 수 있습니다.",
+                provider + " existing banner body exact golden");
+            Check(startup.Evaluate(cached, true).Reason == "DuplicateObservation", provider + " same live sequence is not replayed");
+            QuotaObservation zeroAgain = cached with
+            {
+                Sequence = 2, CheckedAtUtc = now.AddHours(2),
+                PreviousSuccess = new(cached.Reading, cached.CheckedAtUtc, 1)
+            };
+            Check(startup.Evaluate(zeroAgain, true).Reason == "UsageNotDecreased", provider + " zero-to-zero refresh never repeats cached drop");
+            Check(new QuotaEarlyResetNotifications().Evaluate(zeroAgain with { Sequence = 1 }, true).Reason == "UsageNotDecreased",
+                provider + " updated zero cache prevents repeat after a later restart without a notification ledger");
+            Outcome(Cached(provider, checkedAt: now.AddHours(12)), "Alert", provider + " long sleep over ninety minutes retains future weekly evidence");
+            Outcome(Cached(provider, oldUsed: 79, used: 78.999999), "Alert", provider + " any strict raw weekly decrease above ten percent qualifies");
+            Outcome(Cached(provider, oldUsed: 0, used: 0), "UsageNotDecreased", provider + " unused moving weekly reset is quiet");
+            Outcome(Cached(provider, oldUsed: 17, used: 17), "UsageNotDecreased", provider + " equal positive usage is quiet");
+            Outcome(Cached(provider, oldUsed: 17, used: Math.BitIncrement(17.0)), "UsageNotDecreased", provider + " increasing usage is quiet");
+            Outcome(cached, "Disabled", provider + " cached decrease does not bypass consent", enabled: false);
+            Outcome(For(provider, 1, now.AddHours(1), Changed()), "NoPreviousSuccess", provider + " uncached first live read seeds silently");
+            foreach (long generation in new[] { 0L, 2L })
+            {
+                Outcome(Cached(provider, previousContinuity: generation), "ContinuityChanged", provider + " cache previous generation guard " + generation);
+                Outcome(Cached(provider, currentContinuity: generation), "ContinuityChanged", provider + " current live generation guard " + generation);
+            }
+            Outcome(Cached(provider, previousContinuity: 2, currentContinuity: 2), "Alert", provider + " new verified same-generation successes may compare");
+            Outcome(cached with { CheckedAtUtc = now }, "ClockNotForward", provider + " equal cached and live receipts are not chronological");
+            Outcome(cached with { CheckedAtUtc = now.AddTicks(-1) }, "ClockNotForward", provider + " backwards receipt never proves reset");
+            Outcome(Cached(provider, after: Changed(id: "synthetic-new-scope")), "WindowSetChanged", provider + " changed cached window scope rebases");
+            Outcome(Cached(provider, after: Changed(minutes: 300)), "WindowSetChanged", provider + " changed cached duration rebases");
+            foreach (int minutes in new[] { 300, 1440, 10079, 10081 })
+                Outcome(Cached(provider, before: Row(minutes: minutes), after: Changed(minutes: minutes)), "NoWeeklyWindow",
+                    provider + " nonweekly duration excluded without label inference " + minutes);
+            Outcome(Cached(provider, before: Row() with { ResetsAtUtc = null }), "ResetUnavailable", provider + " missing cached reset is quiet");
+            Outcome(Cached(provider, after: Changed() with { ResetsAtUtc = null }), "ResetUnavailable", provider + " missing live reset is quiet");
+            Outcome(Cached(provider, before: Row() with { ResetsAtUtc = now }), "InvalidResetWindow", provider + " expired reset at old success is invalid");
+            Outcome(Cached(provider, after: Changed() with { ResetsAtUtc = now.AddHours(1) }), "InvalidResetWindow", provider + " expired reset at live success is invalid");
+            Outcome(Cached(provider, before: Row() with { ResetsAtUtc = now.AddDays(7).AddTicks(1) }), "InvalidResetWindow",
+                provider + " cache reset cannot exceed weekly length");
+            Outcome(Cached(provider, after: Changed() with { ResetsAtUtc = now.AddHours(1).AddDays(7).AddTicks(1) }), "InvalidResetWindow",
+                provider + " live reset cannot exceed weekly length");
+            foreach (long ticks in new[] { -1L, 0L, 1L })
+                Outcome(Cached(provider, before: Row() with { ResetsAtUtc = now.AddHours(1).AddMinutes(5).AddTicks(ticks) }),
+                    ticks > 0 ? "Alert" : "NotBeforeScheduledReset", provider + " cached five-minute margin tick " + ticks);
+            Outcome(Cached(provider, before: Row() with { ResetsAtUtc = now.AddHours(1) }), "NotBeforeScheduledReset",
+                provider + " normal scheduled reset at live receipt is not early");
+
+            var toggled = new QuotaEarlyResetNotifications();
+            toggled.Reset();
+            Check(toggled.Evaluate(cached, true).Reason == "NoPreviousSuccess" && toggled.Recent(provider) is null,
+                provider + " toggle blocks cached first-live comparison unlike construction");
+            Check(toggled.Evaluate(zeroAgain, true).Reason == "UsageNotDecreased", provider + " post-toggle baseline does not replay past drop");
+            var off = new QuotaEarlyResetNotifications();
+            Check(off.Evaluate(cached, false).Reason == "Disabled", provider + " disabled startup accepts a silent baseline");
+            Check(off.Evaluate(cached with { Sequence = 2, CheckedAtUtc = now.AddMinutes(61) }, true).Reason == "Disabled",
+                provider + " enabling cannot compare an unarmed baseline even with supplied previous success");
+
+            var actualPrevious = new QuotaEarlyResetNotifications();
+            Check(actualPrevious.Observe(For(provider, 1, now, Row(90)), true) is null, provider + " legacy callback seeds memory");
+            Check(actualPrevious.Evaluate(cached with
+            {
+                Sequence = 8,
+                PreviousSuccess = cached.PreviousSuccess! with
+                {
+                    Reading = new(provider, Array.AsReadOnly(new[] { Row(0) with { ResetsAtUtc = now.AddDays(4.6) } }))
+                }
+            }, true).Reason == "UsageNotDecreased", provider + " actual previous success supersedes older UI memory across skipped callbacks");
+        }
+        var missingSource = new QuotaEarlyResetNotifications();
+        Check(missingSource.Evaluate(Observation(1, now, Row()), true).Reason == "NoPreviousSuccess", "fixed reason for initial live-only baseline");
+        Check(missingSource.Evaluate(Observation(1, now.AddMinutes(1), Changed()), true).Reason == "DuplicateObservation", "fixed reason for duplicate sequence");
+        Outcome(Observation(0, now, Row()), "InvalidObservation", "fixed reason for invalid current observation");
+        Outcome(Cached(QuotaProvider.Claude) with { PreviousSuccess = new(null!, now, 1) }, "InvalidObservation", "invalid previous reading is rejected");
+        Outcome(Cached(QuotaProvider.Claude) with { PreviousSuccess = new(new(QuotaProvider.Gemini, [Row()]), now, 1) },
+            "InvalidObservation", "previous Provider cannot cross-compare");
+        Outcome(Cached(QuotaProvider.Claude) with { PreviousSuccess = new(new(QuotaProvider.Claude, [Row()]), now, -1) },
+            "InvalidObservation", "negative previous generation is malformed");
+        Outcome(Cached(QuotaProvider.Claude) with { PreviousSuccess = new(new(QuotaProvider.Claude, [Row(), Row()]), now, 1) },
+            "InvalidObservation", "duplicate cached window identities are malformed");
+        Outcome(Cached(QuotaProvider.Claude) with { PreviousSuccess = new(new(QuotaProvider.Claude, [Row(double.NaN)]), now, 1) },
+            "InvalidObservation", "invalid previous raw usage is malformed");
+        Outcome(Cached(QuotaProvider.Claude) with
+        {
+            PreviousSuccess = new(new(QuotaProvider.Claude, [Row()]), DateTimeOffset.UnixEpoch.AddTicks(-1), 1)
+        }, "InvalidObservation", "invalid previous success time is malformed");
+        Outcome(Cached(QuotaProvider.Claude) with
+        {
+            Reading = new(QuotaProvider.Claude, [Changed() with { ResetsAtUtc = null }, Changed(id: "synthetic-second")]),
+            PreviousSuccess = new(new(QuotaProvider.Claude, [Row(), Row(0, id: "synthetic-second")]), now, 1)
+        }, "ResetUnavailable", "multiple nonqualifying weekly rows report the first weekly failure deterministically");
+        Outcome(Cached(QuotaProvider.Claude) with
+        {
+            Reading = new(QuotaProvider.Claude, [Changed() with { ResetsAtUtc = null }, Changed(id: "synthetic-second")]),
+            PreviousSuccess = new(new(QuotaProvider.Claude, [Row(), Row(id: "synthetic-second")]), now, 1)
+        }, "Alert", "one qualifying weekly row wins over other-row exclusions");
+        var cacheRows = new List<QuotaWindow> { Row(17) with { ResetsAtUtc = now.AddDays(4.6) } };
+        var liveRows = new List<QuotaWindow> { Changed() with { ResetsAtUtc = now.AddDays(4.6) } };
+        var protectedEngine = new QuotaEarlyResetNotifications();
+        QuotaEarlyResetAlert? protectedAlert = protectedEngine.Observe(Cached(QuotaProvider.Claude) with
+        {
+            Reading = new(QuotaProvider.Claude, liveRows),
+            PreviousSuccess = new(new(QuotaProvider.Claude, cacheRows), now, 1)
+        }, true);
+        cacheRows[0] = Row(98);
+        liveRows[0] = Changed(98);
+        Check(protectedAlert?.Windows[0] is { PreviousUsedPercent: 17, UsedPercent: 0 }, "retained alert owns cached and live scalar snapshots");
+        Check(protectedEngine.Observe(Observation(2, now.AddHours(2), Changed() with { ResetsAtUtc = now.AddDays(4.6) }), true) is null,
+            "caller mutation cannot rewrite a cached-comparison live baseline or repeat a decrease");
 
         var invalidFixtures = new List<QuotaObservation>
         {
