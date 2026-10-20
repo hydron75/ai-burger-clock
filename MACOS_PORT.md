@@ -1852,3 +1852,49 @@ CLI 자동 업데이트 스크립트의 .NET 점검(저장소 밖, 06:10)이 202
 ### 수행하지 않은 검증
 - 실제 VoiceOver 낭독, 실제 계정 화면, 시스템 큰 글자·화면 배율, 항상 표시 스크롤러 환경(55절과 같음).
 - 장시간 사용·재부팅 후 자동 실행.
+
+## 57. 주간 조기 초기화 판정 단순화(#82) Mac 확인·전환
+
+2026-10-20 KST. 범위: **Mac 확인·전환(Mac 코드·검사·문서)**. 공통 원본은 Windows가 #82에서 바꾼 것을 그대로 쓰고 Mac이 고치지 않았다. **Mac 버전(0.8.3)과 실행 중인 앱·저장소 경로 번들은 바꾸지 않았다**(빌드·검사는 모두 저장소 밖 임시 사본). 공통 규칙은 [QUOTA_EARLY_RESET_NOTIFICATIONS](QUOTA_EARLY_RESET_NOTIFICATIONS.md)에 있고, 여기는 Mac 연결과 검증만 적는다.
+
+### 공통 변경에서 Mac이 받는 것
+
+| 항목 | 내용 |
+|---|---|
+| 판정 | 주간(10,080분)·모델 전용 주간 창만, 직전 성공의 예정 리셋이 5분 넘게 남았고 사용량이 **엄격히 감소**하면 후보. 20%p·10%·90분·리셋 변경 조건 제거, 5시간 창 제외. 회복 알림은 그대로 |
+| 캐시 | 모니터가 `PreviousSuccess`(조회 전 마지막 성공)를 전달. 앱을 다시 시작한 뒤 첫 성공은 캐시와 비교, 설정 OFF→ON 뒤 첫 성공은 기준만 설정 |
+| 판정 기록 | 조회마다 한 줄 `logs/quota-early-reset-decisions-v1.jsonl`(256건·128KiB, 사용률·리셋 시각·이름 없음). 호스트가 같은 줄을 `Alert`/`Excluded`와 고정 사유로 한 번 마무리 |
+| 호환 | `Observe`는 `Evaluate`의 호환 wrapper로 남고 `QuotaObservation`의 새 필드는 선택. Mac 소스는 그대로 컴파일됨 |
+
+### Mac 변경
+
+| 항목 | 내용 |
+|---|---|
+| 컨트롤러 | `MacQuotaNotifications.Process`가 `Evaluate`를 호출하고 결과를 `monitor.RecordEarlyResetDecision`으로 기록(smoke는 생성자의 `recordDecision`으로 가로챔). 기존 흐름은 그대로: `Succeeded` 콜백은 종료 확인 + 큐 + `BeginInvokeOnMainThread`만 하고, 조회·Stop을 동기 대기하지 않음 |
+| 기록 사유 | 판정 결과(엔진의 고정 사유), 종료·콜백 중 종료 = `HostUnavailable`, 큐에 있는 동안 설정이 바뀜 = `SettingChangedBeforeEvaluation`, `Detach`로 버려진 대기 응답 = `HostUnavailable`. 모니터가 호스트 없이 끝난 응답도 `HostUnavailable` |
+| 그대로 | 배너·메뉴명·저장 피드백·독립 설정·회복과 한 배너 합침·대기열·6.5초 간격·최근 상세 1건·VoiceOver·막대/행/팝오버 높이. 메뉴 설명 한 줄만 공통 `MenuDetail`의 새 문구 |
+| README | 조기 초기화 알림 설명(알리는 때·한계)과 판정 기록 안내를 새 규칙으로 갱신. 규칙 변화는 이 변경을 포함해 빌드한 앱부터 적용된다고 명시 |
+
+### smoke 변경 (모두 합성 데이터·가짜 시계)
+
+- **엔진(59개)**: 주간 fixture로 교체. 60→5, 17→0(4일 넘게 남음), 10.1%, 1%p 감소, 같은 리셋 시각, 30초 리셋 변경, 간격 제한 없음(91분·30시간)이 모두 후보. 사용량 같음·증가·0%→0%, 이전 리셋 5분 이내(5.1분은 후보), 이미 지난 예정 리셋, 5시간 창, 창 길이·구성 변경, 연속성 ID 변경, 중복 순번, OFF는 제외. 고정 사유(`Alert`·`UsageNotDecreased`·`NotBeforeScheduledReset`·`WindowSetChanged`·`NoWeeklyWindow`·`ContinuityChanged`·`DuplicateObservation`·`NoPreviousSuccess`·`Disabled`)를 확인. 캐시 17%→첫 성공 0%는 후보, 토글 뒤 같은 입력·다른 연속성 캐시·0%→0%는 제외. 실제 `AccountQuotaMonitor`가 `PreviousSuccess`와 세대를 전달하는지와 실패 뒤 연속성 단절 확인.
+- **컨트롤러**: 주간 1%p 감소(리셋 그대로)와 5시간 창 제외, 회복 5시간·실패 뒤 회복, 한 배너 합침(다른 창은 5시간 fixture), 대기 배너 폐기에서 90분 만료를 **제거**(91분 뒤에도 사실이면 표시)하고 이전 예정 리셋 경과·사용량 재상승 폐기를 추가, 재시작 캐시 vs 토글, 결정 사유 기록(OFF=`Disabled`, 첫 성공=`NoPreviousSuccess`, 알림=`Alert/Alert`, 같은 값=`UsageNotDecreased`, 종료·토글·`Detach` 사유).
+- **결정 기록 통합**: 실제 모니터(임시 SQLite, 가짜 시계)와 Mac 컨트롤러로 5번 조회 → 행 5개가 `NoPreviousSuccess`/`Alert`/`UsageNotDecreased`/`ReadFailed`/`ContinuityChanged`로 한 번씩 마무리되고, 필드는 9개 고정, 사용률·시각·창 이름·임시 파일 없음, 배너는 알림 행 하나에 한 건.
+- **폴링 진단 smoke**: `logs` 폴더에 예약 진단 파일과 새 판정 기록 파일만 허용(임시 파일이 남지 않았는지는 그대로 확인). 새 파일이 생기며 기존 검사가 실패하던 것을 고쳤다.
+
+### 검증 (이 Mac, 옵션 없는 빌드, 임시 사본, 소스 `fca97e12c780dfd41724762845482e90fdf43bab`)
+
+| 항목 | 결과 |
+|---|---|
+| 도구 | Xcode 27.1(27A9275), .NET SDK 10.0.402, .NET macOS 워크로드 27.0.10742(요구 Xcode 27.1). `--allow-xcode-mismatch` 사용 안 함 |
+| Shared.Tests | `PASS ALL SHARED: 255,041 assertions` |
+| `Mac/build.sh` | 경고 0 / 오류 0, `codesign --verify --deep --strict` 통과 |
+| `--smoke-test` | PASS / 종료 코드 0, FAIL 0, 팝오버 380×821pt 그대로, 한도 행 이름/값·Gemini 모델·회복 시나리오 포함 |
+| **symlink fixture** | **실제로 실행됨(SKIP 아님).** 이 Mac의 임시 폴더(`$TMPDIR`)에서 링크 생성이 가능했고 공통 검사 출력에 `SKIP` 줄이 0개였다. 실제 링크로 기존 기록의 append·update 거부와 대상 파일 불변까지 검증됨(NTFS reparse가 아니라 macOS symlink 기준) |
+| 변이 검사 | 판정 기록 호출 제거, 사용량 조건을 20%p로 되돌림, 설정 변경 사유 기록 제거 → 각각 smoke가 종료 코드 1로 실패 |
+| 실행 중인 앱 | 0.8.3 번들·실행 파일 해시(56절 기록, `c4d615d0…`)와 저장소 경로 번들은 변경 없음 |
+
+### 수행하지 않은 검증
+- 실제 계정 응답, 실제 OS 배너·집중 모드, 실제 VoiceOver 낭독, 장시간 사용·절전 복귀·재시작 공백(캐시 비교는 합성 캐시로만).
+- 사용량 감소가 서버 보정인지 실제 초기화인지 구분하는 것은 공통 PR의 설명대로 이번 규칙으로 판별할 수 없다.
+- Mac 앱에 반영하지 않았다(새 빌드·배포 없음). 규칙 변화는 다음 Mac 빌드부터 적용된다.
