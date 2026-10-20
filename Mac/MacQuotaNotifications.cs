@@ -78,11 +78,35 @@ internal sealed class MacQuotaNotifications
     private readonly Dictionary<QuotaProvider, Pending> pending = [];
     // Every accepted live response is delivered, in order. Unlike a coalesced display refresh, dropping
     // one could hide the exhausted -> recovered pair or an early-reset pair.
-    private readonly ConcurrentQueue<(int RecoveryEpoch, int EarlyResetEpoch, QuotaObservation Observation)> queue = new();
-    private AccountQuotaMonitor? monitor;
-    private bool detached;
+    private readonly ConcurrentQueue<Handoff> queue = new();
+    // The subscription that is live now. A subscription keeps the monitor that produced its responses, so a
+    // callback the monitor had already copied into its invocation list can still close its own decision-log row
+    // after Detach, without ever touching the engines or a later subscription (the same monitor included).
+    private Subscription? current = new(null);
+    private static readonly Subscription Ended = new(null);
     private int drainScheduled;
     private long notBefore;
+
+    private sealed class Subscription(AccountQuotaMonitor? monitor)
+    {
+        private int live = 1;
+        internal AccountQuotaMonitor? Monitor { get; } = monitor;
+        internal Action<QuotaObservation>? Handler { get; set; }
+        internal bool Live => Volatile.Read(ref live) == 1;
+        internal void End() => Volatile.Write(ref live, 0);
+    }
+
+    // One accepted response on its way to the main thread. Exactly one party claims it: the main-thread pass
+    // that evaluates it, or whoever closes it as not evaluated (Detach, or the callback that raced with Detach).
+    private sealed class Handoff(Subscription subscription, int recoveryEpoch, int earlyResetEpoch, QuotaObservation observation)
+    {
+        private int claimed;
+        internal Subscription Subscription { get; } = subscription;
+        internal int RecoveryEpoch { get; } = recoveryEpoch;
+        internal int EarlyResetEpoch { get; } = earlyResetEpoch;
+        internal QuotaObservation Observation { get; } = observation;
+        internal bool TryClaim() => Interlocked.Exchange(ref claimed, 1) == 0;
+    }
 
     internal MacQuotaNotifications(Func<bool> isStopping, Func<bool, Task> saveRecovery, Func<bool, Task> saveEarlyReset,
         Func<QuotaProvider, QuotaState?> stateOf, Action<QuotaNotificationAlert> show, Action<string, bool> feedback,
@@ -162,42 +186,56 @@ internal sealed class MacQuotaNotifications
     internal void Attach(AccountQuotaMonitor target)
     {
         Detach();
-        detached = false;
-        monitor = target;
-        target.Succeeded += OnSucceeded;
+        var subscription = new Subscription(target);
+        subscription.Handler = observation => OnSucceeded(subscription, observation);
+        Volatile.Write(ref current, subscription);
+        target.Succeeded += subscription.Handler;
     }
 
     // Unsubscribes and invalidates everything that is queued or still being delivered. Used at shutdown
     // (before the monitors are awaited) and by the smoke run.
     internal void Detach()
     {
-        detached = true;
+        // End the subscription first: from here on a response is closed, never evaluated.
+        Subscription? ended = Interlocked.Exchange(ref current, null);
+        ended?.End();
         Interlocked.Increment(ref recovery.Epoch);
         Interlocked.Increment(ref earlyReset.Epoch);
-        if (monitor is { } attached) attached.Succeeded -= OnSucceeded;
+        if (ended?.Monitor is { } attached && ended.Handler is { } handler) attached.Succeeded -= handler;
         pending.Clear();
         // A response that was handed over but not evaluated is closed in the decision log, not left open.
-        while (queue.TryDequeue(out var dropped)) Record(dropped.Observation, "Excluded", "HostUnavailable");
-        monitor = null;
+        while (queue.TryDequeue(out Handoff? dropped))
+            if (dropped.TryClaim()) Record(dropped.Subscription, dropped.Observation, "Excluded", "HostUnavailable");
     }
 
     // The one row the monitor appended for this read is finished with the decision (no usage, reset time or
     // name is written). It is a decision record, not proof that macOS showed a banner. Safe if no log exists.
-    private void Record(QuotaObservation observation, string outcome, string reason)
+    // The row belongs to the monitor of the subscription that received the response, not to the current one.
+    private void Record(Subscription subscription, QuotaObservation observation, string outcome, string reason)
     {
         if (recordDecision is not null) recordDecision(observation, outcome, reason);
-        else monitor?.RecordEarlyResetDecision(observation, outcome, reason);
+        else subscription.Monitor?.RecordEarlyResetDecision(observation, outcome, reason);
     }
 
-    // Polling task, provider gate held, outside the monitor's state lock. Hand-off only.
-    internal void OnSucceeded(QuotaObservation observation)
+    private bool IsLive(Subscription subscription) => subscription.Live && ReferenceEquals(Volatile.Read(ref current), subscription);
+
+    // Direct delivery (the smoke harness without a monitor): the live subscription, or an ended one after Detach.
+    internal void OnSucceeded(QuotaObservation observation) => OnSucceeded(Volatile.Read(ref current) ?? Ended, observation);
+
+    // Polling task, provider gate held, outside the monitor's state lock. Hand-off only: no engine, no lock held
+    // while the logger runs, nothing awaited.
+    private void OnSucceeded(Subscription subscription, QuotaObservation observation)
     {
-        if (detached || isStopping())
+        if (!IsLive(subscription) || isStopping())
         {
-            Record(observation, "Excluded", "HostUnavailable");
+            Record(subscription, observation, "Excluded", "HostUnavailable");
             return;
         }
-        queue.Enqueue((recovery.CurrentEpoch, earlyReset.CurrentEpoch, observation));
+        var item = new Handoff(subscription, recovery.CurrentEpoch, earlyReset.CurrentEpoch, observation);
+        queue.Enqueue(item);
+        // Detach may have ended the subscription between the check above and the enqueue. It sets the flag before
+        // it empties the queue, so either it sees this item or this check sees the flag: close it here.
+        if (!IsLive(subscription) && item.TryClaim()) Record(subscription, observation, "Excluded", "HostUnavailable");
         if (Interlocked.Exchange(ref drainScheduled, 1) == 0) post(Drain);
     }
 
@@ -205,22 +243,23 @@ internal sealed class MacQuotaNotifications
     {
         // Reset first: an observation enqueued while this loop runs schedules another pass.
         Volatile.Write(ref drainScheduled, 0);
-        while (queue.TryDequeue(out var item))
-            Process(item.RecoveryEpoch, item.EarlyResetEpoch, item.Observation);
+        while (queue.TryDequeue(out Handoff? item))
+            if (item.TryClaim()) Process(item);
     }
 
-    private void Process(int observedRecoveryEpoch, int observedEarlyResetEpoch, QuotaObservation observation)
+    private void Process(Handoff item)
     {
-        // The hand-off can outlive a toggle or shutdown: check again where an alert would be created. A kind
-        // whose setting changed since the response was queued is skipped; the other kind is still decided.
-        if (detached || isStopping())
+        QuotaObservation observation = item.Observation;
+        // The hand-off can outlive a toggle, a re-attach or shutdown: check again where an alert would be created.
+        // A kind whose setting changed since the response was queued is skipped; the other kind is still decided.
+        if (!IsLive(item.Subscription) || isStopping())
         {
-            Record(observation, "Excluded", "HostUnavailable");
+            Record(item.Subscription, observation, "Excluded", "HostUnavailable");
             return;
         }
-        bool recoveryCurrent = observedRecoveryEpoch == recovery.CurrentEpoch;
-        bool earlyResetCurrent = observedEarlyResetEpoch == earlyReset.CurrentEpoch;
-        if (!earlyResetCurrent) Record(observation, "Excluded", "SettingChangedBeforeEvaluation");
+        bool recoveryCurrent = item.RecoveryEpoch == recovery.CurrentEpoch;
+        bool earlyResetCurrent = item.EarlyResetEpoch == earlyReset.CurrentEpoch;
+        if (!earlyResetCurrent) Record(item.Subscription, observation, "Excluded", "SettingChangedBeforeEvaluation");
         if (!recoveryCurrent && !earlyResetCurrent) return;
         // Invalidate at every success, not only at delivery: if a window disappears or changes period and
         // later returns, an alert queued for the earlier state must stay gone.
@@ -232,7 +271,7 @@ internal sealed class MacQuotaNotifications
         {
             QuotaEarlyResetEvaluation evaluation = earlyResetEngine.Evaluate(observation, earlyReset.Active);
             early = evaluation.Alert;
-            Record(observation, early is null ? "Excluded" : "Alert", evaluation.Reason);
+            Record(item.Subscription, observation, early is null ? "Excluded" : "Alert", evaluation.Reason);
         }
         if (recovered is not null || early is not null) pending[observation.Provider] = new(recovered, early, observation);
         // The host's normal display pass raises schedule/service alerts first, then ShowPending.
@@ -244,7 +283,7 @@ internal sealed class MacQuotaNotifications
 
     internal void ShowPending()
     {
-        if (detached || isStopping()) return;
+        if (Volatile.Read(ref current) is null || isStopping()) return;
         foreach (QuotaProvider provider in pending.Keys.OrderBy(provider => provider).ToArray())
         {
             Pending queued = pending[provider];

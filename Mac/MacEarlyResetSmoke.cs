@@ -257,6 +257,150 @@ internal static class MacEarlyResetSmoke
         }
     }
 
+    // Regression (#82 review): a Succeeded callback the monitor had already copied into its invocation list can run after
+    // Detach. It must close ITS OWN monitor's decision-log row as HostUnavailable (never NotEvaluated), without evaluating,
+    // alerting or touching another monitor's log, a later subscription, or a re-attachment of the same monitor.
+    // Real temporary monitors and loggers; a blocker handler registered before the controller holds the poll open.
+    internal static async Task<string> VerifyLateCallbackAsync(Action<Action> post, CancellationToken cancellationToken)
+    {
+        string root = Path.Combine(Path.GetTempPath(), "aibc-late-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            var disposables = new List<IDisposable>();
+            (AccountQuotaMonitor Monitor, string Log, Queue<Func<DateTimeOffset, QuotaReading?>> Script, Func<DateTimeOffset> Clock, Action Advance) Make(string name)
+            {
+                string directory = Path.Combine(root, name);
+                Directory.CreateDirectory(directory);
+                DateTimeOffset clock = T0;
+                var script = new Queue<Func<DateTimeOffset, QuotaReading?>>();
+                var client = new ScriptedClient(() => script.Dequeue()(clock));
+                var monitor = new AccountQuotaMonitor(client, new UsageStore(Path.Combine(directory, "burgerclock.db")), () => clock);
+                disposables.Add(monitor);
+                return (monitor, Path.Combine(directory, "logs", "quota-early-reset-decisions-v1.jsonl"), script, () => clock,
+                    () => clock += TimeSpan.FromMinutes(30));
+            }
+            QuotaReading Weekly(double used, DateTimeOffset reset) => new(QuotaProvider.Claude, [W("w", used, reset)]);
+            string[] Reasons(string log) => File.ReadAllLines(log).Select(line =>
+            {
+                using var document = System.Text.Json.JsonDocument.Parse(line);
+                return document.RootElement.GetProperty("Outcome").GetString() + "/" + document.RootElement.GetProperty("Reason").GetString();
+            }).ToArray();
+            var shown = new List<QuotaNotificationAlert>();
+            AccountQuotaMonitor? attached = null;
+            MacQuotaNotifications? controller = null;
+            controller = new MacQuotaNotifications(() => false, _ => Task.CompletedTask, _ => Task.CompletedTask,
+                provider => attached?.Snapshot().FirstOrDefault(state => state.Provider == provider), shown.Add, (_, _) => { }, post,
+                () => controller!.ShowPending(), [], utcNow: () => T0.AddDays(1));
+            await controller.LoadEarlyResetAsync(() => Task.FromResult(true));
+            void Settle()
+            {
+                DateTime deadline = DateTime.UtcNow.AddSeconds(3);
+                do NSRunLoop.Main.RunUntil(NSRunLoopMode.Default, NSDate.FromTimeIntervalSinceNow(0.01));
+                while (!controller!.Idle && DateTime.UtcNow < deadline);
+                Check(controller.Idle, "the hand-off queue did not drain");
+            }
+
+            // The blocker is registered BEFORE the controller subscribes, so it runs first and holds the poll open after the
+            // monitor has already copied its invocation list (which will contain the controller's handler).
+            (TaskCompletionSource Reached, ManualResetEventSlim Gate) Block(AccountQuotaMonitor monitor)
+            {
+                var reached = new TaskCompletionSource();
+                var gate = new ManualResetEventSlim(false);
+                monitor.Succeeded += _ => { reached.TrySetResult(); gate.Wait(TimeSpan.FromSeconds(10)); };
+                return (reached, gate);
+            }
+            async Task<Task> StartPoll(AccountQuotaMonitor monitor, Queue<Func<DateTimeOffset, QuotaReading?>> script, Action advance,
+                Func<DateTimeOffset, QuotaReading?> reading, TaskCompletionSource reached)
+            {
+                advance();
+                script.Enqueue(reading);
+                Task poll = Task.Run(() => monitor.RefreshOnceAsync(QuotaProvider.Claude, cancellationToken));
+                await reached.Task.WaitAsync(TimeSpan.FromSeconds(10), cancellationToken);
+                return poll;
+            }
+
+            // 1. Detach while a copied callback is pending: the ORIGINAL file is closed as HostUnavailable.
+            var one = Make("one");
+            attached = one.Monitor;
+            var held = Block(one.Monitor);
+            controller.Attach(one.Monitor);
+            Task heldPoll = await StartPoll(one.Monitor, one.Script, one.Advance, now => Weekly(60, now.AddDays(3)), held.Reached);
+            Check(File.Exists(one.Log) && Reasons(one.Log).SequenceEqual(["Excluded/NotEvaluated"]),
+                "the read must have a NotEvaluated row while its callback is pending (" +
+                (File.Exists(one.Log) ? string.Join(",", Reasons(one.Log)) : "no log file at " + one.Log) + ")");
+            controller.Detach();
+            held.Gate.Set();
+            await heldPoll;
+            Settle();
+            Check(Reasons(one.Log).SequenceEqual(["Excluded/HostUnavailable"]),
+                "a callback that ran after Detach must close its own row as HostUnavailable, not leave NotEvaluated: " + string.Join(",", Reasons(one.Log)));
+            Check(shown.Count == 0 && controller.PendingCount == 0 && controller.RecentEarlyResets().Count == 0,
+                "a late callback must not evaluate, queue, show or remember anything");
+
+            // 2. Re-attach to ANOTHER monitor before the old callback runs: the old row is closed in the old file only.
+            var oldOne = Make("old");
+            var newOne = Make("new");
+            attached = oldOne.Monitor;
+            held = Block(oldOne.Monitor);
+            controller.Attach(oldOne.Monitor);
+            heldPoll = await StartPoll(oldOne.Monitor, oldOne.Script, oldOne.Advance, now => Weekly(60, now.AddDays(3)), held.Reached);
+            controller.Detach();
+            attached = newOne.Monitor;
+            controller.Attach(newOne.Monitor);
+            held.Gate.Set();
+            await heldPoll;
+            Settle();
+            Check(Reasons(oldOne.Log).SequenceEqual(["Excluded/HostUnavailable"]), "the old monitor's row must be closed as HostUnavailable in the old log");
+            Check(!File.Exists(newOne.Log), "the late callback of the old monitor must not write into the new monitor's log");
+            newOne.Advance();
+            newOne.Script.Enqueue(now => Weekly(5, now.AddDays(7).AddMinutes(-1)));
+            await newOne.Monitor.RefreshOnceAsync(QuotaProvider.Claude, cancellationToken);
+            Settle();
+            Check(Reasons(newOne.Log).SequenceEqual(["Excluded/NoPreviousSuccess"]) && shown.Count == 0,
+                "the new subscription must start fresh: the old response was neither compared nor alerted: " + string.Join(",", Reasons(newOne.Log)));
+
+            // 3. Re-attach the SAME monitor: the old callback belongs to the ended subscription and is only closed.
+            var same = Make("same");
+            attached = same.Monitor;
+            controller.Detach();
+            held = Block(same.Monitor);
+            controller.Attach(same.Monitor);
+            heldPoll = await StartPoll(same.Monitor, same.Script, same.Advance, now => Weekly(60, now.AddDays(3)), held.Reached);
+            controller.Detach();
+            controller.Attach(same.Monitor);
+            held.Gate.Set();
+            await heldPoll;
+            Settle();
+            Check(Reasons(same.Log).SequenceEqual(["Excluded/HostUnavailable"]), "the old subscription's response must be closed as HostUnavailable");
+            same.Advance();
+            same.Script.Enqueue(now => Weekly(5, now.AddDays(7).AddMinutes(-1)));
+            await same.Monitor.RefreshOnceAsync(QuotaProvider.Claude, cancellationToken);
+            Settle();
+            // The monitor itself hands its last successful reading to the next response (the shared PreviousSuccess), so the
+            // new response is compared with it once: that alert is the NEW response's. The old callback alerted nothing.
+            Check(Reasons(same.Log).SequenceEqual(["Excluded/HostUnavailable", "Alert/Alert"]) && shown.Count == 1,
+                "the old response must be closed without an alert and only the new response may alert: " + string.Join(",", Reasons(same.Log)));
+
+            // 4. Normal path is unchanged: a live subscription still evaluates and finishes its row once.
+            same.Advance();
+            same.Script.Enqueue(now => Weekly(2, now.AddDays(7).AddMinutes(-1)));
+            await same.Monitor.RefreshOnceAsync(QuotaProvider.Claude, cancellationToken);
+            Settle();
+            Check(Reasons(same.Log).Last() == "Alert/Alert" && shown.Count + controller.PendingCount == 2,
+                "a live subscription must still evaluate each response once and alert once per decrease");
+            controller.Detach();
+            foreach (IDisposable disposable in disposables) disposable.Dispose();
+            return "late Succeeded callback after Detach (real monitors/loggers: original row closed as HostUnavailable not NotEvaluated, no evaluation/alert, " +
+                   "other monitor's log untouched, same-monitor re-attach gives no alert for the old response, live path unchanged)";
+        }
+        finally
+        {
+            try { Directory.Delete(root, true); }
+            catch (IOException) { }
+        }
+    }
+
     // The Provider detail carries the remembered early reset; rows, bars and the popover size do not change.
     private static void Require(bool condition, string message)
     {
