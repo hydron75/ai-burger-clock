@@ -1,8 +1,10 @@
 # 소스코드, 쉬운 말로 읽기
 
-**Windows 한도 토스트 개발 PR(미배포):** `WindowsQuotaToast.cs`는 WinRT 전송·무동작 COM 콜백, `WindowsQuotaToastRegistration.cs`는 명시적 등록/해제·소유권 검사, `WindowsQuotaNotificationDelivery.cs`는 풍선 대체와 내용 없는 제한된 발송 진단을 맡습니다. `WindowsQuotaToastIntegration.cs`는 별도 시험 ID 전용이며 기본 smoke는 가짜 전송만 사용합니다. `WindowsQuotaNotificationChecks.cs`·`WindowsQuotaToastChecks.cs`는 Windows `SelfTest`에서만 호출합니다. 공통 원본·Mac·버전은 바꾸지 않고, Windows TFM에는 WinRT SDK 참조를 위한 `10.0.19041.0`을 명시합니다. 아래 과거 파일 수·검증 기록은 해당 배포 기준으로 유지합니다. [상세 계약](WINDOWS_QUOTA_NOTIFICATIONS.md).
+**Windows 2.8.2 기준·#86 병합 완료(2026-10-22 KST):** `WindowsQuotaToast.cs`는 WinRT 전송·무동작 COM 콜백, `WindowsQuotaToastRegistration.cs`는 명시적 등록/해제·소유권 검사, `WindowsQuotaNotificationDelivery.cs`는 풍선 대체와 내용 없는 제한된 발송 진단을 맡습니다. `WindowsQuotaToastIntegration.cs`는 별도 시험 ID 전용이며 기본 smoke는 가짜 전송만 사용합니다. `WindowsQuotaNotificationChecks.cs`·`WindowsQuotaToastChecks.cs`는 Windows `SelfTest`에서만 호출합니다. 공통 원본·Mac·판정·조회 정책은 그대로이고, Windows TFM은 WinRT SDK 참조를 위한 `net10.0-windows10.0.19041.0`입니다. 사용자는 2.8.2 버전 PR 병합 전 로컬 배포·운영 등록을 승인했고 병합은 사용자가 합니다. 실제 검사·배포/등록 결과와 EXE 해시는 [2.8.2 기록](MAINTENANCE_2_8_2.md), 전송/COM/해제 계약은 [Windows 알림 안내](WINDOWS_QUOTA_NOTIFICATIONS.md)에 둡니다. 아래 과거 검증 기록은 해당 배포 기준으로 유지합니다.
 
-**Windows 2.8.1 기준(2026-10-20 KST):** #82 병합 main `b45e221eacecb7b74cd706dba92c2fab403f8e09`에서 버전·기록만 올립니다. #74 공통 대기 재검증, #80 이름/값 분리, #82 주간 조기 초기화·캐시 비교·진단·시계 예외 시 게이트 반환을 포함합니다. 사용자가 PR 병합 전 로컬 배포까지 승인했으며 PR은 사용자가 병합합니다. [검사·EXE 소스·SHA-256·백업과 2.8.0 복원](MAINTENANCE_2_8_1.md). 아래 2.8.0 검사·배포 수치는 당시 결과입니다.
+**2.8.2 배포 완료:** 버전 소스 `ea4d6b7d01ed19343fdeb2f0504c44a031be588d`의 build/publish 경고·오류 0, self-test 255,761건·smoke 837 PASS를 확인한 뒤 교체했습니다. 운영 등록 1회와 바로가기/AUMID/COM 대상·해제 dry-run 무변경을 외부 Windows에서 확인했고, 새 배포본의 트레이·상태 창·한도 화면 정상은 사용자 확인입니다. 실제 운영 토스트 시험 발송은 하지 않았으며 자동 시작·기존 설정은 유지합니다. 이번 버전 PR은 Windows C#·공통·Mac을 다시 바꾸지 않았습니다.
+
+**이전 Windows 2.8.1 배포 기록(2026-10-20 KST):** #82 병합 main `b45e221eacecb7b74cd706dba92c2fab403f8e09`에서 버전·기록만 올렸습니다. #74 공통 대기 재검증, #80 이름/값 분리, #82 주간 조기 초기화·캐시 비교·진단·시계 예외 시 게이트 반환을 포함합니다. 사용자가 당시 PR 병합 전 로컬 배포까지 승인했고 이후 버전 PR #84도 병합됐습니다. [검사·EXE 소스·SHA-256·백업과 2.8.0 복원](MAINTENANCE_2_8_1.md). 아래 2.8.0 검사·배포 수치는 당시 결과입니다.
 
 **이전 2.8.0 최종 검사:** SDK 10.0.402·빌드/publish **경고 0/오류 0**, 단일 EXE self-test **254,609건(공통 254,302 + Windows 307)·ExitCode 0**, 최종 별도 smoke **1회 634 PASS·ExitCode 0**입니다. 승인 전 준비 후보의 **5회 모두 634 PASS·ExitCode 0**, PNG 20개/layout 14개 동일과 구분합니다. 당시 자동 시작 경로·값·종류는 그대로였으며 바이트 대조 헬퍼 오탐은 읽기 전용 검증으로 해결했습니다. 실제 EXE 소스와 뒤의 결과 문서 커밋을 혼동하지 않습니다.
 
@@ -16,7 +18,9 @@
 
 코드를 한 줄씩 번역한 문서는 아닙니다. **각 파일이 무엇을 맡고, 서로 어떻게 연결되는지** 설명합니다. **Windows 2.8.0 배포 당시 소스 기준** 루트·Properties C#는 **89개(앱 기능 43 + 검사·진단 45 + 명찰 1)**, Mac 호스트·검사 11개, 공통 검사 입구 1개로 총 **101개**였고 공통 제품 원본 목록은 **31개**였습니다. #70의 조기 초기화 엔진 1개·공통 검사 2개·Windows UI 검사 1개를 포함하며 당시 버전 준비/배포에서 C#를 추가하거나 2.7.0 당시 결과를 바꾼 것이 아닙니다.
 
-아래 파일 지도는 **#82 병합 뒤 2.8.1 기준**입니다. 루트·Properties C# **96개(앱 기능 45 + 검사·진단 50 + 명찰 1)**, Mac 호스트·검사 **19개**, 공통 검사 입구 **1개**로 총 **116개**이며 공통 제품 원본은 **33개**입니다. `SharedTestSuite.cs`는 루트 검사에 포함하고 별도 입구는 `Shared.Tests/Program.cs`만 셉니다. 생성된 `bin`·`obj`·검증 `artifacts`는 제외합니다. 이번 버전 PR에서 C#를 추가한 것은 아닙니다.
+아래 파일 지도는 **#86 병합 뒤 2.8.2 기준**입니다. 루트·Properties C# **102개(앱 기능 49 + 검사·진단 52 + 명찰 1)**, Mac 호스트·검사 **19개**, 공통 검사 입구 **1개**로 총 **122개**이며 공통 제품 원본은 **33개 그대로**입니다. #82 뒤 2.8.1 당시에는 루트·Properties 96개(앱 기능 45 + 검사·진단 50 + 명찰 1), 전체 114개였고 #86에서 Windows 제품 파일 4개·검사 2개를 추가했습니다. `SharedTestSuite.cs`는 루트 검사에 포함하고 별도 입구는 `Shared.Tests/Program.cs`만 셉니다. 생성된 `bin`·`obj`·검증 `artifacts`는 제외합니다. 이번 버전 PR에서 C#를 추가한 것은 아닙니다.
+
+**#86의 Windows 검증 기준점:** self-test **255,761건(공통 255,062 + Windows 699)**·smoke **837 PASS**·빌드/publish 경고 0/오류 0입니다. 2.8.2 재검사 결과와 구분합니다. 단일 EXE는 Windows SDK projection으로 **3.89→28.19MiB**, 동일 합성 warm 경로 각 5회 중앙값은 firstIdle **344→371ms**, 작업 집합 **79.96→88.61MiB**, Private Bytes **25.39→25.84MiB**였습니다. 실제 계정 대기·등록된 COM 서버·cold start는 제외했고 같은 측정 hook 비용은 두 버전에 포함됩니다. 지연 생성은 [성능 후보](BACKLOG.md#성능-최적화-후보-보류)로만 남깁니다.
 
 **#62·#63 병합 완료·2.7.0에 반영·배포 완료:** 공통 Gemini 파서는 `5시간` → `주간` → `주간 {묶음 이름}`을 만들고 원본 묶음명+bucket ID를 기존 시간 비교·회복 엔진·캐시에 연결합니다. 정확한 사용 0% 창은 새 리셋 후보에서 제외하고 구형 Gemini 캐시의 출처 불명 기준을 한 번 정리합니다. 모든 Provider의 예약 이유·선택 리셋·다음 조회를 최근 256건/128KiB로 기록하며 1분 이내 흔들림은 구간 양끝만 보존합니다. [구조·전환 제약·진단 위치·양쪽 확인](GEMINI_ANTIGRAVITY_QUOTAS.md). 이번 버전·배포 기록 작업은 공통 C#·Mac 파일을 다시 고치지 않았습니다.
 
@@ -225,7 +229,7 @@ UNKNOWN/STALE인 BURGER는 BURGER + CHECK입니다. **공식 상태로 시간표
 
 중복 Provider 입력은 첫 값을 사용하고 [WindowsWarningLog.cs](WindowsWarningLog.cs)에 경고를 보냅니다. 앱 데이터의 `logs/status-ticker.log`와 이전 로그 1개는 각각 최대 64 KiB이며, 정상 입력에는 파일을 만들지 않습니다. 관리자 권한·이벤트 로그 원본 등록은 필요 없고 로그 실패가 판정·화면을 중단시키지 않습니다.
 
-이는 알림을 **요청하는 로직**입니다. Windows 설정에 따라 실제 풍선이 보이지 않을 수도 있습니다. STOP 역시 안내일 뿐 다른 프로그램을 중단시키지 않습니다.
+이는 알림을 **요청하는 로직**입니다. Windows 설정에 따라 실제 알림이 보이지 않을 수도 있습니다. 2.8.2에서 회복·주간 조기 초기화만 등록된 토스트 경로로 보내고 시간표·공식 상태·공휴일 안내는 풍선을 유지합니다. API 제출·진단 기록이 실제 배너나 사용자 열람을 증명하지는 않습니다. STOP 역시 안내일 뿐 다른 프로그램을 중단시키지 않습니다.
 
 ## 7. 내 기록은 어떻게 저장되나요?
 
@@ -341,12 +345,16 @@ Windows 내부 승인 형식은 알려진 경우만 해석합니다. 낯선 값�
 
 이름을 눌러 소스를 열 수 있습니다. 역할을 알고 필요한 파일부터 읽으면 됩니다.
 
-### 실제 앱 기능: 45개
+### 실제 앱 기능: 49개
 
 | 파일 | 맡은 일 |
 |---|---|
 | [Program.cs](Program.cs) | 실행 입구, 검사 모드 분기, 중복 실행 방지 |
 | [TrayApplicationContext.cs](TrayApplicationContext.cs) | 트레이·타이머·조회·저장·알림·절전 복귀·종료 연결 |
+| [WindowsQuotaNotificationDelivery.cs](WindowsQuotaNotificationDelivery.cs) | Windows 한도 토스트 발송·풍선 대체·차단 분리와 제목/본문/계정값 없는 256건/128KiB 발송 기록 |
+| [WindowsQuotaToast.cs](WindowsQuotaToast.cs) | Windows SDK WinRT 토스트 API, MTA COM class factory·무동작 콜백·짧은 전용 활성화 수명 |
+| [WindowsQuotaToastRegistration.cs](WindowsQuotaToastRegistration.cs) | 실제 배포 EXE의 명시적 시작 메뉴/AUMID/CLSID 등록, 소유권·경로 검증, 해제·dry-run. 자동 시작과 별개 |
+| [WindowsQuotaToastIntegration.cs](WindowsQuotaToastIntegration.cs) | 고정 TEST AUMID·CLSID만 쓰는 별도 통합 검사 명령. 정상 실행과 기본 smoke에서는 시험 알림/등록을 만들지 않음 |
 | [StatusWindow.cs](StatusWindow.cs) | 작은 상태 창, 클릭과 설정 변경 전달, 저장 오류 안내 |
 | [MeasurementDialog.cs](MeasurementDialog.cs) | 기록 종류와 선택 메모 입력 |
 | [StatisticsWindow.cs](StatisticsWindow.cs) | Windows 통계 창 |
@@ -391,13 +399,15 @@ Windows 내부 승인 형식은 알려진 경우만 해석합니다. 낯선 값�
 | [QuotaBarPalette.cs](QuotaBarPalette.cs) | Windows 막대의 실제 합성색 대비로 시간층 농도와 경계선 색을 선택. 고대비 시스템색·경계선 보완 |
 | [QuotaDetailPopup.cs](QuotaDetailPopup.cs) | Windows 비활성화 상세 팝업. 흰색·고정 폭·줄바꿈·포인터 근처/화면 경계 보정·긴 상세 세로 스크롤 |
 
-### 검사와 진단: 50개
+### 검사와 진단: 52개
 
 미완성 임시 코드가 아닙니다. **특별한 검사 명령 때만 쓰는 정식 검사 코드**입니다.
 
 | 파일 | 확인하는 것 |
 |---|---|
 | [SelfTest.cs](SelfTest.cs) | SharedTestSuite를 한 번 실행한 뒤 Windows 전용 검사를 더해 결과 반환 |
+| [WindowsQuotaNotificationChecks.cs](WindowsQuotaNotificationChecks.cs) | 가짜 발송기·임시 파일로 토스트/풍선 대체·차단·중복 방지·비동기 실패·진단 필드/상한/쓰기 실패 323건 |
+| [WindowsQuotaToastChecks.cs](WindowsQuotaToastChecks.cs) | XML·ID 분리·배포 경로 guard·무동작 COM·수명/참조·Windows 차단 우선순위 69건. 실제 등록/알림 없이 실행 |
 | [SharedTestSuite.cs](SharedTestSuite.cs) | 공통 검사 실행 목록 한 곳. Windows와 Shared.Tests가 RunAllAsync를 각각 한 번 호출 |
 | [QuotaRowTextTests.cs](QuotaRowTextTests.cs) | 이름/값/전체 읽기 분리와 이모지·결합문자 보호 중간 생략의 공통 합성 검사 |
 | [QuotaRowUiChecks.cs](QuotaRowUiChecks.cs) | 실제 Windows 글꼴 폭에서 오른쪽 값 우선·이름만 생략·접근성·행 높이 유지 |
@@ -517,7 +527,7 @@ Mac의 시간대 ID는 `America/New_York`, `America/Los_Angeles`, `Asia/Seoul`�
 
 Mac은 `~/Library/Application Support/AIBurgerClock`에 별도 DB를 쓰고 `SMAppService.MainApp`으로 로그인 항목을 관리합니다. CLI는 절대 실행 경로와 실행 권한을 확인하고, shell 프로필·Keychain·인증 파일은 읽지 않습니다. 기능 규칙을 함께 써도 **두 컴퓨터의 DB와 로그인은 자동 동기화되지 않습니다.**
 
-Windows **2.8.1**에는 #74 공통 재검증·#80 한도 행 분리·#82 주간 규칙/캐시/진단을 함께 넣습니다. #60 회복 및 #73 조기 초기화의 Mac 알림 연결과 #74/#80/#82의 Mac 전환/확인은 각 PR과 [Mac 기록](MACOS_PORT.md)에 보존합니다. 이번 Windows 버전 작업은 공통·Mac 코드를 다시 바꾸거나 Mac 검사를 대신하지 않습니다. `MacCliPaths`는 GUI PATH와 표준 설치 위치에서 공식 명령을 찾으며 인증 파일은 직접 읽지 않습니다.
+Windows **2.8.1**에는 #74 공통 재검증·#80 한도 행 분리·#82 주간 규칙/캐시/진단을 포함했고 **2.8.2**는 #86의 Windows 한도 토스트·발송 기록·검사 알림 격리를 더합니다. #60 회복 및 #73 조기 초기화의 Mac 알림 연결과 #74/#80/#82의 Mac 전환/확인은 각 PR과 [Mac 기록](MACOS_PORT.md)에 보존합니다. 이번 Windows 버전 작업은 공통·Mac 코드를 다시 바꾸거나 Mac 검사를 대신하지 않습니다. `MacCliPaths`는 GUI PATH와 표준 설치 위치에서 공식 명령을 찾으며 인증 파일은 직접 읽지 않습니다.
 
 Mac의 상태 UI는 `MacStatusPanel`과 `MacControls`를 쓰는 팝오버입니다. Windows는 `StatusWindow` 안에서 ‘한도 보기 ↔ 상태 보기’로 카드 영역을 전환합니다. 한도 박스·제목 기준선·클릭되는 카드만 hover라는 규칙은 [결정 9](MACOS_UI_PLAN.md)에 따르며, Mac 한도 항상 표시와 Windows 전환 방식의 차이는 결정 10에 남깁니다. 두 호스트의 실제 창 배치·픽셀 검사는 각각의 native smoke가 맡습니다.
 
