@@ -18,7 +18,7 @@
 
 코드를 한 줄씩 번역한 문서는 아닙니다. **각 파일이 무엇을 맡고, 서로 어떻게 연결되는지** 설명합니다. **Windows 2.8.0 배포 당시 소스 기준** 루트·Properties C#는 **89개(앱 기능 43 + 검사·진단 45 + 명찰 1)**, Mac 호스트·검사 11개, 공통 검사 입구 1개로 총 **101개**였고 공통 제품 원본 목록은 **31개**였습니다. #70의 조기 초기화 엔진 1개·공통 검사 2개·Windows UI 검사 1개를 포함하며 당시 버전 준비/배포에서 C#를 추가하거나 2.7.0 당시 결과를 바꾼 것이 아닙니다.
 
-아래 파일 지도는 **#86 병합 뒤 2.8.2 기준**입니다. 루트·Properties C# **102개(앱 기능 49 + 검사·진단 52 + 명찰 1)**, Mac 호스트·검사 **19개**, 공통 검사 입구 **1개**로 총 **122개**이며 공통 제품 원본은 **33개 그대로**입니다. #82 뒤 2.8.1 당시에는 루트·Properties 96개(앱 기능 45 + 검사·진단 50 + 명찰 1), 전체 114개였고 #86에서 Windows 제품 파일 4개·검사 2개를 추가했습니다. `SharedTestSuite.cs`는 루트 검사에 포함하고 별도 입구는 `Shared.Tests/Program.cs`만 셉니다. 생성된 `bin`·`obj`·검증 `artifacts`는 제외합니다. 이번 버전 PR에서 C#를 추가한 것은 아닙니다.
+아래 파일 지도는 **#86 병합 뒤 2.8.2 기준**입니다. 루트·Properties C# **102개(앱 기능 49 + 검사·진단 52 + 명찰 1)**, Mac 호스트·검사 **20개**, 공통 검사 입구 **1개**로 총 **123개**이며 공통 제품 원본은 **33개 그대로**입니다. #82 뒤 2.8.1 당시에는 루트·Properties 96개(앱 기능 45 + 검사·진단 50 + 명찰 1), 전체 114개였고 #86에서 Windows 제품 파일 4개·검사 2개를 추가했습니다. `SharedTestSuite.cs`는 루트 검사에 포함하고 별도 입구는 `Shared.Tests/Program.cs`만 셉니다. 생성된 `bin`·`obj`·검증 `artifacts`는 제외합니다. 이번 버전 PR에서 C#를 추가한 것은 아닙니다.
 
 **#86의 Windows 검증 기준점:** self-test **255,761건(공통 255,062 + Windows 699)**·smoke **837 PASS**·빌드/publish 경고 0/오류 0입니다. 2.8.2 재검사 결과와 구분합니다. 단일 EXE는 Windows SDK projection으로 **3.89→28.19MiB**, 동일 합성 warm 경로 각 5회 중앙값은 firstIdle **344→371ms**, 작업 집합 **79.96→88.61MiB**, Private Bytes **25.39→25.84MiB**였습니다. 실제 계정 대기·등록된 COM 서버·cold start는 제외했고 같은 측정 hook 비용은 두 버전에 포함됩니다. 지연 생성은 [성능 후보](BACKLOG.md#성능-최적화-후보-보류)로만 남깁니다.
 
@@ -464,7 +464,7 @@ Windows 내부 승인 형식은 알려진 경우만 해석합니다. 낯선 값�
 
 [Properties/AssemblyInfo.cs](Properties/AssemblyInfo.cs)는 프로그램 식별 정보 일부를 담습니다. 버전은 여기 아닌 프로젝트 파일에서 관리하고, 나머지 정보는 SDK가 생성합니다.
 
-### Mac 호스트·검사: 19개 / 공통 검사 입구: 1개
+### Mac 호스트·검사: 20개 / 공통 검사 입구: 1개
 
 | 파일 | 맡은 일 |
 |---|---|
@@ -479,6 +479,7 @@ Windows 내부 승인 형식은 알려진 경우만 해석합니다. 낯선 값�
 | [Mac/MacNotificationImageSmoke.cs](Mac/MacNotificationImageSmoke.cs) | Mac native smoke의 알림 그림 시나리오(메뉴바 그림과 일치·배지·thread·임시 파일·첨부 실패 대체). 폴더를 주면 합성 PNG 저장 |
 | [Mac/MacNotificationPermission.cs](Mac/MacNotificationPermission.cs) | 알림 권한의 마지막 값과 발송 규칙(꺼져 있으면 보내기 전에 다시 읽고, 앱을 다시 활성화할 때도 읽음). AppKit에 의존하지 않음 |
 | [Mac/MacNotificationPermissionSmoke.cs](Mac/MacNotificationPermissionSmoke.cs) | 위 규칙의 합성 검사(시스템 설정에서 나중에 허용·끔 등). 앱을 띄우지 않는 하네스에서도 컴파일 가능 |
+| [Mac/MacQuotaLayoutKeySmoke.cs](Mac/MacQuotaLayoutKeySmoke.cs) | 한도 박스를 다시 만드는 기준(공통 `QuotaPanelModel.LayoutKey`)의 합성 검사: 쉼표·구분자·Unicode ID, 두 행↔한 행, 대기↔창 없음, 값만 바뀔 때 박스 유지. 팝오버를 보이지 않고 확인 |
 | [Mac/MacQuotaNotifications.cs](Mac/MacQuotaNotifications.cs) | Mac의 회복·조기 초기화 공통 엔진/재검증 연결·독립 메뉴 설정·메인 스레드 대기열·종료 수명 |
 | [Mac/MacQuotaRecoverySmoke.cs](Mac/MacQuotaRecoverySmoke.cs) | Mac native smoke의 합성 회복·조기 초기화 알림, 독립 메뉴·설정·큐·수명 시나리오 |
 | [Mac/MacEarlyResetSmoke.cs](Mac/MacEarlyResetSmoke.cs) | #73의 Mac native smoke 조기 초기화 엔진·모니터·배너 통합·최근 상세/패널 합성 검사 |
