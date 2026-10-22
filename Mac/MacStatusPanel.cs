@@ -55,6 +55,7 @@ internal sealed class MacStatusPanel : IDisposable
         Action<bool> changeAutoStart, Action<ProviderKind> openPage,
         Action<ProviderKind, UsageEventType, bool> record, bool smoke)
     {
+        this.smoke = smoke;
         root = Stack(vertical: true, spacing: 3);
         root.EdgeInsets = new NSEdgeInsets(12, Inset, 12, Inset);
         root.WidthAnchor.ConstraintEqualTo(PanelWidth).Active = true;
@@ -134,20 +135,28 @@ internal sealed class MacStatusPanel : IDisposable
 
     internal bool IsShown => popover.Shown;
 
+    // A smoke run never activates the app or takes key focus (see MacScreenGuard); only a real status-item click does.
+    private readonly bool smoke;
+
     internal void Show(NSView anchor)
     {
         // A status-item click does not activate an accessory app, and a popover in an inactive app is
         // not key: tooltips stay hidden and checkboxes draw gray until the first click inside it.
         // Activate the app explicitly and make the popover window key as soon as it is shown.
+        // Not in a smoke run: there is no click, and taking the focus away from the user's apps (a full-screen one
+        // above all) is what the smoke must not do.
+        if (!smoke)
+        {
 #pragma warning disable CA1422 // Cooperative Activate() alone left the app inactive on macOS 27.
-        NSApplication.SharedApplication.ActivateIgnoringOtherApps(true);
+            NSApplication.SharedApplication.ActivateIgnoringOtherApps(true);
 #pragma warning restore CA1422
+        }
         // Fit the screen under the clicked menu bar, not a fixed maximum.
         NSScreen? screen = anchor.Window?.Screen ?? NSScreen.MainScreen;
         if (screen is not null) availableHeight = screen.VisibleFrame.Height - ScreenMargin;
         FitContent();
         popover.Show(anchor.Bounds, anchor, NSRectEdge.MinYEdge);
-        popover.ContentViewController.View.Window?.MakeKeyWindow();
+        if (!smoke) popover.ContentViewController.View.Window?.MakeKeyWindow();
     }
 
     internal NSWindow? Window => popover.Shown ? popover.ContentViewController.View.Window : null;
@@ -167,6 +176,13 @@ internal sealed class MacStatusPanel : IDisposable
             height = (nfloat)Math.Ceiling(content.FittingSize.Height);
         }
         popover.ContentSize = new CGSize(PanelWidth, height);
+        // Smoke with the popover not shown (screen checks skipped): give the content the size the popover would,
+        // so the layout checks run on real frames without a window.
+        if (smoke && !popover.Shown)
+        {
+            content.Frame = new CGRect(0, 0, PanelWidth, height);
+            content.LayoutSubtreeIfNeeded();
+        }
     }
 
     // Smoke: lay the popover out for a given usable screen height and return its content size.

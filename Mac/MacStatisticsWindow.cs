@@ -26,9 +26,13 @@ internal sealed class MacStatisticsWindow : IDisposable
     private int requestedPeriod;
     private Task currentLoad = Task.CompletedTask;
 
-    internal MacStatisticsWindow(UsageStore store)
+    // A smoke run orders the window in without activating the app or taking key focus (see MacScreenGuard).
+    private readonly bool smoke;
+
+    internal MacStatisticsWindow(UsageStore store, bool smoke = false)
     {
         this.store = store;
+        this.smoke = smoke;
         Window = new(new CGRect(0, 0, 790, 520), NSWindowStyle.Titled | NSWindowStyle.Closable,
             NSBackingStore.Buffered, false)
         {
@@ -135,8 +139,12 @@ internal sealed class MacStatisticsWindow : IDisposable
     internal void Show()
     {
         if (disposed || stopping) return;
-        NSApplication.SharedApplication.Activate();
-        Window.MakeKeyAndOrderFront(null);
+        if (smoke) Window.OrderFront(null);
+        else
+        {
+            NSApplication.SharedApplication.Activate();
+            Window.MakeKeyAndOrderFront(null);
+        }
         _ = RefreshAsync();
     }
 
