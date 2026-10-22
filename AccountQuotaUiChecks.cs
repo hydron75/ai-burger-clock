@@ -8,10 +8,10 @@ internal sealed class TestAccountQuotaClient(Func<DateTimeOffset> clock, SmokeQu
     private int codexCalls;
     private int claudeCalls;
     private int geminiCalls;
-    private int geminiDelayMilliseconds;
+    private TaskCompletionSource? geminiResponseGate;
     internal bool FailClaude { get; set; }
     internal bool FailGemini { get; set; }
-    internal int GeminiDelayMilliseconds { set => Volatile.Write(ref geminiDelayMilliseconds, value); }
+    internal TaskCompletionSource? NextGeminiResponseGate { set => Interlocked.Exchange(ref geminiResponseGate, value); }
     internal int Calls(QuotaProvider provider) => provider switch
     {
         QuotaProvider.Codex => Volatile.Read(ref codexCalls),
@@ -29,9 +29,9 @@ internal sealed class TestAccountQuotaClient(Func<DateTimeOffset> clock, SmokeQu
                 Interlocked.Increment(ref geminiCalls);
                 break;
         }
-        int delay = provider == QuotaProvider.Gemini ? Interlocked.Exchange(ref geminiDelayMilliseconds, 0) : 0;
-        using var query = activity?.Begin("fake-quota/" + provider, delay);
-        if (delay > 0) await Task.Delay(delay, cancellationToken);
+        var responseGate = provider == QuotaProvider.Gemini ? Interlocked.Exchange(ref geminiResponseGate, null) : null;
+        using var query = activity?.Begin("fake-quota/" + provider + (responseGate is null ? "" : "/completion-gate"));
+        if (responseGate is not null) await responseGate.Task.WaitAsync(cancellationToken);
         if ((provider == QuotaProvider.Claude && FailClaude) || (provider == QuotaProvider.Gemini && FailGemini))
             throw new IOException("Synthetic offline condition");
         var now = clock();
@@ -435,8 +435,8 @@ internal static class AccountQuotaUiChecks
         Check(context.StatusWindow.QuotaView.VerticalScroll.Visible && !context.StatusWindow.QuotaView.HorizontalScroll.Visible,
             "Returning to two Providers retains only the vertical scrolling required by their balance bars");
         context.RefreshStatus(false);
-        diagnostics.Phase = "quota.synthetic-10s";
-        diagnostics.Record("quota.synthetic-10s-start");
+        diagnostics.Phase = "quota.synthetic-held-response";
+        diagnostics.Record("quota.synthetic-held-response-start");
         await CheckResponsiveRefreshAsync(context, client, clock, setClock, Check, condition => Wait(condition));
         ClickQuotaButton("Restore status after delayed Gemini response");
         context.RefreshStatus(false);
@@ -453,6 +453,7 @@ internal static class AccountQuotaUiChecks
         var tooltipValues = new HashSet<string>();
         var countdownValues = new HashSet<string>();
         using var heartbeat = new System.Windows.Forms.Timer { Interval = 200 };
+        var responseGate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         heartbeat.Tick += (_, _) =>
         {
             setClock(clock().AddSeconds(1));
@@ -463,11 +464,11 @@ internal static class AccountQuotaUiChecks
         };
         try
         {
-            client.GeminiDelayMilliseconds = 10000;
+            client.NextGeminiResponseGate = responseGate;
             var elapsed = System.Diagnostics.Stopwatch.StartNew();
             heartbeat.Start();
             menu.Items.OfType<ToolStripMenuItem>().Single(item => item.Text == "상태·한도 새로 고침").PerformClick();
-            check(elapsed.ElapsedMilliseconds < 1000, "Tray Refresh action returns immediately while Gemini waits for a synthetic 10-second response");
+            check(elapsed.ElapsedMilliseconds < 1000, "Tray Refresh action returns immediately while Gemini waits for a synthetic completion gate");
             await wait(() => client.Calls(QuotaProvider.Gemini) > calls[QuotaProvider.Gemini] &&
                 monitor.Snapshot().Single(s => s.Provider == QuotaProvider.Gemini).IsRefreshing);
             await Task.Delay(1500);
@@ -481,25 +482,30 @@ internal static class AccountQuotaUiChecks
             menu.Items.OfType<ToolStripMenuItem>().Single(item => item.Text == "상태 창 열기").PerformClick();
             check(context.StatusWindow.Visible && monitor.Snapshot().Single(s => s.Provider == QuotaProvider.Gemini).IsRefreshing,
                 "Tray menu reopens the status window before the Gemini lookup finishes");
-            await Task.Delay(6000);
+            // UI responsiveness has a bounded wait of its own. The fake response
+            // cannot finish merely because this continuation runs late.
+            await wait(() => uiTicks >= 20 && tooltipValues.Count >= 3 && countdownValues.Count >= 3);
             check(monitor.Snapshot().Single(s => s.Provider == QuotaProvider.Gemini).IsRefreshing && uiTicks >= 20 &&
                 tooltipValues.Count >= 3 && countdownValues.Count >= 3,
-                "Real Windows timer keeps tray tooltip and status countdown updating during Gemini's 10-second lookup");
+                "Real Windows timer keeps tray tooltip and status countdown updating while Gemini is explicitly held");
             check(monitor.Snapshot().Where(s => s.Provider != QuotaProvider.Gemini).All(s => !s.IsRefreshing) &&
                 client.Calls(QuotaProvider.Codex) > calls[QuotaProvider.Codex] &&
                 client.Calls(QuotaProvider.Claude) > calls[QuotaProvider.Claude] &&
                 client.Calls(QuotaProvider.Gemini) == calls[QuotaProvider.Gemini] + 1,
                 "Other quota providers complete independently without repeating the pending Gemini lookup");
+            responseGate.SetResult();
             await wait(() => !monitor.Snapshot().Single(s => s.Provider == QuotaProvider.Gemini).IsRefreshing);
             await wait(() => context.StatusWindow.QuotaView.Controls.OfType<Panel>()
                 .Single(box => box.Name == "GeminiQuotaBox").Controls.OfType<Label>().Any(label => label.Text == "Gemini"));
             check(!monitor.Snapshot().Single(s => s.Provider == QuotaProvider.Gemini).IsPrevious,
                 "Delayed Gemini response updates its Provider box after completion");
-            Console.WriteLine($"INFO: synthetic Gemini delay completed in {elapsed.Elapsed.TotalSeconds:0.00}s; UI heartbeat={uiTicks}, tray countdown values={tooltipValues.Count}, status countdown values={countdownValues.Count}.");
+            Console.WriteLine($"INFO: synthetic Gemini held-response completed in {elapsed.Elapsed.TotalSeconds:0.00}s; UI heartbeat={uiTicks}, tray countdown values={tooltipValues.Count}, status countdown values={countdownValues.Count}.");
         }
         finally
         {
             heartbeat.Stop();
+            client.NextGeminiResponseGate = null;
+            responseGate.TrySetResult();
             menu.Close();
             setClock(originalNow);
             context.RefreshStatus(false);

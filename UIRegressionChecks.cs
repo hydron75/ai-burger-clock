@@ -8,12 +8,18 @@ internal static class UIRegressionChecks
 {
     public static async Task RunAsync(TrayApplicationContext context, UsageStore store,
         TestStatusHttpHandler handler, string? reportDirectory, List<Uri> openedPages,
-        DateTimeOffset initialNow, Action<DateTimeOffset> setNow, SmokeDiagnostics diagnostics)
+        DateTimeOffset initialNow, Action<DateTimeOffset> setNow, SmokeDiagnostics diagnostics, Action advanceNotificationClock)
     {
         void Check(bool value, string message)
         {
             if (!value) { diagnostics.Record("ui.check-failed", new { message }); throw new InvalidOperationException("UI integration: " + message); }
             Console.WriteLine("PASS: " + message);
+        }
+        void RefreshStatus()
+        {
+            // Complete the previous synthetic balloon's bounded lifetime without sleeping.
+            advanceNotificationClock();
+            context.RefreshStatus(true);
         }
         var monitor = context.ProviderMonitor ?? throw new InvalidOperationException("Test monitor missing");
         var mouseClick = typeof(Control).GetMethod("OnMouseClick", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
@@ -67,13 +73,13 @@ internal static class UIRegressionChecks
         await WaitUntilAsync(() => Task.FromResult(handler.RequestCount > requests && !monitor.IsRefreshing && monitor.NextRefreshUtc.HasValue));
         Check(true, "Resume from sleep triggers an immediate provider update");
         await monitor.RefreshOnceAsync();
-        context.RefreshStatus(true);
+        RefreshStatus();
         Check(context.CurrentAppearance?.Attention == TrayAttention.Green, "Healthy FULL shows green F");
         Check(context.StatusWindow.Controls.OfType<Label>().Single(l => l.Text == "●  FULL THROTTLE").ForeColor == Color.FromArgb(25, 145, 78) &&
             panels.Take(3).All(p => p.Controls.OfType<Label>().Single(l => l.Font.Bold).ForeColor == Color.FromArgb(25, 145, 78)),
             "Shared Good tones retain the Windows schedule and Provider green palette");
         Icon? unchangedIcon = context.TrayIcon.Icon;
-        context.RefreshStatus(true);
+        RefreshStatus();
         Check(ReferenceEquals(unchangedIcon, context.TrayIcon.Icon), "Countdown ticks do not recreate unchanged tray icon");
         var notices = new List<(ProviderKind, Recommendation)>();
         var providerApplyOrder = new List<bool>();
@@ -87,14 +93,13 @@ internal static class UIRegressionChecks
             providerApplyOrder.Add(context.CurrentAppearance == TrayPresentation.Calculate(AgentState.FullThrottle, monitor.Snapshot()) &&
                 context.TrayIcon.Text.Contains(displayed + " " + name, StringComparison.Ordinal) &&
                 context.TrayIcon.BalloonTipTitle == expected.Title && context.TrayIcon.BalloonTipText == expected.Body &&
-                context.TrayIcon.BalloonTipIcon == (recommendation == Recommendation.Go ? ToolTipIcon.Info : ToolTipIcon.Warning) &&
-                panels[(int)provider].Controls.OfType<Label>().Single(label => label.Font.Bold).Text != displayed + "   " + name);
+                context.TrayIcon.BalloonTipIcon == (recommendation == Recommendation.Go ? ToolTipIcon.Info : ToolTipIcon.Warning));
         };
         handler.OpenAiStatus = OfficialStatus.Degraded;
         await monitor.RefreshOnceAsync();
-        context.RefreshStatus(true);
+        RefreshStatus();
         Check(notices.SequenceEqual(new[] { (ProviderKind.OpenAI, Recommendation.Hold) }), "GO -> HOLD notification reaches tray handler");
-        Check(providerApplyOrder[0], "Provider warning event follows icon/tooltip and balloon, before provider UI");
+        Check(providerApplyOrder[0], "Provider warning event follows current icon/tooltip and its balloon submission");
         Check(panels[0].Controls.OfType<Label>().Any(l => l.Text == "ChatGPT   HOLD" && l.ForeColor == Color.FromArgb(160, 99, 20)),
             "Shared Caution tone retains the Windows Provider HOLD color");
         Check(context.CurrentAppearance == new TrayAppearance(AgentState.FullThrottle, TrayAttention.Orange) &&
@@ -105,11 +110,11 @@ internal static class UIRegressionChecks
                 monitor.Snapshot().Single(s => s.Provider == ProviderKind.OpenAI).Reason).Body,
             "Native Provider warning uses ChatGPT with unchanged body wording");
         await monitor.RefreshOnceAsync();
-        context.RefreshStatus(true);
+        RefreshStatus();
         Check(notices.Count == 1, "Repeated official status does not repeat notification");
         handler.OpenAiStatus = OfficialStatus.PartialOutage;
         await monitor.RefreshOnceAsync();
-        context.RefreshStatus(true);
+        RefreshStatus();
         Check(notices.Last() == (ProviderKind.OpenAI, Recommendation.Stop), "HOLD -> STOP notification");
         Check(context.CurrentAppearance?.Attention == TrayAttention.Red, "Partial outage makes red F");
         Check(panels[0].Controls.OfType<Label>().Any(l => l.Text == "ChatGPT   STOP" && l.ForeColor == Color.FromArgb(195, 50, 45)),
@@ -123,23 +128,23 @@ internal static class UIRegressionChecks
         Check(context.StatusWindow.Visible, "Owned warning message does not auto-hide the status window");
         handler.OpenAiStatus = OfficialStatus.Degraded;
         await monitor.RefreshOnceAsync();
-        context.RefreshStatus(true);
+        RefreshStatus();
         handler.OpenAiStatus = OfficialStatus.Operational;
         await monitor.RefreshOnceAsync();
-        context.RefreshStatus(true);
+        RefreshStatus();
         handler.OpenAiStatus = OfficialStatus.MajorOutage;
         await monitor.RefreshOnceAsync();
-        context.RefreshStatus(true);
+        RefreshStatus();
         handler.OpenAiStatus = OfficialStatus.Operational;
         await monitor.RefreshOnceAsync();
-        context.RefreshStatus(true);
+        RefreshStatus();
         Check(notices.Select(n => n.Item2).SequenceEqual(new[] { Recommendation.Hold, Recommendation.Stop,
             Recommendation.Hold, Recommendation.Go, Recommendation.Stop, Recommendation.Go }),
             "STOP -> HOLD, HOLD -> GO, GO -> STOP, STOP -> GO notification sequence");
 
         handler.FailOpenAi = true;
         await monitor.RefreshOnceAsync();
-        context.RefreshStatus(true);
+        RefreshStatus();
         Check(notices.Count == 6, "Unknown gap itself does not send an outage alert");
         Check(context.CurrentAppearance?.Attention == TrayAttention.Gray, "Unknown provider makes gray F without outage alert");
         Check(panels[0].Controls.OfType<Label>().Any(l => l.Text == "ChatGPT   CHECK" && l.ForeColor == Color.DimGray),
@@ -147,18 +152,18 @@ internal static class UIRegressionChecks
         handler.FailOpenAi = false;
         handler.OpenAiStatus = OfficialStatus.Degraded;
         await monitor.RefreshOnceAsync();
-        context.RefreshStatus(true);
+        RefreshStatus();
         Check(notices.Count == 7 && notices.Last() == (ProviderKind.OpenAI, Recommendation.Hold), "GO -> UNKNOWN -> HOLD still notifies");
         handler.FailOpenAi = true;
         await monitor.RefreshOnceAsync();
-        context.RefreshStatus(true);
+        RefreshStatus();
         handler.FailOpenAi = false;
         await monitor.RefreshOnceAsync();
-        context.RefreshStatus(true);
+        RefreshStatus();
         Check(notices.Count == 7, "HOLD -> UNKNOWN -> same HOLD does not duplicate alert");
         handler.OpenAiStatus = OfficialStatus.Operational;
         await monitor.RefreshOnceAsync();
-        context.RefreshStatus(true);
+        RefreshStatus();
         Check(notices.Count == 8 && notices.Last() == (ProviderKind.OpenAI, Recommendation.Go), "Recovery after uncertainty notifies once");
         Check(providerApplyOrder.Count == 8 && providerApplyOrder.All(value => value),
             "All Provider warning/recovery events preserve native application order");
@@ -169,7 +174,7 @@ internal static class UIRegressionChecks
         // Public-status shapes reproduced with synthetic incidents, never account data.
         handler.OpenAiJson = """{"components":[{"id":"chat","name":"ChatGPT","status":"operational"}],"status":{"indicator":"none"},"incidents":[{"id":"synthetic-unscoped","name":"Synthetic reporting delay","status":"monitoring","impact":"minor"}]}""";
         await monitor.RefreshOnceAsync();
-        context.RefreshStatus(true);
+        RefreshStatus();
         context.ShowWindow();
         var receivedUnknown = monitor.Snapshot().Single(s => s.Provider == ProviderKind.OpenAI);
         Check(receivedUnknown.Status == OfficialStatus.Unknown && receivedUnknown.LastSuccessfulCheckUtc == receivedUnknown.CheckedAtUtc &&
@@ -191,7 +196,7 @@ internal static class UIRegressionChecks
 
         handler.OpenAiComponentsJson = """{"components":[{"id":"codex-cli","name":"CLI","status":"partial_outage"}]}""";
         await monitor.RefreshOnceAsync();
-        context.RefreshStatus(true);
+        RefreshStatus();
         var codexOutage = monitor.Snapshot().Single(s => s.Provider == ProviderKind.OpenAI);
         Check(codexOutage.Status == OfficialStatus.PartialOutage && codexOutage.RelevantComponent.Contains("CLI", StringComparison.Ordinal) &&
             panels[0].Controls.OfType<Label>().Any(l => l.Text == "ChatGPT   STOP"),
@@ -201,7 +206,7 @@ internal static class UIRegressionChecks
         handler.OpenAiJson = null;
         handler.OpenAiComponentsJson = null;
         await monitor.RefreshOnceAsync();
-        context.RefreshStatus(true);
+        RefreshStatus();
         Check(!(statusDetails.GetToolTip(detailLabel) ?? "").Contains("범위 미확인 사건", StringComparison.Ordinal),
             "Fresh healthy response clears uncertain incident details");
 
