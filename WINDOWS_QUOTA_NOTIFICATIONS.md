@@ -136,3 +136,43 @@ dry-run은 경로·소유권을 검사하고 제거 대상을 보여 주지만 �
 Windows 버전이 포함된 .NET TFM의 SDK 참조로 `Windows.UI.Notifications`를 사용한다. Windows App SDK 런타임·알림 Toolkit 패키지·별도 설치 프로그램은 추가하지 않는다. 배포 형식은 framework-dependent 단일 EXE를 유지한다. 실제 publish에서 WinRT projection과 COM 콜백이 동작하는지는 위 통합 검사로 확인한다. [Microsoft .NET 6+ WinRT 호출 지침](https://learn.microsoft.com/en-us/windows/apps/desktop/modernize/winrt-apis-desktop-apps)
 
 단일 EXE 내부 어셈블리 위치나 추출 폴더를 COM 실행 경로로 등록하지 않는다. 실제 프로세스 EXE 경로를 사용하고 인용 처리한다. [.NET 단일 파일 배포 지침](https://learn.microsoft.com/en-us/dotnet/core/deploying/single-file/overview)
+
+## 2026-10-22 Windows 검증 (운영 미등록·미배포)
+
+제품 코드 기준 커밋은 `c5d426108b00c4f25a88bb674d76ec35b713bf3e`다. 버전 상수는 2.8.1 그대로이고, 이 개발 산출물을 운영 2.8.1로 교체하지 않았다. SDK 10.0.402에서 확인했다.
+
+| 검사 | 결과 |
+|---|---|
+| `build.ps1` / 별도 Portable publish | 경고 0 / 오류 0 |
+| self-test (일반 빌드와 publish 단일 EXE 각각) | 255,761건 PASS / 실제 ExitCode 0 |
+| 공통 / Windows 전용 | 255,062건 그대로 / 307 → 699건(+392) |
+| 새 Windows 자체 검사 | 전송·제한 로그 323건 + XML·등록 guard·COM·Windows 차단 우선순위 69건 |
+| 최종 publish smoke | 837 PASS / 실제 ExitCode 0, 기준 830 대비 +7 |
+| 합성 렌더 비교 | PNG 22개·layout JSON 16개 모두 SHA-256 동일 |
+| 기본 smoke 알림 | 모든 Windows 검사 호스트에 가짜 전송기 주입, native BalloonTipShown 0 |
+| 일반 mutex 점유 + 명시적 callback-only 프로세스 | 20회 모두 콜백/프로세스 ExitCode 0 (약 0.23~0.26초) |
+| 일반 mutex 점유 + 실제 COM cold activation | 20회 모두 호출 ExitCode 0 (약 0.21~0.25초), 잔류 프로세스 0 |
+| 기존 배포 앱 실행 중 cold activation | 시험 콜백 성공, 기존 배포 프로세스 유지, 시험 프로세스 잔류 없음 |
+
+기준 화면 사본은 main `82ecdce4750b15dfda9d3f11a30ba687163779c7`에서 만들었다. **기준 사본에서도 기존 풍선 API 호출 4곳만 막아** 알림 누적 없이 기존 문구·필드·UI 검사와 PNG를 비교했다. 이 기준 사본 수정은 로컬 artifacts에만 있으며 제품 공통 코드 변경으로 포함하지 않는다. 공통 기존 symlink fixture 하나는 임시 파일시스템의 링크 생성 제한으로 SKIP이었고 이 부분을 통과로 세지 않는다.
+
+### 실제 시험 알림과 종료 후 클릭
+
+- 계정과 무관한 시험 알림을 별도 AUMID로 한 건 전송했다. 배너 종료 뒤 알림 센터 보관은 **사용자 확인**, History API에서도 1건이었다.
+- 발송 프로세스 종료와 동일 publish EXE의 실제 WinForms 합성 smoke 호스트 재실행 뒤에도 1건이 유지됐다. 시험 콜백 호스트 수명과 운영 ID의 배포 검증을 혼동하지 않는다.
+- 시험 프로세스가 모두 종료된 뒤 사용자가 센터 항목 본문을 클릭했다. 새로운 시험 콜백 기록과 잔류 프로세스 없음, 사용자 확인상 새 창·트레이 상주 없음, 클릭 후 시험 History 0건을 확인했다.
+- 운영 등록/새 버전 배포는 하지 않았다. 정상 배포 경로의 기존 2.8.1을 같은 EXE로 다시 실행했고 SHA-256도 기존 기록과 같았다.
+
+### 등록 뷰 차이와 정리
+
+처음에는 도구 쪽에서 시험 CLSID가 보였지만 Codex 밖 PowerShell의 같은 `Test-Path`는 False였다. 이 상태에서 이미 실행 중인 COM 서버에 대한 연결은 성공했으나 cold activation은 즉시 `0x80040154`였다. **사용자가 외부 PowerShell에서 시험 ID만 등록**한 뒤 실제 COM cold activation이 성공했다. 정확한 격리 기전은 단정하지 않으며 도구의 같은 뷰 read-back만으로 Windows broker 등록 완료를 보장하지 않는다. 2.8.2의 운영 등록도 실제 사용 환경에서 외부 확인한다.
+
+해제 dry-run은 쓰지 않고 대상을 출력했다. 실제 정리는 외부 PowerShell과 도구 양쪽의 **시험 ID만** 대상으로 수행했다. 시험 History 0, 시험 바로가기·AUMID·CLSID 없음과 운영 AUMID·CLSID 미등록을 확인했다. 운영 알림 이력을 지우거나 Windows 알림 설정을 변경하지 않았다. 개인 값 없는 로컬 검사 근거는 `artifacts/quota-toast/`, `artifacts/quota-toast-final/`에 보관하며 원문을 공개 PR에 올리지 않는다.
+
+초기 NuGet 접근/오류 캐시 문제는 정상 네트워크 복원으로 해결했고, 새 로그의 `InvalidDataException` 격리 누락은 회귀 검사 중 수정했다. 첫 발송 전 Setting 조회 특성은 위의 한 번 제출 규칙으로 보완했다. 최종 결과는 이 보완 뒤의 결과다.
+
+### 배포 크기와 남은 경계
+
+Windows SDK projection이 단일 EXE에 포함되어 산출물은 기존 약 3.89MiB에서 약 28.19MiB로 커졌다. 별도 Windows App SDK 런타임이나 명시적 알림 NuGet 패키지는 추가하지 않았고 framework-dependent 단일 EXE 형식은 그대로다. 이 크기 영향도 2.8.2 배포 검토에 포함한다.
+
+운영 ID 등록·운영 토스트·2.8.2 정상 실행, 재부팅/로그인/절전·알림 권한 차단의 실기·장기 운영은 이번에 수행하지 않았다. 차단/오류/풍선 대체는 가짜 전송기와 합성 검사로 확인했다. 실제 운영 승인 때의 등록·클릭·보관 확인은 이 시험 결과와 별개로 기록한다.
