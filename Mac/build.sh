@@ -60,32 +60,36 @@ task_running_pids() {
     fi
   done < <(/bin/ps -axo pid=,comm=)
 }
-task_pids="$(task_running_pids)"
-if [[ -n "$task_pids" ]]; then
-  task_pid_list="$(printf '%s' "$task_pids" | tr '\n' ' ')"
-  echo "실행 중인 AI Burger Clock(PID ${task_pid_list% })이 빌드할 bundle을 사용 중입니다: $task_app" >&2
-  task_quit=false
-  if [[ "$task_quit_running" == true ]]; then
-    task_quit=true
-  elif [[ -t 0 ]]; then
-    # EOF (Ctrl-D) counts as No instead of ending the script through set -e.
-    read -r -p "종료하고 빌드할까요? [y/N] " task_answer || task_answer=""
-    if [[ "$task_answer" == [yY] || "$task_answer" == [yY][eE][sS] ]]; then
+# Stops (or asks to stop) an app running from the bundle about to be rewritten. It runs twice: at the start,
+# and again right before the compile, because Shared.Tests take a while and the app can be started meanwhile.
+task_ensure_app_not_running() {
+  local task_pids task_pid_list task_quit task_answer
+  task_pids="$(task_running_pids)"
+  if [[ -n "$task_pids" ]]; then
+    task_pid_list="$(printf '%s' "$task_pids" | tr '\n' ' ')"
+    echo "실행 중인 AI Burger Clock(PID ${task_pid_list% })이 빌드할 bundle을 사용 중입니다: $task_app" >&2
+    task_quit=false
+    if [[ "$task_quit_running" == true ]]; then
       task_quit=true
+    elif [[ -t 0 ]]; then
+      # EOF (Ctrl-D) counts as No instead of ending the script through set -e.
+      read -r -p "종료하고 빌드할까요? [y/N] " task_answer || task_answer=""
+      if [[ "$task_answer" == [yY] || "$task_answer" == [yY][eE][sS] ]]; then
+        task_quit=true
+      fi
+    else
+      echo "대화형 터미널이 아니어서 묻지 않고 멈춥니다. 앱을 메뉴바 아이콘 오른쪽 클릭 → 종료로 닫은 뒤 다시 실행하거나, --quit-running으로 종료 후 빌드하세요." >&2
+      exit 2
     fi
-  else
-    echo "대화형 터미널이 아니어서 묻지 않고 멈춥니다. 앱을 메뉴바 아이콘 오른쪽 클릭 → 종료로 닫은 뒤 다시 실행하거나, --quit-running으로 종료 후 빌드하세요." >&2
-    exit 2
-  fi
-  if [[ "$task_quit" != true ]]; then
-    echo "빌드를 시작하지 않았습니다. 앱을 종료한 뒤 다시 실행하세요." >&2
-    exit 2
-  fi
-  # A normal quit request (NSRunningApplication terminate) to exactly these PIDs, never by bundle id:
-  # another copy of the app may be running elsewhere. The app finishes pending writes before it exits.
-  echo "앱에 종료를 요청합니다..."
-  # shellcheck disable=SC2086 # One argument per PID.
-  if ! /usr/bin/osascript - $task_pids <<'APPLESCRIPT'
+    if [[ "$task_quit" != true ]]; then
+      echo "빌드를 시작하지 않았습니다. 앱을 종료한 뒤 다시 실행하세요." >&2
+      exit 2
+    fi
+    # A normal quit request (NSRunningApplication terminate) to exactly these PIDs, never by bundle id:
+    # another copy of the app may be running elsewhere. The app finishes pending writes before it exits.
+    echo "앱에 종료를 요청합니다..."
+    # shellcheck disable=SC2086 # One argument per PID.
+    if ! /usr/bin/osascript - $task_pids <<'APPLESCRIPT'
 use framework "AppKit"
 on run argv
   repeat with pidText in argv
@@ -95,20 +99,23 @@ on run argv
   end repeat
 end run
 APPLESCRIPT
-  then
-    echo "종료 요청에 실패했습니다. 앱을 직접 종료한 뒤 다시 실행하세요. 빌드를 시작하지 않았습니다." >&2
-    exit 2
+    then
+      echo "종료 요청에 실패했습니다. 앱을 직접 종료한 뒤 다시 실행하세요. 빌드를 시작하지 않았습니다." >&2
+      exit 2
+    fi
+    for _ in $(seq 1 40); do
+      [[ -z "$(task_running_pids)" ]] && break
+      sleep 0.5
+    done
+    if [[ -n "$(task_running_pids)" ]]; then
+      echo "20초 안에 앱이 종료되지 않았습니다. 앱을 직접 종료한 뒤 다시 실행하세요. 빌드를 시작하지 않았습니다." >&2
+      exit 2
+    fi
+    echo "앱이 종료되었습니다. 빌드를 계속합니다."
   fi
-  for _ in $(seq 1 40); do
-    [[ -z "$(task_running_pids)" ]] && break
-    sleep 0.5
-  done
-  if [[ -n "$(task_running_pids)" ]]; then
-    echo "20초 안에 앱이 종료되지 않았습니다. 앱을 직접 종료한 뒤 다시 실행하세요. 빌드를 시작하지 않았습니다." >&2
-    exit 2
-  fi
-  echo "앱이 종료되었습니다. 빌드를 계속합니다."
-fi
+
+}
+task_ensure_app_not_running
 
 if ! command -v dotnet >/dev/null 2>&1; then
   echo ".NET 10 SDK가 필요합니다. 이 스크립트는 소프트웨어를 설치하지 않습니다." >&2
@@ -175,17 +182,18 @@ task_xcode_log_note() {
   mkdir -p -- "$task_xcode_log_dir"
   printf '%s %s\n' "$(date '+%Y-%m-%dT%H:%M:%S%z')" "$*" >> "$task_xcode_log"
 }
-# Prints the Xcode major.minor the installed macOS SDK pack asks for, or nothing when it cannot be read.
+# Prints the Xcode major.minor the build will require, or nothing when it cannot be read. The value is the one the
+# project itself evaluates (RecommendedXcodeVersion from the macOS SDK pack the workload actually selects), not the
+# highest pack version found on disk: old packs can stay installed beside the selected one. -getProperty only
+# evaluates (no restore, no build).
 task_required_xcode_version() {
-  local dotnet_path root props
-  dotnet_path="$(command -v dotnet)"
-  root="${DOTNET_ROOT:-$(cd -- "$(dirname -- "$(/usr/bin/readlink -f "$dotnet_path" 2>/dev/null || printf '%s' "$dotnet_path")")" && pwd)}"
-  props="$(ls -d "$root"/packs/Microsoft.macOS.Sdk.net10.0_27.0/*/targets/Microsoft.macOS.Sdk.Versions.props 2>/dev/null | sort -V | tail -n 1 || true)"
-  [[ -n "$props" ]] || return 0
+  local value
+  value="$(dotnet msbuild "$task_script_dir/AiBurgerClock.Mac.csproj" -getProperty:RecommendedXcodeVersion -restore:false 2>/dev/null \
+    | tr -d '[:space:]' || true)"
+  [[ "$value" =~ ^[0-9]+(\.[0-9]+)*$ ]] || return 0
   # The property may carry more than major.minor (e.g. 27.0.1) but the workload validates only
   # major.minor, so compare the same way.
-  sed -n 's/.*<RecommendedXcodeVersion>\([0-9][0-9.]*\)<.*/\1/p' "$props" | head -n 1 \
-    | awk -F. 'NF { print $1 "." ($2 == "" ? 0 : $2) }'
+  printf '%s\n' "$value" | awk -F. 'NF { print $1 "." ($2 == "" ? 0 : $2) }'
 }
 # $1 installed Xcode major.minor, $2 required major.minor (may be empty). Echoes: bypass | unneeded | unknown.
 task_xcode_mismatch_state() {
@@ -237,6 +245,7 @@ export NUGET_HTTP_CACHE_PATH="$task_http_cache"
 
 echo "NuGet HTTP cache: $NUGET_HTTP_CACHE_PATH"
 dotnet run --project ../Shared.Tests/AiBurgerClock.Shared.Tests.csproj -c Release --property:TreatWarningsAsErrors=true
+task_ensure_app_not_running
 dotnet build AiBurgerClock.Mac.csproj -c Release -warnaserror ${task_build_extra:+"$task_build_extra"}
 if [[ ! -d "$task_app" ]]; then
   echo "빌드는 끝났으나 예상 .app가 없습니다. MSBuild 출력에서 실제 bundle 경로를 확인하세요." >&2

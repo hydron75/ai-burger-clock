@@ -2049,3 +2049,34 @@ Mac 알림은 종류와 관계없이 앱 번들 아이콘(초록 "F")만 보여,
 - 시스템이 접수한 뒤 첨부 파일을 옮기는지 복사하는지.
 - 전체 화면 앱이 떠 있는 상태에서 smoke 가드가 SKIP으로 건너뛰는 동작은 #85 병합 후 확인에서 검증했고(59절), 메뉴바 고착이 없어졌는지는 재현하지 못해 확인할 수 없다.
 - 장시간 사용·절전 복귀 공백.
+
+## 62. 전체 코드 리뷰의 Mac 항목 5건 수정
+
+2026-10-22 KST. 범위: **Mac 파일·문서만**(공통 원본·Windows 파일·앱 버전 0.8.5 / 21은 바꾸지 않음). 다른 세션의 정적 분석(main `ae7d707` 기준)에서 나온 Mac 항목 5건을 항목마다 **합성 검사로 실패를 먼저 재현한 뒤** 고쳤다. 5건 모두 재현됐고 지적은 맞았다. 이 변경이 담긴 앱은 아직 빌드·배포하지 않았다(저장소 경로 빌드·앱 교체 없음).
+
+| 항목 | 재현 | 수정 |
+|---|---|---|
+| **MAC-01** 알림 권한을 시작 때만 읽음 | 합성 검사(`MacNotificationPermissionSmoke`)에서 거부 → 시스템 설정에서 허용 → 다음 알림이 `Show()`에서 계속 버려짐(수정 전 로직으로 FAIL: `after allowing in System Settings the notification was still dropped until restart`) | 판정을 AppKit 없는 `MacNotificationPermission`으로 분리. 꺼져 있으면 **보내기 전에 `GetNotificationSettings`로 다시 읽고** 허용이면 그 알림을 보낸다. 앱이 다시 활성화될 때(`DidBecomeActive`)도 읽어 `Denied` 상태를 갱신하고, 켜 둔 권한이 꺼진 것을 발견하면 안내를 한 번만 한다. 아직 결정 전(`NotDetermined`)은 거부로 보지 않는다 |
+| **BUILD-04** 요구 Xcode를 디스크의 가장 높은 SDK 팩으로 판단 | 가짜 DOTNET_ROOT(팩 두 개: 27.1을 요구하는 낮은 버전·27.5를 요구하는 높은 버전)와 프로젝트 평가 값 27.1을 흉내 낸 가짜 `dotnet`으로 수정 전 `build.sh`가 `27.5`를 돌려줌 | `dotnet msbuild AiBurgerClock.Mac.csproj -getProperty:RecommendedXcodeVersion -restore:false`(평가만, 빌드·복원 없음)의 값을 쓴다. 평가 실패·형식 오류는 값 없음(기존 "unknown" 처리) |
+| **BUILD-03** 빌드 중 시작된 앱을 덮어쓸 수 있음 | 수정 전 `build.sh`에는 Shared.Tests와 컴파일 사이에 실행 중 앱 확인이 없음(순서 검사 FAIL, 239→240줄) | 실행 중 앱 확인을 `task_ensure_app_not_running` 함수로 만들어 처음과 `dotnet build` 직전, 두 번 호출한다. 기존 확인·종료 요청 흐름은 그대로 |
+| **BUILD-06** 버전 안내가 두 필드만 | Mac/README의 안내문에 `Version`·`ApplicationVersion`만 있음(AGENTS.md는 네 필드) | `Version`·`AssemblyVersion`·`FileVersion`·`ApplicationVersion` 네 필드를 안내 |
+| **TEST-05** "40초 drift"가 실제로는 100초 간격 | smoke 항목에 연속 리셋 간격 검사를 더하자 `100 s`로 FAIL(조회 시계가 매번 60초 전진하는데 기준 리셋을 루프 안에서 `T()`로 다시 잡았음) | 기준 리셋을 루프 밖에 고정. 실제 40초 간격에서 앵커 15개 유지(이전과 같은 값), 범위 8~64 안 |
+
+### 바뀐 파일
+
+`Mac/MacNotificationPermission.cs`·`Mac/MacNotificationPermissionSmoke.cs`(신규), `Mac/MacServices.cs`, `Mac/MacApplication.cs`(smoke에 합성 검사 연결), `Mac/MacPollingDiagnosticSmoke.cs`, `Mac/build.sh`, `Mac/tools/check-build-script.sh`(신규, 빌드·앱 없이 BUILD-03·04를 가짜 `dotnet`·가짜 실행 파일로 확인), `Mac/README.md`, `CODE_GUIDE.md`, 이 절.
+
+### 이 Mac에서 수행한 검증(임시 사본에서만)
+
+| 항목 | 결과 |
+|---|---|
+| 도구 | Xcode 27.1(27A9275), .NET SDK 10.0.402, macOS 워크로드 27.0.10742(최신과 같음) |
+| 앱을 띄우지 않는 검사 | 임시 .NET 콘솔 하네스(공통 원본 + 위 두 Mac smoke 파일만 컴파일, 임시 폴더)로 조회 진단 검사와 알림 권한 합성 검사를 **수정 전 FAIL → 수정 후 PASS**로 반복 확인(40초 drift 앵커 15개, 반복 3회 동일). `bash Mac/tools/check-build-script.sh`: 수정 전 `build.sh`로 6건 FAIL, 수정 후 ALL PASS |
+| 빌드 | `bash Mac/build.sh --allow-xcode-mismatch`(옵션이 필요하지 않다는 알림이 나와 새 Xcode 조회를 실제로 통과함, Shared.Tests 255,062건 PASS, 경고 0 / 오류 0). 앞서 같은 소스의 옵션 없는 빌드도 같은 결과 |
+| `--smoke-test` | **1회**, 종료 코드 0. 실행 때 전체 화면 RDP(Windows App, 디스플레이 2)가 떠 있어 가드가 창을 여는 6건을 SKIP하고 `PASS with 6 screen checks SKIPPED (not verified)`로 끝남. 알림 권한 합성 검사 6개 시나리오와 조회 진단(40초 drift 포함)은 통과. 6건은 이 PR이 바꾸지 않은 코드 경로(59·60절에서 전체 통과 기록) |
+
+### 수행하지 않은 검증
+- 실제 알림 센터에서 거부 → 시스템 설정 허용 → 알림이 오는지, 앱을 다시 활성화했을 때의 안내(`GetNotificationSettings`·`DidBecomeActive` 연결)는 합성 검사 밖이라 직접 확인하지 않았다. 새 앱을 빌드한 뒤 사용자 확인이 필요하다.
+- `build.sh`의 실제 `--quit-running`·재확인 흐름 전체(검사는 함수 단위와 줄 순서)와 사용자 환경에서의 `-getProperty` 평가는 임시 사본 빌드에서 한 번씩만 통과를 확인했다.
+- 6건의 창 smoke는 이번 실행에서 SKIP이다(전체 화면 앱 위).
+- 저장소 경로 빌드·앱 교체는 하지 않았다. 앱 버전은 올리지 않았다.

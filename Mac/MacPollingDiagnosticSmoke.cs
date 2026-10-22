@@ -121,12 +121,21 @@ internal static class MacPollingDiagnosticSmoke
             Check(jitterAnchors <= 2, $"sub-minute jitter left {jitterAnchors} anchors (expected one band, at most 2 endpoints).");
             // A steady 40s drift is a chain, not jitter: the +/-15m union must not collapse into one pair.
             int chain = 0;
+            var movingResets = new List<DateTimeOffset>();
+            // Fixed before the loop: the clock moves a minute per poll, so a base taken inside it would add that
+            // minute to every 40 s step (the resets would be 100 s apart).
+            DateTimeOffset driftBase = T().AddDays(5);
             for (int poll = 0; poll < 12; poll++)
             {
                 client.Clock = client.Clock.AddMinutes(1);
-                DateTimeOffset moving = T().AddDays(5).AddSeconds(40 * poll);
+                DateTimeOffset moving = driftBase.AddSeconds(40 * poll);
+                movingResets.Add(moving);
                 chain = (await Poll(QuotaProvider.Claude, (p, now) => R(p, new QuotaWindow("weekly_all", "주간", 30, moving, 10080)))).Anchors;
             }
+            // The input itself must be the drift it claims to be: consecutive resets 40 s apart.
+            Check(movingResets.Zip(movingResets.Skip(1)).All(pair => pair.Second - pair.First == TimeSpan.FromSeconds(40)),
+                "the 'steady 40s drift' input does not move 40 s per poll (" +
+                string.Join(", ", movingResets.Zip(movingResets.Skip(1)).Select(pair => (pair.Second - pair.First).TotalSeconds).Distinct()) + " s).");
             Check(chain >= 8 && chain <= 64, $"a 40s drift chain was collapsed to {chain} anchors.");
 
             // Limits: 256 entries and 128 KiB, newest kept, file still valid JSON, one file only.
