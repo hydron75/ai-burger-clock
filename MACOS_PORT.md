@@ -1941,6 +1941,56 @@ CLI 자동 업데이트 스크립트의 .NET 점검(저장소 밖, 06:10)이 202
 - 사용량 감소가 서버 보정인지 실제 초기화인지의 구별은 이 규칙으로 불가(공통 PR 설명).
 - 장시간 사용·절전 복귀 공백.
 
+## 59. 알림 모양: 메뉴바 아이콘 그림과 Level 배지
+
+2026-10-22 KST. 범위: **Mac 파일만**(`Mac/`). 공통 원본·Windows 파일은 바꾸지 않았고, 알림 문구·조건·간격·설정과 앱 버전(0.8.4 / 20)도 그대로다. 버전은 병합 뒤 별도 PR(0.8.5 / build 21)에서 올린다. 저장소 경로 빌드와 실행 중인 앱 교체는 하지 않았다.
+
+### 문제와 결정
+
+Mac 알림은 종류와 관계없이 앱 번들 아이콘(초록 "F")만 보여, HOLD·BURGER TIME 알림도 정상 상태처럼 보였다. 알림 왼쪽의 앱 아이콘은 알림마다 바꿀 수 없으므로(알림 내용에 그 속성이 없음), 오른쪽 첨부 그림으로 상태를 보이고 앱 아이콘은 중립으로 바꾼다. 사용자 승인 결정: Info/Warning은 그림 모서리 배지, 한도 알림은 파란 ↻ 하나, 앱 아이콘은 같은 PR의 별도 커밋, 버전은 병합 뒤 별도 PR.
+
+| 알림 종류 | 첨부 그림 | 배지(Windows `ToolTipIcon` 기준) | threadIdentifier |
+|---|---|---|---|
+| 시간표 전환 → FULL THROTTLE | 그 시점 메뉴바 아이콘 | Info | `aiburgerclock.status` |
+| 시간표 전환 → BURGER TIME | 메뉴바 아이콘 | Warning | `aiburgerclock.status` |
+| Provider 정상화 | 메뉴바 아이콘 | Info | `aiburgerclock.status` |
+| Provider HOLD·STOP | 메뉴바 아이콘 | Warning | `aiburgerclock.status` |
+| 공휴일 설정 알림 | 메뉴바 아이콘 | Info | `aiburgerclock.status` |
+| 한도 회복·조기 초기화 | 파란 ↻ 원(상태 색과 다름) | Info | `aiburgerclock.quota` |
+
+- **메뉴바와 일치:** `ApplyTick`의 `result.Appearance`를 메뉴바 이미지와 알림 그림의 단일 원본으로 쓴다. 틱 밖의 알림(공휴일)은 직전 틱이 저장한 값을 쓰고, 첫 틱 전에는 그림 없이 보낸다. 그림은 `MacStatusIcon.Draw`(메뉴바와 같은 코드)를 6픽셀/포인트로 키워 그려, 메뉴바 아이콘 검사와 같은 스케일에서 1×1 칸 평균색이 ±0.03 안에서 같다.
+- **PNG 색:** 장치 RGB 비트맵에 그린 뒤 sRGB로 변환해 저장한다(태그 없는 PNG는 다른 감마로 읽힌다). 라이트·다크는 보내는 시점의 시스템 화면 모드를 따른다. 이미 보낸 알림은 모드를 바꿔도 그림이 바뀌지 않는다.
+- **임시 파일:** 앱 캐시 폴더 `notification-images/`에 알림마다 한 파일을 쓰고 접수 직후 지운다. 앱 시작 때 폴더를 비우고 20개를 넘으면 오래된 것부터 지운다.
+- **첨부 실패:** 그림 생성·파일 쓰기·첨부 생성이 실패하거나 시스템이 첨부 때문에 요청을 거부하면 같은 알림을 그림 없이 한 번만 다시 보낸다(같은 식별자). 그림 없는 알림도 거부되면 지금처럼 피드백 문구 한 번만 표시한다.
+- **앱 아이콘:** `Mac/tools/make-app-icon.swift`로 석탄색 바탕 + 흰 시계(바늘 10:10, 글자 없음)로 다시 생성했다. Windows는 `ApplicationIcon`이 없고 트레이 아이콘만 상태 색 원+F/B를 그리므로, 색은 상태에만 쓰는 규칙이 두 OS에서 같다.
+
+### 바뀐 파일
+
+| 구분 | 파일 |
+|---|---|
+| 수정 | `Mac/MacApplication.cs`, `Mac/MacServices.cs`, `Mac/MacStatusIcon.cs`, `Mac/tools/make-app-icon.swift`, `Mac/Assets.xcassets/AppIcon.appiconset/*`(10개), `Mac/README.md` |
+| 신규 | `Mac/MacNotificationImages.cs`, `Mac/MacNotificationImageSmoke.cs`, `docs/reviews/mac-notification-images-20261022/notification-pictures.png`(합성 예시) |
+| 문서 | `CODE_GUIDE.md`(Mac 파일 수 14에서 16), 이 절 |
+
+### 이 Mac에서 수행한 검증(임시 사본에서만)
+
+| 항목 | 결과 |
+|---|---|
+| 도구 | Xcode 27.1(27A9275), .NET SDK 10.0.402, macOS 워크로드 27.0.10742(최신과 같음) |
+| 빌드 방식 | `git` 작업 트리를 임시 사본(rsync)으로 옮겨 **옵션 없이** `bash Mac/build.sh`. 저장소 경로에서 `dotnet build`·`build.sh`는 실행하지 않음 |
+| Shared.Tests | 255,062건 PASS(공통 코드 변경 없음) |
+| 빌드 | 경고 0 / 오류 0, 서명 통과 |
+| `--smoke-test` | 종료 코드 0, FAIL 0. 새 시나리오: 종류→배지·thread 표(Windows 규칙을 코드로 고정), 모든 시간표·attention·라이트/다크의 그림이 메뉴바 아이콘과 일치(칸 평균색 ±0.03), 배지 색, 파란 ↻의 대비 4.5:1 이상과 상태 색과의 거리, 가짜 전송 9건(첨부·thread·그림 없는 대체·재시도·실패 보고 1회), 임시 파일 삭제·개수 상한·시작 시 비우기, `StatusTicker` 틱마다 알림 그림의 appearance = 메뉴바 appearance(HOLD→정상화→BURGER TIME) |
+| 변이 검사 | 일부러 깨뜨린 5가지(알림에 이전 appearance 사용, 정상화를 Warning으로, 재시도 제거, 임시 파일 미삭제, 한도 알림 thread 변경)를 모두 smoke가 잡았다(임시 사본에서만) |
+| main 병합 뒤 재확인(#87 방식) | 이 PR에 `main`(#87: smoke가 앱을 활성화하지 않음, 전체 화면 가드)을 merge한 `ed9b4f1`에서 임시 사본 빌드(경고 0 / 오류 0, Shared.Tests 255,062건 PASS) 후 smoke **1회**. 전체 화면 RDP(Windows App, 디스플레이 2)가 떠 있는 상태에서 실행해 종료 코드 0, 가드가 `Windows App … display 2`를 감지해 `SKIP: 6 screen checks …`와 `PASS with 6 screen checks SKIPPED (not verified)`를 출력했다. 알림 그림 검사와 틱별 appearance 일치 검사는 창을 열지 않는 검사라 건너뛰지 않고 통과했다. 맨 앞 앱은 실행 전후 Windows App 그대로였고 사용자 확인: 화면 이상 없음 |
+| 전체 화면 앱 없이 최종 확인 | 같은 방식으로 #85 HEAD `21b9893`을 임시 사본에서 빌드(경고 0 / 오류 0, Shared.Tests 255,062건 PASS)하고, 전체 화면 앱이 없음을 확인한 뒤 smoke **1회**: 종료 코드 0, SKIP 없이 `PASS`. 팝오버 열기·닫기·다시 열기와 통계 창 표시·닫기·다시 열기 6건을 포함해 전체 통과했고, 앱을 활성화하지 않고 열었다(`popover opens without activating the app`). 알림 그림·배지·thread·임시 파일·첨부 실패 대체 검사도 통과. 사용자 확인: 화면 이상 없음 |
+
+### 수행하지 않은 검증
+- 실제 배너에서의 모양(배지 크기·어두운 화면 가독성), 알림 센터의 묶음 표시, 집중 모드.
+- 시스템이 접수한 뒤 첨부 파일을 옮기는지 복사하는지(앱은 어느 쪽이든 접수 직후 자기 파일을 지움).
+- 새 앱 아이콘이 알림 센터·Finder에 바로 반영되는지(아이콘 캐시).
+- 저장소 경로 빌드와 실행 중인 앱의 교체(이 PR은 하지 않음). 0.8.5 / build 21 버전 PR 때 빌드하고 해시를 기록한다.
+
 ## 60. smoke가 포커스를 가져가지 않게 하기
 
 2026-10-22 KST. 범위: **Mac 파일만**(`Mac/`)과 규칙 문서(AGENTS.md). 공통 원본·Windows 파일·앱 버전(0.8.4 / 20)은 바꾸지 않았다. 저장소 경로 빌드와 실행 중인 앱 교체는 하지 않았다. 배경: [39절](#39-메뉴바-강제-표시-증상-원인-미확정-재부팅-후-해소)의 2026-10-22 재발.

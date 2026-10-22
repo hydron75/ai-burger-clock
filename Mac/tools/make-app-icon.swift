@@ -1,6 +1,7 @@
 // Generates Mac/Assets.xcassets/AppIcon.appiconset from code so the icon stays reproducible.
 // Run from the repository root: swift Mac/tools/make-app-icon.swift
-// Green matches TrayAppearance's FULL THROTTLE color; the glyph matches the menu-bar "F".
+// Neutral on purpose: a color or a letter here would read as one of the app's states (green F = FULL THROTTLE), and the
+// same icon shows beside every notification. Color is only for state: the menu bar and the notification picture.
 import AppKit
 
 let output = URL(fileURLWithPath: "Mac/Assets.xcassets/AppIcon.appiconset", isDirectory: true)
@@ -17,7 +18,7 @@ func render(pixels: Int) -> Data {
                             space: space, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
     // Full-bleed square: macOS applies its own icon shape mask.
     let gradient = CGGradient(colorsSpace: space,
-                              colors: [color(38, 196, 110), color(18, 128, 70)] as CFArray,
+                              colors: [color(74, 82, 98), color(34, 38, 48)] as CFArray,
                               locations: [0, 1])!
     context.drawLinearGradient(gradient, start: CGPoint(x: 0, y: size), end: CGPoint(x: 0, y: 0), options: [])
 
@@ -38,13 +39,17 @@ func render(pixels: Int) -> Data {
         context.strokePath()
     }
 
-    // Bold "F" centered on the glyph's own bounds.
-    let font = NSFont.systemFont(ofSize: size * 0.40, weight: .heavy)
-    let text = NSAttributedString(string: "F", attributes: [.font: font, .foregroundColor: NSColor.white])
-    let line = CTLineCreateWithAttributedString(text)
-    let bounds = CTLineGetBoundsWithOptions(line, .useGlyphPathBounds)
-    context.textPosition = CGPoint(x: center.x - bounds.midX, y: center.y - bounds.midY)
-    CTLineDraw(line, context)
+    // Clock hands at 10:10, no letter.
+    context.setStrokeColor(color(255, 255, 255))
+    context.setLineWidth(size * 0.03)
+    context.move(to: center)
+    context.addLine(to: CGPoint(x: center.x - radius * 0.46, y: center.y + radius * 0.40))
+    context.strokePath()
+    context.move(to: center)
+    context.addLine(to: CGPoint(x: center.x + radius * 0.12, y: center.y + radius * 0.66))
+    context.strokePath()
+    context.setFillColor(color(255, 255, 255))
+    context.fillEllipse(in: CGRect(x: center.x - size * 0.018, y: center.y - size * 0.018, width: size * 0.036, height: size * 0.036))
 
     let rep = NSBitmapImageRep(cgImage: context.makeImage()!)
     return rep.representation(using: .png, properties: [:])!
