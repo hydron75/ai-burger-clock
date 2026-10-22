@@ -16,7 +16,12 @@ internal static class SmokeTest
         using var statusHttp = new HttpClient(new SmokeStatusHttpHandler(activity, statusHandler));
         var openedPages = new List<Uri>();
         var quotaClient = new TestAccountQuotaClient(() => now, activity);
-        using var context = new TrayApplicationContext(true, () => now, usageStore: testStore, statusHttpClient: statusHttp, openStatusPage: openedPages.Add, accountQuotaClient: quotaClient);
+        var balloonRequests = new List<(string Title, string Body, ToolTipIcon Icon, int Timeout)>();
+        var quotaRequests = new List<QuotaNotificationAlert>();
+        using var context = new TrayApplicationContext(true, () => now, usageStore: testStore, statusHttpClient: statusHttp,
+            openStatusPage: openedPages.Add, accountQuotaClient: quotaClient,
+            quotaNotificationSink: quotaRequests.Add,
+            balloonNotificationSink: (icon, timeout) => balloonRequests.Add((icon.BalloonTipTitle, icon.BalloonTipText, icon.BalloonTipIcon, timeout)));
         using var diagnostics = new SmokeDiagnostics(context, activity);
         using var timer = new Timer { Interval = 1500 };
         var notifications = new List<AgentState>();
@@ -64,6 +69,8 @@ internal static class SmokeTest
                         Check(notifications.SequenceEqual(new[] { AgentState.FullThrottle }), "Open-at-transition requests exactly one FULL notification");
                         Check(transitionApplyOrder[0], "FULL event follows schedule UI and native notification, before icon update");
                         Check(context.TrayIcon.BalloonTipTitle == "FULL THROTTLE 시작", "Native FULL notification title");
+                        Check(balloonRequests.Count == 1 && balloonRequests[0] is { Title: "FULL THROTTLE 시작", Icon: ToolTipIcon.Info, Timeout: 6000 },
+                            "FULL notification reaches the fake balloon transport with unchanged duration and styling");
                         RenderAndCheckLayout(context.StatusWindow, "full-throttle.png", reportDirectory);
                         context.RefreshStatus(true);
                         Check(notifications.Count == 1, "Refresh does not duplicate notification");
@@ -78,6 +85,8 @@ internal static class SmokeTest
                         Check(transitionApplyOrder[1], "BURGER event follows schedule UI and native notification, before icon update");
                         Check(context.TrayIcon.Text.Contains("BURGER TIME") && context.TrayIcon.Text.Contains("12:00:00"), "Monday 22:00 switches to BURGER with 12-hour countdown");
                         Check(context.TrayIcon.BalloonTipTitle == "BURGER TIME 시작", "Native BURGER notification title");
+                        Check(balloonRequests.Count == 2 && balloonRequests[1] is { Title: "BURGER TIME 시작", Icon: ToolTipIcon.Warning, Timeout: 6000 },
+                            "BURGER notification reaches the fake balloon transport with unchanged duration and styling");
                         context.ShowWindow();
                         Check(context.StatusWindow.Visible && notifications.Count == 2, "Hidden window reopens without duplicate notification");
                         RenderAndCheckLayout(context.StatusWindow, "burger-time.png", reportDirectory);
@@ -98,7 +107,11 @@ internal static class SmokeTest
                         await QuotaEarlyResetUiChecks.RunAsync();
                         if (verifyAutoStart)
                             VerifyAutoStart(context, reportDirectory);
-                        Console.WriteLine($"Windows BalloonTipShown events: {balloonEvents} (visual delivery depends on Windows notification settings).");
+                        Check(balloonRequests.Count > 2 && balloonRequests.Any(request => request.Timeout == 4000) &&
+                            balloonRequests.All(request => request.Timeout is 4000 or 6000),
+                            "Schedule, service and holiday notifications are captured without changing production balloon timeouts");
+                        Check(quotaRequests.Count == 0 && balloonEvents == 0,
+                            "Main smoke host keeps quota preferences OFF and emits zero native Windows notification events");
                         timer.Stop();
                         context.ExitApplication();
                         break;

@@ -312,7 +312,7 @@ Visual Studio Community 2026의 .NET 데스크톱 개발 워크로드 또는 .NE
 .\build.ps1 -Publish
 ~~~
 
-- 일반 빌드: `bin\Release\net10.0-windows\win-x64` — 폴더 전체가 필요합니다.
+- 일반 빌드(한도 토스트 개발 PR): `bin\Release\net10.0-windows10.0.19041.0\win-x64` — 폴더 전체가 필요합니다. 기존 2.8.1 소스 빌드는 `net10.0-windows` 폴더입니다.
 - 배포본: `dist\win-x64\AI Burger Clock.exe` — .NET 런타임은 별도로 필요합니다.
 - 직접 추가한 패키지는 `Microsoft.Data.Sqlite 10.0.12` 하나입니다. 함께 필요한 SQLite 부품은 패키지 관리자가 가져옵니다.
 - 경고도 빌드 실패로 취급하고, 검사 프로그램이 실제로 끝난 결과까지 확인합니다.
@@ -320,6 +320,8 @@ Visual Studio Community 2026의 .NET 데스크톱 개발 워크로드 또는 .NE
 개발용 검사 명령과 주의사항은 [소스 해설의 검사 안내](CODE_GUIDE.md)에 있습니다. 특히 자동 시작 설정을 바꾸는 검사는 별도 옵션이므로 일반 사용 중에는 실행할 필요가 없습니다.
 
 Windows smoke와 수동 테스트 빌드는 PR별 산출물 폴더에서 직접 실행하지 않고, [고정된 변경 전·후 테스트 실행 경로](WINDOWS_TEST_RUNNER.md)를 사용합니다. `test-windows.ps1`은 실행 파일 묶음의 해시를 확인하고, 로그·합성 PNG는 PR별로 보관하며 반복 실행 후 트레이 기록 증가 여부를 읽기 전용으로 확인합니다. 배포 EXE는 교체하지 않습니다.
+
+**Windows 개발 PR(운영 2.8.1에는 미적용):** 회복·조기 초기화 한도 알림만 센터에 보관하는 토스트로 전환합니다. 기본 self-test·smoke는 실제 풍선/토스트·운영 등록 없이 가짜 발송기로 검증합니다. 별도 시험 ID를 쓰는 통합 검증, 배포 시 명시적 등록과 해제·dry-run, 민감한 내용 없는 발송 진단은 [Windows 한도 알림 안내](WINDOWS_QUOTA_NOTIFICATIONS.md)를 따릅니다. 운영 등록·버전·배포 EXE는 변경하지 않았습니다.
 
 ## 더 자세히 보기
 
