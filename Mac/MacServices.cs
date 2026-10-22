@@ -9,8 +9,8 @@ internal sealed class MacNotifications : UNUserNotificationCenterDelegate
 {
     private readonly Action<string> feedback;
     private readonly MacNotificationSender sender;
-    private bool authorized;
-    private bool answered;
+    private readonly MacNotificationPermission permission;
+    private NSObject? activationObserver;
     private bool stopped;
 
     internal MacNotifications(Action<string> feedback, MacNotificationImageStore? images = null)
@@ -27,6 +27,19 @@ internal sealed class MacNotifications : UNUserNotificationCenterDelegate
             {
                 if (!stopped) feedback("알림을 표시하지 못했습니다. macOS 알림 설정을 확인하세요.");
             });
+        // The permission can change in System Settings while the app runs: look again when a notification finds it
+        // off, and whenever the app is activated (see MacNotificationPermission).
+        permission = new(
+            answer => UNUserNotificationCenter.Current.GetNotificationSettings(settings =>
+            {
+                UNAuthorizationStatus status = settings.AuthorizationStatus;
+                answer(status is UNAuthorizationStatus.Authorized or UNAuthorizationStatus.Provisional,
+                    status != UNAuthorizationStatus.NotDetermined);
+            }),
+            action => InvokeOnMainThread(action),
+            () => feedback("알림이 꺼져 있습니다. macOS 시스템 설정 → 알림에서 허용할 수 있습니다."));
+        activationObserver = NSNotificationCenter.DefaultCenter.AddObserver(NSApplication.DidBecomeActiveNotification,
+            _ => permission.Refresh());
         // Keep this delegate alive: the center stores a weak reference.
         UNUserNotificationCenter.Current.Delegate = this;
     }
@@ -37,20 +50,19 @@ internal sealed class MacNotifications : UNUserNotificationCenterDelegate
             (granted, error) => InvokeOnMainThread(() =>
             {
                 if (stopped) return;
-                authorized = granted && error is null;
-                answered = true;
-                if (!authorized) feedback("알림이 꺼져 있습니다. macOS 시스템 설정 → 알림에서 허용할 수 있습니다.");
+                permission.Answered(granted && error is null);
+                if (permission.Denied) feedback("알림이 꺼져 있습니다. macOS 시스템 설정 → 알림에서 허용할 수 있습니다.");
             }));
     }
 
     // True once macOS answered the permission request and the answer was "not allowed".
-    internal bool Denied => answered && !authorized;
+    internal bool Denied => permission.Denied;
 
     // appearance is the menu-bar icon's TrayAppearance of this moment (schedule/service notices); quota notices pass null.
     internal void Show(string title, string body, MacNotificationKind kind, TrayAppearance? appearance)
     {
-        if (stopped || !authorized) return;
-        sender.Send(title, body, kind, appearance);
+        if (stopped) return;
+        permission.Send(() => sender.Send(title, body, kind, appearance));
     }
 
     public override void WillPresentNotification(UNUserNotificationCenter center, UNNotification notification,
@@ -60,6 +72,13 @@ internal sealed class MacNotifications : UNUserNotificationCenterDelegate
     internal void Stop()
     {
         stopped = true;
+        permission.Stop();
+        if (activationObserver is not null)
+        {
+            NSNotificationCenter.DefaultCenter.RemoveObserver(activationObserver);
+            activationObserver.Dispose();
+            activationObserver = null;
+        }
         UNUserNotificationCenter.Current.Delegate = null;
     }
 }

@@ -16,7 +16,7 @@
 
 코드를 한 줄씩 번역한 문서는 아닙니다. **각 파일이 무엇을 맡고, 서로 어떻게 연결되는지** 설명합니다. **Windows 2.8.0 배포 당시 소스 기준** 루트·Properties C#는 **89개(앱 기능 43 + 검사·진단 45 + 명찰 1)**, Mac 호스트·검사 11개, 공통 검사 입구 1개로 총 **101개**였고 공통 제품 원본 목록은 **31개**였습니다. #70의 조기 초기화 엔진 1개·공통 검사 2개·Windows UI 검사 1개를 포함하며 당시 버전 준비/배포에서 C#를 추가하거나 2.7.0 당시 결과를 바꾼 것이 아닙니다.
 
-아래 파일 지도는 **#82 병합 뒤 2.8.1 기준**입니다. 루트·Properties C# **96개(앱 기능 45 + 검사·진단 50 + 명찰 1)**, Mac 호스트·검사 **17개**, 공통 검사 입구 **1개**로 총 **114개**이며 공통 제품 원본은 **33개**입니다. `SharedTestSuite.cs`는 루트 검사에 포함하고 별도 입구는 `Shared.Tests/Program.cs`만 셉니다. 생성된 `bin`·`obj`·검증 `artifacts`는 제외합니다. 이번 버전 PR에서 C#를 추가한 것은 아닙니다.
+아래 파일 지도는 **#82 병합 뒤 2.8.1 기준**입니다. 루트·Properties C# **96개(앱 기능 45 + 검사·진단 50 + 명찰 1)**, Mac 호스트·검사 **19개**, 공통 검사 입구 **1개**로 총 **116개**이며 공통 제품 원본은 **33개**입니다. `SharedTestSuite.cs`는 루트 검사에 포함하고 별도 입구는 `Shared.Tests/Program.cs`만 셉니다. 생성된 `bin`·`obj`·검증 `artifacts`는 제외합니다. 이번 버전 PR에서 C#를 추가한 것은 아닙니다.
 
 **#62·#63 병합 완료·2.7.0에 반영·배포 완료:** 공통 Gemini 파서는 `5시간` → `주간` → `주간 {묶음 이름}`을 만들고 원본 묶음명+bucket ID를 기존 시간 비교·회복 엔진·캐시에 연결합니다. 정확한 사용 0% 창은 새 리셋 후보에서 제외하고 구형 Gemini 캐시의 출처 불명 기준을 한 번 정리합니다. 모든 Provider의 예약 이유·선택 리셋·다음 조회를 최근 256건/128KiB로 기록하며 1분 이내 흔들림은 구간 양끝만 보존합니다. [구조·전환 제약·진단 위치·양쪽 확인](GEMINI_ANTIGRAVITY_QUOTAS.md). 이번 버전·배포 기록 작업은 공통 C#·Mac 파일을 다시 고치지 않았습니다.
 
@@ -454,7 +454,7 @@ Windows 내부 승인 형식은 알려진 경우만 해석합니다. 낯선 값�
 
 [Properties/AssemblyInfo.cs](Properties/AssemblyInfo.cs)는 프로그램 식별 정보 일부를 담습니다. 버전은 여기 아닌 프로젝트 파일에서 관리하고, 나머지 정보는 SDK가 생성합니다.
 
-### Mac 호스트·검사: 17개 / 공통 검사 입구: 1개
+### Mac 호스트·검사: 19개 / 공통 검사 입구: 1개
 
 | 파일 | 맡은 일 |
 |---|---|
@@ -467,6 +467,8 @@ Windows 내부 승인 형식은 알려진 경우만 해석합니다. 낯선 값�
 | [Mac/MacServices.cs](Mac/MacServices.cs) | macOS 알림 권한·요청 전달과 로그인 항목 등록 |
 | [Mac/MacNotificationImages.cs](Mac/MacNotificationImages.cs) | 알림 종류별 Info/Warning·thread, 메뉴바 아이콘 그림+배지 PNG 생성, 임시 파일 관리, 그림 없이 다시 보내는 전송 도우미 |
 | [Mac/MacNotificationImageSmoke.cs](Mac/MacNotificationImageSmoke.cs) | Mac native smoke의 알림 그림 시나리오(메뉴바 그림과 일치·배지·thread·임시 파일·첨부 실패 대체). 폴더를 주면 합성 PNG 저장 |
+| [Mac/MacNotificationPermission.cs](Mac/MacNotificationPermission.cs) | 알림 권한의 마지막 값과 발송 규칙(꺼져 있으면 보내기 전에 다시 읽고, 앱을 다시 활성화할 때도 읽음). AppKit에 의존하지 않음 |
+| [Mac/MacNotificationPermissionSmoke.cs](Mac/MacNotificationPermissionSmoke.cs) | 위 규칙의 합성 검사(시스템 설정에서 나중에 허용·끔 등). 앱을 띄우지 않는 하네스에서도 컴파일 가능 |
 | [Mac/MacQuotaNotifications.cs](Mac/MacQuotaNotifications.cs) | Mac의 회복·조기 초기화 공통 엔진/재검증 연결·독립 메뉴 설정·메인 스레드 대기열·종료 수명 |
 | [Mac/MacQuotaRecoverySmoke.cs](Mac/MacQuotaRecoverySmoke.cs) | Mac native smoke의 합성 회복·조기 초기화 알림, 독립 메뉴·설정·큐·수명 시나리오 |
 | [Mac/MacEarlyResetSmoke.cs](Mac/MacEarlyResetSmoke.cs) | #73의 Mac native smoke 조기 초기화 엔진·모니터·배너 통합·최근 상세/패널 합성 검사 |
@@ -491,6 +493,7 @@ Windows 내부 승인 형식은 알려진 경우만 해석합니다. 낯선 값�
 | [Shared.Tests/AiBurgerClock.Shared.Tests.csproj](Shared.Tests/AiBurgerClock.Shared.Tests.csproj) | net10.0 공통 검사, 임시 DB와 가짜 HTTP·CLI 사용 |
 | [Mac/AiBurgerClock.Mac.csproj](Mac/AiBurgerClock.Mac.csproj) | native AppKit, net10.0-macos27.0, osx-arm64, preview 버전과 bundle 버전(`ApplicationDisplayVersion`/`ApplicationVersion`) 지정 |
 | [Mac/tools/make-app-icon.swift](Mac/tools/make-app-icon.swift) | Mac 앱 아이콘(상태와 무관한 중립 시계) 10개 크기를 코드로 생성해 `Mac/Assets.xcassets/AppIcon.appiconset`에 저장. 아이콘을 바꿀 때만 실행 |
+| [Mac/tools/check-build-script.sh](Mac/tools/check-build-script.sh) | `Mac/build.sh`의 필요 Xcode 판정·실행 중 앱 재확인을 빌드·앱 없이 확인하는 합성 검사 |
 | [Mac/Info.plist](Mac/Info.plist) | Mac 앱 식별자·메뉴바 앱 설정·최소 OS. 버전은 적지 않음(증분 빌드에 반영되지 않음) |
 | [Mac/build.sh](Mac/build.sh) | 진행 단계·도구 오류 표시 → 공통 검사 → Mac Release 빌드 → bundle 서명·SQLite 포함 확인 |
 | bin | 일반 빌드 결과 |

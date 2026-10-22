@@ -376,6 +376,8 @@ Mac에서 사용하는 Codex와 Claude는 **그 Mac에 별도로 설치·로그�
 
 빌드된 bundle의 실행 파일을 직접 실행합니다.
 
+**빌드·앱 없이 하는 확인:** `bash Mac/tools/check-build-script.sh`는 `build.sh`의 필요 Xcode 판정(프로젝트가 평가한 값)과 빌드 직전 실행 중 앱 재확인을 가짜 `dotnet`·가짜 실행 파일로 확인합니다. 빌드도 앱 실행도 하지 않습니다.
+
 **화면을 건드리지 않는 smoke(0.8.5, #87):** smoke는 앱을 활성화하거나 키 포커스를 가져가지 않습니다(실제 앱에서 아이콘을 눌렀을 때의 활성화는 그대로입니다). 다른 앱이 한 디스플레이 전체를 덮는 전체 화면이면(RDP·영상 등) 창을 여는 검사 6건(팝오버 열기·닫기·다시 열기, 통계 창 표시·닫기·다시 열기)을 **건너뛰고** `SKIP: …` 줄과 `PASS with N screen checks SKIPPED (not verified)`로 표시합니다. 나머지 검사는 그대로 실행합니다. 건너뛴 검사는 전체 화면 앱 없이 다시 실행해야 검증된 것입니다. `AIBURGERCLOCK_SMOKE_SCREEN=skip`을 주면 건너뛰는 경로를 전체 화면 앱 없이 시험할 수 있습니다. smoke는 한 작업에 마지막 확인 1~2회만 실행하세요. [기록](../MACOS_PORT.md#60-smoke가-포커스를-가져가지-않게-하기)
 
 현재 소스의 `bash Mac/build.sh`가 성공한 뒤 아래 검사로 진행합니다. 저장소 루트에서 실행하세요. 실행 중인 일반 앱이 있으면 메뉴바에서 종료합니다.
@@ -389,7 +391,7 @@ echo "검사 종료 코드: $?"
 
 앱 아이콘은 `Mac/Assets.xcassets/AppIcon.appiconset`에 있습니다. 바꿀 때는 `swift Mac/tools/make-app-icon.swift`로 다시 생성합니다.
 
-성공 기준은 `PASS: bundle version, menu-tracking countdown timer, 20pt color menu icon/1x-2x pixels, left/right/control-click routing, ...` 출력과 종료 코드 `0`입니다. 소스 `66fb868`부터 bundle의 `CFBundleShortVersionString`이 앱 버전과 다르면 `FAIL: Bundle version ...`으로 실패합니다. Mac 버전은 `Mac/AiBurgerClock.Mac.csproj`의 `Version`·`ApplicationVersion`에서만 바꾸고 `Info.plist`에는 적지 않습니다. SDK가 `Info.plist`만 바뀐 증분 빌드에서 bundle manifest를 다시 만들지 않기 때문입니다. 오류가 있으면 출력과 종료 코드를 보존하고 일반 실행·자동 시작 설정 전에 원인을 확인합니다.
+성공 기준은 `PASS: bundle version, menu-tracking countdown timer, 20pt color menu icon/1x-2x pixels, left/right/control-click routing, ...` 출력과 종료 코드 `0`입니다. 소스 `66fb868`부터 bundle의 `CFBundleShortVersionString`이 앱 버전과 다르면 `FAIL: Bundle version ...`으로 실패합니다. Mac 버전은 `Mac/AiBurgerClock.Mac.csproj`에서만 `Version`·`AssemblyVersion`·`FileVersion`·`ApplicationVersion` 네 필드를 함께 바꾸고(`AssemblyVersion`은 공식 상태 조회 User-Agent와 CLI 클라이언트 버전에 쓰이며 [AGENTS](../AGENTS.md)의 규칙과 같습니다), `Info.plist`에는 적지 않습니다. SDK가 `Info.plist`만 바뀐 증분 빌드에서 bundle manifest를 다시 만들지 않기 때문입니다. 오류가 있으면 출력과 종료 코드를 보존하고 일반 실행·자동 시작 설정 전에 원인을 확인합니다.
 
 2026-10-03 KST 사용자 Mac에서 이전 0.1.0뿐 아니라 새 0.1.1의 종료 코드 0도 확인했습니다. 0.1.1 성공 출력에는 `compact one-screen layout/standard quota rows`와 `injected quota countdown`이 포함됐습니다. 가짜 한도 데이터로 실행한 검사이므로 실제 CLI 계정 조회 성공이나 OS 알림 노출을 뜻하지 않습니다. [검사 기록](../MACOS_PORT.md#18-011-새-native-smoke-통과)
 
