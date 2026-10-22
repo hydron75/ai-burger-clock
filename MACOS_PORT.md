@@ -2100,7 +2100,7 @@ Mac 알림은 종류와 관계없이 앱 번들 아이콘(초록 "F")만 보여,
 | 도구 | Xcode 27.1(27A9275), .NET SDK 10.0.402, macOS 워크로드 27.0.10742(최신과 같음), 옵션 없이 `bash Mac/build.sh` |
 | Shared.Tests | **255,197건 PASS, 20회 반복 모두 PASS·실패 0**(약 11초씩). 이 스위트에 service monitor 139건·quota 레이아웃 키 49건이 포함된다. 출력에 SKIP 표기는 없었다 |
 | 빌드 | 경고 0 / 오류 0 |
-| `--smoke-test` | **1회**, 전체 화면 앱 없음 확인 뒤 실행: 종료 코드 0, SKIP 없이 `PASS`(팝오버·통계 창 6건 포함 전체). 새 `quota layout key` 시나리오 17갱신 포함 |
+| `--smoke-test` | **1회**, 전체 화면 앱 없음 확인 뒤 실행: 종료 코드 0, SKIP 없이 `PASS`(팝오버·통계 창 6건 포함 전체). 새 `quota layout key` 시나리오 17갱신 포함. 사용자 확인: 화면 이상 없음 |
 
 ### 수행하지 않은 검증
 - CORE-01·02(Provider 상태 판정)·CORE-04(임시 SQLite 배타 잠금 복구)·TEST-02·03(monitor 검사)은 공통 검사로 Mac에서도 통과했고, 별도 Mac UI 검사는 없다.
