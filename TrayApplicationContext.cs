@@ -29,6 +29,10 @@ namespace AiBurgerClock
         private sealed record PendingQuotaAlert(QuotaRecoveryAlert? Recovery, QuotaEarlyResetAlert? EarlyReset,
             QuotaObservation Observation);
         private readonly Dictionary<QuotaProvider, PendingQuotaAlert> pendingQuotaAlerts = new();
+        // Latest official recommendation per Provider, never an unbounded event history.
+        private readonly Dictionary<ProviderKind, ProviderAlert> pendingProviderAlerts = new();
+        private long providerNotificationNotBefore;
+        private long providerBalloonExpires;
         private readonly Func<long> notificationMilliseconds;
         private readonly Action<QuotaNotificationAlert> showQuotaNotification;
         private readonly Action<NotifyIcon, int> showBalloonNotification;
@@ -156,6 +160,9 @@ namespace AiBurgerClock
                 if (e.Button == MouseButtons.Left)
                     ShowWindow();
             };
+            // The ShowBalloonTip timeout argument does not prove native display completion.
+            trayIcon.BalloonTipClosed += (_, _) => providerBalloonExpires = 0;
+            trayIcon.BalloonTipClicked += (_, _) => providerBalloonExpires = 0;
 
             timer = new Timer { Interval = 1000 };
             timer.Tick += delegate { RefreshStatus(true); };
@@ -240,13 +247,15 @@ namespace AiBurgerClock
                 TickResult result = RefreshStatus(TickReason.PolicyChanged);
                 var snapshot = GetSchedule(utcNow());
                 statusWindow.SetFeedback(FeedbackText.HolidaySaved(enabled));
-                if (result.ProviderAlerts.Count == 0)
+                if (result.ProviderAlerts.Count == 0 && pendingProviderAlerts.Count == 0 &&
+                    notificationMilliseconds() >= providerBalloonExpires)
                 {
                     // Do not immediately replace an important concurrent service alert.
                     (trayIcon.BalloonTipTitle, trayIcon.BalloonTipText) = FeedbackText.HolidayNotification(enabled, snapshot);
                     trayIcon.BalloonTipIcon = ToolTipIcon.Info;
                     showBalloonNotification(trayIcon, 4000);
                     DeferQuotaNotifications(4500);
+                    DeferProviderNotifications(4500);
                 }
             }
             catch (Exception error)
@@ -285,6 +294,7 @@ namespace AiBurgerClock
                 ShowTransitionNotification(snapshot, transition);
             // Apply the decision in the existing order: schedule UI, transition,
             // icon/tooltip, provider alerts, then provider/quota UI.
+            if (reason == TickReason.Initial) pendingProviderAlerts.Clear();
             UpdateProviderDisplay(result);
             ShowPendingQuotaNotification();
             return result;
@@ -297,6 +307,7 @@ namespace AiBurgerClock
             trayIcon.BalloonTipIcon = full ? ToolTipIcon.Info : ToolTipIcon.Warning;
             showBalloonNotification(trayIcon, 6000);
             DeferQuotaNotifications(6500);
+            DeferProviderNotifications(6500);
             TransitionNotificationRequested?.Invoke(snapshot.State);
         }
 
@@ -362,13 +373,8 @@ namespace AiBurgerClock
             }
             trayIcon.Text = TrayPresentation.Tooltip(result.Schedule, result.Providers, WindowsProviderNames.Provider);
             foreach (ProviderAlert alert in result.ProviderAlerts)
-            {
-                (trayIcon.BalloonTipTitle, trayIcon.BalloonTipText) = (alert.Title, alert.Body);
-                trayIcon.BalloonTipIcon = alert.Recovered ? ToolTipIcon.Info : ToolTipIcon.Warning;
-                showBalloonNotification(trayIcon, 6000);
-                DeferQuotaNotifications(6500);
-                ProviderNotificationRequested?.Invoke(alert.Provider, alert.Recommendation);
-            }
+                pendingProviderAlerts[alert.Provider] = alert;
+            ShowPendingProviderNotification(result);
             statusWindow.UpdateProviders(result.Providers, result.Schedule, monitor?.IsRefreshing ?? false,
                 monitor?.NextRefreshUtc, monitor?.StorageError ?? "");
             // Quotas never change official service health, schedule recommendations or tray colors.
@@ -377,6 +383,47 @@ namespace AiBurgerClock
                 .Where(item => item.Alert is not null).ToDictionary(item => item.Provider, item => item.Alert!);
             statusWindow.UpdateQuotas(quotaMonitor?.Snapshot() ??
                 Enum.GetValues<QuotaProvider>().Select(p => new QuotaState(p)).ToArray(), utcNow(), recent);
+        }
+
+        private void DeferProviderNotifications(int milliseconds) =>
+            providerNotificationNotBefore = Math.Max(providerNotificationNotBefore, notificationMilliseconds() + milliseconds);
+
+        private void ShowPendingProviderNotification(TickResult result)
+        {
+            if (exiting || disposed) return;
+            if (result.Schedule.State != AgentState.FullThrottle)
+            {
+                pendingProviderAlerts.Clear();
+                return;
+            }
+            // Drop a stale recommendation before waiting or delivery. If an incident's
+            // detail changes at the same severity, generate its text from the latest state.
+            foreach (var provider in pendingProviderAlerts.Keys.ToArray())
+            {
+                var state = result.Providers.FirstOrDefault(state => state.Provider == provider);
+                if (state is null || RecommendationPolicy.Calculate(result.Schedule.State, state.Status) !=
+                    pendingProviderAlerts[provider].Recommendation)
+                    pendingProviderAlerts.Remove(provider);
+            }
+            long now = notificationMilliseconds();
+            if (now < providerNotificationNotBefore || now < providerBalloonExpires) return;
+            foreach (var provider in pendingProviderAlerts.Keys.OrderBy(provider => provider).ToArray())
+            {
+                var alert = pendingProviderAlerts[provider];
+                pendingProviderAlerts.Remove(provider);
+                var state = result.Providers.Single(state => state.Provider == provider);
+                (trayIcon.BalloonTipTitle, trayIcon.BalloonTipText) = TrayPresentation.ProviderNotification(
+                    provider, alert.Recommendation, state.Reason, WindowsProviderNames.Provider);
+                trayIcon.BalloonTipIcon = alert.Recovered ? ToolTipIcon.Info : ToolTipIcon.Warning;
+                // Wait for Closed/Clicked, but don't block forever if Windows suppresses
+                // the balloon and emits no event. This is a fallback, not a display guarantee.
+                providerBalloonExpires = now + 30000;
+                DeferProviderNotifications(6500);
+                showBalloonNotification(trayIcon, 6000);
+                DeferQuotaNotifications(6500);
+                ProviderNotificationRequested?.Invoke(provider, alert.Recommendation);
+                return; // Never submit multiple official balloons in one UI tick.
+            }
         }
 
         private void OnQuotaSucceeded(QuotaObservation observation)
@@ -438,6 +485,8 @@ namespace AiBurgerClock
         private void ShowPendingQuotaNotification()
         {
             if (exiting || disposed) return;
+            if (pendingProviderAlerts.Count > 0 || notificationMilliseconds() < providerBalloonExpires)
+                return; // Protect the whole official batch, including its last native balloon.
             // At most one pending summary per Provider (three entries), never an unbounded history.
             foreach (var provider in pendingQuotaAlerts.Keys.OrderBy(provider => provider).ToArray())
             {
@@ -753,6 +802,7 @@ namespace AiBurgerClock
             if (exiting) return;
             exiting = true;
             pendingQuotaAlerts.Clear();
+            pendingProviderAlerts.Clear();
             Interlocked.Increment(ref quotaNotificationEpoch);
             Interlocked.Increment(ref quotaEarlyResetNotificationEpoch);
             timer.Stop();
@@ -804,6 +854,7 @@ namespace AiBurgerClock
                     quotaMonitor.Succeeded -= OnQuotaSucceeded;
                 }
                 pendingQuotaAlerts.Clear();
+                pendingProviderAlerts.Clear();
                 Interlocked.Increment(ref quotaNotificationEpoch);
                 Interlocked.Increment(ref quotaEarlyResetNotificationEpoch);
                 quotaMonitor?.Dispose();

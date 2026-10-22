@@ -218,13 +218,23 @@ try {
         $passes = if (Test-Path -LiteralPath $stdout) { @(Select-String -LiteralPath $stdout -Pattern '^PASS:').Count } else { 0 }
         $pngCount = @(Get-ChildItem -LiteralPath $images -File -Filter '*.png' -Recurse).Count
         $runs += [pscustomobject]@{ Run = $run; ExitCode = $exitCode; Failure = $failure; TimedOut = $timedOut; Passes = $passes; PngFiles = $pngCount; Seconds = [Math]::Round($watch.Elapsed.TotalSeconds, 2); TotalTrayRecords = $after.Count; SlotTrayRecords = $slotKeys.Count; NewKeys = $newKeys; AddedSinceFirstRun = $growthAfterFirst }
-        Save-Json (Join-Path $session 'summary.json') ([pscustomobject]@{ Slot = $Slot; SourceCommit = $SourceCommit; ProductVersion = $version; Repeat = $Repeat; RegistryObservationDelaySeconds = 2; InitialTrayRecords = $initial.Count; Runs = $runs })
+        $growthStatus = if ($Repeat -eq 1) { 'NotEvaluated' }
+            elseif ($failure -or $exitCode -ne 0 -or $passes -eq 0 -or $pngCount -eq 0 -or $slotKeys.Count -eq 0) { 'Indeterminate' }
+            elseif ($growthAfterFirst.Count) { 'Failed' }
+            elseif ($run -eq $Repeat) { 'Passed' }
+            else { 'InProgress' }
+        $growthVerification = [pscustomobject]@{ Status = $growthStatus; Comparisons = [Math]::Max(0, $run - 1); RequiredRuns = 2 }
+        Save-Json (Join-Path $session 'summary.json') ([pscustomobject]@{ Slot = $Slot; SourceCommit = $SourceCommit; ProductVersion = $version; Repeat = $Repeat; RegistryObservationDelaySeconds = 2; InitialTrayRecords = $initial.Count; TrayGrowthVerification = $growthVerification; Runs = $runs })
         Write-Host "Run $run/$Repeat : exit=$exitCode PASS=$passes PNG=$pngCount slotRecords=$($slotKeys.Count) addedSinceFirst=$($growthAfterFirst.Count)"
         if ($failure -or $exitCode -ne 0 -or $passes -eq 0 -or $pngCount -eq 0) { throw "Smoke failed in $directory; remaining runs were not started. $failure" }
         if ($slotKeys.Count -eq 0) { throw 'No attributable slot tray record was found; no-growth verification is indeterminate.' }
         if ($growthAfterFirst.Count) { throw 'Tray records grew after the first run; inspect the retained snapshots.' }
     }
-    Write-Host 'Smoke passed; no additional slot tray keys were observed after the first run.'
+    if ($Repeat -eq 1) {
+        Write-Host 'Smoke passed; tray-history no-growth verification was not evaluated (one run; at least two runs are required).'
+    } else {
+        Write-Host 'Smoke passed; no additional slot tray keys were observed after the first run.'
+    }
 } finally {
     if ($lock) { $lock.Dispose() }
 }

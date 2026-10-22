@@ -18,10 +18,15 @@ internal static class SmokeTest
         var quotaClient = new TestAccountQuotaClient(() => now, activity);
         var balloonRequests = new List<(string Title, string Body, ToolTipIcon Icon, int Timeout)>();
         var quotaRequests = new List<QuotaNotificationAlert>();
+        long notificationClock = 0;
         using var context = new TrayApplicationContext(true, () => now, usageStore: testStore, statusHttpClient: statusHttp,
             openStatusPage: openedPages.Add, accountQuotaClient: quotaClient,
-            quotaNotificationSink: quotaRequests.Add,
-            balloonNotificationSink: (icon, timeout) => balloonRequests.Add((icon.BalloonTipTitle, icon.BalloonTipText, icon.BalloonTipIcon, timeout)));
+            quotaNotificationSink: quotaRequests.Add, notificationMilliseconds: () => notificationClock,
+            balloonNotificationSink: (icon, timeout) =>
+            {
+                balloonRequests.Add((icon.BalloonTipTitle, icon.BalloonTipText, icon.BalloonTipIcon, timeout));
+                ProviderBalloonChecks.CompleteNativeBalloon(icon);
+            });
         using var diagnostics = new SmokeDiagnostics(context, activity);
         using var timer = new Timer { Interval = 1500 };
         var notifications = new List<AgentState>();
@@ -31,6 +36,7 @@ internal static class SmokeTest
         int exitCode = 0;
         int callbackSequence = 0;
         int callbacksInFlight = 0;
+        var stepGuard = new SmokeStepGuard();
         context.TransitionNotificationRequested += notifications.Add;
         context.TransitionNotificationRequested += state => transitionApplyOrder.Add(
             context.StatusWindow.Controls.OfType<Label>().Any(label => label.Text == "●  " + TrayPresentation.StateName(state)) &&
@@ -48,6 +54,11 @@ internal static class SmokeTest
 
         timer.Tick += async (_, _) =>
         {
+            if (!stepGuard.TryEnter())
+            {
+                diagnostics.Record("smoke.timer-skipped-in-flight", new { callbacksInFlight, step });
+                return;
+            }
             int callbackId = ++callbackSequence;
             callbacksInFlight++;
             diagnostics.Record("smoke.timer-enter", new { callbackId, callbacksInFlight, step });
@@ -57,6 +68,7 @@ internal static class SmokeTest
                 {
                     case 0:
                         await context.Initialization;
+                        await SmokeAsyncChecks.RunAsync(Check);
                         Check(!context.StatusWindow.Visible && context.TrayIcon.Visible, "Autostart opens only the native tray icon");
                         Check(context.TrayIcon.Text.Contains("BURGER TIME"), "Initial BURGER TIME tooltip");
                         Check(notifications.Count == 0, "No startup notification");
@@ -96,7 +108,9 @@ internal static class SmokeTest
                         now = new DateTimeOffset(2026, 9, 19, 12, 0, 0, TimeSpan.FromHours(9));
                         context.RefreshStatus(false);
                         diagnostics.Phase = "ui.regression";
-                        await UIRegressionChecks.RunAsync(context, testStore, statusHandler, reportDirectory, openedPages, now, value => now = value, diagnostics);
+                        await UIRegressionChecks.RunAsync(context, testStore, statusHandler, reportDirectory, openedPages, now, value => now = value, diagnostics, () => notificationClock += 30000);
+                        diagnostics.Phase = "provider.balloon-queue";
+                        await ProviderBalloonChecks.RunAsync();
                         diagnostics.Phase = "holiday";
                         await HolidayUiChecks.RunAsync(context, testStore, statusHandler, value => now = value, reportDirectory);
                         diagnostics.Phase = "quota";
@@ -128,6 +142,7 @@ internal static class SmokeTest
             finally
             {
                 callbacksInFlight--;
+                stepGuard.Exit();
                 diagnostics.Record("smoke.timer-exit", new { callbackId, callbacksInFlight, step });
             }
         };

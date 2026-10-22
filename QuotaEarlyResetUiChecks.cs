@@ -78,8 +78,11 @@ internal static class QuotaEarlyResetUiChecks
         }
         void Drain()
         {
+            // A fake service send has no real Closed callback; model normal
+            // completion instead of treating elapsed spacing as native closure.
+            ProviderBalloonChecks.CompleteNativeBalloon(context!.TrayIcon);
             milliseconds += 7000; // Fake notification spacing, never a longer real test wait.
-            context!.RefreshStatus(false);
+            context.RefreshStatus(false);
         }
         void Step()
         {

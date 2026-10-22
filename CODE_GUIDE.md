@@ -18,7 +18,7 @@
 
 코드를 한 줄씩 번역한 문서는 아닙니다. **각 파일이 무엇을 맡고, 서로 어떻게 연결되는지** 설명합니다. **Windows 2.8.0 배포 당시 소스 기준** 루트·Properties C#는 **89개(앱 기능 43 + 검사·진단 45 + 명찰 1)**, Mac 호스트·검사 11개, 공통 검사 입구 1개로 총 **101개**였고 공통 제품 원본 목록은 **31개**였습니다. #70의 조기 초기화 엔진 1개·공통 검사 2개·Windows UI 검사 1개를 포함하며 당시 버전 준비/배포에서 C#를 추가하거나 2.7.0 당시 결과를 바꾼 것이 아닙니다.
 
-아래 파일 지도는 **2.8.2 배포 뒤 #90 병합·#91 작업 브랜치 기준**입니다. 루트·Properties C# **104개(앱 기능 49 + 검사·진단 54 + 명찰 1)**, Mac 호스트·검사 **20개**, 공통 검사 입구 **1개**로 총 **125개**이며 공통 제품 원본은 **33개 그대로**입니다. #82 뒤 2.8.1 당시에는 루트·Properties 96개(앱 기능 45 + 검사·진단 50 + 명찰 1), 전체 114개였고 #86에서 Windows 제품 파일 4개·검사 2개를 추가했습니다. #91은 공통 `QuotaLayoutKeyTests.cs`와 Windows `QuotaLayoutChecks.cs`를 더합니다. Mac은 기존 17개에 #90의 알림 권한 원본·검사 2개와 #91의 `MacQuotaLayoutKeySmoke.cs` 1개를 더해 20개입니다. `SharedTestSuite.cs`는 루트 검사에 포함하고 별도 입구는 `Shared.Tests/Program.cs`만 셉니다. C# 파일만 집계하므로 `Mac/tools/check-build-script.sh` 등 빌드 도구와 생성된 `bin`·`obj`·검증 `artifacts`는 제외합니다. 배포 당시 검사·파일 수 기록은 위에 별도로 유지합니다.
+아래 파일 지도는 **2.8.2 배포 뒤 #91 병합·Windows 리뷰 후속 작업 브랜치 기준**입니다. 루트·Properties C# **106개(앱 기능 49 + 검사·진단 56 + 명찰 1)**, Mac 호스트·검사 **20개**, 공통 검사 입구 **1개**로 총 **127개**이며 공통 제품 원본은 **33개 그대로**입니다. #82 뒤 2.8.1 당시에는 루트·Properties 96개(앱 기능 45 + 검사·진단 50 + 명찰 1), 전체 114개였고 #86에서 Windows 제품 파일 4개·검사 2개를 추가했습니다. #91은 공통 `QuotaLayoutKeyTests.cs`와 Windows `QuotaLayoutChecks.cs`를 더했고, 이번 Windows 후속은 `ProviderBalloonChecks.cs`·`SmokeAsyncChecks.cs`를 더합니다. Mac은 기존 17개에 #90의 알림 권한 원본·검사 2개와 #91의 `MacQuotaLayoutKeySmoke.cs` 1개를 더해 20개입니다. `SharedTestSuite.cs`는 루트 검사에 포함하고 별도 입구는 `Shared.Tests/Program.cs`만 셉니다. C# 파일만 집계하므로 `Mac/tools/check-build-script.sh` 등 빌드 도구와 생성된 `bin`·`obj`·검증 `artifacts`는 제외합니다. 배포 당시 검사·파일 수 기록은 위에 별도로 유지합니다.
 
 **#86의 Windows 검증 기준점:** self-test **255,761건(공통 255,062 + Windows 699)**·smoke **837 PASS**·빌드/publish 경고 0/오류 0입니다. 2.8.2 재검사 결과와 구분합니다. 단일 EXE는 Windows SDK projection으로 **3.89→28.19MiB**, 동일 합성 warm 경로 각 5회 중앙값은 firstIdle **344→371ms**, 작업 집합 **79.96→88.61MiB**, Private Bytes **25.39→25.84MiB**였습니다. 실제 계정 대기·등록된 COM 서버·cold start는 제외했고 같은 측정 hook 비용은 두 버전에 포함됩니다. 지연 생성은 [성능 후보](BACKLOG.md#성능-최적화-후보-보류)로만 남깁니다.
 
@@ -399,7 +399,7 @@ Windows 내부 승인 형식은 알려진 경우만 해석합니다. 낯선 값�
 | [QuotaBarPalette.cs](QuotaBarPalette.cs) | Windows 막대의 실제 합성색 대비로 시간층 농도와 경계선 색을 선택. 고대비 시스템색·경계선 보완 |
 | [QuotaDetailPopup.cs](QuotaDetailPopup.cs) | Windows 비활성화 상세 팝업. 흰색·고정 폭·줄바꿈·포인터 근처/화면 경계 보정·긴 상세 세로 스크롤 |
 
-### 검사와 진단: 54개
+### 검사와 진단: 56개
 
 미완성 임시 코드가 아닙니다. **특별한 검사 명령 때만 쓰는 정식 검사 코드**입니다.
 
@@ -441,6 +441,8 @@ Windows 내부 승인 형식은 알려진 경우만 해석합니다. 낯선 값�
 | [HolidayMonitorTests.cs](HolidayMonitorTests.cs) | 백그라운드 저장도 같은 공휴일 정책을 쓰는지 |
 | [AutoStartTests.cs](AutoStartTests.cs) | 가짜 경로·승인값으로 자동 시작 판정만 검사 |
 | [SmokeTest.cs](SmokeTest.cs) | 실제 WinForms 실행 흐름의 검사 입구 |
+| [SmokeAsyncChecks.cs](SmokeAsyncChecks.cs) | Windows timer 단계 재진입 guard와 초기화 보류·해제, Gemini 응답 완료 gate·UI heartbeat의 합성 검사 |
+| [ProviderBalloonChecks.cs](ProviderBalloonChecks.cs) | 가짜 풍선 전송으로 동시 Provider 순차 전달·닫힘/클릭·최소 간격/이벤트 누락 fallback·최신 상태 재확인·공휴일 안내 충돌을 검사 |
 | [SmokeDiagnostics.cs](SmokeDiagnostics.cs) | smoke 실패 직전/시점의 창·버튼·Click·Provider별 가짜/monitor 조회와 경과 시간을 표준 오류의 DIAG JSON으로 기록. 일반 앱 실행 로그와 구분 |
 | [UIRegressionChecks.cs](UIRegressionChecks.cs) | 클릭·새로고침·기록·메모·통계 연결. 한도 모드에서 실제 잘림 메모 저장·박스·피드백·상태 복귀 통합 검사 |
 | [HolidayUiChecks.cs](HolidayUiChecks.cs) | 공휴일 옵션·색상·카운트다운·기록·알림 연결 |
@@ -500,6 +502,7 @@ Windows 내부 승인 형식은 알려진 경우만 해석합니다. 낯선 값�
 | [AiBurgerClock.sln](AiBurgerClock.sln) | Visual Studio에서 여는 프로젝트 묶음 |
 | [global.json](global.json) | SDK 범위. 10.0.100 기준에서 같은 10.0의 최신 기능 밴드 허용 |
 | [build.ps1](build.ps1) | 빌드와 자체 검사를 실행하는 순서 |
+| [tools/Test-WindowsBuildScripts.ps1](tools/Test-WindowsBuildScripts.ps1) | 운영 dist·레지스트리·실제 프로세스 실행 없이 격리 합성 publish 실패/교체 보호와 runner 1회/반복 결과 구분 검사 |
 | [Portable.pubxml](Properties/PublishProfiles/Portable.pubxml) | 배포용 단일 EXE 설정 |
 | [app.manifest](app.manifest) | Windows 권한·호환 설정. 관리자 권한으로 자동 상승하지 않음 |
 | [Shared/SharedSources.props](Shared/SharedSources.props) | 공통 C# 원본 33개를 Mac과 검사 프로젝트에 연결하는 목록. 검사 실행 목록은 SharedTestSuite에 별도 관리 |

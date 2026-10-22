@@ -61,8 +61,11 @@ internal static class QuotaRecoveryUiChecks
         }
         void AdvanceNotificationQueue()
         {
+            // The fake transport has no OS lifecycle callback. Complete its
+            // previous official balloon explicitly before the normal next cycle.
+            ProviderBalloonChecks.CompleteNativeBalloon(context!.TrayIcon);
             milliseconds += 7000; // Fake monotonic time; no product interval is shortened.
-            context!.RefreshStatus(false);
+            context.RefreshStatus(false);
         }
         async Task SetSettingFailure(bool fail)
         {
@@ -202,9 +205,14 @@ internal static class QuotaRecoveryUiChecks
             await Refresh(QuotaProvider.Claude);
             Check(alerts.Count == 3 && context.TrayIcon.BalloonTipTitle == priorityTitle,
                 "A concurrent quota recovery queues without replacing the higher-priority service balloon");
-            AdvanceNotificationQueue();
+            milliseconds += 6500;
+            context.RefreshStatus(false);
+            Check(alerts.Count == 3 && context.TrayIcon.BalloonTipTitle == priorityTitle,
+                "Quota recovery still waits when minimum spacing expires but the official balloon has not closed");
+            ProviderBalloonChecks.CompleteNativeBalloon(context.TrayIcon);
+            context.RefreshStatus(false);
             Check(alerts.Count == 4 && submitted[^1].Title == alerts[^1].Title,
-                "Queued quota recovery drains after the existing service notification spacing");
+                "Queued quota recovery drains after official balloon closure and existing notification spacing");
 
             foreach (var provider in new[] { QuotaProvider.Codex, QuotaProvider.Gemini })
             {
