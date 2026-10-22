@@ -485,8 +485,6 @@ namespace AiBurgerClock
         private void ShowPendingQuotaNotification()
         {
             if (exiting || disposed) return;
-            if (pendingProviderAlerts.Count > 0 || notificationMilliseconds() < providerBalloonExpires)
-                return; // Protect the whole official batch, including its last native balloon.
             // At most one pending summary per Provider (three entries), never an unbounded history.
             foreach (var provider in pendingQuotaAlerts.Keys.OrderBy(provider => provider).ToArray())
             {
@@ -508,6 +506,9 @@ namespace AiBurgerClock
                 if (pending is null) continue;
                 var alert = QuotaNotificationText.Combine(pending.Recovery, pending.EarlyReset);
                 if (alert is null) { pendingQuotaAlerts.Remove(provider); continue; }
+                // Waiting for the official batch must defer only delivery, never
+                // skip invalidation by a failed/later snapshot while it is visible.
+                if (pendingProviderAlerts.Count > 0 || notificationMilliseconds() < providerBalloonExpires) continue;
                 if (notificationMilliseconds() < quotaNotificationNotBefore) continue;
                 pendingQuotaAlerts.Remove(provider);
                 try
