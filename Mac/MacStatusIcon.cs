@@ -40,9 +40,16 @@ internal static class MacStatusIcon
     internal static (NSColor Disc, NSColor Glyph) Colors(TrayAttention attention, bool dark) =>
         (dark ? DarkDisc : LightDisc, MacControls.Resolved(MacControls.Color(Tone(attention)), dark));
 
-    private static void Draw(TrayAppearance appearance, bool dark)
+    // Also drawn (scaled up) as the picture attached to schedule/service notifications, so the banner and the
+    // menu bar always show the same drawing; see MacNotificationImage.
+    internal static void Draw(TrayAppearance appearance, bool dark) =>
+        DrawDisc(Colors(appearance.Attention, dark).Glyph, appearance.Glyph, dark);
+
+    // The disc, ring and centered letter on the 20-point grid; the quota notification picture reuses it with its own accent.
+    internal static void DrawDisc(NSColor accent, string letter, bool dark)
     {
-        var (disc, glyph) = Colors(appearance.Attention, dark);
+        NSColor disc = dark ? DarkDisc : LightDisc;
+        NSColor glyph = accent;
         NSBezierPath circle = NSBezierPath.FromOvalInRect(new CGRect(1, 1, Size - 2, Size - 2));
         disc.SetFill();
         circle.Fill();
@@ -56,7 +63,7 @@ internal static class MacStatusIcon
         try
         {
             using var font = new CTFont("Helvetica-Bold", 13);
-            using var text = new NSAttributedString(appearance.Glyph,
+            using var text = new NSAttributedString(letter,
                 new CTStringAttributes { Font = font, ForegroundColor = glyph.CGColor });
             using var line = new CTLine(text);
             context.TextMatrix = CGAffineTransform.MakeIdentity();
@@ -109,7 +116,7 @@ internal static class MacStatusIcon
         return weakest;
     }
 
-    private static NSBitmapImageRep Render(NSImage image, bool dark, int scale)
+    internal static NSBitmapImageRep Render(NSImage image, bool dark, int scale)
     {
         int pixels = Size * scale;
         var bitmap = new NSBitmapImageRep(IntPtr.Zero, pixels, pixels, 8, 4, true, false,
@@ -125,7 +132,7 @@ internal static class MacStatusIcon
         return bitmap;
     }
 
-    private static bool Near((double R, double G, double B, double A) pixel, NSColor expected, double tolerance)
+    internal static bool Near((double R, double G, double B, double A) pixel, NSColor expected, double tolerance)
     {
         NSColor color = expected.UsingColorSpace(NSColorSpace.SRGBColorSpace)!;
         return pixel.A > 0.98 && Math.Abs(pixel.R - color.RedComponent) <= tolerance &&
@@ -133,7 +140,7 @@ internal static class MacStatusIcon
     }
 
     // Read back in sRGB so the comparison does not depend on the display's device color space.
-    private static (double R, double G, double B, double A) Pixel(NSBitmapImageRep bitmap, int x, int y)
+    internal static (double R, double G, double B, double A) Pixel(NSBitmapImageRep bitmap, int x, int y)
     {
         using var raw = bitmap.ColorAt(x, y) ?? throw new InvalidOperationException("Menu-bar pixel unavailable.");
         NSColor color = raw.UsingColorSpace(NSColorSpace.SRGBColorSpace) ?? raw;

@@ -8,14 +8,25 @@ namespace AiBurgerClock;
 internal sealed class MacNotifications : UNUserNotificationCenterDelegate
 {
     private readonly Action<string> feedback;
+    private readonly MacNotificationSender sender;
     private bool authorized;
     private bool answered;
     private bool stopped;
-    private long serial;
 
-    internal MacNotifications(Action<string> feedback)
+    internal MacNotifications(Action<string> feedback, MacNotificationImageStore? images = null)
     {
         this.feedback = feedback;
+        MacNotificationImageStore store = images ?? MacNotificationImageStore.Default();
+        // Nothing is in flight at start, so any picture file still here is a leftover.
+        store.Sweep();
+        sender = new(store,
+            (request, done) => UNUserNotificationCenter.Current.AddNotificationRequest(request, error => done(error)),
+            action => InvokeOnMainThread(action),
+            () => MacControls.IsDark(NSApplication.SharedApplication.EffectiveAppearance),
+            () =>
+            {
+                if (!stopped) feedback("알림을 표시하지 못했습니다. macOS 알림 설정을 확인하세요.");
+            });
         // Keep this delegate alive: the center stores a weak reference.
         UNUserNotificationCenter.Current.Delegate = this;
     }
@@ -35,18 +46,11 @@ internal sealed class MacNotifications : UNUserNotificationCenterDelegate
     // True once macOS answered the permission request and the answer was "not allowed".
     internal bool Denied => answered && !authorized;
 
-    internal void Show(string title, string body)
+    // appearance is the menu-bar icon's TrayAppearance of this moment (schedule/service notices); quota notices pass null.
+    internal void Show(string title, string body, MacNotificationKind kind, TrayAppearance? appearance)
     {
         if (stopped || !authorized) return;
-        using var content = new UNMutableNotificationContent { Title = title, Body = body };
-        using var request = UNNotificationRequest.FromIdentifier("aiburgerclock-" + ++serial, content, null);
-        UNUserNotificationCenter.Current.AddNotificationRequest(request, error =>
-        {
-            if (error is not null) InvokeOnMainThread(() =>
-            {
-                if (!stopped) feedback("알림을 표시하지 못했습니다. macOS 알림 설정을 확인하세요.");
-            });
-        });
+        sender.Send(title, body, kind, appearance);
     }
 
     public override void WillPresentNotification(UNUserNotificationCenter center, UNNotification notification,

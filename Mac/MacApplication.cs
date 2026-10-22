@@ -25,6 +25,10 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
     private MacQuotaNotifications? quotaNotifications;
     private NSStatusItem? statusItem;
     private NSImage? statusImage;
+    // The TrayAppearance of the latest tick: schedule/service notifications are drawn from it, and the menu-bar
+    // icon is drawn from the same value, so the banner picture and the menu bar cannot disagree.
+    private TrayAppearance? shownAppearance;
+    private TrayAppearance? statusAppearance;
     // Right-click menu only; left-click opens the status popover.
     private NSMenu? contextMenu;
     private NSTimer? timer;
@@ -33,6 +37,8 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
     private StatusTicker? ticker;
     // Smoke: notification requests (notifications are not authorized in a smoke run) and duplicate warnings.
     private readonly List<(string Title, string Body)>? smokeNotifications = smoke ? [] : null;
+    // Smoke: how each of those was drawn (kind and the appearance its picture would use).
+    private readonly List<(MacNotificationKind Kind, TrayAppearance? Appearance)>? smokeNotificationLooks = smoke ? [] : null;
     private int duplicateWarnings;
     // Apply the user's holiday policy only after its stored setting is read successfully.
     private bool holidayEnabled;
@@ -55,7 +61,7 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
         quotaNotifications = new(() => stopping, enabled => store.SetQuotaRecoveryNotificationsEnabledAsync(enabled),
             enabled => store.SetQuotaEarlyResetNotificationsEnabledAsync(enabled),
             provider => quotaMonitor?.Snapshot().FirstOrDefault(state => state.Provider == provider),
-            alert => notifications?.Show(alert.Title, alert.Body),
+            alert => notifications?.Show(alert.Title, alert.Body, MacNotificationKind.Quota, null),
             (text, error) => panel?.SetFeedback(text, error),
             BeginInvokeOnMainThread, () => RefreshDisplay(TickReason.ProviderChanged), pendingWrites,
             notificationsDenied: () => notifications?.Denied == true);
@@ -226,8 +232,11 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
     // Same order as before 7a: transition notification, provider alerts, icon and tooltip, popover.
     private void ApplyTick(TickResult result)
     {
-        if (result.Transition is { } transition) Notify(transition.Title, transition.Body);
-        foreach (ProviderAlert alert in result.ProviderAlerts) Notify(alert.Title, alert.Body);
+        shownAppearance = result.Appearance;
+        if (result.Transition is { } transition)
+            Notify(transition.Title, transition.Body, MacNotificationLook.ForSchedule(result.Schedule.State));
+        foreach (ProviderAlert alert in result.ProviderAlerts)
+            Notify(alert.Title, alert.Body, MacNotificationLook.ForProviderAlert(alert));
         // Existing schedule/service alerts are requested first; a quota recovery alert never precedes them.
         quotaNotifications?.ShowPending();
         if (statusItem?.Button is { } button)
@@ -239,6 +248,7 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
                 button.Image = image;
                 button.Title = "";
                 statusImage = image;
+                statusAppearance = result.Appearance;
                 previous?.Dispose();
             }
             // Minute precision: a per-second change would close the tooltip while it is being read.
@@ -249,10 +259,11 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
         if (panel?.IsShown == true) UpdatePanel(result.Schedule, result.Providers);
     }
 
-    private void Notify(string title, string body)
+    private void Notify(string title, string body, MacNotificationKind kind)
     {
         smokeNotifications?.Add((title, body));
-        notifications?.Show(title, body);
+        smokeNotificationLooks?.Add((kind, shownAppearance));
+        notifications?.Show(title, body, kind, shownAppearance);
         quotaNotifications?.DeferAfterExisting();
     }
 
@@ -315,7 +326,7 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
             if (policy is { ProviderAlerts.Count: 0 })
             {
                 var (title, body) = FeedbackText.HolidayNotification(enabled, Schedule(DateTimeOffset.UtcNow));
-                notifications?.Show(title, body);
+                notifications?.Show(title, body, MacNotificationKind.Holiday, shownAppearance);
                 quotaNotifications?.DeferAfterExisting();
             }
         }
@@ -522,6 +533,7 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
                 DateTimeOffset.UtcNow, DateTimeOffset.UtcNow, provider + " fixture")).ToArray();
         var probe = new StatusTicker(ProviderNames.Provider, strictInput: true);
         smokeNotifications.Clear();
+        smokeNotificationLooks!.Clear();
 
         ApplyTick(probe.Tick(full, Providers(OfficialStatus.Operational), TickReason.Initial));
         NSImage? green = statusImage;
@@ -533,15 +545,29 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
         if (smokeNotifications is not [var alert] || alert != hold || ReferenceEquals(statusImage, green) ||
             button.ToolTip?.Contains("ChatGPT HOLD", StringComparison.Ordinal) != true)
             throw new InvalidOperationException("A provider change must request one ChatGPT alert and redraw the icon.");
+        // The banner picture and the menu-bar icon come from one TrayAppearance (orange F: FULL with a service issue).
+        if (smokeNotificationLooks is not [var holdLook] || holdLook.Kind != MacNotificationKind.ProviderIssue ||
+            holdLook.Appearance != statusAppearance || statusAppearance != new TrayAppearance(AgentState.FullThrottle, TrayAttention.Orange))
+            throw new InvalidOperationException("The HOLD notification must be an issue notice drawn from the menu-bar icon's appearance.");
+
+        ApplyTick(probe.Tick(full, Providers(OfficialStatus.Operational), TickReason.ProviderChanged));
+        if (smokeNotifications.Count != 2 ||
+            smokeNotifications[1] != TrayPresentation.ProviderNotification(ProviderKind.OpenAI, Recommendation.Go, "OpenAI fixture", ProviderNames.Provider) ||
+            smokeNotificationLooks.Count != 2 || smokeNotificationLooks[1].Kind != MacNotificationKind.ProviderRecovered ||
+            smokeNotificationLooks[1].Appearance != statusAppearance || statusAppearance != new TrayAppearance(AgentState.FullThrottle, TrayAttention.Green))
+            throw new InvalidOperationException("The normalization notice must be a recovery notice drawn from the green menu-bar icon.");
 
         ApplyTick(probe.Tick(burger, Providers(OfficialStatus.MajorOutage), TickReason.Timer));
-        if (smokeNotifications.Count != 2 || smokeNotifications[1] != TrayPresentation.TransitionNotification(burger) ||
+        if (smokeNotifications.Count != 3 || smokeNotifications[2] != TrayPresentation.TransitionNotification(burger) ||
             button.ToolTip?.Contains("BURGER TIME", StringComparison.Ordinal) != true)
             throw new InvalidOperationException("A schedule transition must request only the transition notification.");
+        if (smokeNotificationLooks.Count != 3 || smokeNotificationLooks[2].Kind != MacNotificationKind.ScheduleBurger ||
+            smokeNotificationLooks[2].Appearance != statusAppearance || statusAppearance != new TrayAppearance(AgentState.BurgerTime, TrayAttention.Red))
+            throw new InvalidOperationException("The BURGER TIME notification must be a warning notice drawn from the red B menu-bar icon.");
 
         NSImage? burgerIcon = statusImage;
         ApplyTick(probe.Tick(burger, Providers(OfficialStatus.MajorOutage), TickReason.Timer));
-        if (smokeNotifications.Count != 2 || !ReferenceEquals(statusImage, burgerIcon))
+        if (smokeNotifications.Count != 3 || smokeNotificationLooks.Count != 3 || !ReferenceEquals(statusImage, burgerIcon))
             throw new InvalidOperationException("An unchanged decision must not notify again or recreate the icon.");
 
         // The app's own ticker path: a duplicate never throws, keeps the first value and logs once.
@@ -556,7 +582,7 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
 
         // Back to the real state for the rest of the smoke run.
         RefreshDisplay(TickReason.Initial);
-        return "display decisions via StatusTicker (no first alert, provider alert, transition only, icon reuse, duplicate kept-first + logged once)";
+        return "display decisions via StatusTicker (no first alert, provider alert, normalization, transition only, icon reuse, notification picture appearance = menu-bar icon appearance, duplicate kept-first + logged once)";
     }
 
     private async Task RunSmokeAsync()
@@ -831,6 +857,7 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
             string earlyResetUiResult = MacEarlyResetSmoke.VerifyPanel(panel, Schedule(now), healthy, quotas, now);
             panel.Close();
             string displayResult = VerifyDisplayDecisions();
+            string notificationImageResult = MacNotificationImageSmoke.Verify();
             string diagnosticResult = await MacPollingDiagnosticSmoke.VerifyAsync(lifetime.Token);
             string recoveryResult = await MacQuotaRecoverySmoke.VerifyAsync(store, quotaNotifications!, contextMenu,
                 BeginInvokeOnMainThread, lifetime.Token);
@@ -853,7 +880,7 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
             await statisticsWindow.RefreshAsync();
             if (!statisticsWindow.Window.IsVisible)
                 throw new InvalidOperationException("Statistics window did not reopen from the menu-bar action.");
-            Console.WriteLine($"PASS: bundle version, menu-tracking countdown timer, 20pt menu icon white/dark disc + color glyph light/dark 1x-2x pixels (glyph contrast min {iconContrast:0.0}:1), left/right/control-click routing, right-click menu, popover open/close/reopen, shared panel text/record menu/quota lines, {activationResult}, tone contrast >= 4.5:1 light+dark (min {weakest:0.0}:1), card text x = quota box text x ({layout.BoxTextX:0}pt; titles {layout.TitleX:0}pt), whole-card click/quota boxes read-only, shared quota title, usage bars (0% empty/100% full, provider colors >= 3:1 light+dark min {barWeakest:0.0}:1, muted when previous/elapsed, none without a value), time layer (tint-track/tint-used >= 1.5:1 min {tintWeakest:0.0}:1, marker >= 3:1 min {markerWeakest:0.0}:1 light+dark, dark tint-used >= 2.0:1 min {darkSeparationWeakest:0.0}:1, marker position/end points, hidden states, spoken row = shared reading text once), one shared Provider detail per quota box, three quota boxes incl. Gemini, popover {layout.Size.Width:0}x{layout.Size.Height:0}pt (this screen usable {layout.UsableHeight:0}pt; 1280x800 {standard.Height:0}pt not cut off, quota area {standardQuota:0}pt; 1024x640 {small.Height:0}pt with quota area {smallQuota:0}pt scrolling), 1,000-char note limit, temporary SQLite, four events/notes via shared factory, {displayResult}, {recoveryResult}, {earlyResetResult}, {earlyResetControllerResult}, {decisionLogResult}, {lateCallbackResult}, {earlyResetUiResult}, {geminiModelResult}, {quotaRowResult}, {diagnosticResult}, statistics (shared text, explanation fits, Mac empty-state hint), injected quota countdown; no account/network/settings changes.");
+            Console.WriteLine($"PASS: bundle version, menu-tracking countdown timer, 20pt menu icon white/dark disc + color glyph light/dark 1x-2x pixels (glyph contrast min {iconContrast:0.0}:1), left/right/control-click routing, right-click menu, popover open/close/reopen, shared panel text/record menu/quota lines, {activationResult}, tone contrast >= 4.5:1 light+dark (min {weakest:0.0}:1), card text x = quota box text x ({layout.BoxTextX:0}pt; titles {layout.TitleX:0}pt), whole-card click/quota boxes read-only, shared quota title, usage bars (0% empty/100% full, provider colors >= 3:1 light+dark min {barWeakest:0.0}:1, muted when previous/elapsed, none without a value), time layer (tint-track/tint-used >= 1.5:1 min {tintWeakest:0.0}:1, marker >= 3:1 min {markerWeakest:0.0}:1 light+dark, dark tint-used >= 2.0:1 min {darkSeparationWeakest:0.0}:1, marker position/end points, hidden states, spoken row = shared reading text once), one shared Provider detail per quota box, three quota boxes incl. Gemini, popover {layout.Size.Width:0}x{layout.Size.Height:0}pt (this screen usable {layout.UsableHeight:0}pt; 1280x800 {standard.Height:0}pt not cut off, quota area {standardQuota:0}pt; 1024x640 {small.Height:0}pt with quota area {smallQuota:0}pt scrolling), 1,000-char note limit, temporary SQLite, four events/notes via shared factory, {displayResult}, {notificationImageResult}, {recoveryResult}, {earlyResetResult}, {earlyResetControllerResult}, {decisionLogResult}, {lateCallbackResult}, {earlyResetUiResult}, {geminiModelResult}, {quotaRowResult}, {diagnosticResult}, statistics (shared text, explanation fits, Mac empty-state hint), injected quota countdown; no account/network/settings changes.");
             ExitCode = 0;
         }
         catch (Exception error)
