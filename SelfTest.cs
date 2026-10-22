@@ -17,7 +17,11 @@ internal static class SelfTest
             Console.WriteLine($"PASS Windows quota CLI paths: {quotaClient:N0} assertions (no account calls)");
             int warningLog = WindowsWarningLogChecks.Run();
             Console.WriteLine($"PASS Windows ticker warning log/rotation/failure isolation: {warningLog:N0} assertions (temporary files only)");
-            Console.WriteLine($"PASS ALL: {autoStart + shared + tray + quotaClient + warningLog:N0} assertions");
+            int quotaNotifications = WindowsQuotaNotificationChecks.Run();
+            Console.WriteLine($"PASS Windows quota notification transport/privacy/bounded log: {quotaNotifications:N0} assertions (no OS notifications)");
+            int quotaToast = WindowsQuotaToastChecks.Run();
+            Console.WriteLine($"PASS Windows quota toast activation/registration guards: {quotaToast:N0} assertions (no persistent registration)");
+            Console.WriteLine($"PASS ALL: {autoStart + shared + tray + quotaClient + warningLog + quotaNotifications + quotaToast:N0} assertions");
             return 0;
         }
         catch (Exception error)

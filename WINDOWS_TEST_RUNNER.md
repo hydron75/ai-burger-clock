@@ -21,11 +21,11 @@
 
 ```powershell
 .\test-windows.ps1 -Slot before `
-  -SourceDirectory '<변경 전 빌드의 bin\Release\net10.0-windows\win-x64>' `
+  -SourceDirectory '<변경 전 빌드의 실제 출력 폴더>' `
   -SourceCommit '<변경 전 전체 커밋>' -ReportGroup pr-123 -Repeat 3
 
 .\test-windows.ps1 -Slot after `
-  -SourceDirectory '<변경 후 빌드의 bin\Release\net10.0-windows\win-x64>' `
+  -SourceDirectory '<변경 후 빌드의 실제 출력 또는 publish 폴더>' `
   -SourceCommit '<변경 후 전체 커밋>' -ReportGroup pr-123 -Repeat 3
 ```
 

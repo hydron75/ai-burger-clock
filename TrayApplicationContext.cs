@@ -31,6 +31,7 @@ namespace AiBurgerClock
         private readonly Dictionary<QuotaProvider, PendingQuotaAlert> pendingQuotaAlerts = new();
         private readonly Func<long> notificationMilliseconds;
         private readonly Action<QuotaNotificationAlert> showQuotaNotification;
+        private readonly Action<NotifyIcon, int> showBalloonNotification;
         private long quotaNotificationNotBefore;
         private bool quotaRecoveryEnabled;
         private bool quotaRecoverySettingsReady;
@@ -65,11 +66,21 @@ namespace AiBurgerClock
         internal event Action<QuotaNotificationAlert>? QuotaNotificationRequested;
 
         // Normal runs use UTC now; the explicit smoke test supplies a clock without changing Windows time.
-        public TrayApplicationContext(bool startedAutomatically, Func<DateTimeOffset>? utcNow = null, bool enableServices = true, UsageStore? usageStore = null, HttpClient? statusHttpClient = null, Action<Uri>? openStatusPage = null, IAccountQuotaClient? accountQuotaClient = null, Func<long>? notificationMilliseconds = null, Action<QuotaNotificationAlert>? quotaNotificationSink = null)
+        public TrayApplicationContext(bool startedAutomatically, Func<DateTimeOffset>? utcNow = null, bool enableServices = true, UsageStore? usageStore = null, HttpClient? statusHttpClient = null, Action<Uri>? openStatusPage = null, IAccountQuotaClient? accountQuotaClient = null, Func<long>? notificationMilliseconds = null, Action<QuotaNotificationAlert>? quotaNotificationSink = null, Action<NotifyIcon, int>? balloonNotificationSink = null)
         {
             this.utcNow = utcNow ?? (() => DateTimeOffset.UtcNow);
             this.notificationMilliseconds = notificationMilliseconds ?? (() => Environment.TickCount64);
-            showQuotaNotification = quotaNotificationSink ?? ShowNativeQuotaNotification;
+            if (quotaNotificationSink is not null) showQuotaNotification = quotaNotificationSink;
+            else
+            {
+                var toast = new WindowsQuotaToastSender(WindowsQuotaToastIdentity.Production);
+                var delivery = new WindowsQuotaNotificationDelivery(toast.Send, ShowNativeQuotaNotification);
+                toast.Failed = delivery.RecordToastFailure;
+                showQuotaNotification = delivery.Send;
+            }
+            // Native smoke injects both transports. Production behavior is independent
+            // of service enablement and retains the original balloon durations.
+            showBalloonNotification = balloonNotificationSink ?? ((icon, timeout) => icon.ShowBalloonTip(timeout));
             this.openStatusPage = openStatusPage ?? ProviderStatusPages.Open;
             store = usageStore ?? new UsageStore();
             statusTicker = new StatusTicker(WindowsProviderNames.Provider, warn: new WindowsWarningLog().Write);
@@ -234,7 +245,7 @@ namespace AiBurgerClock
                     // Do not immediately replace an important concurrent service alert.
                     (trayIcon.BalloonTipTitle, trayIcon.BalloonTipText) = FeedbackText.HolidayNotification(enabled, snapshot);
                     trayIcon.BalloonTipIcon = ToolTipIcon.Info;
-                    trayIcon.ShowBalloonTip(4000);
+                    showBalloonNotification(trayIcon, 4000);
                     DeferQuotaNotifications(4500);
                 }
             }
@@ -284,7 +295,7 @@ namespace AiBurgerClock
             bool full = snapshot.State == AgentState.FullThrottle;
             (trayIcon.BalloonTipTitle, trayIcon.BalloonTipText) = transition;
             trayIcon.BalloonTipIcon = full ? ToolTipIcon.Info : ToolTipIcon.Warning;
-            trayIcon.ShowBalloonTip(6000);
+            showBalloonNotification(trayIcon, 6000);
             DeferQuotaNotifications(6500);
             TransitionNotificationRequested?.Invoke(snapshot.State);
         }
@@ -354,7 +365,7 @@ namespace AiBurgerClock
             {
                 (trayIcon.BalloonTipTitle, trayIcon.BalloonTipText) = (alert.Title, alert.Body);
                 trayIcon.BalloonTipIcon = alert.Recovered ? ToolTipIcon.Info : ToolTipIcon.Warning;
-                trayIcon.ShowBalloonTip(6000);
+                showBalloonNotification(trayIcon, 6000);
                 DeferQuotaNotifications(6500);
                 ProviderNotificationRequested?.Invoke(alert.Provider, alert.Recommendation);
             }
@@ -474,7 +485,7 @@ namespace AiBurgerClock
         {
             (trayIcon.BalloonTipTitle, trayIcon.BalloonTipText) = (alert.Title, alert.Body);
             trayIcon.BalloonTipIcon = ToolTipIcon.Info;
-            trayIcon.ShowBalloonTip(6000);
+            showBalloonNotification(trayIcon, 6000);
         }
 
         private PendingQuotaAlert? CurrentPending(PendingQuotaAlert pending, QuotaReading reading,

@@ -20,6 +20,9 @@ internal static class QuotaEarlyResetUiChecks
         TrayApplicationContext? context = null;
         bool disposed = false;
         var nativeAlerts = new List<QuotaNotificationAlert>();
+        var submitted = new List<QuotaNotificationAlert>();
+        var balloonRequests = new List<(string Title, int Timeout)>();
+        int nativeBalloonEvents = 0;
         var recoveryAlerts = new List<QuotaRecoveryAlert>();
         var deliveredThreads = new List<int>();
         var officialAlerts = new List<ProviderKind>();
@@ -163,7 +166,9 @@ internal static class QuotaEarlyResetUiChecks
         {
             context = new TrayApplicationContext(true, () => now, usageStore: store,
                 statusHttpClient: http, accountQuotaClient: client,
-                notificationMilliseconds: () => milliseconds);
+                notificationMilliseconds: () => milliseconds, quotaNotificationSink: submitted.Add,
+                balloonNotificationSink: (icon, timeout) => balloonRequests.Add((icon.BalloonTipTitle, timeout)));
+            context.TrayIcon.BalloonTipShown += (_, _) => nativeBalloonEvents++;
             context.QuotaNotificationRequested += alert =>
             {
                 nativeAlerts.Add(alert);
@@ -220,9 +225,8 @@ internal static class QuotaEarlyResetUiChecks
                 "A seventeen-to-zero weekly decrease before the unchanged reset coalesces both weekly rows into one native banner");
             Check(HasDecision(QuotaProvider.Claude, "Alert", "Alert"),
                 "The UI decision updates the same completed diagnostic row to an alert candidate rather than claiming OS delivery");
-            Check(recoveryAlerts.Count == 0 && context.TrayIcon.BalloonTipTitle == nativeAlerts[^1].Title &&
-                context.TrayIcon.BalloonTipText == nativeAlerts[^1].Body && context.TrayIcon.BalloonTipIcon == ToolTipIcon.Info,
-                "Early-only notification uses the exact shared informational native balloon without inventing a recovery event");
+            Check(recoveryAlerts.Count == 0 && submitted.Count == 1 && submitted[^1] == nativeAlerts[^1],
+                "Early-only notification submits the exact shared payload without inventing a recovery event or native OS delivery");
             Check(!nativeAlerts[^1].Body.Contains('%') && !nativeAlerts[^1].Body.Contains("KST", StringComparison.Ordinal) &&
                 !nativeAlerts[^1].Body.Contains("synthetic-", StringComparison.Ordinal) &&
                 nativeAlerts[^1].Body.Contains("예정보다 일찍 초기화된 것으로 보입니다", StringComparison.Ordinal),
@@ -375,7 +379,7 @@ internal static class QuotaEarlyResetUiChecks
             await Refresh(QuotaProvider.Claude);
             Drain();
             Check(nativeAlerts.Count == before + 1 && nativeAlerts[^1] is { Recovery: null, EarlyReset.Windows.Count: 1 } &&
-                context.TrayIcon.BalloonTipTitle == nativeAlerts[^1].Title,
+                submitted[^1] == nativeAlerts[^1],
                 "A freshly revalidated queued weekly early reset survives ninety minutes and drains once after service notification spacing");
             Drain();
             Check(nativeAlerts.Count == before + 1, "An already delivered queued early reset cannot repeat on another UI tick");
@@ -469,7 +473,9 @@ internal static class QuotaEarlyResetUiChecks
             var restartedClient = new EarlyResetClient(Rows(0, 0));
             context = new TrayApplicationContext(true, () => now, usageStore: new UsageStore(store.DatabasePath),
                 statusHttpClient: http, accountQuotaClient: restartedClient,
-                notificationMilliseconds: () => milliseconds);
+                notificationMilliseconds: () => milliseconds, quotaNotificationSink: submitted.Add,
+                balloonNotificationSink: (icon, timeout) => balloonRequests.Add((icon.BalloonTipTitle, timeout)));
+            context.TrayIcon.BalloonTipShown += (_, _) => nativeBalloonEvents++;
             disposed = false;
             context.QuotaNotificationRequested += restartedAlerts.Add;
             await InitialRequestsComplete();
@@ -496,7 +502,9 @@ internal static class QuotaEarlyResetUiChecks
             var cacheResetAlerts = new List<QuotaNotificationAlert>();
             context = new TrayApplicationContext(true, () => now, usageStore: new UsageStore(store.DatabasePath),
                 statusHttpClient: http, accountQuotaClient: cacheResetClient,
-                notificationMilliseconds: () => milliseconds);
+                notificationMilliseconds: () => milliseconds, quotaNotificationSink: submitted.Add,
+                balloonNotificationSink: (icon, timeout) => balloonRequests.Add((icon.BalloonTipTitle, timeout)));
+            context.TrayIcon.BalloonTipShown += (_, _) => nativeBalloonEvents++;
             disposed = false;
             context.QuotaNotificationRequested += cacheResetAlerts.Add;
             await InitialRequestsComplete();
@@ -520,6 +528,9 @@ internal static class QuotaEarlyResetUiChecks
             disposed = true;
             Check(context.StatusWindow.IsDisposed,
                 "The cached-decrease restart host disposes normally and leaves the outer smoke loop running");
+            Check(submitted.Count == nativeAlerts.Count + restartedAlerts.Count + cacheResetAlerts.Count &&
+                submitted.Count > 0 && balloonRequests.Count > 0 && nativeBalloonEvents == 0,
+                "Every early-reset smoke host captures quota and service requests without native notification delivery");
         }
         finally
         {
@@ -551,6 +562,8 @@ internal static class QuotaEarlyResetUiChecks
         bool disposed = false;
         bool rejectDelivery = true;
         int attempts = 0;
+        int balloonRequests = 0;
+        int nativeBalloonEvents = 0;
         var delivered = new List<QuotaNotificationAlert>();
 
         void Check(bool condition, string label)
@@ -579,7 +592,8 @@ internal static class QuotaEarlyResetUiChecks
                 {
                     attempts++;
                     if (rejectDelivery) throw new InvalidOperationException("Synthetic native notification delivery failure");
-                });
+                }, balloonNotificationSink: (_, _) => balloonRequests++);
+            context.TrayIcon.BalloonTipShown += (_, _) => nativeBalloonEvents++;
             context.QuotaNotificationRequested += delivered.Add;
             await context.Initialization;
             var deadline = DateTime.UtcNow.AddSeconds(5);
@@ -653,6 +667,8 @@ internal static class QuotaEarlyResetUiChecks
             disposed = true;
             Check(context.StatusWindow.IsDisposed,
                 "Injected delivery failure host stops and disposes normally without touching actual OS notification settings");
+            Check(attempts == 2 && delivered.Count == 1 && balloonRequests == 0 && nativeBalloonEvents == 0,
+                "Synthetic quota delivery failure and recovery never fall through to a real Windows notification");
         }
         finally
         {

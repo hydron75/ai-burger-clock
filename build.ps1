@@ -24,7 +24,7 @@ if ($ReportGroup) {
 }
 if ($LASTEXITCODE -ne 0) { throw "Build failed: $LASTEXITCODE" }
 
-$outputPath = Join-Path $projectDirectory "bin\$Configuration\net10.0-windows\win-x64\AI Burger Clock.exe"
+$outputPath = Join-Path $projectDirectory "bin\$Configuration\net10.0-windows10.0.19041.0\win-x64\AI Burger Clock.exe"
 if ($Publish) {
     if ($ReportGroup) {
         & dotnet publish $projectPath -c $Configuration -p:PublishProfile=Portable --nologo -warnaserror 2>&1 | Tee-Object -FilePath (Join-Path $reportDirectory 'publish.txt')

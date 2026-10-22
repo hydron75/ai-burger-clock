@@ -1,5 +1,7 @@
 # 소스코드, 쉬운 말로 읽기
 
+**Windows 한도 토스트 개발 PR(미배포):** `WindowsQuotaToast.cs`는 WinRT 전송·무동작 COM 콜백, `WindowsQuotaToastRegistration.cs`는 명시적 등록/해제·소유권 검사, `WindowsQuotaNotificationDelivery.cs`는 풍선 대체와 내용 없는 제한된 발송 진단을 맡습니다. `WindowsQuotaToastIntegration.cs`는 별도 시험 ID 전용이며 기본 smoke는 가짜 전송만 사용합니다. `WindowsQuotaNotificationChecks.cs`·`WindowsQuotaToastChecks.cs`는 Windows `SelfTest`에서만 호출합니다. 공통 원본·Mac·버전은 바꾸지 않고, Windows TFM에는 WinRT SDK 참조를 위한 `10.0.19041.0`을 명시합니다. 아래 과거 파일 수·검증 기록은 해당 배포 기준으로 유지합니다. [상세 계약](WINDOWS_QUOTA_NOTIFICATIONS.md).
+
 **Windows 2.8.1 기준(2026-10-20 KST):** #82 병합 main `b45e221eacecb7b74cd706dba92c2fab403f8e09`에서 버전·기록만 올립니다. #74 공통 대기 재검증, #80 이름/값 분리, #82 주간 조기 초기화·캐시 비교·진단·시계 예외 시 게이트 반환을 포함합니다. 사용자가 PR 병합 전 로컬 배포까지 승인했으며 PR은 사용자가 병합합니다. [검사·EXE 소스·SHA-256·백업과 2.8.0 복원](MAINTENANCE_2_8_1.md). 아래 2.8.0 검사·배포 수치는 당시 결과입니다.
 
 **이전 2.8.0 최종 검사:** SDK 10.0.402·빌드/publish **경고 0/오류 0**, 단일 EXE self-test **254,609건(공통 254,302 + Windows 307)·ExitCode 0**, 최종 별도 smoke **1회 634 PASS·ExitCode 0**입니다. 승인 전 준비 후보의 **5회 모두 634 PASS·ExitCode 0**, PNG 20개/layout 14개 동일과 구분합니다. 당시 자동 시작 경로·값·종류는 그대로였으며 바이트 대조 헬퍼 오탐은 읽기 전용 검증으로 해결했습니다. 실제 EXE 소스와 뒤의 결과 문서 커밋을 혼동하지 않습니다.

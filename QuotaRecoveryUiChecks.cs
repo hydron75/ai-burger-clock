@@ -18,6 +18,9 @@ internal static class QuotaRecoveryUiChecks
         TrayApplicationContext? context = null;
         bool contextDisposed = false;
         var alerts = new List<QuotaRecoveryAlert>();
+        var submitted = new List<QuotaNotificationAlert>();
+        var balloonRequests = new List<(string Title, int Timeout)>();
+        int nativeBalloonEvents = 0;
         int uiThread = Environment.CurrentManagedThreadId;
         var deliveryThreads = new List<int>();
 
@@ -87,7 +90,9 @@ internal static class QuotaRecoveryUiChecks
                 "Fresh quota recovery preference defaults OFF without a new schema");
             context = new TrayApplicationContext(true, () => now, usageStore: store,
                 statusHttpClient: http, accountQuotaClient: client,
-                notificationMilliseconds: () => milliseconds);
+                notificationMilliseconds: () => milliseconds, quotaNotificationSink: submitted.Add,
+                balloonNotificationSink: (icon, timeout) => balloonRequests.Add((icon.BalloonTipTitle, timeout)));
+            context.TrayIcon.BalloonTipShown += (_, _) => nativeBalloonEvents++;
             context.QuotaRecoveryNotificationRequested += alert =>
             {
                 alerts.Add(alert);
@@ -140,9 +145,9 @@ internal static class QuotaRecoveryUiChecks
             Check(alerts.Count == 1 && alerts[0].Provider == QuotaProvider.Claude &&
                 alerts[0].WindowIds.SequenceEqual(new[] { "session" }),
                 "New accepted recovery reaches exactly one native request for its recovered window");
-            Check(context.TrayIcon.BalloonTipTitle == alerts[0].Title && context.TrayIcon.BalloonTipText == alerts[0].Body &&
-                context.TrayIcon.BalloonTipIcon == ToolTipIcon.Info,
-                "Native recovery balloon uses the exact shared title and body with informational styling");
+            Check(submitted.Count == 1 && submitted[0].Title == alerts[0].Title && submitted[0].Body == alerts[0].Body &&
+                submitted[0] is { Recovery: not null, EarlyReset: null },
+                "Captured recovery transport uses the exact shared title and body without creating an OS notification");
             Check(alerts[0].Body.Contains("다른 한도는 아직 소진 상태", StringComparison.Ordinal) &&
                 !alerts[0].WindowIds.Contains("weekly"),
                 "Partial recovery identifies only recovered rows without promising whole-Provider availability");
@@ -198,7 +203,7 @@ internal static class QuotaRecoveryUiChecks
             Check(alerts.Count == 3 && context.TrayIcon.BalloonTipTitle == priorityTitle,
                 "A concurrent quota recovery queues without replacing the higher-priority service balloon");
             AdvanceNotificationQueue();
-            Check(alerts.Count == 4 && context.TrayIcon.BalloonTipTitle == alerts[^1].Title,
+            Check(alerts.Count == 4 && submitted[^1].Title == alerts[^1].Title,
                 "Queued quota recovery drains after the existing service notification spacing");
 
             foreach (var provider in new[] { QuotaProvider.Codex, QuotaProvider.Gemini })
@@ -302,7 +307,9 @@ internal static class QuotaRecoveryUiChecks
             var restartedAlerts = new List<QuotaRecoveryAlert>();
             context = new TrayApplicationContext(true, () => now, usageStore: new UsageStore(store.DatabasePath),
                 statusHttpClient: http, accountQuotaClient: restartedClient,
-                notificationMilliseconds: () => milliseconds);
+                notificationMilliseconds: () => milliseconds, quotaNotificationSink: submitted.Add,
+                balloonNotificationSink: (icon, timeout) => balloonRequests.Add((icon.BalloonTipTitle, timeout)));
+            context.TrayIcon.BalloonTipShown += (_, _) => nativeBalloonEvents++;
             contextDisposed = false;
             context.QuotaRecoveryNotificationRequested += restartedAlerts.Add;
             await context.Initialization;
@@ -329,6 +336,9 @@ internal static class QuotaRecoveryUiChecks
             contextDisposed = true;
             Check(context.StatusWindow.IsDisposed,
                 "The restarted private host also stops and disposes without exiting the outer smoke loop");
+            Check(submitted.Count == alerts.Count + restartedAlerts.Count && submitted.Count > 0 &&
+                balloonRequests.Count > 0 && nativeBalloonEvents == 0,
+                "Both recovery smoke hosts capture every quota and service request without native notification delivery");
         }
         finally
         {
