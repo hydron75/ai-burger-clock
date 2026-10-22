@@ -240,9 +240,10 @@ internal sealed class MacStatusPanel : IDisposable
     private void UpdateQuotas(IReadOnlyList<QuotaState> states, DateTimeOffset now,
         IReadOnlyDictionary<QuotaProvider, QuotaEarlyResetAlert>? recentEarlyResets)
     {
-        string key = string.Join('|', states.Select(s => s.Provider + ":" +
-            string.Join(',', s.Reading?.Windows.Select(w => w.Id) ?? [])));
         IReadOnlyList<QuotaSectionText> sections = QuotaPanelModel.Sections(states, now, recentEarlyResets);
+        // Shared structural key (counts and length-prefixed IDs): window IDs are opaque, so a delimiter-joined key
+        // could call two different structures the same and leave stale rows. Values and text do not change it.
+        string key = QuotaPanelModel.LayoutKey(sections);
         if (key != quotaLayoutKey)
         {
             quotaLayoutKey = key;
@@ -986,6 +987,11 @@ internal sealed class MacStatusPanel : IDisposable
 
     // Smoke: how many usage bars are drawn, and the visible fill of one of them.
     internal int QuotaBarCount => quotas.Values.Sum(views => views.Bars.Count);
+
+    // Smoke: what the panel really holds per quota box (its row IDs, the box view, how many boxes), to compare with the model.
+    internal string[] QuotaRowIds(QuotaProvider provider) => quotas[provider].Rows.Keys.Order(StringComparer.Ordinal).ToArray();
+    internal NSView QuotaBoxView(QuotaProvider provider) => quotas[provider].Box;
+    internal int QuotaBoxCount => quotas.Count;
     internal nfloat QuotaBarFill(QuotaProvider provider, string windowId) => quotas[provider].Bars[windowId].FilledWidth;
 
     public void Dispose()

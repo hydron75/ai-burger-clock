@@ -252,7 +252,7 @@ internal sealed class AccountQuotaView : Panel, IMessageFilter
         IReadOnlyDictionary<QuotaProvider, QuotaEarlyResetAlert>? recentEarlyResets = null)
     {
         var sections = QuotaPanelModel.Sections(states, now, recentEarlyResets);
-        string key = DeviceDpi + "|" + string.Join('|', sections.Select(s => s.Provider + ":" + (s.Scope is not null) + ":" + string.Join(',', s.Rows.Select(row => row.WindowId))));
+        string key = DeviceDpi + "|" + QuotaPanelModel.LayoutKey(sections);
         if (key != layoutKey)
         {
             HideDetail();

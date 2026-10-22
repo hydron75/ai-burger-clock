@@ -441,7 +441,13 @@ internal sealed class UsageStore(string? databasePath = null)
                     Pooling = false, DefaultTimeout = 5
                 }.ToString());
                 connection.Open();
-                try { EnsureSchema(connection); }
+                // A transient read error is not a failed migration. Read the
+                // version before entering the backup/schema-mutation latch so
+                // the next operation can recover after a temporary lock clears.
+                long version;
+                using (SqliteCommand schema = connection.CreateCommand())
+                    version = ReadSchemaVersion(schema);
+                try { EnsureSchema(connection, version); }
                 catch (Exception ex) when (LatchesSchemaFailure(ex))
                 {
                     // Polling must not repeatedly create whole-DB backups after a
@@ -466,10 +472,9 @@ internal sealed class UsageStore(string? databasePath = null)
         "데이터베이스 준비에 실패하여 자동 재시도를 중단했습니다. 원본과 pre-schema2 백업을 확인한 뒤 앱을 다시 시작하세요. " + cause.Message,
         cause);
 
-    private static void EnsureSchema(SqliteConnection connection)
+    private static void EnsureSchema(SqliteConnection connection, long version)
     {
         using SqliteCommand command = connection.CreateCommand();
-        long version = ReadSchemaVersion(command);
         if (version == SchemaVersion) return;
 
         if (version == 1) BackupBeforeMigration(connection);

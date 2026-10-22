@@ -331,6 +331,7 @@ internal sealed class ProviderStatusClient(HttpClient client, Func<DateTimeOffse
             if (geminiIds.Count == 0) return Unknown(provider, now, source, "공식 catalog에서 Gemini를 찾을 수 없음");
 
             var problems = new List<Problem>();
+            var uncertainDetails = new List<Problem>();
             bool uncertain = false;
             foreach (var incident in history.RootElement.EnumerateArray())
             {
@@ -354,7 +355,12 @@ internal sealed class ProviderStatusClient(HttpClient client, Func<DateTimeOffse
                     related = geminiIds.Contains(legacyId);
                 }
                 if (!scoped)
-                    return Unknown(provider, now, source, "Google incident의 product 범위를 확인할 수 없음");
+                {
+                    uncertain = true;
+                    uncertainDetails.Add(new(OfficialStatus.Unknown, "", Text(incident, "id"),
+                        Clean(Text(incident, "external_desc"), 180)));
+                    continue;
+                }
                 if (!related) continue;
 
                 var begin = Text(incident, "begin");
@@ -390,8 +396,8 @@ internal sealed class ProviderStatusClient(HttpClient client, Func<DateTimeOffse
                     problems.Add(new(status, "Gemini", Text(incident, "id"), Clean(title, 180)));
                 }
             }
-            if (problems.Count > 0) return FromProblems(provider, now, source, problems);
-            if (uncertain) return Unknown(provider, now, source, "Gemini incident 상태를 확인할 수 없음");
+            if (problems.Count > 0) return WithUncertainIncidents(FromProblems(provider, now, source, problems), uncertainDetails);
+            if (uncertain) return Unknown(provider, now, source, "Gemini incident 상태 또는 product 범위를 확인할 수 없음", uncertainDetails);
             return new(provider, OfficialStatus.Operational, now, now, "Gemini 진행 중 장애 없음", "Gemini", Source: source);
         }
         catch (JsonException)
@@ -418,7 +424,7 @@ internal sealed class ProviderStatusClient(HttpClient client, Func<DateTimeOffse
         if (provider == ProviderKind.Claude)
             return ContainsAny(name, "console", "government") && !ContainsAny(name, "claude code", "claude.ai", "claude api", "cowork");
         // A specific Agent/Codex capability mentioned alongside an excluded product remains relevant.
-        if (ContainsAny(name, "codex", "deep research", "chatgpt work", "conversation", "file upload", "connector")) return false;
+        if (ContainsAny(name, "codex", "deep research", "chatgpt work", "conversation", "file upload", "connector", "agent mode", "chatgpt search")) return false;
         return ContainsAny(name, "sora", "voice", "image", "realtime", "embedding", "fine-tun", "fedramp", "ads ", "billing", "overbilling");
     }
 
