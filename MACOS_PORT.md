@@ -2080,3 +2080,28 @@ Mac 알림은 종류와 관계없이 앱 번들 아이콘(초록 "F")만 보여,
 - `build.sh`의 실제 `--quit-running`·재확인 흐름 전체(검사는 함수 단위와 줄 순서)와 사용자 환경에서의 `-getProperty` 평가는 임시 사본 빌드에서 한 번씩만 통과를 확인했다.
 - 6건의 창 smoke는 이번 실행에서 SKIP이다(전체 화면 앱 위).
 - 저장소 경로 빌드·앱 교체는 하지 않았다. 앱 버전은 올리지 않았다.
+
+## 63. 공통 리뷰 수정(#91)의 Mac 확인·WIN-07 Mac 전환
+
+2026-10-22 KST. 범위: **Mac 파일·문서만**(공통 원본·Windows 파일·앱 버전은 바꾸지 않음). 대상: Draft PR #91(`codex/shared-review-regressions`)의 공통 변경(CORE-01·02·04, WIN-07 공통 `QuotaPanelModel.LayoutKey`, TEST-02·03). 같은 브랜치에 Mac 커밋을 더했다(#90 병합 main을 먼저 merge). 저장소 경로 번들·실행 중인 앱은 건드리지 않았다.
+
+### WIN-07의 Mac 전환
+
+| 항목 | 내용 |
+|---|---|
+| 재현(수정 전) | `MacQuotaLayoutKeySmoke`(합성 ID, 패널을 만들되 **보이지 않고 활성화도 없음**)를 수정 전 `MacStatusPanel.UpdateQuotas`로 실행하면 Codex 두 행 `a:primary`·`b:primary` → 한 행 `a:primary,b:primary`에서 `KeyNotFoundException`(Windows와 같은 증상). 키가 같아 박스를 다시 만들지 않고 낡은 행에 새 ID를 찾았다. 같은 검사의 다른 시나리오도 수정 전 로직으로 각각 실패를 확인했다: 두 박스 ↔ 구분자가 든 ID 한 박스(`KeyNotFoundException`), 대기 박스(자리표시 행) ↔ 창 없는 조회(낡은 행이 남음) |
+| 수정 | `UpdateQuotas`가 `QuotaPanelModel.Sections(...)` 결과로 `QuotaPanelModel.LayoutKey(sections)`를 키로 쓴다(기존 쉼표·`|` join 제거). controls 재구성·텍스트 갱신·VoiceOver·스크롤 흐름은 그대로 |
+| 수정 후 | 17번의 갱신(쉼표·구분자·Unicode ID, 두 행↔한 행, 두 박스↔한 박스, 대기↔창 없음, 순서 바꿈)에서 예외 없이 패널의 박스 수·행 ID가 모델과 같다. 값·문구만 바뀔 때 박스 뷰가 그대로(재구성 없음) |
+
+### 이 Mac에서 수행한 검증(임시 사본에서만)
+
+| 항목 | 결과 |
+|---|---|
+| 도구 | Xcode 27.1(27A9275), .NET SDK 10.0.402, macOS 워크로드 27.0.10742(최신과 같음), 옵션 없이 `bash Mac/build.sh` |
+| Shared.Tests | **255,197건 PASS, 20회 반복 모두 PASS·실패 0**(약 11초씩). 이 스위트에 service monitor 139건·quota 레이아웃 키 49건이 포함된다. 출력에 SKIP 표기는 없었다 |
+| 빌드 | 경고 0 / 오류 0 |
+| `--smoke-test` | **1회**, 전체 화면 앱 없음 확인 뒤 실행: 종료 코드 0, SKIP 없이 `PASS`(팝오버·통계 창 6건 포함 전체). 새 `quota layout key` 시나리오 17갱신 포함 |
+
+### 수행하지 않은 검증
+- CORE-01·02(Provider 상태 판정)·CORE-04(임시 SQLite 배타 잠금 복구)·TEST-02·03(monitor 검사)은 공통 검사로 Mac에서도 통과했고, 별도 Mac UI 검사는 없다.
+- 실제 계정·운영 DB·실제 장애 공지, 저장소 경로 번들 실행·팝오버의 실제 한도 화면(합성 검사만), 장시간 운영.
