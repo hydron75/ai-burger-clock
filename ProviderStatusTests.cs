@@ -150,7 +150,132 @@ internal static class ProviderStatusTests
         Check(Google(GoogleHistory("gemini", "SERVICE_OUTAGE")).IncidentId == "google-incident", "Google incident id retained");
         GoogleExpect("Legacy Google service_key supported", """[{"id":"legacy","service_key":"gemini","begin":"2026-09-18T00:00:00Z","status_impact":"SERVICE_DISRUPTION"}]""", OfficialStatus.PartialOutage);
 
+        count += MixedOpenAiIncidentRegressionTests();
+        count += MixedGoogleIncidentRegressionTests();
         count += Task.Run(TransportTestsAsync).GetAwaiter().GetResult();
+        return count;
+    }
+
+    // Synthetic regression for CORE-01: excluded-product words cannot erase an
+    // explicitly named supported capability, but a broad ChatGPT link alone is not enough.
+    internal static int MixedOpenAiIncidentRegressionTests()
+    {
+        int count = 0;
+        void Check(bool condition, string description)
+        {
+            count++;
+            if (!condition) throw new InvalidOperationException("CORE-01 regression failed: " + description);
+        }
+        foreach (var fixture in new[]
+        {
+            (Component: "Agent", Title: "ChatGPT agent mode and voice are unavailable"),
+            (Component: "Agent", Title: "ChatGPT agent mode and image generation are unavailable"),
+            (Component: "Agent", Title: "ChatGPT agent mode and billing are unavailable"),
+            (Component: "Search", Title: "ChatGPT search and voice are unavailable"),
+            (Component: "Codex CLI", Title: "Codex CLI and image generation are unavailable")
+        })
+        {
+            foreach (bool linked in new[] { true, false })
+            {
+                var result = ProviderStatusClient.ParseStatuspage(ProviderKind.OpenAI,
+                    Page([Component(fixture.Component, "operational", "supported")],
+                        [Incident(fixture.Title, "critical", linked ? ["supported"] : [])]), Now);
+                Check(result.Status == OfficialStatus.MajorOutage,
+                    $"mixed {fixture.Component} outage retained, linked={linked}");
+                Check(result.IncidentId == "test-incident" && result.IncidentTitle == fixture.Title &&
+                    result.AssessmentIssue.Length == 0, "mixed incident remains confirmed, not uncertain");
+                Check(RecommendationPolicy.Calculate(AgentState.FullThrottle, result.Status) == Recommendation.Stop,
+                    "confirmed mixed outage cannot become GO");
+            }
+        }
+        foreach (string excluded in new[] { "voice", "image generation", "billing" })
+        {
+            foreach (bool linked in new[] { true, false })
+            {
+                var result = ProviderStatusClient.ParseStatuspage(ProviderKind.OpenAI,
+                    Page([Component("ChatGPT", "operational", "chat")],
+                        [Incident($"ChatGPT {excluded} failure", "critical", linked ? ["chat"] : [])]), Now);
+                Check(result.Status == OfficialStatus.Operational && result.IncidentId.Length == 0,
+                    $"{excluded}-only incident remains excluded with broad link={linked}");
+            }
+        }
+        foreach (string state in new[] { "resolved", "postmortem", "completed" })
+        {
+            var result = ProviderStatusClient.ParseStatuspage(ProviderKind.OpenAI,
+                Page([Component("Agent", "operational", "agent")],
+                    [Incident("ChatGPT agent mode and voice recovered", "critical", ["agent"], state)]), Now);
+            Check(result.Status == OfficialStatus.Operational, "resolved mixed incident ignored: " + state);
+        }
+        return count;
+    }
+
+    // Synthetic regression for CORE-02: uncertain product scope is additional
+    // evidence, never a reason to discard an independently confirmed Gemini outage.
+    internal static int MixedGoogleIncidentRegressionTests()
+    {
+        int count = 0;
+        void Check(bool condition, string description)
+        {
+            count++;
+            if (!condition) throw new InvalidOperationException("CORE-02 regression failed: " + description);
+        }
+        object Unscoped() => new
+        {
+            id = "unknown-product-incident", begin = "2026-09-18T00:00:00Z",
+            external_desc = "Synthetic incident with unknown product scope", status_impact = "SERVICE_OUTAGE"
+        };
+        object Known(string state, string? end = null, string product = "gemini") => new
+        {
+            id = "confirmed-gemini-incident", begin = "2026-09-18T00:00:00Z", end,
+            external_desc = "Synthetic scoped incident", affected_products = new[] { new { id = product } },
+            status_impact = state
+        };
+        ProviderStatus Parse(params object[] incidents) => ProviderStatusClient.ParseGoogle(Catalog,
+            JsonSerializer.Serialize(incidents), Now);
+        foreach (var fixture in new[]
+        {
+            (State: "SERVICE_OUTAGE", Status: OfficialStatus.MajorOutage, Recommendation: Recommendation.Stop),
+            (State: "SERVICE_DISRUPTION", Status: OfficialStatus.PartialOutage, Recommendation: Recommendation.Stop),
+            (State: "SERVICE_INFORMATION", Status: OfficialStatus.Degraded, Recommendation: Recommendation.Hold)
+        })
+        {
+            foreach (bool unknownFirst in new[] { true, false })
+            {
+                var result = unknownFirst ? Parse(Unscoped(), Known(fixture.State)) : Parse(Known(fixture.State), Unscoped());
+                Check(result.Status == fixture.Status,
+                    $"confirmed severity survives unknown scope, unknownFirst={unknownFirst}, state={fixture.State}");
+                Check(result.IncidentId == "confirmed-gemini-incident" && result.IncidentTitle == "Synthetic scoped incident" &&
+                    result.RelevantComponent == "Gemini", "confirmed metadata retained separately");
+                Check(result.UncertainIncidentId == "unknown-product-incident" &&
+                    result.UncertainIncidentTitle == "Synthetic incident with unknown product scope" &&
+                    result.AssessmentIssue.Length > 0, "unknown scope metadata remains inspectable");
+                Check(RecommendationPolicy.Calculate(AgentState.FullThrottle, result.Status) == fixture.Recommendation,
+                    "confirmed outage cannot be downgraded to CHECK by unknown scope");
+            }
+        }
+        var unknownOnly = Parse(Unscoped());
+        Check(unknownOnly.Status == OfficialStatus.Unknown && unknownOnly.IncidentId.Length == 0 &&
+            unknownOnly.UncertainIncidentId == "unknown-product-incident", "unscoped alone stays UNKNOWN with separate metadata");
+        foreach (var inactive in new[]
+        {
+            Known("SERVICE_OUTAGE", end: "2026-09-19T05:59:59Z"),
+            Known("SERVICE_OUTAGE", end: "2026-09-19T06:00:00Z"),
+            Known("AVAILABLE"),
+            Known("SERVICE_OUTAGE", product: "gmail")
+        })
+        {
+            Check(Parse(inactive).Status == OfficialStatus.Operational, "resolved, available, and other products remain ignored");
+            var unknown = Parse(inactive, Unscoped());
+            Check(unknown.Status == OfficialStatus.Unknown && unknown.IncidentId.Length == 0 &&
+                unknown.UncertainIncidentId == "unknown-product-incident", "inactive or irrelevant incident never creates confirmed outage");
+        }
+        var futureEnd = Parse(Known("SERVICE_OUTAGE", end: "2026-09-19T06:00:01Z"), Unscoped());
+        Check(futureEnd.Status == OfficialStatus.MajorOutage && futureEnd.AssessmentIssue.Length > 0,
+            "a future end cannot erase confirmed current severity");
+        var recovered = Parse();
+        Check(recovered.Status == OfficialStatus.Operational && recovered.IncidentId.Length == 0 &&
+            recovered.UncertainIncidentId.Length == 0 && recovered.AssessmentIssue.Length == 0,
+            "mixed incident metadata never leaks into a later healthy response");
         return count;
     }
 

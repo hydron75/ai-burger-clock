@@ -163,6 +163,47 @@ internal static class HolidayStorageTests
         Check(UsageStore.LatchesSchemaFailure(new InvalidDataException()), "backup verification failure is latched like other migration failures");
         Check(!UsageStore.LatchesSchemaFailure(new InvalidOperationException()), "future-schema rejection stays retryable without backup");
 
+        // A real rollback-journal exclusive lock makes the schema read fail;
+        // no migration or backup has begun. Keep the normal five-second timeout
+        // rather than adding a product-only injection seam for this regression.
+        string busyPath = Path.Combine(directory, "busy-current-schema.db");
+        UsageStore busyStore = new(busyPath);
+        await busyStore.InitializeAsync();
+        await busyStore.SetHolidayAdjustmentAsync(false);
+        using (SqliteConnection blocker = Open(busyPath))
+        {
+            using SqliteCommand command = blocker.CreateCommand();
+            command.CommandText = "PRAGMA journal_mode=DELETE;";
+            Check(string.Equals(command.ExecuteScalar() as string, "delete", StringComparison.OrdinalIgnoreCase),
+                "current-schema transient-lock fixture uses rollback journal");
+            command.CommandText = "BEGIN EXCLUSIVE;";
+            command.ExecuteNonQuery();
+            bool schemaBusy = false;
+            try { await busyStore.InitializeAsync(); }
+            catch (SqliteException ex) when (ex.SqliteErrorCode is 5 or 6) { schemaBusy = true; }
+            catch (InvalidOperationException ex) when (ex.InnerException is SqliteException { SqliteErrorCode: 5 or 6 })
+            { schemaBusy = true; }
+            finally
+            {
+                command.CommandText = "ROLLBACK;";
+                command.ExecuteNonQuery();
+            }
+            Check(schemaBusy, "exclusive lock reproduces a transient SQLITE_BUSY/LOCKED schema read failure");
+        }
+        bool recovered = false;
+        try
+        {
+            await busyStore.InitializeAsync();
+            recovered = !await busyStore.GetHolidayAdjustmentAsync();
+        }
+        catch (InvalidOperationException) { }
+        Check(recovered, "same current-schema store recovers after the transient schema-read lock is released");
+        await busyStore.SetHolidayAdjustmentAsync(true);
+        Check(await busyStore.GetHolidayAdjustmentAsync(), "recovered store can write and read settings");
+        Check(Scalar(busyPath, "PRAGMA user_version;") == 2 &&
+            !Directory.EnumerateFiles(directory, "busy-current-schema.pre-schema2-*.db").Any(),
+            "transient current-schema failure does not migrate, downgrade or create a backup");
+
         string futurePath = Path.Combine(directory, "future.db");
         CreateVersionOne(futurePath);
         Execute(futurePath, "PRAGMA user_version=99; UPDATE AppMetadata SET Value='99' WHERE Key='SchemaVersion';");
@@ -171,6 +212,21 @@ internal static class HolidayStorageTests
         catch (InvalidOperationException) { futureRejected = true; }
         Check(futureRejected && Scalar(futurePath, "PRAGMA user_version;") == 99, "future schema rejected without downgrade");
         Check(!Directory.EnumerateFiles(directory, "future.pre-schema2-*.db").Any(), "future schema does not trigger migration or backup");
+
+        string futureCurrentPath = Path.Combine(directory, "future-current-schema.db");
+        UsageStore futureCurrentStore = new(futureCurrentPath);
+        await futureCurrentStore.InitializeAsync();
+        Execute(futureCurrentPath, "PRAGMA user_version=99;");
+        bool futureCurrentRejected = false;
+        try { await futureCurrentStore.InitializeAsync(); }
+        catch (InvalidOperationException) { futureCurrentRejected = true; }
+        Check(futureCurrentRejected && Scalar(futureCurrentPath, "PRAGMA user_version;") == 99,
+            "future-schema rejection on an existing store leaves the version untouched");
+        Execute(futureCurrentPath, "PRAGMA user_version=2;");
+        Check(await futureCurrentStore.GetHolidayAdjustmentAsync(),
+            "future-schema rejection is not latched when a supported database is restored");
+        Check(!Directory.EnumerateFiles(directory, "future-current-schema.pre-schema2-*.db").Any(),
+            "future-schema rejection and supported restore never create a migration backup");
         Check(Scalar(legacyPath, "SELECT COUNT(*) FROM pragma_integrity_check WHERE integrity_check='ok';") == 1, "migrated database integrity after restart/write");
         return assertions;
     }

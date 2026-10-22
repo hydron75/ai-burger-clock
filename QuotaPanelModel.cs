@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text;
 
 namespace AiBurgerClock;
 
@@ -42,6 +43,29 @@ internal static class QuotaPanelModel
     public static IReadOnlyList<QuotaSectionText> Sections(IReadOnlyList<QuotaState> states, DateTimeOffset now,
         IReadOnlyDictionary<QuotaProvider, QuotaEarlyResetAlert>? recentEarlyResets = null) =>
         states.Select(state => Section(state, now, recentEarlyResets?.GetValueOrDefault(state.Provider))).ToArray();
+
+    // Both hosts cache native controls by section/row identity. IDs are opaque and
+    // may contain any delimiter; counts and UTF-16 length prefixes keep this exact,
+    // ordered layout signature unambiguous without changing the IDs themselves.
+    // Values/text/tone do not affect control structure. Hosts add their own DPI key.
+    internal static string LayoutKey(IReadOnlyList<QuotaSectionText> sections)
+    {
+        var key = new StringBuilder();
+        void Number(int value) => key.Append(value.ToString(CultureInfo.InvariantCulture)).Append(':');
+        Number(sections.Count);
+        foreach (var section in sections)
+        {
+            Number((int)section.Provider);
+            Number(section.Scope is null ? 0 : 1);
+            Number(section.Rows.Count);
+            foreach (var row in section.Rows)
+            {
+                Number(row.WindowId.Length);
+                key.Append(row.WindowId);
+            }
+        }
+        return key.ToString();
+    }
 
     public static QuotaSectionText Section(QuotaState state, DateTimeOffset now, QuotaEarlyResetAlert? recentEarlyReset = null)
     {

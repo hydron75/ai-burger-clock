@@ -45,6 +45,7 @@ internal static class SharedTestSuite
             Report("panel text/tones (Windows golden)", PanelModelTests.Run());
             Report("quota usage/countdown/provider detail (portable)", QuotaPresentationTests.Run());
             Report("quota split row text/middle ellipsis (synthetic)", QuotaRowTextTests.Run());
+            Report("quota layout identity/opaque ID encoding (synthetic)", QuotaLayoutKeyTests.Run());
             Report("quota snapshot time/usage comparison (portable)", QuotaPacingTests.Run());
             Report("quota recovery notification decisions/text (synthetic)", QuotaRecoveryNotificationTests.Run());
             Report("quota recovery notification settings (temporary SQLite)", await QuotaRecoverySettingsTests.RunAsync(directory));

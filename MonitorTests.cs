@@ -15,11 +15,14 @@ internal sealed class TestStatusHttpHandler : HttpMessageHandler
     public string? OpenAiComponentsJson { get; set; }
     public bool Block { get; set; }
     public int RequestCount;
+    public Func<int, CancellationToken, Task>? BeforeResponseAsync { get; set; }
 
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken token)
     {
-        Interlocked.Increment(ref RequestCount);
+        int requestNumber = Interlocked.Increment(ref RequestCount);
         token.ThrowIfCancellationRequested();
+        if (BeforeResponseAsync is { } beforeResponse)
+            await beforeResponse(requestNumber, token).ConfigureAwait(false);
         if (Block) await Task.Delay(Timeout.Infinite, token).ConfigureAwait(false);
         string url = request.RequestUri!.AbsoluteUri;
         bool openai = url.Contains("status.openai.com", StringComparison.Ordinal);
@@ -225,16 +228,35 @@ internal static class MonitorTests
         handler.Block = false;
         await monitor.StopAsync();
 
-        var pollingHandler = new TestStatusHttpHandler();
+        // Hold the final response of pass two after its request-start counter has
+        // advanced. A started request is deliberately not a completed polling pass.
+        var tenthStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseTenth = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var pollingHandler = new TestStatusHttpHandler
+        {
+            BeforeResponseAsync = async (number, token) =>
+            {
+                if (number != 10) return;
+                tenthStarted.TrySetResult();
+                await releaseTenth.Task.WaitAsync(token).ConfigureAwait(false);
+            }
+        };
         using var pollingHttp = new HttpClient(pollingHandler);
         using var polling = new StatusMonitor(new ProviderStatusClient(pollingHttp), pollInterval: TimeSpan.FromMilliseconds(100));
+        var initialPoll = CompletedCycle(polling, pollingHandler, 5);
+        var automaticPoll = CompletedCycle(polling, pollingHandler, 10);
         polling.Start();
-        await WaitUntilAsync(() => pollingHandler.RequestCount >= 10);
-        Check(polling.NextRefreshUtc.HasValue && !polling.IsRefreshing, "Automatic polling and next refresh");
-        int before = pollingHandler.RequestCount;
-        polling.RequestRefresh();
-        await WaitUntilAsync(() => pollingHandler.RequestCount > before);
-        Check(pollingHandler.RequestCount > before, "Manual refresh");
+        await initialPoll.WaitAsync(TimeSpan.FromSeconds(5));
+        await tenthStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        Check(pollingHandler.RequestCount == 10 && polling.IsRefreshing && polling.NextRefreshUtc is null,
+            "Ten HTTP request starts do not imply that the gated second polling pass has completed");
+        Check(!automaticPoll.IsCompleted, "The polling completion barrier waits for the final response, not request starts");
+        releaseTenth.TrySetResult();
+        var completedAutomatic = await automaticPoll.WaitAsync(TimeSpan.FromSeconds(5));
+        // Capture at the scheduling event: another timer pass cannot invalidate this
+        // immutable observation if the assertion continuation is delayed by the host.
+        Check(completedAutomatic.RequestCount == 10 && completedAutomatic.NextRefreshUtc.HasValue && !completedAutomatic.IsRefreshing,
+            "Automatic polling completes and schedules its next refresh");
         await polling.StopAsync();
         int stopped = pollingHandler.RequestCount;
         await Task.Delay(150);
@@ -243,26 +265,58 @@ internal static class MonitorTests
         polling.Dispose();
         Check(true, "Monitor Dispose is idempotent");
 
+        // An hour-long automatic interval cannot satisfy this test's five-second
+        // completion bound. Only RequestRefresh can start the second pass.
+        var manualHandler = new TestStatusHttpHandler();
+        using var manualHttp = new HttpClient(manualHandler);
+        using var manual = new StatusMonitor(new ProviderStatusClient(manualHttp), pollInterval: TimeSpan.FromHours(1));
+        var manualInitial = CompletedCycle(manual, manualHandler, 5);
+        manual.Start();
+        var completedInitial = await manualInitial.WaitAsync(TimeSpan.FromSeconds(5));
+        Check(completedInitial.RequestCount == 5 && completedInitial.NextRefreshUtc.HasValue && !completedInitial.IsRefreshing,
+            "Manual-refresh fixture has finished its initial pass before accepting a click");
+        var manualCompletion = CompletedCycle(manual, manualHandler, 10);
+        manual.RequestRefresh();
+        var completedManual = await manualCompletion.WaitAsync(TimeSpan.FromSeconds(5));
+        Check(completedManual.RequestCount == 10 && completedManual.NextRefreshUtc.HasValue && !completedManual.IsRefreshing,
+            "Manual refresh completes a new pass without help from automatic polling");
+        await manual.StopAsync();
+
         var faultyHandler = new TestStatusHttpHandler();
         using var faultyHttp = new HttpClient(faultyHandler);
         using var faulty = new StatusMonitor(new ProviderStatusClient(faultyHttp), pollInterval: TimeSpan.FromMilliseconds(100));
         faulty.Changed += () => throw new InvalidOperationException("Synthetic subscriber failure");
+        var faultyCompletion = CompletedCycle(faulty, faultyHandler, 10);
         faulty.Start();
-        await WaitUntilAsync(() => faultyHandler.RequestCount >= 10);
+        var completedFaulty = await faultyCompletion.WaitAsync(TimeSpan.FromSeconds(5));
         await faulty.StopAsync();
-        Check(faultyHandler.RequestCount >= 10, "Subscriber failure does not stop polling or shutdown");
+        Check(completedFaulty.RequestCount == 10 && completedFaulty.NextRefreshUtc.HasValue && !completedFaulty.IsRefreshing,
+            "Subscriber failure does not stop polling completion or shutdown");
 
         // No scheduled poll within the test: only the queued request can start a second pass.
-        var queuedHandler = new TestStatusHttpHandler { Block = true };
-        using var queuedHttp = new HttpClient(queuedHandler) { Timeout = TimeSpan.FromSeconds(1) };
+        var firstStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseFirst = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var queuedHandler = new TestStatusHttpHandler
+        {
+            BeforeResponseAsync = async (number, token) =>
+            {
+                if (number != 1) return;
+                firstStarted.TrySetResult();
+                await releaseFirst.Task.WaitAsync(token).ConfigureAwait(false);
+            }
+        };
+        using var queuedHttp = new HttpClient(queuedHandler);
         using var queued = new StatusMonitor(new ProviderStatusClient(queuedHttp), pollInterval: TimeSpan.FromHours(1));
+        var queuedCompletion = CompletedCycle(queued, queuedHandler, 10);
         queued.Start();
-        await WaitUntilAsync(() => queuedHandler.RequestCount >= 4);
+        await firstStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        Check(queued.IsRefreshing && !queuedCompletion.IsCompleted, "Queued refresh is requested while a response is explicitly held");
         queued.RequestRefresh(queueWhileRefreshing: true);
-        queuedHandler.Block = false;
-        await WaitUntilAsync(() => queuedHandler.RequestCount >= 10);
+        releaseFirst.TrySetResult();
+        var completedQueued = await queuedCompletion.WaitAsync(TimeSpan.FromSeconds(5));
         await queued.StopAsync();
-        Check(queuedHandler.RequestCount >= 10, "Refresh requested during an active poll runs right after it");
+        Check(completedQueued.RequestCount == 10 && completedQueued.NextRefreshUtc.HasValue && !completedQueued.IsRefreshing,
+            "Refresh requested during an active poll completes another pass right after it");
 
         var blockedHandler = new TestStatusHttpHandler { Block = true };
         using var blockedHttp = new HttpClient(blockedHandler);
@@ -388,6 +442,22 @@ internal static class MonitorTests
         Check(NetworkRefreshScheduler.HasUsableNetwork([Nic(true, NetworkInterfaceType.Wireless80211, "2001:db8::5")]),
             "An up interface with a global IPv6 address counts");
         return count;
+    }
+
+    private sealed record PollingCompletion(int RequestCount, bool IsRefreshing, DateTimeOffset? NextRefreshUtc);
+
+    private static Task<PollingCompletion> CompletedCycle(StatusMonitor monitor, TestStatusHttpHandler handler, int minimumRequests)
+    {
+        var completed = new TaskCompletionSource<PollingCompletion>(TaskCreationOptions.RunContinuationsAsynchronously);
+        void Observe()
+        {
+            var observation = new PollingCompletion(Volatile.Read(ref handler.RequestCount), monitor.IsRefreshing, monitor.NextRefreshUtc);
+            if (observation.RequestCount < minimumRequests || observation.IsRefreshing || !observation.NextRefreshUtc.HasValue) return;
+            monitor.Changed -= Observe;
+            completed.TrySetResult(observation);
+        }
+        monitor.Changed += Observe;
+        return completed.Task;
     }
 
     internal static async Task WaitUntilAsync(Func<bool> predicate, int milliseconds = 5000)
