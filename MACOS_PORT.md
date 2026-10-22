@@ -1153,6 +1153,7 @@ PASS: bundle version, menu-tracking countdown timer, 20pt menu icon white/dark d
   | 기타 | 같은 시기 ChatGPT의 Codex Computer Use 클라이언트(`SkyComputerUseClient`, UIElement)가 여러 개 실행 중이었다. 메뉴바·Spaces 시스템 설정은 기본값이었다(읽기만 함) |
 
 - **판단**: 앱을 모두 종료해도 남고 재부팅으로 풀린 점으로 보아, 특정 앱의 실행 상태보다 macOS 전체 화면 Space·메뉴바 상태(WindowServer·Dock)가 꼬였던 것으로 본다. 처음 원인은 확정하지 못했다.
+- **2026-10-22 재발과 재현 결과:** 알림 모양 작업(#85) 중 임시 사본의 `--smoke-test`를 18:52~19:07 사이 22번 반복 실행하는 동안 같은 증상이 다시 생겼고, 로그아웃으로 풀었다(앱은 모두 종료된 뒤였다). 오른쪽 모니터에서 RDP(Windows App)를 전체 화면으로 쓰는 환경이었다. 실행마다 맨 앞 프로세스가 Windows App, AI Burger Clock, Claude 사이를 1~3번 오갔다(WindowServer `SetFrontProcessWithInfo`). 19:20~19:22에 전체 화면 RDP를 띄우고 3번 재실행한 결과 1·2번째는 증상이 없었고, 3번째에서 **앱이 포커스를 가져갈 때 메뉴바가 나타났다가 앱이 종료되자 같이 사라졌다(정상 동작)**. 사용자 해석: 포커스가 옮겨질 때마다 메뉴바가 나타났다 숨겨지는데, 이를 반복하다 숨김이 빠지면 앱이 사라져도 메뉴바만 남아 고착된다. 고착 자체는 이 3번으로 재현하지 못했다. 원인 호출은 smoke가 실제 앱과 같이 호출하는 `ActivateIgnoringOtherApps`(팝오버)·`Activate`+`MakeKeyAndOrderFront`(통계 창)이다. 대응은 [60절](#60-smoke가-포커스를-가져가지-않게-하기).
 - **재발 시 조사 순서(제안)**
   1. 전체 화면 모니터를 클릭하는 순간 앞으로 나오는 앱을 기록한다: `while true; do printf '%s  ' "$(date +%T)"; lsappinfo info -only name "$(lsappinfo front)" | cut -d'"' -f2; sleep 0.5; done`
   2. `killall Dock`으로 Dock만 다시 시작해 본다.
@@ -1939,3 +1940,32 @@ CLI 자동 업데이트 스크립트의 .NET 점검(저장소 밖, 06:10)이 202
 - 실제 OS 배너·집중 모드, 실제 VoiceOver 낭독, 실제 계정에서 새 규칙으로 조기 초기화 알림이 뜨는 것(합성 응답만).
 - 사용량 감소가 서버 보정인지 실제 초기화인지의 구별은 이 규칙으로 불가(공통 PR 설명).
 - 장시간 사용·절전 복귀 공백.
+
+## 60. smoke가 포커스를 가져가지 않게 하기
+
+2026-10-22 KST. 범위: **Mac 파일만**(`Mac/`)과 규칙 문서(AGENTS.md). 공통 원본·Windows 파일·앱 버전(0.8.4 / 20)은 바꾸지 않았다. 저장소 경로 빌드와 실행 중인 앱 교체는 하지 않았다. 배경: [39절](#39-메뉴바-강제-표시-증상-원인-미확정-재부팅-후-해소)의 2026-10-22 재발.
+
+| 항목 | 내용 |
+|---|---|
+| 활성화 제거(smoke만) | 팝오버의 `ActivateIgnoringOtherApps`·`MakeKeyWindow`, 통계 창의 `Activate`·`MakeKeyAndOrderFront`를 `smoke`일 때 건너뛴다(통계 창은 `OrderFront`만). 실제 앱의 아이콘 클릭 동작은 코드 경로가 그대로다 |
+| 전체 화면 가드 | `Mac/MacScreenGuard.cs`: 화면에 보이는 다른 앱의 layer 0 창이 한 디스플레이를 덮으면(창 이름·크기만 읽음, 캡처 없음) 창을 여는 검사 6건을 건너뛰고 `SKIP:` 줄과 `PASS with N screen checks SKIPPED (not verified)`로 표시한다. 종료 코드는 0 |
+| 건너뛰어도 하는 검사 | 팝오버 레이아웃(창 없이 내용 보기에 팝오버 크기를 주어 계산)과 통계 창 내용·문구. 나머지 smoke 전체 |
+| 시험용 | `AIBURGERCLOCK_SMOKE_SCREEN=skip`으로 가드를 강제해 건너뛰는 경로를 전체 화면 앱 없이 시험 |
+| 규칙 | AGENTS.md 빌드 절: smoke는 한 작업에 마지막 확인 1~2회, 반복 디버깅은 앱을 띄우지 않는 검사로 |
+
+### 이 Mac에서 수행한 검증(임시 사본에서만)
+
+| 항목 | 결과 |
+|---|---|
+| 도구 | Xcode 27.1, .NET SDK 10.0.402, macOS 워크로드 27.0.10742(최신과 같음), 옵션 없이 `bash Mac/build.sh` |
+| 빌드 | Shared.Tests 255,062건 PASS, 경고 0 / 오류 0 |
+| 가드 기하 | 전체 화면 RDP가 떠 있는 상태에서 같은 계산의 읽기 전용 스크립트가 해당 창을 "디스플레이 2"로 잡았고, 전체 화면 앱을 내린 뒤에는 "없음"이었다. 앱 안의 가드(`MacScreenGuard`) 자체는 전체 화면 앱이 떠 있는 상태로 실행해 보지 않았다 |
+| smoke 1(전체 화면 앱 없음, 일반) | 종료 코드 0, `PASS`, SKIP 없음. 활성화 없이 팝오버·통계 창 검사 통과. 사용자 확인: 화면 이상 없음 |
+| smoke 2(`AIBURGERCLOCK_SMOKE_SCREEN=skip`) | 종료 코드 0, `SKIP: 6 screen checks …`와 `PASS with 6 screen checks SKIPPED (not verified)`. 창을 열지 않고 나머지 검사 통과. 사용자 확인: 화면 이상 없음 |
+| 실행 횟수 | 앱을 띄우는 smoke는 위 2번. 개발 중 반복 실행은 없었다 |
+
+### 수행하지 않은 검증
+- 전체 화면 앱이 실제로 떠 있을 때 앱 안의 가드가 감지해 건너뛰는 실행(사용자 환경에서 창을 열지 않는 안전한 경로이지만 이번에는 실행하지 않음).
+- 메뉴바가 남는 고착이 이 변경으로 없어졌는지는 확인할 수 없다(고착 자체를 재현하지 못함). 호출을 줄인 변경이다.
+- 실제 앱에서 아이콘 클릭 시 활성화·키보드 동작은 코드가 그대로라 다시 확인하지 않았다.
+- 알림 모양 PR(#85)도 같은 파일 끝에 절(59)을 추가해, 병합 순서에 따라 이 절과 작은 충돌이 날 수 있다.
