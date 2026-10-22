@@ -26,6 +26,7 @@ AI Burger Clock 저장소에서 코드를 고치는 사람과 에이전트를 �
 - `-Publish`는 `dist`의 EXE를 덮어씁니다. 실행 중인 앱을 먼저 종료합니다.
 - `bin/`, `obj/`, `dist/`, `artifacts/`, `*.db`는 `.gitignore` 대상입니다. 커밋하지 않습니다.
 - **Mac 빌드:** 저장소 경로에서 `dotnet build Mac/AiBurgerClock.Mac.csproj`를 직접 실행하지 않습니다. 같은 bundle(`Mac/bin/Release/…`)로 실행 중인 앱의 디스크 번들이 덮어써집니다. Mac 컴파일·빌드·`--smoke-test` 확인은 임시 사본(`git worktree`·`rsync`)에서 `Mac/build.sh`로 하고, 실제로 쓸 앱만 사용자 허락 뒤 저장소 경로에서 `Mac/build.sh`(실행 중이면 `--quit-running`)로 빌드합니다. 자세한 내용은 [Mac/README](Mac/README.md)의 "실행 중인 앱이 있을 때"를 봅니다.
+- **Mac smoke 실행 횟수(2026-10-22):** `--smoke-test`는 상태 항목·팝오버·통계 창을 열어 사용자의 화면에 나타납니다. 전체 화면 앱 위에서 반복하면 메뉴바 표시가 남아 로그아웃으로만 풀린 적이 있습니다([MACOS_PORT 39절](MACOS_PORT.md#39-메뉴바-강제-표시-증상-원인-미확정-재부팅-후-해소)). 한 작업에서 마지막 확인 1~2회만 실행하고, 반복 디버깅은 Shared.Tests·컴파일처럼 앱을 띄우지 않는 검사로 합니다.
 
 ## 검사
 

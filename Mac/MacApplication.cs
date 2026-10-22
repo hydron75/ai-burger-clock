@@ -286,7 +286,7 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
     private void ShowStatistics()
     {
         if (stopping) return;
-        statisticsWindow ??= new(store);
+        statisticsWindow ??= new(store, smoke);
         statisticsWindow.Show();
     }
 
@@ -621,21 +621,28 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
                 contextMenu.Items[^1].KeyEquivalent != "q")
                 throw new InvalidOperationException("Right-click menu must be Refresh / 한도 회복 알림 / 한도 조기 초기화 알림 / 로그인 항목 설정 열기… / 종료 ⌘Q.");
 
-            ShowPanel();
-            if (!panel.IsShown) throw new InvalidOperationException("Status popover did not open.");
-            // Tooltips and active control accents need an active app and a key popover window right away.
-            // macOS grants activation on real user input (a status-item click). A smoke run has none, so
-            // activation is checked only when the system happens to grant it; the user check covers real clicks.
-            DateTime activation = DateTime.UtcNow.AddSeconds(2);
-            while (!(NSApplication.SharedApplication.Active && panel.Window?.IsKeyWindow == true) && DateTime.UtcNow < activation)
-                NSRunLoop.Main.RunUntil(NSRunLoopMode.Default, NSDate.FromTimeIntervalSinceNow(0.05));
-            if (panel.Window?.CanBecomeKeyWindow != true)
-                throw new InvalidOperationException("The popover window cannot become key.");
-            if (NSApplication.SharedApplication.Active && panel.Window.IsKeyWindow != true)
-                throw new InvalidOperationException("The app is active but the opened popover is not the key window.");
-            string activationResult = NSApplication.SharedApplication.Active
-                ? "popover active/key on open"
-                : "popover activation not checked (macOS did not grant activation without a user click)";
+            // Checks that open windows are skipped (and counted) while another app is full screen on a display:
+            // opening them shows the menu bar over that app (MacScreenGuard, MACOS_PORT 39).
+            MacScreenGuard.Covering? covering = MacScreenGuard.Find();
+            var skippedScreenChecks = new List<string>();
+            string activationResult;
+            if (covering is null)
+            {
+                ShowPanel();
+                if (!panel.IsShown) throw new InvalidOperationException("Status popover did not open.");
+                // A smoke run never activates the app or takes key focus, so activation and key state are not
+                // exercised here; the user check on a real status-item click covers them.
+                if (panel.Window?.CanBecomeKeyWindow != true)
+                    throw new InvalidOperationException("The popover window cannot become key.");
+                activationResult = "popover opens without activating the app (activation/key state: user click check)";
+            }
+            else
+            {
+                skippedScreenChecks.Add("popover opens");
+                // Lay the panel out without a window so the layout checks below still run on real frames.
+                panel.FitFor((NSScreen.MainScreen?.VisibleFrame.Height ?? 800) - 24);
+                activationResult = "popover open SKIPPED";
+            }
             // Readable tone text on the opaque background whatever the desktop behind it, in both appearances.
             double weakest = double.MaxValue;
             double barWeakest = double.MaxValue;
@@ -707,10 +714,14 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
                     }
                 }
             }
-            panel.Close();
-            if (panel.IsShown) throw new InvalidOperationException("Status popover did not close.");
-            StatusItemClicked(); // No current mouse event: treated as a left click.
-            if (!panel.IsShown) throw new InvalidOperationException("Status popover did not reopen from the status item.");
+            if (covering is null)
+            {
+                panel.Close();
+                if (panel.IsShown) throw new InvalidOperationException("Status popover did not close.");
+                StatusItemClicked(); // No current mouse event: treated as a left click.
+                if (!panel.IsShown) throw new InvalidOperationException("Status popover did not reopen from the status item.");
+            }
+            else skippedScreenChecks.AddRange(["popover closes", "popover reopens from the status item"]);
 
             string longNote = new string('a', UsageMeasurementFactory.MaximumNoteLength - 1) + "🍔";
             if (UsageMeasurementFactory.Note(longNote) != longNote[..(UsageMeasurementFactory.MaximumNoteLength - 1)])
@@ -866,21 +877,32 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
                 contextMenu, BeginInvokeOnMainThread, lifetime.Token);
             string decisionLogResult = await MacEarlyResetSmoke.VerifyDecisionLogAsync(BeginInvokeOnMainThread, lifetime.Token);
             string lateCallbackResult = await MacEarlyResetSmoke.VerifyLateCallbackAsync(BeginInvokeOnMainThread, lifetime.Token);
-            ShowStatistics();
+            if (covering is null) ShowStatistics();
+            else statisticsWindow ??= new(store, smoke); // created, not ordered in: the content checks below still run
             await statisticsWindow!.RefreshAsync();
-            if (!statisticsWindow.Window.IsVisible || statisticsWindow.Window.DangerousReleasedWhenClosed)
+            if (covering is null && (!statisticsWindow.Window.IsVisible || statisticsWindow.Window.DangerousReleasedWhenClosed))
                 throw new InvalidOperationException("Statistics window is not visible/retained.");
+            if (covering is not null && statisticsWindow.Window.DangerousReleasedWhenClosed)
+                throw new InvalidOperationException("Statistics window is not retained.");
             if (!statisticsWindow.SummaryText.StartsWith("직접 기록한 표본 n = 4 · 정책: ", StringComparison.Ordinal) ||
                 statisticsWindow.SummaryText.Contains('\n') || !statisticsWindow.ExplanationFits())
                 throw new InvalidOperationException("Statistics summary/explanation did not use the shared text or fit.");
-            statisticsWindow.Window.Close();
-            if (statisticsWindow.Window.IsVisible)
-                throw new InvalidOperationException("Statistics window did not close.");
-            ShowStatistics();
-            await statisticsWindow.RefreshAsync();
-            if (!statisticsWindow.Window.IsVisible)
-                throw new InvalidOperationException("Statistics window did not reopen from the menu-bar action.");
-            Console.WriteLine($"PASS: bundle version, menu-tracking countdown timer, 20pt menu icon white/dark disc + color glyph light/dark 1x-2x pixels (glyph contrast min {iconContrast:0.0}:1), left/right/control-click routing, right-click menu, popover open/close/reopen, shared panel text/record menu/quota lines, {activationResult}, tone contrast >= 4.5:1 light+dark (min {weakest:0.0}:1), card text x = quota box text x ({layout.BoxTextX:0}pt; titles {layout.TitleX:0}pt), whole-card click/quota boxes read-only, shared quota title, usage bars (0% empty/100% full, provider colors >= 3:1 light+dark min {barWeakest:0.0}:1, muted when previous/elapsed, none without a value), time layer (tint-track/tint-used >= 1.5:1 min {tintWeakest:0.0}:1, marker >= 3:1 min {markerWeakest:0.0}:1 light+dark, dark tint-used >= 2.0:1 min {darkSeparationWeakest:0.0}:1, marker position/end points, hidden states, spoken row = shared reading text once), one shared Provider detail per quota box, three quota boxes incl. Gemini, popover {layout.Size.Width:0}x{layout.Size.Height:0}pt (this screen usable {layout.UsableHeight:0}pt; 1280x800 {standard.Height:0}pt not cut off, quota area {standardQuota:0}pt; 1024x640 {small.Height:0}pt with quota area {smallQuota:0}pt scrolling), 1,000-char note limit, temporary SQLite, four events/notes via shared factory, {displayResult}, {notificationImageResult}, {recoveryResult}, {earlyResetResult}, {earlyResetControllerResult}, {decisionLogResult}, {lateCallbackResult}, {earlyResetUiResult}, {geminiModelResult}, {quotaRowResult}, {diagnosticResult}, statistics (shared text, explanation fits, Mac empty-state hint), injected quota countdown; no account/network/settings changes.");
+            if (covering is null)
+            {
+                statisticsWindow.Window.Close();
+                if (statisticsWindow.Window.IsVisible)
+                    throw new InvalidOperationException("Statistics window did not close.");
+                ShowStatistics();
+                await statisticsWindow.RefreshAsync();
+                if (!statisticsWindow.Window.IsVisible)
+                    throw new InvalidOperationException("Statistics window did not reopen from the menu-bar action.");
+            }
+            else skippedScreenChecks.AddRange(["statistics window is visible", "statistics window closes", "statistics window reopens"]);
+            if (covering is not null)
+                Console.WriteLine($"SKIP: {skippedScreenChecks.Count} screen checks not run because a window of {covering.Value.Owner} covers display {covering.Value.ScreenNumber} " +
+                    $"(opening ours would show the menu bar over it): {string.Join("; ", skippedScreenChecks)}. Run again with no full-screen app to check them.");
+            string verdict = skippedScreenChecks.Count == 0 ? "PASS" : $"PASS with {skippedScreenChecks.Count} screen checks SKIPPED (not verified)";
+            Console.WriteLine($"{verdict}: bundle version, menu-tracking countdown timer, 20pt menu icon white/dark disc + color glyph light/dark 1x-2x pixels (glyph contrast min {iconContrast:0.0}:1), left/right/control-click routing, right-click menu, popover open/close/reopen, shared panel text/record menu/quota lines, {activationResult}, tone contrast >= 4.5:1 light+dark (min {weakest:0.0}:1), card text x = quota box text x ({layout.BoxTextX:0}pt; titles {layout.TitleX:0}pt), whole-card click/quota boxes read-only, shared quota title, usage bars (0% empty/100% full, provider colors >= 3:1 light+dark min {barWeakest:0.0}:1, muted when previous/elapsed, none without a value), time layer (tint-track/tint-used >= 1.5:1 min {tintWeakest:0.0}:1, marker >= 3:1 min {markerWeakest:0.0}:1 light+dark, dark tint-used >= 2.0:1 min {darkSeparationWeakest:0.0}:1, marker position/end points, hidden states, spoken row = shared reading text once), one shared Provider detail per quota box, three quota boxes incl. Gemini, popover {layout.Size.Width:0}x{layout.Size.Height:0}pt (this screen usable {layout.UsableHeight:0}pt; 1280x800 {standard.Height:0}pt not cut off, quota area {standardQuota:0}pt; 1024x640 {small.Height:0}pt with quota area {smallQuota:0}pt scrolling), 1,000-char note limit, temporary SQLite, four events/notes via shared factory, {displayResult}, {notificationImageResult}, {recoveryResult}, {earlyResetResult}, {earlyResetControllerResult}, {decisionLogResult}, {lateCallbackResult}, {earlyResetUiResult}, {geminiModelResult}, {quotaRowResult}, {diagnosticResult}, statistics (shared text, explanation fits, Mac empty-state hint), injected quota countdown; no account/network/settings changes.");
             ExitCode = 0;
         }
         catch (Exception error)

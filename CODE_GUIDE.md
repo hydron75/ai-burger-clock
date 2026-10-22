@@ -14,7 +14,7 @@
 
 코드를 한 줄씩 번역한 문서는 아닙니다. **각 파일이 무엇을 맡고, 서로 어떻게 연결되는지** 설명합니다. **Windows 2.8.0 배포 당시 소스 기준** 루트·Properties C#는 **89개(앱 기능 43 + 검사·진단 45 + 명찰 1)**, Mac 호스트·검사 11개, 공통 검사 입구 1개로 총 **101개**였고 공통 제품 원본 목록은 **31개**였습니다. #70의 조기 초기화 엔진 1개·공통 검사 2개·Windows UI 검사 1개를 포함하며 당시 버전 준비/배포에서 C#를 추가하거나 2.7.0 당시 결과를 바꾼 것이 아닙니다.
 
-아래 파일 지도는 **#82 병합 뒤 2.8.1 기준**입니다. 루트·Properties C# **96개(앱 기능 45 + 검사·진단 50 + 명찰 1)**, Mac 호스트·검사 **16개**, 공통 검사 입구 **1개**로 총 **113개**이며 공통 제품 원본은 **33개**입니다. `SharedTestSuite.cs`는 루트 검사에 포함하고 별도 입구는 `Shared.Tests/Program.cs`만 셉니다. 생성된 `bin`·`obj`·검증 `artifacts`는 제외합니다. 이번 버전 PR에서 C#를 추가한 것은 아닙니다.
+아래 파일 지도는 **#82 병합 뒤 2.8.1 기준**입니다. 루트·Properties C# **96개(앱 기능 45 + 검사·진단 50 + 명찰 1)**, Mac 호스트·검사 **17개**, 공통 검사 입구 **1개**로 총 **114개**이며 공통 제품 원본은 **33개**입니다. `SharedTestSuite.cs`는 루트 검사에 포함하고 별도 입구는 `Shared.Tests/Program.cs`만 셉니다. 생성된 `bin`·`obj`·검증 `artifacts`는 제외합니다. 이번 버전 PR에서 C#를 추가한 것은 아닙니다.
 
 **#62·#63 병합 완료·2.7.0에 반영·배포 완료:** 공통 Gemini 파서는 `5시간` → `주간` → `주간 {묶음 이름}`을 만들고 원본 묶음명+bucket ID를 기존 시간 비교·회복 엔진·캐시에 연결합니다. 정확한 사용 0% 창은 새 리셋 후보에서 제외하고 구형 Gemini 캐시의 출처 불명 기준을 한 번 정리합니다. 모든 Provider의 예약 이유·선택 리셋·다음 조회를 최근 256건/128KiB로 기록하며 1분 이내 흔들림은 구간 양끝만 보존합니다. [구조·전환 제약·진단 위치·양쪽 확인](GEMINI_ANTIGRAVITY_QUOTAS.md). 이번 버전·배포 기록 작업은 공통 C#·Mac 파일을 다시 고치지 않았습니다.
 
@@ -452,7 +452,7 @@ Windows 내부 승인 형식은 알려진 경우만 해석합니다. 낯선 값�
 
 [Properties/AssemblyInfo.cs](Properties/AssemblyInfo.cs)는 프로그램 식별 정보 일부를 담습니다. 버전은 여기 아닌 프로젝트 파일에서 관리하고, 나머지 정보는 SDK가 생성합니다.
 
-### Mac 호스트·검사: 16개 / 공통 검사 입구: 1개
+### Mac 호스트·검사: 17개 / 공통 검사 입구: 1개
 
 | 파일 | 맡은 일 |
 |---|---|
@@ -471,6 +471,7 @@ Windows 내부 승인 형식은 알려진 경우만 해석합니다. 낯선 값�
 | [Mac/MacGeminiModelRowSmoke.cs](Mac/MacGeminiModelRowSmoke.cs) | Mac native smoke의 Gemini 모델 행·막대 수·팝오버/스크롤·행별 설명 시나리오 |
 | [Mac/MacQuotaRowSmoke.cs](Mac/MacQuotaRowSmoke.cs) | Mac native smoke의 한도 행 이름/값 분리(값 전체 폭 보존·이름 가운데 생략·한 번 읽기·팝오버 크기 유지) 시나리오 |
 | [Mac/MacQuotaRowImages.cs](Mac/MacQuotaRowImages.cs) | 환경 변수로 폴더를 줄 때만 합성 한도 행 PNG를 저장하는 Mac smoke 도우미 |
+| [Mac/MacScreenGuard.cs](Mac/MacScreenGuard.cs) | native smoke 전용 전체 화면 가드: 다른 앱이 디스플레이를 덮으면 창을 여는 검사를 건너뛰고 SKIP으로 표시(창 이름·크기만 읽음) |
 | [Mac/MacPollingDiagnosticSmoke.cs](Mac/MacPollingDiagnosticSmoke.cs) | Mac Release의 예약 진단·256건 상한·리셋 흔들림/연속 이동 시나리오 |
 | [Shared.Tests/Program.cs](Shared.Tests/Program.cs) | OS UI 없이 SharedTestSuite.RunAllAsync를 한 번 실행하는 입구 |
 
