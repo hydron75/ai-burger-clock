@@ -1,8 +1,16 @@
-# AI Burger Clock · macOS preview 0.8.6
+# AI Burger Clock · macOS preview 0.8.7
 
 Apple Silicon / macOS 27을 위한 C# AppKit 메뉴바 앱입니다. 함께 쓰는 Windows 2.8.0 배포본과 별도 앱이지만, 시간표·공식 상태·권고·한도 조회·기록·통계 계산 코드는 같은 저장소의 원본 소스를 링크해서 사용합니다. Windows 코드를 복사해 따로 유지하지 않습니다.
 
 이 폴더는 **일반 사용 검증을 진행 중인 preview 소스**입니다. 2026-10-03 KST **0.1.2의 실제 Mac 공통 검사 244,347건·Release `.app`·서명·ARM64 SQLite·native smoke PASS에 이어, 일반 실행의 커진 컬러 아이콘과 양쪽 메뉴막대 표시도 확인했습니다.** 앞선 0.1.1의 한 화면 배치·두 계정 한도 수신도 확인했습니다. 이후 이 Mac에서 직접 빌드해 보니 **이전 bundle은 `Info.plist` 버전이 0.1.0 / 1로 남아 있었습니다.** 소스 `66fb868`에서 버전을 csproj로 옮겨 0.1.2 / 3이 반영되도록 고쳤고, native smoke가 bundle 버전도 검사합니다. 절전 복귀·연결 복구 자동 조회와 재로그인 자동 실행·로그아웃 정상 종료도 실제로 확인했습니다. OS 알림·장기 사용은 남아 있습니다. [재로그인 확인](../MACOS_PORT.md#27-로그아웃-정상-종료와-재로그인-자동-실행-실제-확인), [절전·연결 복구 확인](../MACOS_PORT.md#26-연결-복구절전-복귀-실제-확인), [버전 수정과 로컬 검증](../MACOS_PORT.md#24-012-bundle-버전-미반영-수정과-첫-로컬-mac-검증), [실제 Mac 빌드](../MACOS_PORT.md#21-012-실제-mac-release-빌드-성공), [native 검사](../MACOS_PORT.md#22-012-아이콘-native-smoke-pass), [실제 메뉴막대](../MACOS_PORT.md#23-012-실제-컬러-아이콘과-양쪽-메뉴막대-확인)
+
+## 0.8.7: .NET 런타임 10.0.14 번들
+
+.NET 10.0.14(2026-10-25 공개, 정기 일정 밖 긴급 보안 업데이트)를 담는 빌드입니다. 앱 코드·화면·메뉴·알림 문구·조건·설정은 바뀌지 않습니다. [기록](../MACOS_PORT.md#65-087-정리)
+
+- **번들 런타임:** 이 앱은 .NET 런타임을 번들에 포함(self-contained)하므로, 시스템의 .NET이 아니라 **다시 빌드한 번들**이 갱신돼야 반영됩니다. 번들의 `System.Private.CoreLib` 버전이 10.0.13(10.0.1326)에서 10.0.14(10.0.1426)로 바뀐 것을 확인했습니다.
+- **기준 도구 변경:** .NET SDK 10.0.402 → **10.0.403**, macOS workload set 10.0.402.1 → **10.0.403**입니다. macOS 워크로드 매니페스트(27.0.10742)와 Xcode 27.1 조합은 그대로입니다. SDK를 올린 뒤에는 `sudo dotnet workload update`를 한 번 실행해야 합니다(새 SDK가 가져온 Mono 매니페스트의 팩이 없으면 `dotnet workload list`가 경고합니다).
+- **Brotli 취약점(CVE-2026-111497) 관련:** 앱의 HTTP 핸들러는 자동 압축 해제를 GZip·Deflate로만 켭니다(`ProviderStatusClient`). 저장소 코드에는 Brotli 사용이 없습니다. 이 확인은 코드 검색이며 취약점 평가가 아닙니다.
 
 ## 0.8.6: 알림 권한 재확인과 공통 리뷰 수정 반영
 
@@ -242,18 +250,18 @@ xcodebuild -version
 command -v dotnet
 ```
 
-기준 도구는 .NET SDK **10.0.402**, Xcode **27.1**, macos workload set **10.0.402.1**(macOS 워크로드 27.0.10742)입니다. [Microsoft 공식 Xcode 27.1 지원 릴리스](https://github.com/dotnet/macios/releases/tag/dotnet-10.0.1xx-xcode27.1-10018)에 맞춘 조합입니다. 프로젝트는 `net10.0-macos27.0` / `osx-arm64`를 대상으로 합니다.
+기준 도구는 .NET SDK **10.0.403**, Xcode **27.1**, macos workload set **10.0.403**(macOS 워크로드 27.0.10742)입니다. [Microsoft 공식 Xcode 27.1 지원 릴리스](https://github.com/dotnet/macios/releases/tag/dotnet-10.0.1xx-xcode27.1-10018)에 맞춘 조합입니다. 프로젝트는 `net10.0-macos27.0` / `osx-arm64`를 대상으로 합니다.
 
-`dotnet`을 찾지 못한다면 [.NET SDK 10.0.402 macOS Arm64 설치 파일](https://dotnet.microsoft.com/en-us/download/dotnet/thank-you/sdk-10.0.402-macos-arm64-installer)을 수동 설치하세요. Runtime만 설치하거나 x64 버전을 선택하지 않습니다. 설치 후 새 터미널에서 버전을 확인합니다.
+`dotnet`을 찾지 못한다면 [.NET SDK 10.0.403 macOS Arm64 설치 파일](https://builds.dotnet.microsoft.com/dotnet/Sdk/10.0.403/dotnet-sdk-10.0.403-osx-arm64.pkg)을 수동 설치하세요. Runtime만 설치하거나 x64 버전을 선택하지 않습니다. 설치 후 새 터미널에서 버전을 확인합니다.
 
 ```sh
 dotnet --version
 ```
 
-`10.0.402`가 확인되면 macOS 앱 빌드에 필요한 workload만 설치합니다. 이 명령은 개발 도구를 설치하며 계정 로그인이나 앱 자동 실행 설정을 바꾸지 않습니다. 시스템에 설치한 SDK는 관리자 권한이 필요할 수 있어 `sudo`를 사용합니다.
+`10.0.403`이 확인되면 macOS 앱 빌드에 필요한 workload만 설치합니다. 이 명령은 개발 도구를 설치하며 계정 로그인이나 앱 자동 실행 설정을 바꾸지 않습니다. 시스템에 설치한 SDK는 관리자 권한이 필요할 수 있어 `sudo`를 사용합니다.
 
 ```sh
-sudo dotnet workload install macos --version 10.0.402.1
+sudo dotnet workload install macos --version 10.0.403
 dotnet workload list
 ```
 
