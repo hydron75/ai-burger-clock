@@ -2169,7 +2169,7 @@ SDK 10.0.403 설치 직후 `dotnet workload list`가 "워크로드를 확인하�
 |---|---|
 | **빌드 방식** | **옵션 없이** `bash Mac/build.sh`(임시 사본) 후 `bash Mac/build.sh --quit-running`(저장소 경로, 사용자 허락). `--allow-xcode-mismatch` 사용 안 함 |
 | 앱 소스 | `421c24ad459bc4842d729fd3188b1265e8e404ce`(버전 변경 커밋, main `311f7b5` 기반) |
-| 임시 사본 선검증 | 경고 0 / 오류 0, Shared.Tests 255,197 PASS, 번들 0.8.7 / 23, `codesign` 통과. 전체 화면 앱을 내린 상태에서 `--smoke-test` **1회**: 종료 코드 0, SKIP·FAIL 없이 `PASS` |
+| 임시 사본 선검증 | 경고 0 / 오류 0, Shared.Tests 255,197 PASS, 번들 0.8.7 / 23, `codesign` 통과. 전체 화면 앱을 내린 상태에서 `--smoke-test` **1회**: 종료 코드 0, SKIP·FAIL 없이 `PASS`. 사용자 확인: 화면 이상 없음 |
 | 저장소 경로 빌드 | 경고 0 / 오류 0, Shared.Tests 255,197 PASS, `codesign --verify --deep --strict` 통과, bundle **0.8.7 / 23**, 125M. 사용자 허락으로 실행 중이던 0.8.6 앱(PID 61306)에 종료 요청(정상 종료) 후 빌드. 이 경로 번들로는 smoke를 실행하지 않았다 |
 | **번들 런타임** | `System.Private.CoreLib` 버전: 이전 번들 **10.0.1326.50504**(10.0.13) → 새 번들 **10.0.1426.52326**(10.0.14). 빌드 참조의 런타임 팩도 10.0.13 → 10.0.14(15건) |
 | SHA-256 실행 파일 | `700f0e9c4f03d881bc00494b573924656aa76ef68c6924cc00d890832694afb4` |
