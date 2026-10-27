@@ -26,7 +26,7 @@ internal static class HolidayMonitorTests
             command.Parameters.AddWithValue("$state", state);
             command.Parameters.AddWithValue("$recommendation", recommendation);
             assertions++;
-            if ((long)command.ExecuteScalar()! != 3)
+            if ((long)command.ExecuteScalar()! != Enum.GetValues<ProviderKind>().Length)
                 throw new InvalidOperationException("Background provider cache did not use the selected holiday policy.");
         }
         CheckCache("FullThrottle", "Go");

@@ -1,6 +1,6 @@
 # Official provider sources (verified 2026-09-19; OpenAI follow-ups 2026-09-22 / 2026-10-10)
 
-Only public HTTPS JSON feeds are read. No keys, authentication, HTML scraping, cookies, or AI traffic inspection. The application sends five requests per refresh (OpenAI summary and full component catalog, Claude summary, Google catalog and history), or six when OpenAI summary omits incidents. A shared HttpClient, cancellation and bounded 4 MiB response reads are used. A linked timeout covers response-body reads as well as headers. The 2026-10-10 source changes are included in Windows 2.4.1, published from merged main `0d69a64`; see [the deployment record](MAINTENANCE_2_4_1.md). Atom/RSS comparison is out of scope for this change.
+Windows 2.8.3 baseline (historical source contract): only public HTTPS JSON feeds are read. No keys, authentication, HTML scraping, cookies, or AI traffic inspection. The application sends five requests per refresh (OpenAI summary and full component catalog, Claude summary, Google catalog and history), or six when OpenAI summary omits incidents. A shared HttpClient, cancellation and bounded 4 MiB response reads are used. A linked timeout covers response-body reads as well as headers. The 2026-10-10 source changes are included in Windows 2.4.1, published from merged main `0d69a64`; see [the deployment record](MAINTENANCE_2_4_1.md). Atom/RSS comparison is out of scope for this change.
 
 ## OpenAI and Claude
 
@@ -54,3 +54,7 @@ This covers the dashboard's Gemini product only, not every Google AI/Vertex/Gemi
 ## Tests
 
 `ProviderStatusTests.Run()` exercises deterministic JSON fixtures and in-memory HTTP handlers: all providers healthy; component/incident outages; unrelated-product isolation; renamed IDs; malformed/missing/unknown fields; incident scope; billing-only incident exclusion; Google resolved/active/future incidents; metadata; offline/HTTP errors; timeout; cancellation; response size limit. No network or user credentials are needed for this suite.
+
+## xAI implementation Draft (2026-10-27; not deployed)
+
+The xAI card combines Grok, Cursor and Grok Bot. Four public GETs read the xAI RSS and Cursor-compatible summary/components/incidents JSON. This makes nine requests per refresh, or ten when OpenAI needs its incident history. A valid RSS without ongoing target incidents is operational under the approved official-incident-feed rule. Missing unresolved incidents, malformed or ambiguous data, and partial failures remain diagnostic; confirmed issues take priority. Account quota lookup is excluded; the usage link opens only https://grok.com/dashboard. See [the exact contract and Mac transition checks](XAI_STATUS.md). The old Cursor endpoints redirect to xAI compatibility endpoints, but no long-term support guarantee has been found.

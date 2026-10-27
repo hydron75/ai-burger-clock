@@ -38,8 +38,8 @@ internal static class StatusTickerTests
         new(provider, status, DateTimeOffset.UnixEpoch, null, provider + " " + status);
 
     private static ProviderStatus[] All(OfficialStatus openAi, OfficialStatus claude = OfficialStatus.Operational,
-        OfficialStatus gemini = OfficialStatus.Operational) =>
-        [Status(ProviderKind.OpenAI, openAi), Status(ProviderKind.Claude, claude), Status(ProviderKind.Gemini, gemini)];
+        OfficialStatus gemini = OfficialStatus.Operational, OfficialStatus xai = OfficialStatus.Operational) =>
+        [Status(ProviderKind.OpenAI, openAi), Status(ProviderKind.Claude, claude), Status(ProviderKind.Gemini, gemini), Status(ProviderKind.Xai, xai)];
 
     private static StatusTicker Strict() => new(strictInput: true);
 
@@ -153,7 +153,8 @@ internal static class StatusTickerTests
         {
             Status(ProviderKind.Gemini, OfficialStatus.Degraded),
             Status(ProviderKind.OpenAI, OfficialStatus.MajorOutage),
-            Status(ProviderKind.Claude, OfficialStatus.Degraded)
+            Status(ProviderKind.Claude, OfficialStatus.Degraded),
+            Status(ProviderKind.Xai, OfficialStatus.Degraded)
         };
         var result = ticker.Tick(Full, input, TickReason.Timer);
         check(result.Providers.Select(s => s.Provider).SequenceEqual(Enum.GetValues<ProviderKind>()), "providers in ProviderKind order");
@@ -161,7 +162,7 @@ internal static class StatusTickerTests
             "simultaneous alerts in ProviderKind order");
         input.Clear();
         input.Add(Status(ProviderKind.OpenAI, OfficialStatus.Operational));
-        check(result.Providers.Count == 3 && result.Providers[0].Status == OfficialStatus.MajorOutage,
+        check(result.Providers.Count == 4 && result.Providers[0].Status == OfficialStatus.MajorOutage,
             "the result is a copy; later input changes do not alter it");
         check(result.Providers is not ProviderStatus[] && result.ProviderAlerts is not List<ProviderAlert>,
             "result lists are read-only views");

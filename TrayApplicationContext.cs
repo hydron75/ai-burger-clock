@@ -94,6 +94,7 @@ namespace AiBurgerClock
             statusWindow.StatisticsRequested += (_, _) => ShowStatistics();
             statusWindow.RecordRequested += RecordMeasurement;
             statusWindow.StatusPageRequested += OpenStatusPage;
+            statusWindow.XaiUsageRequested += () => OpenOfficialPage(ProviderStatusPages.XaiUsage);
             statusWindow.HolidayAdjustmentChanged += async (_, _) => await SetHolidayAdjustmentAsync(statusWindow.HolidayAdjustmentChecked);
 
             menu = new ContextMenuStrip();
@@ -645,9 +646,12 @@ namespace AiBurgerClock
         }
 
         private void OpenStatusPage(ProviderKind provider)
+            => OpenOfficialPage(ProviderStatusPages.For(provider));
+
+        private void OpenOfficialPage(Uri destination)
         {
             if (exiting) return;
-            try { openStatusPage(ProviderStatusPages.For(provider)); }
+            try { openStatusPage(destination); }
             catch (Exception error) when (error is System.ComponentModel.Win32Exception or InvalidOperationException or System.IO.IOException)
             {
                 statusWindow.SetFeedback("공식 페이지를 열지 못했습니다. 기본 브라우저 설정을 확인하세요.", true);

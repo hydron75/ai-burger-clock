@@ -106,7 +106,10 @@ internal sealed class StatusMonitor : IDisposable
                     var cached = await store.ReadLatestStatusesAsync(lifetime.Token).ConfigureAwait(false);
                     lock (sync)
                         foreach (var state in cached)
+                        {
+                            client.RestoreXai(state);
                             states[state.Provider] = WithFreshness(state, utcNow());
+                        }
                     RaiseChanged();
                 }
                 catch (OperationCanceledException) when (lifetime.IsCancellationRequested) { return; }

@@ -18,6 +18,7 @@ internal static class SharedTestSuite
             Report("Schedule/DST", ScheduleTests.Run());
             Report("US holidays", HolidayScheduleTests.Run());
             Report("official sources (in-memory HTTP)", ProviderStatusTests.Run());
+            Report("xAI RSS/Cursor compatibility aggregation (synthetic)", await XaiStatusTests.RunAsync());
             Report("service monitor/notification policy", await MonitorTests.RunAsync());
             Report("tray colors/recommendations/tooltips (portable)", SharedTrayPresentationTests.Run());
             Report("status ticker: transitions/provider alerts/icon (Windows rules)", StatusTickerTests.Run());

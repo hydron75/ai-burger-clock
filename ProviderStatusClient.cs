@@ -10,6 +10,8 @@ internal sealed class ProviderStatusClient(HttpClient client, Func<DateTimeOffse
 {
     // Incident begin/end comparisons use the same injected clock as the rest of the app.
     private readonly Func<DateTimeOffset> clock = utcNow ?? (() => DateTimeOffset.UtcNow);
+    private readonly XaiStatusFeed xai = new();
+    internal void RestoreXai(ProviderStatus cached) => xai.Restore(cached);
 
     internal const string OpenAiSummaryUrl = "https://status.openai.com/api/v2/summary.json";
     internal const string OpenAiComponentsUrl = "https://status.openai.com/api/v2/components.json";
@@ -56,6 +58,27 @@ internal sealed class ProviderStatusClient(HttpClient client, Func<DateTimeOffse
 
     public async Task<ProviderStatus> FetchAsync(ProviderKind provider, CancellationToken token)
     {
+        if (provider == ProviderKind.Xai)
+        {
+            string[] urls = [XaiStatusFeed.RssUrl, XaiStatusFeed.SummaryUrl, XaiStatusFeed.ComponentsUrl, XaiStatusFeed.IncidentsUrl];
+            var responses = await Task.WhenAll(urls.Select(ReadXaiAsync)).ConfigureAwait(false);
+            token.ThrowIfCancellationRequested();
+            var bodies = responses.Select(response => response.Body).ToArray();
+            if (bodies.All(body => body is null))
+            {
+                if (responses.All(response => response.TimedOut)) throw new OperationCanceledException("xAI 공식 상태 조회 시간 초과");
+                throw new HttpRequestException("xAI 공식 상태 출처 응답 수신 실패");
+            }
+            return xai.Parse(bodies[0], bodies[1], bodies[2], bodies[3], clock());
+
+            async Task<(string? Body, bool TimedOut)> ReadXaiAsync(string url)
+            {
+                try { return (await GetJsonAsync(url, token).ConfigureAwait(false), false); }
+                catch (OperationCanceledException) when (token.IsCancellationRequested) { throw; }
+                catch (OperationCanceledException) { return (null, true); }
+                catch (Exception error) when (error is HttpRequestException or IOException) { return (null, false); }
+            }
+        }
         if (provider == ProviderKind.Gemini)
         {
             var catalog = GetJsonAsync(GoogleProductsUrl, token);
@@ -180,7 +203,7 @@ internal sealed class ProviderStatusClient(HttpClient client, Func<DateTimeOffse
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(token);
         if (client.Timeout != Timeout.InfiniteTimeSpan) deadline.CancelAfter(client.Timeout);
         using var request = new HttpRequestMessage(HttpMethod.Get, url);
-        request.Headers.Accept.ParseAdd("application/json");
+        request.Headers.Accept.ParseAdd(url == XaiStatusFeed.RssUrl ? "application/rss+xml, application/xml;q=0.9" : "application/json");
         request.Headers.UserAgent.ParseAdd(UserAgent);
         using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, deadline.Token)
             .ConfigureAwait(false);

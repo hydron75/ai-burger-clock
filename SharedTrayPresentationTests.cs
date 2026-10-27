@@ -33,16 +33,17 @@ internal static class SharedTrayPresentationTests
         foreach (var openAi in officialStates)
         foreach (var claude in officialStates)
         foreach (var gemini in officialStates)
+        foreach (var xai in officialStates)
         {
             combinations++;
             var statuses = new[]
             {
                 Status(ProviderKind.OpenAI, openAi),
                 Status(ProviderKind.Claude, claude),
-                Status(ProviderKind.Gemini, gemini)
+                Status(ProviderKind.Gemini, gemini), Status(ProviderKind.Xai, xai)
             };
             var original = statuses.ToArray();
-            int highest = new[] { priorities[openAi], priorities[claude], priorities[gemini] }.Max();
+            int highest = new[] { priorities[openAi], priorities[claude], priorities[gemini], priorities[xai] }.Max();
             TrayAttention expected = highest switch
             {
                 3 => TrayAttention.Red,
@@ -50,7 +51,7 @@ internal static class SharedTrayPresentationTests
                 1 => TrayAttention.Gray,
                 _ => schedule.State == AgentState.FullThrottle ? TrayAttention.Green : TrayAttention.Orange
             };
-            string context = $"{schedule.State}: {openAi}/{claude}/{gemini}";
+            string context = $"{schedule.State}: {openAi}/{claude}/{gemini}/{xai}";
             TrayAppearance appearance = TrayPresentation.Calculate(schedule.State, statuses);
             Check(appearance.Attention == expected, "Color priority " + context);
             Check(appearance.Schedule == schedule.State && appearance.Glyph ==
@@ -66,7 +67,7 @@ internal static class SharedTrayPresentationTests
             Check(tooltip.Contains(schedule.State == AgentState.FullThrottle ? "FULL THROTTLE" : "BURGER TIME", StringComparison.Ordinal),
                 "Tooltip retains Schedule: " + context);
             string[] lines = tooltip.Split('\n');
-            Check(lines.Length == 5, "One Schedule/countdown/provider line each: " + context);
+            Check(lines.Length == 6, "One Schedule/countdown/provider line each: " + context);
             foreach (var status in statuses)
             {
                 Recommendation independent = ExpectedRecommendation(schedule.State, status.Status);
@@ -86,7 +87,7 @@ internal static class SharedTrayPresentationTests
                 Check(lines.Contains(ProviderNames.Provider(status.Provider) + " " + expectedLabel), "Independent tooltip recommendation: " + context + "/" + status.Provider);
             }
         }
-        Check(combinations == 2 * 6 * 6 * 6, "All 432 Schedule/provider combinations tested");
+        Check(combinations == 2 * 6 * 6 * 6 * 6, "All 2592 Schedule/provider combinations tested");
 
         foreach (var schedule in new[] { full, burger })
         {
@@ -119,7 +120,7 @@ internal static class SharedTrayPresentationTests
             "Same instant without holiday adjustment stays Burger");
         string holidayTooltip = TrayPresentation.Tooltip(holiday, allStale, ProviderNames.Provider);
         Check(holidayTooltip.Contains("공휴일", StringComparison.Ordinal) && holidayTooltip.Length <= 127,
-            "Holiday marker remains within tooltip limit with three stale providers");
+            "Holiday marker remains within tooltip limit with four stale providers");
         Check(!TrayPresentation.Tooltip(unadjustedHoliday, allStale, ProviderNames.Provider).Contains("공휴일", StringComparison.Ordinal),
             "No holiday marker when policy is disabled");
         Check(TrayPresentation.Tooltip(burger, allStale, ProviderNames.Provider).Length <= 127,

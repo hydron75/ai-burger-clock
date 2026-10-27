@@ -25,6 +25,7 @@ internal sealed class StatusWindow : Form
     private bool updatingAutoStart;
     private bool updatingHoliday;
     private int autoHideSuppressed;
+    private readonly int fullClientHeight;
 
     public event EventHandler? AutoStartChanged;
     public event EventHandler? HolidayAdjustmentChanged;
@@ -32,6 +33,7 @@ internal sealed class StatusWindow : Form
     public event EventHandler? StatisticsRequested;
     public event Action<ProviderKind, UsageEventType, bool>? RecordRequested;
     public event Action<ProviderKind>? StatusPageRequested;
+    internal event Action? XaiUsageRequested;
 
     public StatusWindow()
     {
@@ -39,7 +41,9 @@ internal sealed class StatusWindow : Form
         AutoScaleDimensions = new SizeF(96F, 96F);
         AutoScaleMode = AutoScaleMode.Dpi;
         Text = "AI Burger Clock";
-        ClientSize = new Size(374, 569);
+        int footerOffset = (Enum.GetValues<ProviderKind>().Length - 3) * 89;
+        fullClientHeight = 569 + footerOffset;
+        ClientSize = new Size(374, fullClientHeight);
         FormBorderStyle = FormBorderStyle.FixedSingle;
         MaximizeBox = false;
         MinimizeBox = false;
@@ -58,6 +62,20 @@ internal sealed class StatusWindow : Form
         {
             var panel = new Panel { Location = new Point(16, 146 + index++ * 89), Size = new Size(342, 83), BackColor = Color.White };
             var heading = new Label { Location = new Point(8, 4), Size = new Size(326, 20), Font = OwnedFont(10F, FontStyle.Bold) };
+            if (provider == ProviderKind.Xai)
+            {
+                heading.Width = 220;
+                var usage = new LinkLabel
+                {
+                    Text = ProviderStatusPages.XaiUsageLabel, Location = new Point(238, 6), Size = new Size(96, 18),
+                    Font = OwnedFont(8.5F), AccessibleName = ProviderStatusPages.XaiUsageLabel,
+                    AccessibleDescription = "Grok 공식 대시보드를 엽니다. 한도 값은 앱에서 조회하지 않습니다.",
+                    LinkBehavior = LinkBehavior.HoverUnderline, TabStop = true
+                };
+                usage.LinkClicked += (_, _) => XaiUsageRequested?.Invoke();
+                details.SetToolTip(usage, ProviderStatusPages.XaiUsage.AbsoluteUri);
+                panel.Controls.Add(usage);
+            }
             var official = new Label { Location = new Point(8, 25), Size = new Size(326, 34), Font = OwnedFont(8.5F) };
             var reason = new Label { Location = new Point(8, 61), Size = new Size(326, 17), Font = OwnedFont(8.5F), AutoEllipsis = true, ForeColor = Color.DimGray };
             var menu = CreateRecordingMenu(provider, (p, e, note) => RecordRequested?.Invoke(p, e, note));
@@ -76,14 +94,14 @@ internal sealed class StatusWindow : Form
         }
         quotaView = new AccountQuotaView { Location = new Point(16, 146), Size = new Size(342, 214), Visible = false };
         Controls.Add(quotaView);
-        checkedLabel = AddLabel(StatusPanelModel.WaitingCaption, 17, 417, 342, 35, 8.5F);
-        refreshButton = new Button { Text = "Refresh", Location = new Point(16, 458), Size = new Size(106, 28) };
+        checkedLabel = AddLabel(StatusPanelModel.WaitingCaption, 17, 417 + footerOffset, 342, 35, 8.5F);
+        refreshButton = new Button { Text = "Refresh", Location = new Point(16, 458 + footerOffset), Size = new Size(106, 28) };
         refreshButton.Click += (_, _) => RefreshRequested?.Invoke(this, EventArgs.Empty);
-        var statisticsButton = new Button { Text = "Statistics", Location = new Point(130, 458), Size = new Size(106, 28) };
+        var statisticsButton = new Button { Text = "Statistics", Location = new Point(130, 458 + footerOffset), Size = new Size(106, 28) };
         statisticsButton.Click += (_, _) => StatisticsRequested?.Invoke(this, EventArgs.Empty);
         Controls.Add(refreshButton);
         Controls.Add(statisticsButton);
-        quotaButton = new Button { Text = QuotaPanelModel.ShowQuotas, Location = new Point(244, 458), Size = new Size(114, 28) };
+        quotaButton = new Button { Text = QuotaPanelModel.ShowQuotas, Location = new Point(244, 458 + footerOffset), Size = new Size(114, 28) };
         quotaButton.Click += (_, _) =>
         {
             quotaView.Visible = !quotaView.Visible;
@@ -94,15 +112,15 @@ internal sealed class StatusWindow : Form
         };
         Controls.Add(quotaButton);
         details.SetToolTip(quotaButton, QuotaPanelModel.ToggleDetail);
-        feedbackLabel = AddLabel(DefaultFeedback, 17, 493, 342, 19, 8.5F);
+        feedbackLabel = AddLabel(DefaultFeedback, 17, 493 + footerOffset, 342, 19, 8.5F);
         feedbackLabel.AutoEllipsis = true;
-        autoStartCheckBox = new CheckBox { AutoSize = true, Text = "Windows 시작 시 자동 실행", Location = new Point(17, 517) };
+        autoStartCheckBox = new CheckBox { AutoSize = true, Text = "Windows 시작 시 자동 실행", Location = new Point(17, 517 + footerOffset) };
         autoStartCheckBox.CheckedChanged += (_, _) =>
         {
             if (!updatingAutoStart) AutoStartChanged?.Invoke(this, EventArgs.Empty);
         };
         Controls.Add(autoStartCheckBox);
-        holidayCheckBox = new CheckBox { AutoSize = true, Text = StatusPanelModel.HolidayOption, Location = new Point(17, 543), Enabled = false };
+        holidayCheckBox = new CheckBox { AutoSize = true, Text = StatusPanelModel.HolidayOption, Location = new Point(17, 543 + footerOffset), Enabled = false };
         holidayCheckBox.CheckedChanged += (_, _) =>
         {
             if (!updatingHoliday) HolidayAdjustmentChanged?.Invoke(this, EventArgs.Empty);
@@ -274,10 +292,26 @@ internal sealed class StatusWindow : Form
     public void ShowNearTray()
     {
         Rectangle area = Screen.FromPoint(Cursor.Position).WorkingArea;
+        FitWorkArea(area);
         Location = new Point(Math.Max(area.Left, area.Right - Width - 12), Math.Max(area.Top, area.Bottom - Height - 12));
         Show();
         BringToFront();
         Activate();
+    }
+
+    // Four cards must remain reachable on a small/high-DPI desktop. Scroll only
+    // when needed, and restore the full layout on a larger working area.
+    internal void FitWorkArea(Rectangle area)
+    {
+        AutoScrollPosition = Point.Empty;
+        int height = Math.Max((int)Math.Round(fullClientHeight * DeviceDpi / 96d),
+            Controls.Cast<Control>().Max(control => control.Bottom) + 4);
+        int width = Math.Max((int)Math.Round(374 * DeviceDpi / 96d),
+            Controls.Cast<Control>().Max(control => control.Right) + 8);
+        int available = Math.Max(1, area.Height - (Height - ClientSize.Height));
+        AutoScroll = true;
+        AutoScrollMinSize = new Size(0, height);
+        ClientSize = new Size(width + (height > available ? SystemInformation.VerticalScrollBarWidth : 0), Math.Min(height, available));
     }
 
     internal static string FormatRemaining(TimeSpan remaining) => DisplayFormatting.FormatRemaining(remaining);

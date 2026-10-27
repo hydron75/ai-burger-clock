@@ -1,6 +1,6 @@
 namespace AiBurgerClock;
 
-internal enum ProviderKind { OpenAI, Claude, Gemini }
+internal enum ProviderKind { OpenAI, Claude, Gemini, Xai }
 internal enum OfficialStatus { Operational, Degraded, PartialOutage, MajorOutage, Unknown, Stale }
 internal enum Recommendation { Go, Hold, Stop, Check, BurgerTime, BurgerServiceIssue, BurgerCheck }
 internal enum UsageEventType { Success, Slow, Error, Interrupted }

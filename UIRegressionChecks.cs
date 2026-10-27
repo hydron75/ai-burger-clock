@@ -30,7 +30,7 @@ internal static class UIRegressionChecks
         foreach (var provider in Enum.GetValues<ProviderKind>())
         {
             var panel = panels[(int)provider];
-            foreach (var surface in new[] { (Control)panel }.Concat(panel.Controls.Cast<Control>()))
+            foreach (var surface in new[] { (Control)panel }.Concat(panel.Controls.Cast<Control>().Where(control => control is not LinkLabel)))
             {
                 int before = openedPages.Count;
                 mouseClick.Invoke(surface, [new MouseEventArgs(MouseButtons.Left, 1, 4, 4, 0)]);
@@ -41,6 +41,28 @@ internal static class UIRegressionChecks
                 Check(openedPages.Count == before + 1 && surface.ContextMenuStrip is not null && surface.Cursor == Cursors.Hand,
                     "Right/middle click does not open browser; recording menu and hand cursor preserved");
             }
+        }
+        var usageLink = panels[(int)ProviderKind.Xai].Controls.OfType<LinkLabel>().Single();
+        int beforeUsage = openedPages.Count;
+        typeof(LinkLabel).GetMethod("OnLinkClicked", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
+            .Invoke(usageLink, [new LinkLabelLinkClickedEventArgs(usageLink.Links[0])]);
+        Check(usageLink.Text == "사용량 보기" && openedPages.Count == beforeUsage + 1 && openedPages[^1] == ProviderStatusPages.XaiUsage,
+            "xAI usage link opens only the fixed official dashboard through the fake browser sink");
+        Check(panels.Where((_, index) => index != (int)ProviderKind.Xai).All(panel => !panel.Controls.OfType<LinkLabel>().Any()),
+            "usage dashboard link is present only on the xAI status card");
+        var footer = context.StatusWindow.Controls.OfType<Button>().Single(button => button.Text == "Refresh");
+        Check(panels.Length == 4 && panels.All(panel => panel.Bottom <= footer.Top) &&
+            panels.SelectMany(panel => panel.Controls.Cast<Control>()).All(control => control.Right <= control.Parent!.ClientSize.Width),
+            "four status cards and the usage link do not overlap footer controls or overflow their boxes");
+        using (var small = new StatusWindow())
+        {
+            small.CreateControl();
+            small.FitWorkArea(new Rectangle(0, 0, 640, 480));
+            Check(small.Height <= 480 && small.AutoScrollMinSize.Height > small.ClientSize.Height,
+                "small working area exposes the complete four-card content through scrolling");
+            small.FitWorkArea(new Rectangle(0, 0, 1920, 1080));
+            Check(small.ClientSize.Height >= 658 && small.Controls.Cast<Control>().All(control => small.ClientRectangle.Contains(control.Bounds)),
+                "large working area restores full reachable status controls");
         }
         Check((await store.ReadUsageAsync(null)).Count == 0, "Opening official pages never creates usage records");
         await WaitUntilAsync(() => Task.FromResult(!monitor.IsRefreshing && monitor.NextRefreshUtc.HasValue));
@@ -76,7 +98,7 @@ internal static class UIRegressionChecks
         RefreshStatus();
         Check(context.CurrentAppearance?.Attention == TrayAttention.Green, "Healthy FULL shows green F");
         Check(context.StatusWindow.Controls.OfType<Label>().Single(l => l.Text == "●  FULL THROTTLE").ForeColor == Color.FromArgb(25, 145, 78) &&
-            panels.Take(3).All(p => p.Controls.OfType<Label>().Single(l => l.Font.Bold).ForeColor == Color.FromArgb(25, 145, 78)),
+            panels.All(p => p.Controls.OfType<Label>().Single(l => l.Font.Bold).ForeColor == Color.FromArgb(25, 145, 78)),
             "Shared Good tones retain the Windows schedule and Provider green palette");
         Icon? unchangedIcon = context.TrayIcon.Icon;
         RefreshStatus();
@@ -255,8 +277,8 @@ internal static class UIRegressionChecks
                 Check(feedback.ForeColor == Color.DimGray, provider + " " + type + " save uses the exact success feedback");
             }
         }
-        Check(total == 12, "Provider row/tray menu handlers store all 3 providers x 4 event types");
-        Check(trayRoot.DropDownItems.OfType<ToolStripMenuItem>().Select(i => i.Text).SequenceEqual(new[] { "ChatGPT", "Claude", "Gemini" }),
+        Check(total == 16, "Provider row/tray menu handlers store all 4 providers x 4 event types");
+        Check(trayRoot.DropDownItems.OfType<ToolStripMenuItem>().Select(i => i.Text).SequenceEqual(new[] { "ChatGPT", "Claude", "Gemini", "xAI" }),
             "Windows recording menu shows ChatGPT without changing provider order");
         var events = await store.ReadUsageAsync(null);
         Check(events.All(e => e.SchedulePolicyVersion == AgentSchedule.HolidayPolicyVersion && e.HolidayAdjustmentEnabled == true &&
@@ -321,7 +343,7 @@ internal static class UIRegressionChecks
             rowMenus[0].Items.OfType<ToolStripMenuItem>().Single(i => i.Text == "메모와 함께 기록…").PerformClick();
         }
         if (cancelError is not null) throw new InvalidOperationException("Cancel dialog action failed", cancelError);
-        Check(dialogCanceled && (await store.ReadUsageAsync(null)).Count == 12,
+        Check(dialogCanceled && (await store.ReadUsageAsync(null)).Count == 16,
             "Canceling a note dialog creates no usage record");
         Check(feedback.Text == feedbackBeforeCancel && feedback.ForeColor == feedbackColorBeforeCancel,
             "Canceling a note dialog preserves existing feedback");
@@ -367,7 +389,7 @@ internal static class UIRegressionChecks
                 rowMenus[0].Items.OfType<ToolStripMenuItem>().Single(i => i.Text == "메모와 함께 기록…").PerformClick();
             }
             if (dialogError is not null) throw new InvalidOperationException("Note dialog action failed", dialogError);
-            await WaitUntilAsync(async () => (await store.ReadUsageAsync(null)).Count == 13 &&
+            await WaitUntilAsync(async () => (await store.ReadUsageAsync(null)).Count == 17 &&
                 feedback.Text == "ChatGPT · Interrupted 저장됨 (12:00 KST)");
             events = await store.ReadUsageAsync(null);
             var noted = events.Single(e => e.UserNote == "검증 메모 · synthetic only");
@@ -391,12 +413,12 @@ internal static class UIRegressionChecks
         Check(context.CurrentAppearance == new TrayAppearance(AgentState.FullThrottle, TrayAttention.Green) &&
             monitor.Snapshot().All(s => s.Status == OfficialStatus.Operational && s.CheckedAtUtc == initialNow.ToUniversalTime()),
             "Note capture test restores the original FULL/healthy clock and status fixture");
-        Check((await new UsageStore(store.DatabasePath).ReadUsageAsync(null)).Count == 13, "UI input persists across database reopen");
+        Check((await new UsageStore(store.DatabasePath).ReadUsageAsync(null)).Count == 17, "UI input persists across database reopen");
 
         context.ShowStatistics();
         var statistics = Application.OpenForms.OfType<StatisticsWindow>().Single();
         await WaitUntilAsync(() => Task.FromResult(Descendants(statistics).OfType<Label>().Any(l => l.Text.StartsWith("직접 기록한 표본 n = "))));
-        Check(Descendants(statistics).OfType<Label>().Any(l => l.Text.StartsWith("직접 기록한 표본 n = 13 ")),
+        Check(Descendants(statistics).OfType<Label>().Any(l => l.Text.StartsWith("직접 기록한 표본 n = 17 ")),
             "Statistics 7-day period uses the app clock, not the real date");
         var period = Descendants(statistics).OfType<ComboBox>().Single();
         for (int index = 0; index < 3; index++)
@@ -406,7 +428,7 @@ internal static class UIRegressionChecks
             Check(period.Text == new[] { "최근 7일", "최근 30일", "전체" }[index], "Statistics selected period text");
             Check(Descendants(statistics).OfType<DataGridView>().Count() == 5, $"Statistics period {index}: all five tables populated");
         }
-        Check(Descendants(statistics).OfType<DataGridView>().First().Rows.Count == 3, "Statistics provider counts rendered for all providers");
+        Check(Descendants(statistics).OfType<DataGridView>().First().Rows.Count == 4, "Statistics provider counts rendered for all providers");
         foreach (var grid in Descendants(statistics).OfType<DataGridView>())
             Check(grid.Rows.Cast<DataGridViewRow>().Any(r => r.Cells[0].Value as string == "ChatGPT") &&
                 grid.Rows.Cast<DataGridViewRow>().All(r => r.Cells[0].Value as string != "OpenAI"),
@@ -433,7 +455,7 @@ internal static class UIRegressionChecks
             // End with a normal save so the later holiday PNG keeps its original feedback fixture.
             (Label: "exactly 1,000 units", Input: new string('b', 1000), Saved: new string('b', 1000), Truncated: false)
         };
-        int savedNoteCount = 13;
+        int savedNoteCount = 17;
         foreach (var noteCase in savedNoteCases)
         {
             bool combinedQuotaCase = noteCase.Label == "over 1,000 units";
@@ -489,18 +511,38 @@ internal static class UIRegressionChecks
                 context.ShowWindow();
                 var quotaView = context.StatusWindow.Controls.OfType<AccountQuotaView>().Single();
                 Check(quotaView.Visible && quotaView.Controls.OfType<Panel>().Select(p => p.Name)
-                    .SequenceEqual(new[] { "CodexQuotaBox", "ClaudeQuotaBox", "GeminiQuotaBox" }) && panels.Take(3).All(p => !p.Visible),
+                    .SequenceEqual(new[] { "CodexQuotaBox", "ClaudeQuotaBox", "GeminiQuotaBox" }) && panels.All(p => !p.Visible),
                     "Combined quota/note save keeps all three Provider boxes visible and status cards hidden");
                 Check(feedback.Text == expectedFeedback && feedback.ForeColor == Color.DimGray,
                     "Combined quota/note save shows the truncation feedback in quota mode");
                 SaveFormImage(context.StatusWindow, "account-quotas-note-truncated.png", reportDirectory);
                 context.StatusWindow.Controls.OfType<Button>().Single(b => b.Text == QuotaPanelModel.ShowStatus).PerformClick();
-                Check(!quotaView.Visible && panels.Take(3).All(p => p.Visible) && feedback.Text == expectedFeedback,
+                Check(!quotaView.Visible && panels.All(p => p.Visible) && feedback.Text == expectedFeedback,
                     "Combined quota/note save returns to status mode without clearing truncation feedback");
                 SaveFormImage(context.StatusWindow, "note-truncated.png", reportDirectory);
             }
         }
-        Check((await store.ReadLatestStatusesAsync()).Count == 3, "Official cache saved independently of user observations");
+        Check((await store.ReadLatestStatusesAsync()).Count == 4, "Official cache saved independently of user observations");
+        handler.XaiRss = XaiStatusTests.Rss(XaiStatusTests.Item("grok-bot"));
+        await monitor.RefreshOnceAsync();
+        RefreshStatus();
+        var xai = monitor.Snapshot().Single(status => status.Provider == ProviderKind.Xai);
+        Check(xai.Status == OfficialStatus.PartialOutage && xai.Reason.Contains("Grok Bot", StringComparison.Ordinal),
+            "xAI card is driven by the affected Grok Bot product in the synthetic RSS");
+        SaveFormImage(context.StatusWindow, "xai-issue.png", reportDirectory);
+        handler.XaiRss = XaiStatusTests.EmptyRss;
+        await monitor.RefreshOnceAsync();
+        RefreshStatus();
+        Check(monitor.Snapshot().Single(status => status.Provider == ProviderKind.Xai).Status == OfficialStatus.Unknown,
+            "lost unresolved RSS event becomes CHECK instead of a false recovery");
+        SaveFormImage(context.StatusWindow, "xai-missing-incident.png", reportDirectory);
+        handler.XaiRss = XaiStatusTests.Rss(XaiStatusTests.Item("grok-bot", state: "resolved"));
+        await monitor.RefreshOnceAsync();
+        RefreshStatus();
+        Check(monitor.Snapshot().Single(status => status.Provider == ProviderKind.Xai).Status == OfficialStatus.Operational,
+            "explicit resolution restores xAI GO under the incident-feed rule");
+        SaveFormImage(context.StatusWindow, "xai-resolved.png", reportDirectory);
+        handler.XaiRss = null;
     }
 
     private static void SaveFormImage(Form form, string name, string? directory)
