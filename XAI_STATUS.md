@@ -148,3 +148,22 @@ smoke는 고정 before/after 슬롯에서 각각 최종 1회 실행했고, OS �
 
 Mac 전환·native 검증은 미실행이며 병합 전 Mac 담당이 완료해야 합니다.
 Windows 버전 2.8.3, 배포 EXE, 운영 알림 등록은 변경하지 않았습니다.
+
+### CHECK 해제 계약 보완 (2026-10-27 KST)
+
+기존 해제 경로를 확인하고 `XaiStatusTests.CheckMissingIncidentRelease`에 합성 검사 **87건**을 추가했습니다.
+제품 판정·문구·Windows/Mac 화면 코드는 변경하지 않았으며 자동 만료도 추가하지 않았습니다.
+
+- RSS `resolved`, summary `resolved`, incidents `resolved`/`postmortem`/`completed` 각각을
+  실행 중과 CHECK 캐시 복원 뒤에 확인합니다.
+- 30일 경과·다른 사건의 해결·다음 사건의 발생/해결·같은 사건의 진행 재등장은 미해결 ID를 지우지 않습니다.
+- 같은 ID가 상충 없이 해결되면 그 조회에서 제거하고, 해결된 사건이 나중에 피드에서 빠져도 CHECK를 다시 만들지 않습니다.
+- 상충 해소 뒤의 해결, 여러 소실 사건의 개별 해결, 사건 해결 뒤에도 남은 출처 수신 실패를 구분합니다.
+
+검사 코드 커밋 `9bcca68`의 `build.ps1`은 경고 0 / 오류 0, self-test **291,653건 PASS**
+(공통 **290,948** + Windows **705**), 종료 코드 0입니다. xAI 그룹은 176→**263건**입니다.
+독립 `Shared.Tests`도 공통 **290,948건 PASS**, 종료 코드 0이며 기존 symlink fixture SKIP은 같습니다.
+보고서는 `artifacts/xai-check-release/build/20261027-204133-451/`에 보존합니다.
+이번에는 검사·문서만 바꿨으므로 smoke·PNG를 다시 실행하지 않았으며,
+위의 895 PASS·25 PNG는 변경 전 제품 코드의 마지막 native 검증 결과로 유지합니다.
+Mac은 최신 브랜치에서 공통 **290,948건**을 기준으로 확인합니다.
