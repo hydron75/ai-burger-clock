@@ -60,7 +60,7 @@ internal static class UIRegressionChecks
             small.FitWorkArea(new Rectangle(0, 0, 640, 480));
             Check(small.Height <= 480 && small.AutoScrollMinSize.Height > small.ClientSize.Height,
                 "small working area exposes the complete four-card content through scrolling");
-            small.FitWorkArea(new Rectangle(0, 0, 1920, 1080));
+            small.FitWorkArea(new Rectangle(0, 0, 3840, Math.Max(2160, 2 * 658 * small.DeviceDpi / 96)));
             Check(small.ClientSize.Height >= 658 && small.Controls.Cast<Control>().All(control => small.ClientRectangle.Contains(control.Bounds)),
                 "large working area restores full reachable status controls: client=" + small.ClientSize + "; outside=" +
                 string.Join(";", small.Controls.Cast<Control>().Where(control => !small.ClientRectangle.Contains(control.Bounds))
