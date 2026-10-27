@@ -174,6 +174,7 @@ internal static class XaiStatusTests
         Check(longRestart.Parse(Rss(longIds.Select(id => Item(id: id, state: "resolved")).ToArray()), SummaryJson, ComponentsJson,
             IncidentsJson, Now.AddMinutes(10)).Status == OfficialStatus.Operational,
             "truncated display ID never creates a phantom event after restart and explicit resolution");
+        CheckMissingIncidentRelease(Check);
         var detail = StatusPanelModel.Card(baseline, AgentState.FullThrottle);
         Check(detail.Detail.Contains("공식 사건 피드 기준", StringComparison.Ordinal) && detail.Detail.Contains("사용량 보기: https://grok.com/dashboard", StringComparison.Ordinal), "shared detail declares incident-feed scope and usage link only");
         Check(TrayPresentation.ProviderNotification(ProviderKind.Xai, Recommendation.Stop, open.Reason, ProviderNames.Provider).Body.Contains("Grok Bot", StringComparison.Ordinal), "problem notification includes affected product");
@@ -261,6 +262,57 @@ internal static class XaiStatusTests
         }
         finally { Directory.Delete(directory, recursive: true); }
         return count;
+    }
+
+    private static void CheckMissingIncidentRelease(Action<bool, string> check)
+    {
+        foreach (var (source, phase) in new[] { ("RSS", "resolved"), ("summary", "resolved"),
+            ("incidents", "resolved"), ("incidents", "postmortem"), ("incidents", "completed") })
+        foreach (bool restart in new[] { false, true })
+        {
+            string label = $"{source}/{phase}, restart={restart}: ";
+            var tracker = new XaiStatusFeed();
+            _ = tracker.Parse(Rss(Item()), SummaryJson, ComponentsJson, IncidentsJson, Now);
+            var missing = tracker.Parse(EmptyRss, SummaryJson, ComponentsJson, IncidentsJson, Now.AddMinutes(5));
+            check(missing.Status == OfficialStatus.Unknown && missing.PendingXaiIncidentIds == "synthetic-incident", label + "disappearance enters CHECK");
+            if (restart) { tracker = new XaiStatusFeed(); tracker.Restore(missing); }
+            var late = tracker.Parse(EmptyRss, SummaryJson, ComponentsJson, IncidentsJson, Now.AddDays(30));
+            check(late.Status == OfficialStatus.Unknown && late.PendingXaiIncidentIds == "synthetic-incident", label + "neither elapsed time nor restart expires the missing identity");
+            var unrelatedResolution = tracker.Parse(Rss(Item(id: "synthetic-other", state: "resolved")), SummaryJson, ComponentsJson, IncidentsJson, Now.AddDays(30).AddMinutes(5));
+            check(unrelatedResolution.Status == OfficialStatus.Unknown && unrelatedResolution.PendingXaiIncidentIds == "synthetic-incident", label + "another incident resolution cannot clear CHECK");
+            var next = tracker.Parse(Rss(Item("cursor-cli", id: "synthetic-next")), SummaryJson, ComponentsJson, IncidentsJson, Now.AddDays(30).AddMinutes(10));
+            check(next.Status == OfficialStatus.PartialOutage && next.UncertainIncidentId == "synthetic-incident" && next.PendingXaiIncidentIds.Contains("synthetic-next", StringComparison.Ordinal), label + "new issue takes severity priority without forgetting the missing incident");
+            var nextResolved = tracker.Parse(Rss(Item("cursor-cli", id: "synthetic-next", state: "resolved")), SummaryJson, ComponentsJson, IncidentsJson, Now.AddDays(30).AddMinutes(15));
+            check(nextResolved.Status == OfficialStatus.Unknown && nextResolved.PendingXaiIncidentIds == "synthetic-incident", label + "resolving the new incident returns to the original CHECK");
+            var reappeared = tracker.Parse(Rss(Item()), SummaryJson, ComponentsJson, IncidentsJson, Now.AddDays(30).AddMinutes(20));
+            check(reappeared.Status == OfficialStatus.PartialOutage && reappeared.PendingXaiIncidentIds == "synthetic-incident", label + "same incident reappearing as active is an outage rather than a recovery");
+            string resolved = JsonSerializer.Serialize(new { incidents = new[] { Incident(state: phase) } });
+            var closed = tracker.Parse(source == "RSS" ? Rss(Item(state: phase)) : EmptyRss,
+                source == "summary" ? Summary(incidents: [Incident(state: phase)]) : SummaryJson, ComponentsJson,
+                source == "incidents" ? resolved : IncidentsJson, Now.AddDays(30).AddMinutes(25));
+            check(closed.Status == OfficialStatus.Operational && closed.PendingXaiIncidentIds.Length == 0 && closed.AssessmentIssue.Length == 0, label + "matching explicit resolution releases CHECK on that poll");
+            var after = tracker.Parse(EmptyRss, SummaryJson, ComponentsJson, IncidentsJson, Now.AddDays(30).AddMinutes(30));
+            check(after.Status == OfficialStatus.Operational && after.PendingXaiIncidentIds.Length == 0, label + "a resolved incident may leave the feed without recreating CHECK");
+        }
+
+        var conflict = new XaiStatusFeed();
+        _ = conflict.Parse(Rss(Item()), SummaryJson, ComponentsJson, IncidentsJson, Now);
+        var opposed = conflict.Parse(Rss(Item(state: "resolved")), Summary(incidents: [Incident(components: ["sm5wkcnqkvr9"])]), ComponentsJson, IncidentsJson, Now.AddMinutes(5));
+        check(opposed.Status == OfficialStatus.PartialOutage && opposed.PendingXaiIncidentIds == "synthetic-incident", "active observation blocks matching resolution from another source");
+        check(conflict.Parse(EmptyRss, SummaryJson, ComponentsJson, IncidentsJson, Now.AddMinutes(10)).Status == OfficialStatus.Unknown, "a conflicted resolution cannot silently expire when both observations disappear");
+        check(conflict.Parse(Rss(Item(state: "resolved")), SummaryJson, ComponentsJson, IncidentsJson, Now.AddMinutes(15)).Status == OfficialStatus.Operational, "later unopposed matching resolution clears the conflict");
+
+        var multiple = new XaiStatusFeed();
+        _ = multiple.Parse(Rss(Item(), Item("grok-bot", id: "synthetic-second")), SummaryJson, ComponentsJson, IncidentsJson, Now);
+        var one = multiple.Parse(Rss(Item(state: "resolved")), SummaryJson, ComponentsJson, IncidentsJson, Now.AddMinutes(5));
+        check(one.Status == OfficialStatus.Unknown && one.PendingXaiIncidentIds == "synthetic-second", "each missing incident must be resolved independently");
+        check(multiple.Parse(Rss(Item("grok-bot", id: "synthetic-second", state: "resolved")), SummaryJson, ComponentsJson, IncidentsJson, Now.AddMinutes(10)).Status == OfficialStatus.Operational, "resolving the final missing incident releases CHECK");
+
+        var partial = new XaiStatusFeed();
+        _ = partial.Parse(Rss(Item()), SummaryJson, ComponentsJson, IncidentsJson, Now);
+        var receivedResolution = partial.Parse(Rss(Item(state: "resolved")), SummaryJson, null, IncidentsJson, Now.AddMinutes(5));
+        check(receivedResolution.Status == OfficialStatus.Unknown && receivedResolution.PendingXaiIncidentIds.Length == 0 && receivedResolution.AssessmentIssue.Contains("수신 실패", StringComparison.Ordinal), "matching resolution clears the incident but a separate source failure still requires CHECK");
+        check(partial.Parse(EmptyRss, SummaryJson, ComponentsJson, IncidentsJson, Now.AddMinutes(10)).Status == OfficialStatus.Operational, "healthy receipt clears the remaining source failure without reviving a resolved incident");
     }
 
     private sealed class FakeHandler : HttpMessageHandler
