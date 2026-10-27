@@ -1,5 +1,7 @@
 # 소스코드, 쉬운 말로 읽기
 
+**Windows 2.8.4 기준·#98 병합 완료(2026-10-27 KST):** xAI RSS/호환 JSON 집계·24시간 소실 해제·공통 상세·Windows 네 번째 카드를 포함합니다. 이번 버전 PR은 Windows 버전 세 필드·문서만 바꾸고 C#·검사·Mac 파일은 바꾸지 않습니다. 준비/Portable publish 경고 0·오류 0, self-test 각 **291,779건(공통 291,074 + Windows 705)**·smoke 각 **897 PASS·종료 코드 0**입니다. 사용자 외부 백업 뒤 EXE를 교체했으며 운영 실행·등록은 하지 않았습니다. [소스·해시·외부 명령·백업](MAINTENANCE_2_8_4.md). 아래 과거 배포 기록은 당시 기준으로 유지합니다.
+
 **Windows 2.8.3 기준·#91/#93 병합 완료(2026-10-22 KST):** 공통 상태 판정·일시 DB 잠금 복구·한도 레이아웃 키와 monitor 검사는 #91에서, Windows 공식 알림 순차 전달·검증 뒤 publish 교체·smoke 비동기 경쟁은 #93에서 보완했습니다. 이번 버전 PR은 버전·문서만 변경하며 공통/Windows/Mac C#를 다시 고치지 않았습니다. 사용자 승인으로 PR 병합 전 버전 소스 **`d671647c10a29aea9fa7bda96d2d02e1b2bb02fb`**의 EXE를 백업·검사 뒤 교체·실행했습니다. 준비/Portable publish 경고·오류 0, 준비/단일 EXE self-test 각 **255,902건(공통 255,197 + Windows 705)·ExitCode 0**, 별도 smoke 각 **1회 858 PASS·ExitCode 0**이며 PNG 22개/layout 16개는 #93과 같습니다. 각 1회 실행의 반복 트레이 억제는 **미평가**입니다. 기존 symlink fixture 1개 SKIP은 유지합니다. 프로세스·자동 시작·기존 운영 등록 대상/해제 dry-run 불변을 확인했고 **트레이·상태 창·한도 보기 정상은 사용자 확인**입니다. 등록 재실행·시험 알림은 없으며 실제 EXE 해시·백업·2.8.2 EXE 복원은 [2.8.3 기록](MAINTENANCE_2_8_3.md)에 둡니다. 병합은 사용자가 합니다.
 
 **Windows 2.8.2 기준·#86 병합 완료(2026-10-22 KST):** `WindowsQuotaToast.cs`는 WinRT 전송·무동작 COM 콜백, `WindowsQuotaToastRegistration.cs`는 명시적 등록/해제·소유권 검사, `WindowsQuotaNotificationDelivery.cs`는 풍선 대체와 내용 없는 제한된 발송 진단을 맡습니다. `WindowsQuotaToastIntegration.cs`는 별도 시험 ID 전용이며 기본 smoke는 가짜 전송만 사용합니다. `WindowsQuotaNotificationChecks.cs`·`WindowsQuotaToastChecks.cs`는 Windows `SelfTest`에서만 호출합니다. 공통 원본·Mac·판정·조회 정책은 그대로이고, Windows TFM은 WinRT SDK 참조를 위한 `net10.0-windows10.0.19041.0`입니다. 사용자는 2.8.2 버전 PR 병합 전 로컬 배포·운영 등록을 승인했고 병합은 사용자가 합니다. 실제 검사·배포/등록 결과와 EXE 해시는 [2.8.2 기록](MAINTENANCE_2_8_2.md), 전송/COM/해제 계약은 [Windows 알림 안내](WINDOWS_QUOTA_NOTIFICATIONS.md)에 둡니다. 아래 과거 검증 기록은 해당 배포 기준으로 유지합니다.
@@ -22,7 +24,7 @@
 
 배포 당시 파일 지도는 **Windows 2.8.3·#91/#93 병합 기준**입니다. 루트·Properties C# **106개(앱 기능 49 + 검사·진단 56 + 명찰 1)**, Mac 호스트·검사 **20개**, 공통 검사 입구 **1개**로 총 **127개**이며 공통 제품 원본은 **33개 그대로**입니다. #82 뒤 2.8.1 당시에는 루트·Properties 96개(앱 기능 45 + 검사·진단 50 + 명찰 1), 전체 114개였고 #86에서 Windows 제품 파일 4개·검사 2개를 추가했습니다. #91은 공통 `QuotaLayoutKeyTests.cs`와 Windows `QuotaLayoutChecks.cs`를, #93은 Windows `ProviderBalloonChecks.cs`·`SmokeAsyncChecks.cs`를 더했습니다. Mac은 기존 17개에 #90의 알림 권한 원본·검사 2개와 #91의 `MacQuotaLayoutKeySmoke.cs` 1개를 더해 20개입니다. 이번 버전 PR이 C# 파일을 추가한 것은 아닙니다. `SharedTestSuite.cs`는 루트 검사에 포함하고 별도 입구는 `Shared.Tests/Program.cs`만 셉니다. C# 파일만 집계하므로 `Mac/tools/check-build-script.sh` 등 빌드 도구와 생성된 `bin`·`obj`·검증 `artifacts`는 제외합니다. 과거 배포 당시 검사·파일 수 기록은 위에 별도로 유지합니다.
 
-**현재 xAI 구현 Draft 파일 지도:** 루트·Properties C# **108개(앱 기능 50 + 검사·진단 57 + 명찰 1)**, Mac **20개**, 공통 검사 입구 **1개**, 합계 **129개**입니다. 공통 제품 원본은 **34개**입니다. 새 파일은 `XaiStatusFeed.cs`와 `XaiStatusTests.cs`이며 Mac 전용 파일·버전·배포 EXE는 바꾸지 않습니다. [제품 대응·정상/불확실 판정·Mac 전환 항목](XAI_STATUS.md).
+**현재 2.8.4·#98 병합 파일 지도:** 루트·Properties C# **108개(앱 기능 50 + 검사·진단 57 + 명찰 1)**, Mac **20개**, 공통 검사 입구 **1개**, 합계 **129개**입니다. 공통 제품 원본은 **34개**입니다. #98에서 `XaiStatusFeed.cs`와 `XaiStatusTests.cs`를 더했고 Mac 전환도 병합했습니다. 이번 Windows 버전 PR은 C#·Mac 파일을 다시 고치지 않습니다. [제품 대응·정상/불확실 판정·양쪽 확인](XAI_STATUS.md).
 
 **#86의 Windows 검증 기준점:** self-test **255,761건(공통 255,062 + Windows 699)**·smoke **837 PASS**·빌드/publish 경고 0/오류 0입니다. 2.8.2 재검사 결과와 구분합니다. 단일 EXE는 Windows SDK projection으로 **3.89→28.19MiB**, 동일 합성 warm 경로 각 5회 중앙값은 firstIdle **344→371ms**, 작업 집합 **79.96→88.61MiB**, Private Bytes **25.39→25.84MiB**였습니다. 실제 계정 대기·등록된 COM 서버·cold start는 제외했고 같은 측정 hook 비용은 두 버전에 포함됩니다. 지연 생성은 [성능 후보](BACKLOG.md#성능-최적화-후보-보류)로만 남깁니다.
 
@@ -55,7 +57,7 @@
 이 앱에는 다섯 가지 역할이 있습니다.
 
 - **시간표 담당:** 미국 업무시간과 공휴일을 보고 FULL/BURGER를 정합니다.
-- **공지 확인 담당:** OpenAI·Claude·Gemini가 올린 공식 상태를 읽습니다.
+- **공지 확인 담당:** OpenAI·Claude·Gemini·xAI가 올린 공식 상태를 읽습니다.
 - **안내 담당:** 두 정보를 합쳐 Provider별 GO/HOLD/STOP/CHECK를 보여줍니다.
 - **기록 담당:** 사용자가 “느렸어요”, “잘 끝났어요”라고 남긴 경험을 저장합니다.
 - **한도 담당:** 공식 Codex·Claude·agy CLI에 읽기 전용 조회를 부탁합니다. 2.4.0 화면은 사용률과 간략 리셋 시간을 표시하며 조회 범위·인증·정책은 유지합니다. 인증은 CLI가 맡습니다.
@@ -161,7 +163,7 @@ Windows 시간대 이름 `Eastern Standard Time`, `Pacific Standard Time`을 사
 | OpenAI | 공식 summary + 전체 components 목록의 합집합. incident 목록이 생략되어 있으면 공식 incident history도 추가 확인 |
 | Claude | 공식 summary의 구성 요소와 incident |
 | Gemini | Workspace의 제품 목록과 장애 이력에서 Gemini를 선택 |
-| xAI (Draft) | Grok·Cursor·Grok Bot RSS와 Cursor 호환 JSON 3종. 공식 사건 피드 기준 정상 판정·최악 상태 집계 |
+| xAI | Grok·Cursor·Grok Bot RSS와 Cursor 호환 JSON 3종. 공식 사건 피드 기준 정상 판정·최악 상태 집계 |
 
 component는 서비스 안의 기능·구성 요소, incident는 회사가 공개한 장애 사건입니다. 모든 제품의 문제를 이 앱의 관심 서비스 문제로 취급하지 않습니다. 범위를 확실히 판단할 수 없으면 UNKNOWN으로 남깁니다.
 

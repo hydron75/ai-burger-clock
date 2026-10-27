@@ -1,7 +1,8 @@
-# xAI 공식 상태 통합 (구현 Draft · Mac 전환/확인 대기)
+# xAI 공식 상태 통합 (#98 병합 완료 · Windows 2.8.4 반영)
 
-Windows 2.8.3 이후 작업이며 버전·배포 EXE·운영 등록은 바꾸지 않습니다.
-공통 원본과 Windows 연결을 먼저 제공하고 Mac 담당이 전환·검증한 뒤 사용자가 병합합니다.
+공통 원본·Windows 연결과 Mac 전환을 양쪽에서 확인한 뒤 2026-10-27 #98로 병합했습니다.
+Windows 2.8.4의 버전·검사·EXE 교체와 외부 확인/실행 대기는 [배포 기록](MAINTENANCE_2_8_4.md)에 둡니다.
+아래 #98 당시 검사·버전 미변경 기록은 과거 기준으로 보존하며 Mac 새 버전 배포는 별도 담당 범위입니다.
 
 ## 대상과 출처
 
@@ -102,9 +103,9 @@ UNKNOWN/CHECK 자체로 장애·정상화 알림을 보내지 않습니다. Wind
   한도 세 박스와 상태↔한도 전환은 유지합니다.
 - Windows의 `사용량 보기` 링크는 클릭 불가능한 Tooltip과 별도로 xAI 카드 제목 오른쪽에만 둡니다.
   공통 상세에는 주소·조회 제외 안내를 넣습니다. 링크 클릭은 계정 조회·기록·알림 설정 변경을 하지 않습니다.
-- Mac 전용 파일은 이번 Windows 작업에서 수정하지 않습니다. Mac 담당은 네 번째 카드·사용량 링크,
-  마지막 카드 뒤 간격, 팝오버 높이/스크롤, VoiceOver, 네 Provider를 전제한 native smoke를 전환합니다.
-  공통 검사·`Mac/build.sh`·native smoke와 작은 화면의 전체 컨트롤 접근을 확인해야 합니다.
+- #98의 Windows 담당은 Mac 전용 파일을 수정하지 않았고, Mac 담당이 네 번째 카드·사용량 링크,
+  마지막 카드 뒤 간격, 팝오버 높이/스크롤, VoiceOver 접근 요소와 네 Provider native smoke를 전환했습니다.
+  공통 검사·`Mac/build.sh`·최종 native smoke를 확인한 뒤 병합했습니다. 실제 마우스/VoiceOver 낭독 등 한계는 아래에 구분합니다.
 - 기존 Provider 식별 값과 DB 스키마는 유지하고 `Xai`를 뒤에 추가합니다.
   통계·사용 경험 기록은 네 Provider를 다루며 `QuotaProvider`는 기존 세 개 그대로입니다.
 
@@ -116,9 +117,9 @@ UNKNOWN/CHECK 자체로 장애·정상화 알림을 보내지 않습니다. Wind
 기존 모니터·저장·트레이·알림 순서·기록/통계 검사의 세 Provider 전제를 네 개로 갱신합니다.
 실제 계정 정보는 fixture·문서·PR·이미지에 넣지 않습니다.
 
-검증 결과와 합성 PNG 비교는 Draft PR 본문에 기록합니다. Mac 확인 전에는 병합하지 않습니다.
+검증 결과와 합성 PNG 비교는 #98 본문에 기록했고, Mac 전환·확인 뒤 병합했습니다.
 
-### Windows 검증 (2026-10-27 KST)
+### #98 Windows 담당 당시 검증 (2026-10-27 KST, Mac 전환 전 기록)
 
 기준 main은 `0ccd96fb1f388dbbc11be91a595344177f025350`, 최종 검사 코드 커밋은
 `1787bb2d793badeaa464639159fd542371376df6`입니다. SDK 10.0.403으로 `build.ps1`을 실행했습니다.
@@ -210,3 +211,15 @@ SQLite 저장·전체 실패·재시작·만료, 실제 v1-only 캐시, 손상/�
 `artifacts/xai-check-release/shared-expiry-tests.txt`에 보존합니다.
 Mac 담당은 최신 HEAD의 공통 **291,074건**, 재시작 시각 보존·상세 안내·정상화 알림 구분을 확인합니다.
 Mac 파일·Windows 버전·배포 EXE·운영 등록은 변경하지 않았습니다.
+
+### #98 Mac 전환·병합 완료 및 Windows 2.8.4
+
+Mac 담당이 기존 Mac 파일만 전환하고 공통 **291,074건**, `Mac/build.sh` 경고·오류 0,
+최종 native smoke **PASS / 종료 코드 0 / SKIP 없음**을 확인했습니다.
+최신 PR HEAD `c80e73814a5549a663e020afe0232ee947a03f93`를 사용자가
+main `ee9f2d07d0b827c0992b7c3b8155a9bc5ae15c71`로 병합했습니다.
+[Mac 최종 결과와 한계](https://github.com/hydron75/ai-burger-clock/pull/98#issuecomment-6442146820)는
+실제 마우스·VoiceOver 낭독·실피드/24시간 운영 관찰과 합성 검사를 구분합니다.
+
+Windows 2.8.4 버전 PR은 버전 세 필드·문서만 변경합니다. 후보 검사·EXE 교체는 완료했고
+운영 앱 실행·등록은 수행하지 않았습니다. [새 검사·해시·백업·외부 명령](MAINTENANCE_2_8_4.md).
