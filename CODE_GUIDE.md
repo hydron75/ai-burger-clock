@@ -361,7 +361,7 @@ Windows 내부 승인 형식은 알려진 경우만 해석합니다. 낯선 값�
 | [WindowsQuotaToastRegistration.cs](WindowsQuotaToastRegistration.cs) | 실제 배포 EXE의 명시적 시작 메뉴/AUMID/CLSID 등록, 소유권·경로 검증, 해제·dry-run. 자동 시작과 별개 |
 | [WindowsQuotaToastIntegration.cs](WindowsQuotaToastIntegration.cs) | 고정 TEST AUMID·CLSID만 쓰는 별도 통합 검사 명령. 정상 실행과 기본 smoke에서는 시험 알림/등록을 만들지 않음 |
 | [StatusWindow.cs](StatusWindow.cs) | 작은 상태 창, 클릭과 설정 변경 전달, 저장 오류 안내 |
-| [XaiStatusFeed.cs](XaiStatusFeed.cs) | xAI RSS·Cursor 호환 JSON의 제품 대응·중복/최악 상태·부분 실패·미해결 사건 소실/캐시 복원 판정 |
+| [XaiStatusFeed.cs](XaiStatusFeed.cs) | xAI RSS·Cursor 호환 JSON의 제품 대응·중복/최악 상태·부분 실패·소실 사건 24시간 해제/캐시 복원 판정 |
 | [MeasurementDialog.cs](MeasurementDialog.cs) | 기록 종류와 선택 메모 입력 |
 | [StatisticsWindow.cs](StatisticsWindow.cs) | Windows 통계 창 |
 | [StatisticsAnalysis.cs](StatisticsAnalysis.cs) | 두 OS가 함께 쓰는 통계 계산, 표본수와 No data |

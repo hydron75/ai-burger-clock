@@ -557,6 +557,28 @@ internal static class UIRegressionChecks
             "explicit resolution restores xAI GO under the incident-feed rule");
         SaveFormImage(context.StatusWindow, "xai-resolved.png", reportDirectory);
         handler.XaiRss = null;
+
+        // Render the shared expiry decision without moving the host's clock or
+        // altering the monitor's already-tested explicit-resolution episode.
+        var expiryTracker = new XaiStatusFeed();
+        DateTimeOffset firstMissing = xai.CheckedAtUtc.AddHours(-24);
+        _ = expiryTracker.Parse(XaiStatusTests.Rss(XaiStatusTests.Item()), XaiStatusTests.SummaryJson,
+            XaiStatusTests.ComponentsJson, XaiStatusTests.IncidentsJson, firstMissing.AddMinutes(-5));
+        _ = expiryTracker.Parse(XaiStatusTests.EmptyRss, XaiStatusTests.SummaryJson,
+            XaiStatusTests.ComponentsJson, XaiStatusTests.IncidentsJson, firstMissing);
+        var expired = expiryTracker.Parse(XaiStatusTests.EmptyRss, XaiStatusTests.SummaryJson,
+            XaiStatusTests.ComponentsJson, XaiStatusTests.IncidentsJson, xai.CheckedAtUtc);
+        var expirySchedule = AgentSchedule.GetSnapshot(xai.CheckedAtUtc);
+        context.StatusWindow.UpdateProviders(monitor.Snapshot().Select(status => status.Provider == ProviderKind.Xai ? expired : status).ToArray(),
+            expirySchedule, refreshing: false, monitor.NextRefreshUtc);
+        var xaiHeading = panels[(int)ProviderKind.Xai].Controls.OfType<Label>().Single(label => label.Font.Bold);
+        Check(expired.Status == OfficialStatus.Operational && expired.PendingXaiIncidentIds.Length == 0 &&
+            xaiHeading.Text == StatusPanelModel.Card(expired, expirySchedule.State).Heading && xaiHeading.ForeColor != Color.DimGray,
+            "24-hour missing-incident expiry renders xAI normal instead of a gray CHECK card");
+        Check((statusDetails.GetToolTip(xaiHeading) ?? "").Contains(XaiStatusFeed.ExpiryNote, StringComparison.Ordinal),
+            "Native xAI detail retains the exact 24-hour expiry explanation without adding a visible row");
+        SaveFormImage(context.StatusWindow, "xai-expired.png", reportDirectory);
+        RefreshStatus();
     }
 
     private static void SaveFormImage(Form form, string name, string? directory)

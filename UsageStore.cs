@@ -13,6 +13,7 @@ internal sealed class UsageStore(string? databasePath = null)
     internal const string HolidaySettingKey = "UsFederalHolidaysEnabled";
     internal const string ProviderDiagnosticsPrefix = "ProviderStatusDiagnostics.v1.";
     internal const int MaximumProviderDiagnosticsBytes = 8 * 1024;
+    private const int MaximumXaiTrackingBytes = 32 * 1024;
     private const int MaximumQuotaCacheCharacters = 512 * 1024;
     private readonly SemaphoreSlim gate = new(1, 1);
     private Exception? schemaInitializationFailure;
@@ -292,9 +293,10 @@ internal sealed class UsageStore(string? databasePath = null)
                 command.CommandText = "INSERT INTO AppMetadata(Key,Value) VALUES('XaiPendingIncidents.v1',$pending) " +
                     "ON CONFLICT(Key) DO UPDATE SET Value=excluded.Value;";
                 string ids = status.PendingXaiIncidentIds;
-                command.Parameters.AddWithValue("$pending", Utc(status.CheckedAtUtc) + "\n" +
-                    (Encoding.UTF8.GetByteCount(ids) <= 2048 ? ids : "?"));
+                if (Encoding.UTF8.GetByteCount(ids) > 2048) ids = "?";
+                command.Parameters.AddWithValue("$pending", Utc(status.CheckedAtUtc) + "\n" + ids);
                 command.ExecuteNonQuery();
+                SaveXaiTracking(connection, transaction, status, ids);
             }
             cancellationToken.ThrowIfCancellationRequested();
             transaction.Commit();
@@ -335,12 +337,88 @@ internal sealed class UsageStore(string? databasePath = null)
         if (status.Provider != ProviderKind.Xai) return status;
         using var command = connection.CreateCommand();
         command.CommandText = "SELECT Value FROM AppMetadata WHERE Key='XaiPendingIncidents.v1';";
-        if (command.ExecuteScalar() is not string value) return status;
+        if (command.ExecuteScalar() is not string value) return ReadXaiTracking(connection, status);
         int separator = value.IndexOf('\n');
         if (separator < 0 || !DiagnosticUtc(value[..separator], out var time) || time != status.CheckedAtUtc ||
             Encoding.UTF8.GetByteCount(value) > 2100)
-            return status with { PendingXaiIncidentIds = "?" };
-        return status with { PendingXaiIncidentIds = value[(separator + 1)..] };
+            return ReadXaiTracking(connection, status with { PendingXaiIncidentIds = "?" });
+        return ReadXaiTracking(connection, status with { PendingXaiIncidentIds = value[(separator + 1)..] });
+    }
+
+    private static void SaveXaiTracking(SqliteConnection connection, SqliteTransaction transaction, ProviderStatus status, string ids)
+    {
+        using var data = new MemoryStream();
+        using (var writer = new Utf8JsonWriter(data))
+        {
+            writer.WriteStartObject();
+            writer.WriteNumber("Version", 2);
+            writer.WriteString(nameof(ProviderStatus.CheckedAtUtc), Utc(status.CheckedAtUtc));
+            writer.WriteString("PendingIds", ids);
+            writer.WriteStartArray("Missing");
+            foreach (var item in status.XaiMissingIncidents.Take(256))
+            {
+                writer.WriteStartObject();
+                writer.WriteString(nameof(XaiMissingIncident.Id), item.Id);
+                writer.WriteString(nameof(XaiMissingIncident.MissingSinceUtc), Utc(item.MissingSinceUtc));
+                writer.WriteEndObject();
+            }
+            writer.WriteEndArray();
+            writer.WriteString(nameof(ProviderStatus.XaiIncidentExpiryNote), status.XaiIncidentExpiryNote);
+            writer.WriteBoolean(nameof(ProviderStatus.XaiRecoveryUnconfirmed), status.XaiRecoveryUnconfirmed);
+            writer.WriteEndObject();
+        }
+        using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.Parameters.AddWithValue("$key", "XaiPendingIncidents.v2");
+        if (data.Length > MaximumXaiTrackingBytes)
+            command.CommandText = "DELETE FROM AppMetadata WHERE Key=$key;";
+        else
+        {
+            command.CommandText = "INSERT INTO AppMetadata(Key,Value) VALUES($key,$value) ON CONFLICT(Key) DO UPDATE SET Value=excluded.Value;";
+            command.Parameters.AddWithValue("$value", Encoding.UTF8.GetString(data.GetBuffer(), 0, checked((int)data.Length)));
+        }
+        command.ExecuteNonQuery();
+    }
+
+    private static ProviderStatus ReadXaiTracking(SqliteConnection connection, ProviderStatus status)
+    {
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT Value FROM AppMetadata WHERE Key='XaiPendingIncidents.v2' AND length(CAST(Value AS BLOB)) <= $maximum;";
+        command.Parameters.AddWithValue("$maximum", MaximumXaiTrackingBytes);
+        if (command.ExecuteScalar() is not string json) return status;
+        try
+        {
+            using var document = JsonDocument.Parse(json);
+            var root = document.RootElement;
+            if (root.ValueKind != JsonValueKind.Object || !root.TryGetProperty("Version", out var version) ||
+                version.ValueKind != JsonValueKind.Number || !version.TryGetInt32(out int number) || number != 2 ||
+                !DiagnosticString(root, nameof(ProviderStatus.CheckedAtUtc), out string checkedText) ||
+                !DiagnosticUtc(checkedText, out var checkedAt) || checkedAt != status.CheckedAtUtc ||
+                !DiagnosticString(root, "PendingIds", out string ids) || Encoding.UTF8.GetByteCount(ids) > 2048 ||
+                !DiagnosticString(root, nameof(ProviderStatus.XaiIncidentExpiryNote), out string note) || note.Length > 1000 ||
+                !root.TryGetProperty(nameof(ProviderStatus.XaiRecoveryUnconfirmed), out var unconfirmed) ||
+                unconfirmed.ValueKind is not (JsonValueKind.True or JsonValueKind.False) ||
+                !root.TryGetProperty("Missing", out var items) || items.ValueKind != JsonValueKind.Array || items.GetArrayLength() > 256)
+                return status;
+            var pending = ids.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToHashSet(StringComparer.Ordinal);
+            var seen = new HashSet<string>(StringComparer.Ordinal);
+            var missing = new List<XaiMissingIncident>();
+            foreach (var item in items.EnumerateArray())
+            {
+                if (item.ValueKind != JsonValueKind.Object || !DiagnosticString(item, nameof(XaiMissingIncident.Id), out string id) ||
+                    !pending.Contains(id) || !seen.Add(id) ||
+                    !DiagnosticString(item, nameof(XaiMissingIncident.MissingSinceUtc), out string sinceText) ||
+                    !DiagnosticUtc(sinceText, out var since) || since > checkedAt)
+                    return status;
+                missing.Add(new(id, since));
+            }
+            return status with
+            {
+                PendingXaiIncidentIds = ids, XaiMissingIncidents = missing.Count == 0 ? Array.Empty<XaiMissingIncident>() : missing.ToArray(),
+                XaiIncidentExpiryNote = note, XaiRecoveryUnconfirmed = unconfirmed.GetBoolean()
+            };
+        }
+        catch (JsonException) { return status; }
     }
 
     // Auxiliary diagnostics do not alter the schema or grow with the polling history.

@@ -7,7 +7,8 @@ using System.Xml.Linq;
 namespace AiBurgerClock;
 
 // One instance per status client, called serially by StatusMonitor. Only unresolved
-// public incident identities are retained; a missing item is not an explicit resolution.
+// public incident identities are retained; missing items expire after 24 hours, which
+// restores the feed baseline without claiming an explicit resolution.
 internal sealed class XaiStatusFeed
 {
     internal const string RssUrl = "https://status.x.ai/feed.xml";
@@ -15,13 +16,20 @@ internal sealed class XaiStatusFeed
     internal const string ComponentsUrl = "https://status.x.ai/api/compat/components.json";
     internal const string IncidentsUrl = "https://status.x.ai/api/compat/incidents.json";
     internal const string HealthyReason = "정상 · 진행 중 장애 없음(공식 사건 피드 기준)";
+    internal const string ExpiryNote = "해결 표시 없이 피드에서 사라짐(24시간 경과로 해제)";
+    internal static readonly TimeSpan MissingGracePeriod = TimeSpan.FromHours(24);
     private const int MaximumTrackedIncidents = 256;
     private readonly Dictionary<string, string> unresolved = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, DateTimeOffset> missingSince = new(StringComparer.Ordinal);
     private bool incompleteTracking;
+    private string expiryNote = "";
+    private bool recoveryUnconfirmed;
 
     internal void Restore(ProviderStatus cached)
     {
         if (cached.Provider != ProviderKind.Xai) return;
+        expiryNote = cached.XaiIncidentExpiryNote;
+        recoveryUnconfirmed = cached.XaiRecoveryUnconfirmed;
         if (cached.PendingXaiIncidentIds == "?") { incompleteTracking = true; return; }
         string ids = cached.PendingXaiIncidentIds;
         if (ids.Length == 0 && cached.Status != OfficialStatus.Operational)
@@ -32,6 +40,9 @@ internal sealed class XaiStatusFeed
         foreach (string id in ids.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Take(MaximumTrackedIncidents))
             unresolved[id] = cached.IncidentTitle.Length > 0 ? cached.IncidentTitle :
                 cached.UncertainIncidentTitle.Length > 0 ? cached.UncertainIncidentTitle : "이전 xAI 미해결 사건";
+        foreach (var missing in cached.XaiMissingIncidents)
+            if (unresolved.ContainsKey(missing.Id) && missing.MissingSinceUtc <= cached.CheckedAtUtc)
+                missingSince[missing.Id] = missing.MissingSinceUtc;
     }
 
     // Public service paths and Cursor compatibility IDs checked on 2026-10-27.
@@ -72,6 +83,7 @@ internal sealed class XaiStatusFeed
         internal readonly Dictionary<string, string> Uncertain = new(StringComparer.Ordinal);
         internal readonly Dictionary<string, string> Active = new(StringComparer.Ordinal);
         internal readonly HashSet<string> Resolved = new(StringComparer.Ordinal);
+        internal readonly HashSet<string> Seen = new(StringComparer.Ordinal);
         internal readonly HashSet<string> ComponentIds = new(StringComparer.Ordinal);
         internal readonly Dictionary<string, OfficialStatus> ComponentStates = new(StringComparer.Ordinal);
     }
@@ -88,9 +100,34 @@ internal sealed class XaiStatusFeed
 
         foreach (string id in reading.Active.Keys.Intersect(reading.Resolved))
             reading.Issues.Add("동일 사건의 진행/해결 상태가 출처 간 상충");
-        foreach (string id in reading.Resolved.Except(reading.Active.Keys)) unresolved.Remove(id);
+        foreach (string id in reading.Resolved.Except(reading.Active.Keys))
+        {
+            unresolved.Remove(id);
+            missingSince.Remove(id);
+        }
+        // Seeing the same identity, even with an uncertain shape, cancels absence.
+        foreach (string id in reading.Seen) missingSince.Remove(id);
+        bool absenceConfirmed = reading.Issues.Count == 0;
+        var expired = new List<string>();
         foreach (var previous in unresolved)
-            if (!reading.Active.ContainsKey(previous.Key))
+        {
+            if (reading.Seen.Contains(previous.Key)) continue;
+            if (absenceConfirmed)
+            {
+                if (!missingSince.TryGetValue(previous.Key, out var since) || now < since)
+                    missingSince[previous.Key] = now;
+                else if (now - since >= MissingGracePeriod)
+                    expired.Add(previous.Key);
+            }
+        }
+        if (expired.Count > 0)
+        {
+            expiryNote = ExpiryNote;
+            recoveryUnconfirmed = true;
+            foreach (string id in expired) { unresolved.Remove(id); missingSince.Remove(id); }
+        }
+        foreach (var previous in unresolved)
+            if (!reading.Active.ContainsKey(previous.Key) && !reading.Uncertain.ContainsKey(previous.Key))
             {
                 reading.Issues.Add("이전 미해결 사건이 해결 표시 없이 소실됨");
                 reading.Uncertain[previous.Key] = previous.Value;
@@ -102,6 +139,7 @@ internal sealed class XaiStatusFeed
             else unresolved[current.Key] = current.Value;
         }
         if (incompleteTracking) reading.Issues.Add("미해결 사건 추적 범위를 확인할 수 없음");
+        if (reading.Problems.Count > 0) recoveryUnconfirmed = false;
         string pending = string.Join(",", unresolved.Keys.Order(StringComparer.Ordinal));
         if (pending.Length > 2048 || incompleteTracking) pending = "?";
 
@@ -119,6 +157,10 @@ internal sealed class XaiStatusFeed
                 .Select(item => item.Item1 + (item.Item2 is null ? " [수신 실패]" : " [응답 수신]"))))
         {
             PendingXaiIncidentIds = pending,
+            XaiMissingIncidents = missingSince.OrderBy(item => item.Key, StringComparer.Ordinal)
+                .Select(item => new XaiMissingIncident(item.Key, item.Value)).ToArray(),
+            XaiIncidentExpiryNote = expiryNote,
+            XaiRecoveryUnconfirmed = recoveryUnconfirmed,
             AssessmentIssue = issue,
             UncertainIncidentId = Clean(string.Join(",", reading.Uncertain.Keys.Order(StringComparer.Ordinal)), 500),
             UncertainIncidentTitle = Clean(string.Join(" | ", reading.Uncertain.Values.Distinct()), 500)
@@ -148,6 +190,7 @@ internal sealed class XaiStatusFeed
         foreach (var item in channel.Elements("item"))
         {
             string id = ((string?)item.Element("guid") ?? "").Trim();
+            if (id.Length is > 0 and <= 128) reading.Seen.Add(id);
             string title = Clean((string?)item.Element("title") ?? "", 500);
             string description = Clean(Tags.Replace(WebUtility.HtmlDecode((string?)item.Element("description") ?? ""), " "), 100_000);
             var header = Header.Match(description);
@@ -222,6 +265,7 @@ internal sealed class XaiStatusFeed
         foreach (var item in Array(root, "incidents").EnumerateArray())
         {
             string id = Text(item, "id"), title = Clean(Text(item, "name"), 500), state = Text(item, "status");
+            if (id.Length is > 0 and <= 128) reading.Seen.Add(id);
             if (id.Length is 0 or > 128 || state.Length == 0)
             { reading.Issues.Add("Cursor 사건 필수 필드 누락"); continue; }
             if (state is "resolved" or "postmortem" or "completed") { reading.Resolved.Add(id); continue; }

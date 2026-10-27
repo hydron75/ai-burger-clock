@@ -1,7 +1,9 @@
 using System.Net;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Xml.Linq;
+using Microsoft.Data.Sqlite;
 
 namespace AiBurgerClock;
 
@@ -175,6 +177,7 @@ internal static class XaiStatusTests
             IncidentsJson, Now.AddMinutes(10)).Status == OfficialStatus.Operational,
             "truncated display ID never creates a phantom event after restart and explicit resolution");
         CheckMissingIncidentRelease(Check);
+        CheckMissingIncidentExpiry(Check);
         var detail = StatusPanelModel.Card(baseline, AgentState.FullThrottle);
         Check(detail.Detail.Contains("공식 사건 피드 기준", StringComparison.Ordinal) && detail.Detail.Contains("사용량 보기: https://grok.com/dashboard", StringComparison.Ordinal), "shared detail declares incident-feed scope and usage link only");
         Check(TrayPresentation.ProviderNotification(ProviderKind.Xai, Recommendation.Stop, open.Reason, ProviderNames.Provider).Body.Contains("Grok Bot", StringComparison.Ordinal), "problem notification includes affected product");
@@ -261,6 +264,7 @@ internal static class XaiStatusTests
                 "oversized optional diagnostics cannot delete the separate bounded restart state");
         }
         finally { Directory.Delete(directory, recursive: true); }
+        await CheckMissingIncidentStorageAsync(Check);
         return count;
     }
 
@@ -276,22 +280,22 @@ internal static class XaiStatusTests
             var missing = tracker.Parse(EmptyRss, SummaryJson, ComponentsJson, IncidentsJson, Now.AddMinutes(5));
             check(missing.Status == OfficialStatus.Unknown && missing.PendingXaiIncidentIds == "synthetic-incident", label + "disappearance enters CHECK");
             if (restart) { tracker = new XaiStatusFeed(); tracker.Restore(missing); }
-            var late = tracker.Parse(EmptyRss, SummaryJson, ComponentsJson, IncidentsJson, Now.AddDays(30));
-            check(late.Status == OfficialStatus.Unknown && late.PendingXaiIncidentIds == "synthetic-incident", label + "neither elapsed time nor restart expires the missing identity");
-            var unrelatedResolution = tracker.Parse(Rss(Item(id: "synthetic-other", state: "resolved")), SummaryJson, ComponentsJson, IncidentsJson, Now.AddDays(30).AddMinutes(5));
+            var late = tracker.Parse(EmptyRss, SummaryJson, ComponentsJson, IncidentsJson, Now.AddHours(23));
+            check(late.Status == OfficialStatus.Unknown && late.PendingXaiIncidentIds == "synthetic-incident", label + "elapsed time before 24 hours and restart retain the missing identity");
+            var unrelatedResolution = tracker.Parse(Rss(Item(id: "synthetic-other", state: "resolved")), SummaryJson, ComponentsJson, IncidentsJson, Now.AddHours(23).AddMinutes(5));
             check(unrelatedResolution.Status == OfficialStatus.Unknown && unrelatedResolution.PendingXaiIncidentIds == "synthetic-incident", label + "another incident resolution cannot clear CHECK");
-            var next = tracker.Parse(Rss(Item("cursor-cli", id: "synthetic-next")), SummaryJson, ComponentsJson, IncidentsJson, Now.AddDays(30).AddMinutes(10));
+            var next = tracker.Parse(Rss(Item("cursor-cli", id: "synthetic-next")), SummaryJson, ComponentsJson, IncidentsJson, Now.AddHours(23).AddMinutes(10));
             check(next.Status == OfficialStatus.PartialOutage && next.UncertainIncidentId == "synthetic-incident" && next.PendingXaiIncidentIds.Contains("synthetic-next", StringComparison.Ordinal), label + "new issue takes severity priority without forgetting the missing incident");
-            var nextResolved = tracker.Parse(Rss(Item("cursor-cli", id: "synthetic-next", state: "resolved")), SummaryJson, ComponentsJson, IncidentsJson, Now.AddDays(30).AddMinutes(15));
+            var nextResolved = tracker.Parse(Rss(Item("cursor-cli", id: "synthetic-next", state: "resolved")), SummaryJson, ComponentsJson, IncidentsJson, Now.AddHours(23).AddMinutes(15));
             check(nextResolved.Status == OfficialStatus.Unknown && nextResolved.PendingXaiIncidentIds == "synthetic-incident", label + "resolving the new incident returns to the original CHECK");
-            var reappeared = tracker.Parse(Rss(Item()), SummaryJson, ComponentsJson, IncidentsJson, Now.AddDays(30).AddMinutes(20));
+            var reappeared = tracker.Parse(Rss(Item()), SummaryJson, ComponentsJson, IncidentsJson, Now.AddHours(23).AddMinutes(20));
             check(reappeared.Status == OfficialStatus.PartialOutage && reappeared.PendingXaiIncidentIds == "synthetic-incident", label + "same incident reappearing as active is an outage rather than a recovery");
             string resolved = JsonSerializer.Serialize(new { incidents = new[] { Incident(state: phase) } });
             var closed = tracker.Parse(source == "RSS" ? Rss(Item(state: phase)) : EmptyRss,
                 source == "summary" ? Summary(incidents: [Incident(state: phase)]) : SummaryJson, ComponentsJson,
-                source == "incidents" ? resolved : IncidentsJson, Now.AddDays(30).AddMinutes(25));
+                source == "incidents" ? resolved : IncidentsJson, Now.AddHours(23).AddMinutes(25));
             check(closed.Status == OfficialStatus.Operational && closed.PendingXaiIncidentIds.Length == 0 && closed.AssessmentIssue.Length == 0, label + "matching explicit resolution releases CHECK on that poll");
-            var after = tracker.Parse(EmptyRss, SummaryJson, ComponentsJson, IncidentsJson, Now.AddDays(30).AddMinutes(30));
+            var after = tracker.Parse(EmptyRss, SummaryJson, ComponentsJson, IncidentsJson, Now.AddHours(23).AddMinutes(30));
             check(after.Status == OfficialStatus.Operational && after.PendingXaiIncidentIds.Length == 0, label + "a resolved incident may leave the feed without recreating CHECK");
         }
 
@@ -313,6 +317,311 @@ internal static class XaiStatusTests
         var receivedResolution = partial.Parse(Rss(Item(state: "resolved")), SummaryJson, null, IncidentsJson, Now.AddMinutes(5));
         check(receivedResolution.Status == OfficialStatus.Unknown && receivedResolution.PendingXaiIncidentIds.Length == 0 && receivedResolution.AssessmentIssue.Contains("수신 실패", StringComparison.Ordinal), "matching resolution clears the incident but a separate source failure still requires CHECK");
         check(partial.Parse(EmptyRss, SummaryJson, ComponentsJson, IncidentsJson, Now.AddMinutes(10)).Status == OfficialStatus.Operational, "healthy receipt clears the remaining source failure without reviving a resolved incident");
+    }
+
+    private const string ExpiryNote = "해결 표시 없이 피드에서 사라짐(24시간 경과로 해제)";
+
+    private static ProviderStatus ReadAt(XaiStatusFeed tracker, DateTimeOffset at, string rss = EmptyRss) =>
+        tracker.Parse(rss, SummaryJson, ComponentsJson, IncidentsJson, at);
+
+    private static void CheckMissingIncidentExpiry(Action<bool, string> check)
+    {
+        DateTimeOffset firstMissing = Now.AddMinutes(5);
+        var tracker = new XaiStatusFeed();
+        _ = ReadAt(tracker, Now, Rss(Item()));
+        var missing = ReadAt(tracker, firstMissing);
+        check(missing.Status == OfficialStatus.Unknown && missing.XaiMissingIncidents.Single() == new XaiMissingIncident("synthetic-incident", firstMissing),
+            "first valid absence starts the per-ID 24-hour CHECK clock");
+        var repeated = ReadAt(tracker, firstMissing.AddHours(12));
+        check(repeated.XaiMissingIncidents.Single().MissingSinceUtc == firstMissing, "repeated absence preserves the first missing time");
+        var before = ReadAt(tracker, firstMissing.AddHours(24).AddMilliseconds(-1));
+        check(before.Status == OfficialStatus.Unknown && before.PendingXaiIncidentIds == "synthetic-incident" && before.XaiIncidentExpiryNote.Length == 0,
+            "23:59:59.999 since first absence is still CHECK without an expiry note");
+        var expired = ReadAt(tracker, firstMissing.AddHours(24));
+        check(expired.Status == OfficialStatus.Operational && expired.PendingXaiIncidentIds.Length == 0 && expired.XaiMissingIncidents.Count == 0,
+            "a valid empty receipt at exactly 24 hours releases the missing identity");
+        check(expired.XaiIncidentExpiryNote == ExpiryNote && expired.XaiRecoveryUnconfirmed,
+            "time expiry records the exact explanation and never claims confirmed recovery");
+        check(expired.AssessmentIssue.Length == 0 && expired.UncertainIncidentId.Length == 0 && expired.IncidentId.Length == 0,
+            "expired disappearance leaves no current assessment or incident diagnostics");
+        var after = ReadAt(tracker, firstMissing.AddHours(24).AddMilliseconds(1));
+        check(after.Status == OfficialStatus.Operational && after.XaiIncidentExpiryNote == expired.XaiIncidentExpiryNote && after.XaiRecoveryUnconfirmed,
+            "the next valid receipt retains the latest expiry note and unconfirmed-recovery flag");
+        var justAfterTracker = new XaiStatusFeed();
+        _ = ReadAt(justAfterTracker, Now, Rss(Item()));
+        _ = ReadAt(justAfterTracker, firstMissing);
+        check(ReadAt(justAfterTracker, firstMissing.AddHours(24).AddMilliseconds(1)).Status == OfficialStatus.Operational,
+            "first receipt just after 24 hours also releases CHECK");
+        var card = StatusPanelModel.Card(expired, AgentState.FullThrottle);
+        check(card.Recommendation == Recommendation.Go && card.HeadingTone == PanelTone.Good && card.Detail.Split('\n').Contains("과거 사건 해제: " + ExpiryNote),
+            "expiry detail shows the exact note and a GO card instead of gray CHECK");
+        var allHealthy = Enum.GetValues<ProviderKind>().Select(provider => provider == ProviderKind.Xai ? expired :
+            new ProviderStatus(provider, OfficialStatus.Operational, Now, Now, "Synthetic healthy")).ToArray();
+        check(TrayPresentation.Calculate(AgentState.FullThrottle, allHealthy).Attention == TrayAttention.Green,
+            "expired xAI no longer keeps an otherwise healthy tray gray");
+        var restored = new XaiStatusFeed(); restored.Restore(expired);
+        var restoredHealthy = ReadAt(restored, firstMissing.AddDays(2));
+        check(restoredHealthy.Status == OfficialStatus.Operational && restoredHealthy.XaiIncidentExpiryNote == expired.XaiIncidentExpiryNote && restoredHealthy.XaiRecoveryUnconfirmed,
+            "feed restoration retains an expired episode note without recreating its identity");
+
+        foreach (bool uncertain in new[] { false, true })
+        {
+            var reappearing = new XaiStatusFeed();
+            _ = ReadAt(reappearing, Now, Rss(Item()));
+            _ = ReadAt(reappearing, firstMissing);
+            var visible = ReadAt(reappearing, firstMissing.AddHours(24), Rss(Item(state: uncertain ? "future_phase" : "investigating")));
+            check(visible.Status == (uncertain ? OfficialStatus.Unknown : OfficialStatus.PartialOutage) && visible.XaiMissingIncidents.Count == 0 &&
+                visible.PendingXaiIncidentIds == "synthetic-incident" && visible.XaiIncidentExpiryNote.Length == 0,
+                "same-ID reappearance cancels expiry even with an unrecognized state: " + uncertain);
+            DateTimeOffset againAt = firstMissing.AddHours(25);
+            var again = ReadAt(reappearing, againAt);
+            check(again.Status == OfficialStatus.Unknown && again.XaiMissingIncidents.Single().MissingSinceUtc == againAt,
+                "a disappearance after reappearance starts a fresh 24 hours: " + uncertain);
+            check(ReadAt(reappearing, againAt.AddHours(24).AddMilliseconds(-1)).Status == OfficialStatus.Unknown,
+                "reappearance prevents the old missing clock from releasing the episode early: " + uncertain);
+            check(ReadAt(reappearing, againAt.AddHours(24)).Status == OfficialStatus.Operational,
+                "the restarted missing clock releases at its own 24-hour boundary: " + uncertain);
+        }
+        CheckMalformedReappearance(check, firstMissing);
+
+        var multiple = new XaiStatusFeed();
+        _ = ReadAt(multiple, Now, Rss(Item(), Item(id: "synthetic-second")));
+        _ = ReadAt(multiple, firstMissing, Rss(Item(id: "synthetic-second")));
+        DateTimeOffset secondMissing = firstMissing.AddHours(1);
+        var both = ReadAt(multiple, secondMissing);
+        check(both.XaiMissingIncidents.Single(item => item.Id == "synthetic-incident").MissingSinceUtc == firstMissing &&
+            both.XaiMissingIncidents.Single(item => item.Id == "synthetic-second").MissingSinceUtc == secondMissing,
+            "multiple incident IDs keep independent missing times");
+        var firstExpired = ReadAt(multiple, firstMissing.AddHours(24));
+        check(firstExpired.Status == OfficialStatus.Unknown && firstExpired.PendingXaiIncidentIds == "synthetic-second" &&
+            firstExpired.XaiMissingIncidents.Single().MissingSinceUtc == secondMissing && firstExpired.XaiIncidentExpiryNote == ExpiryNote,
+            "expiring one ID leaves the younger missing ID in CHECK");
+        check(ReadAt(multiple, secondMissing.AddHours(24)).Status == OfficialStatus.Operational, "the final missing ID expires on its own boundary");
+
+        var old = new XaiStatusFeed();
+        _ = ReadAt(old, Now.AddDays(-30), Rss(Item()));
+        var oldMissing = ReadAt(old, Now);
+        check(oldMissing.Status == OfficialStatus.Unknown && oldMissing.XaiMissingIncidents.Single().MissingSinceUtc == Now,
+            "old incident publication and first-seen time never replace its first absence time");
+        check(ReadAt(old, Now.AddHours(24).AddMilliseconds(-1)).Status == OfficialStatus.Unknown, "a long-lived incident receives a complete 24-hour missing interval");
+
+        var rewind = new XaiStatusFeed();
+        _ = ReadAt(rewind, Now, Rss(Item()));
+        _ = ReadAt(rewind, firstMissing);
+        DateTimeOffset rewoundAt = firstMissing.AddHours(-1);
+        var rewound = ReadAt(rewind, rewoundAt);
+        check(rewound.Status == OfficialStatus.Unknown && rewound.XaiMissingIncidents.Single().MissingSinceUtc == rewoundAt,
+            "clock rollback resets the missing baseline to the new observation");
+        check(ReadAt(rewind, rewoundAt.AddHours(24).AddMilliseconds(-1)).Status == OfficialStatus.Unknown, "a rolled-back clock still requires a complete new 24-hour interval");
+        check(ReadAt(rewind, rewoundAt.AddHours(24)).Status == OfficialStatus.Operational, "the rebased clock expires at its own boundary");
+
+        var explicitResolution = new XaiStatusFeed();
+        _ = ReadAt(explicitResolution, Now, Rss(Item()));
+        _ = ReadAt(explicitResolution, firstMissing);
+        var resolvedAtBoundary = ReadAt(explicitResolution, firstMissing.AddHours(24), Rss(Item(state: "resolved")));
+        check(resolvedAtBoundary.Status == OfficialStatus.Operational && resolvedAtBoundary.PendingXaiIncidentIds.Length == 0 &&
+            resolvedAtBoundary.XaiMissingIncidents.Count == 0 && resolvedAtBoundary.XaiIncidentExpiryNote.Length == 0 && !resolvedAtBoundary.XaiRecoveryUnconfirmed,
+            "matching explicit resolution wins over time expiry on the same boundary poll");
+        CheckInvalidMissingReceipts(check);
+        CheckExpiryNotifications(check, tracker, expired, firstMissing.AddHours(25));
+    }
+
+    private static void CheckMalformedReappearance(Action<bool, string> check, DateTimeOffset firstMissing)
+    {
+        var mismatched = Item();
+        mismatched.Elements("category").First(item => item.Value == "investigating").Value = "monitoring";
+        var untitled = Item(); untitled.Element("title")!.Remove();
+        (string Label, string Rss, string Summary)[] readings =
+        [
+            ("RSS category/header mismatch", Rss(mismatched), SummaryJson),
+            ("RSS missing title", Rss(untitled), SummaryJson),
+            ("JSON empty status", EmptyRss, Summary(incidents: [Incident(state: "", components: ["sm5wkcnqkvr9"])]))
+        ];
+        foreach (var reading in readings)
+        {
+            var tracker = new XaiStatusFeed();
+            _ = ReadAt(tracker, Now, Rss(Item()));
+            _ = ReadAt(tracker, firstMissing);
+            var malformed = tracker.Parse(reading.Rss, reading.Summary, ComponentsJson, IncidentsJson, firstMissing.AddHours(12));
+            check(malformed.Status == OfficialStatus.Unknown && malformed.PendingXaiIncidentIds == "synthetic-incident" && malformed.XaiMissingIncidents.Count == 0,
+                reading.Label + ": seeing the same valid ID cancels the missing clock before field validation");
+            DateTimeOffset newMissing = firstMissing.AddHours(24);
+            var again = ReadAt(tracker, newMissing);
+            check(again.Status == OfficialStatus.Unknown && again.XaiMissingIncidents.Single().MissingSinceUtc == newMissing && again.XaiIncidentExpiryNote.Length == 0,
+                reading.Label + ": a valid empty receipt at the old boundary begins a new 24-hour CHECK");
+            check(ReadAt(tracker, newMissing.AddHours(24).AddMilliseconds(-1)).Status == OfficialStatus.Unknown,
+                reading.Label + ": malformed reappearance prevents expiry before the new 24-hour boundary");
+            var expired = ReadAt(tracker, newMissing.AddHours(24));
+            check(expired.Status == OfficialStatus.Operational && expired.XaiIncidentExpiryNote == ExpiryNote,
+                reading.Label + ": valid absence releases only after the new complete 24-hour interval");
+        }
+    }
+
+    private static void CheckInvalidMissingReceipts(Action<bool, string> check)
+    {
+        var invalid = new List<(string Label, string? Rss, string? Summary, string? Components, string? History)>();
+        for (int index = 0; index < 4; index++)
+        {
+            string?[] inputs = [EmptyRss, SummaryJson, ComponentsJson, IncidentsJson]; inputs[index] = null;
+            invalid.Add(("missing source " + index, inputs[0], inputs[1], inputs[2], inputs[3]));
+            inputs = [EmptyRss, SummaryJson, ComponentsJson, IncidentsJson]; inputs[index] = index == 0 ? "<rss>" : "{bad";
+            invalid.Add(("malformed source " + index, inputs[0], inputs[1], inputs[2], inputs[3]));
+        }
+        invalid.Add(("missing product scope", EmptyRss, Summary(omit: "sm5wkcnqkvr9"), Components(omit: "sm5wkcnqkvr9"), IncidentsJson));
+        invalid.Add(("uncertain unrelated episode", Rss(Item("future-product", id: "synthetic-other")), SummaryJson, ComponentsJson, IncidentsJson));
+        invalid.Add(("unknown component state", EmptyRss, SummaryJson, Components(changed: "sm5wkcnqkvr9", value: "future-state"), IncidentsJson));
+        foreach (var input in invalid)
+        {
+            var tracker = new XaiStatusFeed();
+            _ = ReadAt(tracker, Now, Rss(Item()));
+            var invalidFirst = tracker.Parse(input.Rss, input.Summary, input.Components, input.History, Now.AddHours(1));
+            check(invalidFirst.Status == OfficialStatus.Unknown && invalidFirst.PendingXaiIncidentIds == "synthetic-incident" && invalidFirst.XaiMissingIncidents.Count == 0,
+                input.Label + ": invalid evidence cannot start a missing interval");
+            DateTimeOffset firstMissing = Now.AddDays(2);
+            var validFirst = ReadAt(tracker, firstMissing);
+            check(validFirst.Status == OfficialStatus.Unknown && validFirst.XaiMissingIncidents.Single().MissingSinceUtc == firstMissing,
+                input.Label + ": the next complete valid absence starts its full 24 hours");
+            var invalidBoundary = tracker.Parse(input.Rss, input.Summary, input.Components, input.History, firstMissing.AddHours(24));
+            check(invalidBoundary.Status == OfficialStatus.Unknown && invalidBoundary.PendingXaiIncidentIds == "synthetic-incident" &&
+                invalidBoundary.XaiMissingIncidents.Single().MissingSinceUtc == firstMissing && invalidBoundary.XaiIncidentExpiryNote.Length == 0,
+                input.Label + ": invalid evidence at 24 hours preserves the first time without expiring");
+            check(ReadAt(tracker, firstMissing.AddHours(24).AddMinutes(5)).Status == OfficialStatus.Operational,
+                input.Label + ": the next complete valid empty receipt may expire the preserved interval");
+        }
+    }
+
+    private static void CheckExpiryNotifications(Action<bool, string> check, XaiStatusFeed tracker, ProviderStatus expired, DateTimeOffset nextAt)
+    {
+        var schedule = AgentSchedule.GetSnapshot(Now);
+        check(schedule.State == AgentState.FullThrottle, "expiry notification fixture is FULL THROTTLE");
+        var ticker = new StatusTicker(strictInput: true);
+        ticker.Tick(schedule, [expired with { Status = OfficialStatus.Operational, XaiRecoveryUnconfirmed = false }], TickReason.Initial);
+        var original = expired with { Status = OfficialStatus.PartialOutage, XaiRecoveryUnconfirmed = false };
+        check(ticker.Tick(schedule, [original], TickReason.ProviderChanged).ProviderAlerts.Count == 1, "confirmed synthetic outage creates an initial work alert");
+        ticker.Tick(schedule, [original with { Status = OfficialStatus.Unknown }], TickReason.ProviderChanged);
+        check(ticker.Tick(schedule, [expired], TickReason.ProviderChanged).ProviderAlerts.Count == 0,
+            "time-expiry GO consumes the recommendation baseline without a recovery alert");
+        check(ticker.Tick(schedule, [ReadAt(tracker, nextAt)], TickReason.Timer).ProviderAlerts.Count == 0, "subsequent healthy polls never leak a deferred time-expiry recovery alert");
+        var next = ReadAt(tracker, nextAt.AddMinutes(5), Rss(Item(id: "synthetic-new")));
+        check(!next.XaiRecoveryUnconfirmed && next.Status == OfficialStatus.PartialOutage,
+            "a newly confirmed outage restores the normal recovery flow");
+        var nextAlert = ticker.Tick(schedule, [next], TickReason.ProviderChanged).ProviderAlerts;
+        check(nextAlert.Count == 1 && !nextAlert[0].Recovered, "a new outage after suppressed expiry still announces its work recommendation");
+        var resolved = ReadAt(tracker, nextAt.AddMinutes(10), Rss(Item(id: "synthetic-new", state: "resolved")));
+        var recovery = ticker.Tick(schedule, [resolved], TickReason.ProviderChanged).ProviderAlerts;
+        check(!resolved.XaiRecoveryUnconfirmed && recovery.Count == 1 && recovery[0].Recovered,
+            "explicit resolution of the new outage sends its normal recovery alert");
+        check(ticker.Tick(schedule, [ReadAt(tracker, nextAt.AddMinutes(15))], TickReason.Timer).ProviderAlerts.Count == 0,
+            "explicit recovery is delivered once even while the historical expiry note remains");
+    }
+
+    private static async Task CheckMissingIncidentStorageAsync(Action<bool, string> check)
+    {
+        string directory = Directory.CreateTempSubdirectory("AiBurgerClock-xai-expiry-").FullName;
+        try
+        {
+            string database = Path.Combine(directory, "synthetic.db");
+            DateTimeOffset firstMissing = Now.AddMinutes(5);
+            var tracker = new XaiStatusFeed();
+            _ = ReadAt(tracker, Now, Rss(Item()));
+            var missing = ReadAt(tracker, firstMissing);
+            var store = new UsageStore(database);
+            await store.SaveProviderAsync(missing, AgentSchedule.GetSnapshot(firstMissing), Recommendation.Check);
+            var reloaded = (await new UsageStore(database).ReadLatestStatusesAsync()).Single(state => state.Provider == ProviderKind.Xai);
+            check(reloaded.XaiMissingIncidents.SequenceEqual(missing.XaiMissingIncidents) && reloaded.PendingXaiIncidentIds == missing.PendingXaiIncidentIds,
+                "temporary SQLite preserves missing ID and first absence time across a fresh store instance");
+            var failed = await RestartPollAsync(firstMissing.AddHours(24), offline: true);
+            check(failed.Status == OfficialStatus.Stale && failed.XaiMissingIncidents.Single().MissingSinceUtc == firstMissing && failed.PendingXaiIncidentIds == "synthetic-incident",
+                "restart plus total fake transport failure preserves the missing interval beyond 24 hours");
+            check(failed.XaiIncidentExpiryNote.Length == 0 && !failed.XaiRecoveryUnconfirmed, "total failure cannot manufacture an expiry or unconfirmed recovery");
+            var expired = await RestartPollAsync(firstMissing.AddHours(24).AddMinutes(5), offline: false);
+            check(expired.Status == OfficialStatus.Operational && expired.PendingXaiIncidentIds.Length == 0 && expired.XaiMissingIncidents.Count == 0 &&
+                expired.XaiIncidentExpiryNote == ExpiryNote && expired.XaiRecoveryUnconfirmed,
+                "first valid receipt after restart and total failure expires from the original persisted time");
+            var noteReload = (await new UsageStore(database).ReadLatestStatusesAsync()).Single(state => state.Provider == ProviderKind.Xai);
+            check(noteReload.XaiIncidentExpiryNote == expired.XaiIncidentExpiryNote && noteReload.XaiRecoveryUnconfirmed,
+                "SQLite persists the exact expiry note and unconfirmed-recovery flag");
+            var afterRestart = await RestartPollAsync(firstMissing.AddHours(25), offline: false);
+            check(afterRestart.Status == OfficialStatus.Operational && afterRestart.XaiIncidentExpiryNote == expired.XaiIncidentExpiryNote && afterRestart.XaiRecoveryUnconfirmed,
+                "later restart and healthy receipt retain the latest historical expiry note");
+            var laterFailure = await RestartPollAsync(firstMissing.AddHours(26), offline: true);
+            check(laterFailure.Status == OfficialStatus.Stale && laterFailure.XaiIncidentExpiryNote == expired.XaiIncidentExpiryNote && laterFailure.XaiRecoveryUnconfirmed,
+                "a later total failure preserves the saved expiry explanation and flag");
+            var legacy = missing with { XaiMissingIncidents = [], CheckedAtUtc = Now.AddDays(-30), LastSuccessfulCheckUtc = Now.AddDays(-30) };
+            await store.SaveProviderAsync(legacy, AgentSchedule.GetSnapshot(Now), Recommendation.Check);
+            SetXaiTrackingValue(database, null);
+            check(ReadXaiTrackingValue(database) is null, "legacy fixture contains the v1 ID entry with the v2 tracking key removed");
+            var legacyFirst = await RestartPollAsync(Now.AddDays(3), offline: false);
+            check(legacyFirst.Status == OfficialStatus.Unknown && legacyFirst.XaiMissingIncidents.Single().MissingSinceUtc == Now.AddDays(3),
+                "IDs-only legacy cache starts 24 hours at the next valid absence rather than the old cache time");
+            check((await RestartPollAsync(Now.AddDays(4).AddMilliseconds(-1), offline: false)).Status == OfficialStatus.Unknown,
+                "IDs-only legacy migration preserves CHECK until its new 24-hour boundary");
+            check((await RestartPollAsync(Now.AddDays(4), offline: false)).Status == OfficialStatus.Operational,
+                "IDs-only legacy migration expires at exactly 24 hours from its first valid absence");
+            foreach (string invalidKind in new[] { "string Version", "duplicate Missing ID", "future missing time", "oversized v2" })
+            {
+                await store.SaveProviderAsync(missing, AgentSchedule.GetSnapshot(firstMissing), Recommendation.Check);
+                var invalid = JsonNode.Parse(ReadXaiTrackingValue(database)!)!.AsObject();
+                switch (invalidKind)
+                {
+                    case "string Version": invalid["Version"] = "2"; break;
+                    case "duplicate Missing ID":
+                        invalid["Missing"]!.AsArray().Add(invalid["Missing"]![0]!.DeepClone()); break;
+                    case "future missing time":
+                        invalid["Missing"]![0]!["MissingSinceUtc"] = firstMissing.AddHours(1).UtcDateTime.ToString("yyyy-MM-dd'T'HH:mm:ss.fffffff'Z'", System.Globalization.CultureInfo.InvariantCulture); break;
+                    case "oversized v2": invalid["XaiIncidentExpiryNote"] = new string('x', 32 * 1024 + 1); break;
+                }
+                SetXaiTrackingValue(database, invalid.ToJsonString());
+                var fallback = (await new UsageStore(database).ReadLatestStatusesAsync()).Single(state => state.Provider == ProviderKind.Xai);
+                check(fallback.PendingXaiIncidentIds == "synthetic-incident" && fallback.XaiMissingIncidents.Count == 0 && fallback.XaiIncidentExpiryNote.Length == 0,
+                    invalidKind + ": invalid v2 falls back to the v1 identity without throwing or retaining its clock");
+                var fallbackTracker = new XaiStatusFeed(); fallbackTracker.Restore(fallback);
+                DateTimeOffset newMissing = Now.AddDays(10);
+                var first = ReadAt(fallbackTracker, newMissing);
+                check(first.Status == OfficialStatus.Unknown && first.XaiMissingIncidents.Single().MissingSinceUtc == newMissing,
+                    invalidKind + ": the next valid absence begins a fresh 24-hour interval instead of early expiry");
+                check(ReadAt(fallbackTracker, newMissing.AddHours(24).AddMilliseconds(-1)).Status == OfficialStatus.Unknown,
+                    invalidKind + ": the fallback identity remains in CHECK for the full new interval");
+                var released = ReadAt(fallbackTracker, newMissing.AddHours(24));
+                check(released.Status == OfficialStatus.Operational && released.XaiIncidentExpiryNote == ExpiryNote,
+                    invalidKind + ": fallback releases normally at the new 24-hour boundary");
+            }
+
+            async Task<ProviderStatus> RestartPollAsync(DateTimeOffset at, bool offline)
+            {
+                using var handler = new TestStatusHttpHandler { Offline = offline };
+                using var http = new HttpClient(handler);
+                using var monitor = new StatusMonitor(new ProviderStatusClient(http, () => at), new UsageStore(database), () => at,
+                    pollInterval: TimeSpan.FromHours(1));
+                monitor.Start();
+                await MonitorTests.WaitUntilAsync(() => !monitor.IsRefreshing && monitor.NextRefreshUtc.HasValue &&
+                    monitor.Snapshot().Single(state => state.Provider == ProviderKind.Xai).CheckedAtUtc == at);
+                await monitor.StopAsync();
+                check(monitor.StorageError.Length == 0, "synthetic expiry restart poll saves without storage errors");
+                return monitor.Snapshot().Single(state => state.Provider == ProviderKind.Xai);
+            }
+        }
+        finally { Directory.Delete(directory, recursive: true); }
+    }
+
+    private static string? ReadXaiTrackingValue(string database)
+    {
+        using var connection = new SqliteConnection(new SqliteConnectionStringBuilder { DataSource = database, Pooling = false }.ToString());
+        connection.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT Value FROM AppMetadata WHERE Key='XaiPendingIncidents.v2';";
+        return command.ExecuteScalar() as string;
+    }
+
+    private static void SetXaiTrackingValue(string database, string? value)
+    {
+        using var connection = new SqliteConnection(new SqliteConnectionStringBuilder { DataSource = database, Pooling = false }.ToString());
+        connection.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = value is null ? "DELETE FROM AppMetadata WHERE Key='XaiPendingIncidents.v2';" :
+            "INSERT INTO AppMetadata(Key,Value) VALUES('XaiPendingIncidents.v2',$value) ON CONFLICT(Key) DO UPDATE SET Value=excluded.Value;";
+        if (value is not null) command.Parameters.AddWithValue("$value", value);
+        command.ExecuteNonQuery();
     }
 
     private sealed class FakeHandler : HttpMessageHandler
