@@ -304,14 +304,22 @@ internal sealed class StatusWindow : Form
     internal void FitWorkArea(Rectangle area)
     {
         AutoScrollPosition = Point.Empty;
+        AutoScrollMinSize = Size.Empty;
+        AutoScroll = false;
+        PerformLayout();
         int height = Math.Max((int)Math.Round(fullClientHeight * DeviceDpi / 96d),
             Controls.Cast<Control>().Max(control => control.Bottom) + 4);
         int width = Math.Max((int)Math.Round(374 * DeviceDpi / 96d),
             Controls.Cast<Control>().Max(control => control.Right) + 8);
         int available = Math.Max(1, area.Height - (Height - ClientSize.Height));
-        AutoScroll = true;
-        AutoScrollMinSize = new Size(0, height);
-        ClientSize = new Size(width + (height > available ? SystemInformation.VerticalScrollBarWidth : 0), Math.Min(height, available));
+        ClientSize = new Size(width, Math.Min(height, available));
+        if (height > available)
+        {
+            AutoScroll = true;
+            AutoScrollMinSize = new Size(0, height);
+            ClientSize = new Size(width + SystemInformation.VerticalScrollBarWidth, available);
+        }
+        PerformLayout();
     }
 
     internal static string FormatRemaining(TimeSpan remaining) => DisplayFormatting.FormatRemaining(remaining);

@@ -62,7 +62,9 @@ internal static class UIRegressionChecks
                 "small working area exposes the complete four-card content through scrolling");
             small.FitWorkArea(new Rectangle(0, 0, 1920, 1080));
             Check(small.ClientSize.Height >= 658 && small.Controls.Cast<Control>().All(control => small.ClientRectangle.Contains(control.Bounds)),
-                "large working area restores full reachable status controls");
+                "large working area restores full reachable status controls: client=" + small.ClientSize + "; outside=" +
+                string.Join(";", small.Controls.Cast<Control>().Where(control => !small.ClientRectangle.Contains(control.Bounds))
+                    .Select(control => control.GetType().Name + " " + control.Bounds)));
         }
         foreach (float scale in new[] { 1.5F, 2F })
         {

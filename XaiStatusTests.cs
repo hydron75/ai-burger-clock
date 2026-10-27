@@ -164,6 +164,16 @@ internal static class XaiStatusTests
             "cached disappearance diagnostics also retain the unresolved identity across another restart");
         Check(restarted.Parse(Rss(Item("grok-bot", state: "resolved")), SummaryJson, ComponentsJson, IncidentsJson, Now.AddHours(3)).Status == OfficialStatus.Operational,
             "explicit resolution releases an identity restored from cache");
+        var longIds = Enumerable.Range(0, 4).Select(index => new string((char)('a' + index), 128)).ToArray();
+        var longTracker = new XaiStatusFeed();
+        _ = longTracker.Parse(Rss(longIds.Select(id => Item(id: id)).ToArray()), SummaryJson, ComponentsJson, IncidentsJson, Now);
+        var longMissing = longTracker.Parse(EmptyRss, SummaryJson, ComponentsJson, IncidentsJson, Now.AddMinutes(5));
+        Check(longMissing.PendingXaiIncidentIds.Length == 515 && longMissing.UncertainIncidentId.Length == 500,
+            "full pending identities remain distinct from truncated visible diagnostics");
+        var longRestart = new XaiStatusFeed(); longRestart.Restore(longMissing);
+        Check(longRestart.Parse(Rss(longIds.Select(id => Item(id: id, state: "resolved")).ToArray()), SummaryJson, ComponentsJson,
+            IncidentsJson, Now.AddMinutes(10)).Status == OfficialStatus.Operational,
+            "truncated display ID never creates a phantom event after restart and explicit resolution");
         var detail = StatusPanelModel.Card(baseline, AgentState.FullThrottle);
         Check(detail.Detail.Contains("공식 사건 피드 기준", StringComparison.Ordinal) && detail.Detail.Contains("사용량 보기: https://grok.com/dashboard", StringComparison.Ordinal), "shared detail declares incident-feed scope and usage link only");
         Check(TrayPresentation.ProviderNotification(ProviderKind.Xai, Recommendation.Stop, open.Reason, ProviderNames.Provider).Body.Contains("Grok Bot", StringComparison.Ordinal), "problem notification includes affected product");

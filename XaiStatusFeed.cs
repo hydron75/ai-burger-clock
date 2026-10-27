@@ -24,10 +24,14 @@ internal sealed class XaiStatusFeed
         if (cached.Provider != ProviderKind.Xai) return;
         if (cached.PendingXaiIncidentIds == "?") { incompleteTracking = true; return; }
         string ids = cached.PendingXaiIncidentIds;
-        if (ids.Length == 0 && cached.Status != OfficialStatus.Operational) ids = cached.IncidentId;
-        if (cached.AssessmentIssue.Contains("해결 표시 없이 소실", StringComparison.Ordinal)) ids += "," + cached.UncertainIncidentId;
+        if (ids.Length == 0 && cached.Status != OfficialStatus.Operational)
+        {
+            ids = cached.IncidentId;
+            if (cached.AssessmentIssue.Contains("해결 표시 없이 소실", StringComparison.Ordinal)) ids += "," + cached.UncertainIncidentId;
+        }
         foreach (string id in ids.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Take(MaximumTrackedIncidents))
-            unresolved[id] = cached.IncidentTitle.Length > 0 ? cached.IncidentTitle : cached.UncertainIncidentTitle;
+            unresolved[id] = cached.IncidentTitle.Length > 0 ? cached.IncidentTitle :
+                cached.UncertainIncidentTitle.Length > 0 ? cached.UncertainIncidentTitle : "이전 xAI 미해결 사건";
     }
 
     // Public service paths and Cursor compatibility IDs checked on 2026-10-27.
