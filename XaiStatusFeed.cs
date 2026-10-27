@@ -17,11 +17,14 @@ internal sealed class XaiStatusFeed
     internal const string HealthyReason = "정상 · 진행 중 장애 없음(공식 사건 피드 기준)";
     private const int MaximumTrackedIncidents = 256;
     private readonly Dictionary<string, string> unresolved = new(StringComparer.Ordinal);
+    private bool incompleteTracking;
 
     internal void Restore(ProviderStatus cached)
     {
-        if (cached.Provider != ProviderKind.Xai || cached.Status == OfficialStatus.Operational) return;
-        string ids = cached.IncidentId;
+        if (cached.Provider != ProviderKind.Xai) return;
+        if (cached.PendingXaiIncidentIds == "?") { incompleteTracking = true; return; }
+        string ids = cached.PendingXaiIncidentIds;
+        if (ids.Length == 0 && cached.Status != OfficialStatus.Operational) ids = cached.IncidentId;
         if (cached.AssessmentIssue.Contains("해결 표시 없이 소실", StringComparison.Ordinal)) ids += "," + cached.UncertainIncidentId;
         foreach (string id in ids.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Take(MaximumTrackedIncidents))
             unresolved[id] = cached.IncidentTitle.Length > 0 ? cached.IncidentTitle : cached.UncertainIncidentTitle;
@@ -91,9 +94,12 @@ internal sealed class XaiStatusFeed
         foreach (var current in reading.Active)
         {
             if (unresolved.Count >= MaximumTrackedIncidents && !unresolved.ContainsKey(current.Key))
-                reading.Issues.Add("미해결 사건 추적 한도 초과");
+                incompleteTracking = true;
             else unresolved[current.Key] = current.Value;
         }
+        if (incompleteTracking) reading.Issues.Add("미해결 사건 추적 범위를 확인할 수 없음");
+        string pending = string.Join(",", unresolved.Keys.Order(StringComparer.Ordinal));
+        if (pending.Length > 2048 || incompleteTracking) pending = "?";
 
         string issue = Clean(string.Join(" · ", reading.Issues), 1000);
         // Only confirmed statuses enter this severity ordering; Unknown is never a fabricated outage.
@@ -108,6 +114,7 @@ internal sealed class XaiStatusFeed
             string.Join(" + ", new[] { (RssUrl, rss), (SummaryUrl, summary), (ComponentsUrl, components), (IncidentsUrl, incidents) }
                 .Select(item => item.Item1 + (item.Item2 is null ? " [수신 실패]" : " [응답 수신]"))))
         {
+            PendingXaiIncidentIds = pending,
             AssessmentIssue = issue,
             UncertainIncidentId = Clean(string.Join(",", reading.Uncertain.Keys.Order(StringComparer.Ordinal)), 500),
             UncertainIncidentTitle = Clean(string.Join(" | ", reading.Uncertain.Values.Distinct()), 500)

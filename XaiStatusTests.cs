@@ -196,6 +196,60 @@ internal static class XaiStatusTests
         try { await client.FetchAsync(ProviderKind.Xai, cancelled.Token); }
         catch (OperationCanceledException) { stopped = true; }
         Check(stopped, "shutdown cancellation is never converted to a successful receipt");
+        using (var partialHandler = new FakeHandler { RssOverride = Rss(Item("grok-bot")), OversizedUrl = XaiStatusFeed.ComponentsUrl })
+        using (var partialHttp = new HttpClient(partialHandler))
+        {
+            var partial = await new ProviderStatusClient(partialHttp, () => Now).FetchAsync(ProviderKind.Xai, CancellationToken.None);
+            Check(partial.Status == OfficialStatus.PartialOutage && partial.AssessmentIssue.Contains("수신 실패", StringComparison.Ordinal),
+                "one oversized body never erases a completed RSS outage");
+        }
+        using (var partialHandler = new FakeHandler { RssOverride = Rss(Item("grok-bot")), BlockedUrl = XaiStatusFeed.ComponentsUrl })
+        using (var partialHttp = new HttpClient(partialHandler))
+        using (var deadline = new CancellationTokenSource())
+        {
+            var partialClient = new ProviderStatusClient(partialHttp, () => Now);
+            var pending = partialClient.FetchAsync(ProviderKind.Xai, deadline.Token, CancellationToken.None);
+            await partialHandler.Blocked.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            deadline.Cancel(); // Same distinction as StatusMonitor: request deadline, not lifetime.
+            var partial = await pending;
+            Check(partial.Status == OfficialStatus.PartialOutage && partial.AssessmentIssue.Length > 0,
+                "monitor request deadline retains already received source evidence");
+        }
+        string directory = Directory.CreateTempSubdirectory("AiBurgerClock-xai-restart-").FullName;
+        try
+        {
+            var store = new UsageStore(Path.Combine(directory, "synthetic.db"));
+            var schedule = AgentSchedule.GetSnapshot(Now);
+            await store.SaveProviderAsync(open, schedule, Recommendation.Stop);
+            using var offlineHandler = new TestStatusHttpHandler { Offline = true };
+            using var offlineHttp = new HttpClient(offlineHandler);
+            using (var monitor = new StatusMonitor(new ProviderStatusClient(offlineHttp, () => Now.AddHours(1)), store,
+                () => Now.AddHours(1), pollInterval: TimeSpan.FromHours(1)))
+            {
+                monitor.Start();
+                await MonitorTests.WaitUntilAsync(() => !monitor.IsRefreshing && monitor.NextRefreshUtc.HasValue &&
+                    monitor.Snapshot().Single(state => state.Provider == ProviderKind.Xai).CheckedAtUtc == Now.AddHours(1));
+                await monitor.StopAsync();
+            }
+            var cache = (await store.ReadLatestStatusesAsync()).Single(state => state.Provider == ProviderKind.Xai);
+            Check(cache.Status == OfficialStatus.Stale && cache.IncidentId.Length == 0 && cache.PendingXaiIncidentIds == "synthetic-incident",
+                "complete failure clears current outage display but preserves independent pending ID in SQLite");
+            using var restartHandler = new TestStatusHttpHandler();
+            using var restartHttp = new HttpClient(restartHandler);
+            using var restartedMonitor = new StatusMonitor(new ProviderStatusClient(restartHttp, () => Now.AddHours(2)), store,
+                () => Now.AddHours(2), pollInterval: TimeSpan.FromHours(1));
+            restartedMonitor.Start();
+            await MonitorTests.WaitUntilAsync(() => !restartedMonitor.IsRefreshing && restartedMonitor.NextRefreshUtc.HasValue &&
+                restartedMonitor.Snapshot().Single(state => state.Provider == ProviderKind.Xai).CheckedAtUtc == Now.AddHours(2));
+            await restartedMonitor.StopAsync();
+            Check(restartedMonitor.Snapshot().Single(state => state.Provider == ProviderKind.Xai).Status == OfficialStatus.Unknown,
+                "open event then total failure then restart cannot produce a false GO from an empty feed");
+            var overflow = open with { AssessmentIssue = new string('한', 9000) };
+            await store.SaveProviderAsync(overflow, schedule, Recommendation.Stop);
+            Check((await store.ReadLatestStatusesAsync()).Single(state => state.Provider == ProviderKind.Xai).PendingXaiIncidentIds == "synthetic-incident",
+                "oversized optional diagnostics cannot delete the separate bounded restart state");
+        }
+        finally { Directory.Delete(directory, recursive: true); }
         return count;
     }
 
@@ -204,21 +258,34 @@ internal static class XaiStatusTests
         internal readonly List<string> Requests = [];
         internal readonly HashSet<string> Failed = [];
         internal bool AcceptsXml, HasUserAgent;
-        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken token)
+        internal string? RssOverride, OversizedUrl, BlockedUrl;
+        internal readonly TaskCompletionSource Blocked = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken token)
         {
             token.ThrowIfCancellationRequested();
             string url = request.RequestUri!.AbsoluteUri;
             lock (Requests) Requests.Add(url);
             if (Failed.Contains(url)) throw new HttpRequestException("Synthetic source failure");
+            if (url == BlockedUrl)
+            {
+                Blocked.TrySetResult();
+                await Task.Delay(Timeout.Infinite, token);
+            }
+            if (url == OversizedUrl)
+            {
+                var content = new ByteArrayContent([]);
+                content.Headers.ContentLength = ProviderStatusClient.MaxResponseBytes + 1L;
+                return new HttpResponseMessage(HttpStatusCode.OK) { Content = content };
+            }
             if (url == XaiStatusFeed.RssUrl) AcceptsXml = request.Headers.Accept.Any(item => item.MediaType == "application/rss+xml");
             HasUserAgent = request.Headers.UserAgent.ToString().Contains("AIBurgerClock/", StringComparison.Ordinal) && request.Headers.Authorization is null;
             string body = url switch
             {
-                XaiStatusFeed.RssUrl => EmptyRss, XaiStatusFeed.SummaryUrl => SummaryJson,
+                XaiStatusFeed.RssUrl => RssOverride ?? EmptyRss, XaiStatusFeed.SummaryUrl => SummaryJson,
                 XaiStatusFeed.ComponentsUrl => ComponentsJson, XaiStatusFeed.IncidentsUrl => IncidentsJson,
                 _ => throw new InvalidOperationException("Unexpected URL")
             };
-            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(body, Encoding.UTF8) });
+            return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(body, Encoding.UTF8) };
         }
     }
 }

@@ -285,6 +285,17 @@ internal sealed class UsageStore(string? databasePath = null)
                 command.ExecuteNonQuery();
             }
             SaveProviderDiagnostics(connection, transaction, status);
+            if (status.Provider == ProviderKind.Xai)
+            {
+                // Independent bounded restart state survives a failed/stale visible receipt
+                // and even an oversized auxiliary diagnostic. Older builds ignore this key.
+                command.CommandText = "INSERT INTO AppMetadata(Key,Value) VALUES('XaiPendingIncidents.v1',$pending) " +
+                    "ON CONFLICT(Key) DO UPDATE SET Value=excluded.Value;";
+                string ids = status.PendingXaiIncidentIds;
+                command.Parameters.AddWithValue("$pending", Utc(status.CheckedAtUtc) + "\n" +
+                    (Encoding.UTF8.GetByteCount(ids) <= 2048 ? ids : "?"));
+                command.ExecuteNonQuery();
+            }
             cancellationToken.ThrowIfCancellationRequested();
             transaction.Commit();
             return true;
@@ -316,8 +327,21 @@ internal sealed class UsageStore(string? databasePath = null)
                 catch (FormatException) { }
             }
             reader.Close();
-            return rows.Select(status => ReadProviderDiagnostics(connection, status)).ToArray();
+            return rows.Select(status => ReadXaiPending(connection, ReadProviderDiagnostics(connection, status))).ToArray();
         }, cancellationToken);
+
+    private static ProviderStatus ReadXaiPending(SqliteConnection connection, ProviderStatus status)
+    {
+        if (status.Provider != ProviderKind.Xai) return status;
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT Value FROM AppMetadata WHERE Key='XaiPendingIncidents.v1';";
+        if (command.ExecuteScalar() is not string value) return status;
+        int separator = value.IndexOf('\n');
+        if (separator < 0 || !DiagnosticUtc(value[..separator], out var time) || time != status.CheckedAtUtc ||
+            Encoding.UTF8.GetByteCount(value) > 2100)
+            return status with { PendingXaiIncidentIds = "?" };
+        return status with { PendingXaiIncidentIds = value[(separator + 1)..] };
+    }
 
     // Auxiliary diagnostics do not alter the schema or grow with the polling history.
     // They are committed with the cache row and applied only to that exact receipt.

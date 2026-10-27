@@ -56,13 +56,16 @@ internal sealed class ProviderStatusClient(HttpClient client, Func<DateTimeOffse
     private static readonly Regex OpenAiPlanUsers = new(@"\bPlus\s+and\s+Pro\s+users\b",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.NonBacktracking);
 
-    public async Task<ProviderStatus> FetchAsync(ProviderKind provider, CancellationToken token)
+    public async Task<ProviderStatus> FetchAsync(ProviderKind provider, CancellationToken token, CancellationToken? shutdownToken = null)
     {
         if (provider == ProviderKind.Xai)
         {
+            // The monitor supplies its lifetime separately from its request deadline.
+            // A single timed-out source must not discard already received public outages.
+            var shutdown = shutdownToken ?? token;
             string[] urls = [XaiStatusFeed.RssUrl, XaiStatusFeed.SummaryUrl, XaiStatusFeed.ComponentsUrl, XaiStatusFeed.IncidentsUrl];
             var responses = await Task.WhenAll(urls.Select(ReadXaiAsync)).ConfigureAwait(false);
-            token.ThrowIfCancellationRequested();
+            shutdown.ThrowIfCancellationRequested();
             var bodies = responses.Select(response => response.Body).ToArray();
             if (bodies.All(body => body is null))
             {
@@ -74,9 +77,9 @@ internal sealed class ProviderStatusClient(HttpClient client, Func<DateTimeOffse
             async Task<(string? Body, bool TimedOut)> ReadXaiAsync(string url)
             {
                 try { return (await GetJsonAsync(url, token).ConfigureAwait(false), false); }
-                catch (OperationCanceledException) when (token.IsCancellationRequested) { throw; }
+                catch (OperationCanceledException) when (shutdown.IsCancellationRequested) { throw; }
                 catch (OperationCanceledException) { return (null, true); }
-                catch (Exception error) when (error is HttpRequestException or IOException) { return (null, false); }
+                catch (Exception error) when (error is HttpRequestException or IOException or InvalidDataException) { return (null, false); }
             }
         }
         if (provider == ProviderKind.Gemini)

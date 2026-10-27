@@ -24,6 +24,8 @@ internal sealed record ProviderStatus(
     public string UncertainIncidentId { get; init; } = "";
     public string UncertainIncidentTitle { get; init; } = "";
     public DateTimeOffset? LastKnownStatusUtc { get; init; }
+    // Historical tracking only, separate from the current visible incident and its failures.
+    public string PendingXaiIncidentIds { get; init; } = "";
 
     public static ProviderStatus Unknown(ProviderKind provider, string reason = "아직 확인하지 않음") =>
         new(provider, OfficialStatus.Unknown, DateTimeOffset.MinValue, null, reason);

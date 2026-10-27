@@ -154,7 +154,7 @@ internal sealed class StatusMonitor : IDisposable
         {
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(token);
             timeout.CancelAfter(RequestTimeout);
-            var fetched = await client.FetchAsync(provider, timeout.Token).ConfigureAwait(false);
+            var fetched = await client.FetchAsync(provider, timeout.Token, token).ConfigureAwait(false);
             var now = utcNow();
             bool assessed = fetched.Status is not (OfficialStatus.Unknown or OfficialStatus.Stale);
             result = fetched with

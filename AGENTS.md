@@ -39,7 +39,7 @@ Windows 앱 검사는 앱 EXE에 옵션을 붙여 실행합니다. 분기는 [Pr
 | `--smoke-test` | 실제 WinForms 메시지 루프에서 트레이·창·버튼·알림 요청·기록·통계·한도 화면 연결 검사 | 테스트 창과 알림이 생길 수 있음. 앱이 실행 중이면 종료 코드 2로 거부 |
 | `--smoke-test --verify-autostart` | 위 검사 + 자동 시작 UI | **실제 HKCU Run·StartupApproved 값을 잠시 바꾼 뒤 복원.** 개발 전용 |
 | `--smoke-test --report-directory 경로` | 검사 중 폼을 PNG로 저장 | 지정 폴더에 이미지 생성 |
-| `--check-providers` | OpenAI·Claude·Gemini 공식 상태를 지금 조회해 출력 | 실제 인터넷 사용. 사용자 DB에는 기록하지 않음 |
+| `--check-providers` | OpenAI·Claude·Gemini·xAI 공식 상태를 지금 조회해 출력 | 실제 인터넷 사용. 사용자 DB에는 기록하지 않음 |
 | `--check-quotas` | 로그인된 Codex·Claude CLI에서 계정 한도만 조회해 출력 | 실제 계정 조회. 모델 요청·리셋권 사용·사용자 DB 저장 없음. 한 Provider라도 실패하면 종료 코드 1 |
 
 - 검사는 가짜 현재 시각을 주입합니다. 시스템 시계를 바꾸지 않습니다.

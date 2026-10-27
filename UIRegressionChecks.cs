@@ -23,7 +23,7 @@ internal static class UIRegressionChecks
         }
         var monitor = context.ProviderMonitor ?? throw new InvalidOperationException("Test monitor missing");
         var mouseClick = typeof(Control).GetMethod("OnMouseClick", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
-        var panels = context.StatusWindow.Controls.OfType<Panel>().ToArray();
+        var panels = context.StatusWindow.Controls.OfType<Panel>().Where(panel => panel != context.StatusWindow.QuotaView).ToArray();
         Check(panels[0].Controls.OfType<Label>().Any(l => l.Text.StartsWith("ChatGPT   ", StringComparison.Ordinal)) &&
             panels[0].AccessibleDescription?.Contains("ChatGPT 공식 상태 페이지", StringComparison.Ordinal) == true,
             "Windows official status heading and accessible link display ChatGPT");
@@ -63,6 +63,18 @@ internal static class UIRegressionChecks
             small.FitWorkArea(new Rectangle(0, 0, 1920, 1080));
             Check(small.ClientSize.Height >= 658 && small.Controls.Cast<Control>().All(control => small.ClientRectangle.Contains(control.Bounds)),
                 "large working area restores full reachable status controls");
+        }
+        foreach (float scale in new[] { 1.5F, 2F })
+        {
+            using var scaled = new StatusWindow();
+            scaled.CreateControl();
+            scaled.Scale(new SizeF(scale, scale));
+            scaled.FitWorkArea(new Rectangle(0, 0, 1280, 720));
+            Check(scaled.Height <= 720 && scaled.AutoScrollMinSize.Height >= scaled.ClientSize.Height,
+                $"Scaled status content ({scale}x) remains reachable in a 720px working area");
+            var card = scaled.Controls.OfType<Panel>().Where(panel => panel != scaled.QuotaView).Last();
+            Check(card.Controls.OfType<LinkLabel>().All(link => link.Right <= card.ClientSize.Width && link.Bottom <= card.ClientSize.Height),
+                $"Usage link stays inside its card at {scale}x synthetic scaling");
         }
         Check((await store.ReadUsageAsync(null)).Count == 0, "Opening official pages never creates usage records");
         await WaitUntilAsync(() => Task.FromResult(!monitor.IsRefreshing && monitor.NextRefreshUtc.HasValue));
@@ -249,7 +261,7 @@ internal static class UIRegressionChecks
         ShowStorage("");
         Check(!feedback.Text.Contains("synthetic") && feedback.ForeColor != Color.Firebrick, "Storage recovery clears a still-visible error");
 
-        var rowMenus = context.StatusWindow.Controls.OfType<Panel>().Select(p => p.ContextMenuStrip!).ToArray();
+        var rowMenus = panels.Select(panel => panel.ContextMenuStrip!).ToArray();
         var trayRoot = context.TrayIcon.ContextMenuStrip!.Items.OfType<ToolStripMenuItem>().Single(i => i.Text == "사용 경험 기록");
         void CheckRecordingMenu(ToolStripItemCollection items, string surface)
         {
