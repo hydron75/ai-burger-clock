@@ -12,6 +12,7 @@ internal static class StorageTests
         string path = Path.Combine(directory, "test.db");
         UsageStore store = new(path);
         int assertions = 0;
+        int providerCount = Enum.GetValues<ProviderKind>().Length;
         void Check(bool result, string description)
         {
             assertions++;
@@ -28,10 +29,10 @@ internal static class StorageTests
         Check((await store.ReadUsageAsync(null)).Count == 0, "empty event data");
         Check((await store.ReadLatestStatusesAsync()).Count == 0, "empty status data");
         StatisticsReport empty = StatisticsAnalysis.Build([]);
-        Check(empty.Providers.Count == 3 && empty.Providers.All(row => row.Counts.Total == 0), "all missing providers shown");
-        Check(empty.Hours.Count == 72 && empty.Hours.All(row => row.Counts.Cell(0) == "No data"), "all empty hours and no division by zero");
+        Check(empty.Providers.Count == providerCount && empty.Providers.All(row => row.Counts.Total == 0), "all missing providers shown");
+        Check(empty.Hours.Count == 24 * providerCount && empty.Hours.All(row => row.Counts.Cell(0) == "No data"), "all empty hours and no division by zero");
         Check(empty.Schedules.All(row => row.Counts.Cell(0) == "No data"), "missing schedule/DST cohorts");
-        Check(empty.Official.Count == 18 && empty.Policies == "No data", "empty official comparisons");
+        Check(empty.Official.Count == 6 * providerCount && empty.Policies == "No data", "empty official comparisons");
 
         DateTimeOffset now = new(2026, 9, 19, 3, 0, 0, TimeSpan.Zero);
         List<UsageMeasurement> fixtures = [];
@@ -52,23 +53,23 @@ internal static class StorageTests
         }
         await store.AddUsageBatchAsync(fixtures);
         IReadOnlyList<UsageMeasurement> saved = await store.ReadUsageAsync(null);
-        Check(saved.Count == 12, "all providers and event types saved");
+        Check(saved.Count == fixtures.Count, "all providers and event types saved");
         foreach (UsageMeasurement item in fixtures)
             Check(saved.Single(row => row.EventId == item.EventId) == item, "all metadata fields and Unicode notes round-trip");
         Check(saved.All(row => row.TimestampUtc.Offset == TimeSpan.Zero), "timestamps stored/read as UTC");
         Check(saved.All(row => row.KstHour == 12), "KST hour derived correctly");
         Check(saved.Single(row => row.EventId == fixtures[0].EventId).KstDay == DayOfWeek.Saturday, "KST weekday derived correctly");
-        Check((await store.ReadUsageAsync(StatisticsAnalysis.SinceUtc(0, now))).Count == 6, "7-day rolling period");
-        Check((await store.ReadUsageAsync(StatisticsAnalysis.SinceUtc(1, now))).Count == 9, "30-day rolling period");
-        Check((await store.ReadUsageAsync(StatisticsAnalysis.SinceUtc(2, now))).Count == 12, "all-time period");
+        Check((await store.ReadUsageAsync(StatisticsAnalysis.SinceUtc(0, now))).Count == 2 * providerCount, "7-day rolling period");
+        Check((await store.ReadUsageAsync(StatisticsAnalysis.SinceUtc(1, now))).Count == 3 * providerCount, "30-day rolling period");
+        Check((await store.ReadUsageAsync(StatisticsAnalysis.SinceUtc(2, now))).Count == fixtures.Count, "all-time period");
         Check((await store.ReadUsageAsync(now.AddTicks(1))).Count == 0, "exclusive data beyond cutoff");
-        Check((await store.ReadUsageAsync(now)).Count == 3, "inclusive exact cutoff");
+        Check((await store.ReadUsageAsync(now)).Count == providerCount, "inclusive exact cutoff");
 
         StatisticsReport report = StatisticsAnalysis.Build(saved);
         Check(report.Providers.All(row => row.Counts == new EventCounts(1, 1, 1, 1)), "provider counts");
         Check(report.Providers.All(row => row.Counts.Cell(row.Counts.Success).Contains("25")), "four-event denominator percentages");
-        Check(report.Hours.Count(row => row.Counts.Total == 4) == 3, "per-provider hourly totals");
-        Check(report.Hours.Count(row => row.Counts.Total == 0) == 69, "missing hours retained");
+        Check(report.Hours.Count(row => row.Counts.Total == 4) == providerCount, "per-provider hourly totals");
+        Check(report.Hours.Count(row => row.Counts.Total == 0) == 23 * providerCount, "missing hours retained");
         Check(report.Schedules.Where(row => row.Group == "FULL THROTTLE").All(row => row.Counts.Total == 2), "FULL schedule comparison");
         Check(report.Schedules.Where(row => row.Group == "BURGER TIME").All(row => row.Counts.Total == 2), "BURGER schedule comparison");
         Check(report.Schedules.Where(row => row.Group == "Weekend / Extended FULL (공휴일 제외)").All(row => row.Counts.Total == 1), "extended weekend comparison");
@@ -93,24 +94,24 @@ internal static class StorageTests
         ScheduleSnapshot schedule = AgentSchedule.GetSnapshot(now);
         foreach (ProviderKind provider in Enum.GetValues<ProviderKind>())
             await store.SaveProviderAsync(new(provider, OfficialStatus.Operational, now, now, "Operational", Source: "fixture://official"), schedule, Recommendation.Go);
-        Check(Scalar(path, "SELECT COUNT(*) FROM ProviderStatusHistory;") == 3, "first provider states captured");
+        Check(Scalar(path, "SELECT COUNT(*) FROM ProviderStatusHistory;") == providerCount, "first provider states captured");
         ProviderStatus update = new(ProviderKind.OpenAI, OfficialStatus.Operational, now.AddMinutes(5), now.AddMinutes(5),
             "Operational", Source: "fixture://official");
         await store.SaveProviderAsync(update, schedule, Recommendation.Go);
-        Check(Scalar(path, "SELECT COUNT(*) FROM ProviderStatusHistory;") == 3, "identical polls not added to history");
+        Check(Scalar(path, "SELECT COUNT(*) FROM ProviderStatusHistory;") == providerCount, "identical polls not added to history");
         Check((await reopened.ReadLatestStatusesAsync()).Single(row => row.Provider == ProviderKind.OpenAI) == update, "cache and last success updated without history growth");
         ProviderStatus incident = update with { Status = OfficialStatus.Degraded, RelevantComponent = "ChatGPT", IncidentId = "test-1", IncidentTitle = "Test issue", Reason = "Slow" };
         await store.SaveProviderAsync(incident, schedule, Recommendation.Hold);
         await store.SaveProviderAsync(incident with { CheckedAtUtc = now.AddMinutes(10) }, schedule, Recommendation.Hold);
-        Check(Scalar(path, "SELECT COUNT(*) FROM ProviderStatusHistory;") == 4, "changed state saved and duplicate incident deduplicated");
+        Check(Scalar(path, "SELECT COUNT(*) FROM ProviderStatusHistory;") == providerCount + 1, "changed state saved and duplicate incident deduplicated");
         await store.SaveProviderAsync(incident with { IncidentId = "test-2" }, schedule, Recommendation.Hold);
-        Check(Scalar(path, "SELECT COUNT(*) FROM ProviderStatusHistory;") == 5, "incident identity change saved");
+        Check(Scalar(path, "SELECT COUNT(*) FROM ProviderStatusHistory;") == providerCount + 2, "incident identity change saved");
         await store.SaveProviderAsync(incident with { IncidentId = "test-2" }, schedule, Recommendation.BurgerServiceIssue);
-        Check(Scalar(path, "SELECT COUNT(*) FROM ProviderStatusHistory;") == 6, "effective recommendation change saved");
+        Check(Scalar(path, "SELECT COUNT(*) FROM ProviderStatusHistory;") == providerCount + 3, "effective recommendation change saved");
         ProviderStatus failed = incident with { Status = OfficialStatus.Stale, LastKnownStatus = OfficialStatus.Degraded, CheckedAtUtc = now.AddMinutes(30), Reason = "Network unavailable" };
         await store.SaveProviderAsync(failed, schedule, Recommendation.Check);
         Check((await reopened.ReadLatestStatusesAsync()).Single(row => row.Provider == ProviderKind.OpenAI) == failed, "stale cache preserves last successful instant, last-known state and source metadata");
-        Check((await store.ReadLatestStatusesAsync()).Count == 3, "one failed provider does not remove others");
+        Check((await store.ReadLatestStatusesAsync()).Count == providerCount, "one failed provider does not remove others");
 
         using (CancellationTokenSource canceled = new())
         {
@@ -118,12 +119,12 @@ internal static class StorageTests
             bool cancelled = false;
             try { await store.AddUsageAsync(fixtures[0] with { EventId = "must-not-write" }, canceled.Token); }
             catch (OperationCanceledException) { cancelled = true; }
-            Check(cancelled && (await store.ReadUsageAsync(null)).Count == 12, "canceled writes do not mutate data");
+            Check(cancelled && (await store.ReadUsageAsync(null)).Count == fixtures.Count, "canceled writes do not mutate data");
         }
         bool duplicateFailed = false;
         try { await store.AddUsageBatchAsync([fixtures[0] with { EventId = "rollback-new" }, fixtures[0]]); }
         catch (SqliteException) { duplicateFailed = true; }
-        Check(duplicateFailed && (await store.ReadUsageAsync(null)).Count == 12, "failed transaction rolls back all inserts");
+        Check(duplicateFailed && (await store.ReadUsageAsync(null)).Count == fixtures.Count, "failed transaction rolls back all inserts");
 
         List<UsageMeasurement> large = Enumerable.Range(0, 10_000).Select(i => fixtures[i % fixtures.Count] with
         {
@@ -131,8 +132,8 @@ internal static class StorageTests
         }).ToList();
         await store.AddUsageBatchAsync(large);
         IReadOnlyList<UsageMeasurement> many = await reopened.ReadUsageAsync(null);
-        Check(many.Count == 10_012, "10k transactional write and reopen");
-        Check(StatisticsAnalysis.Build(many).Providers.Sum(row => row.Counts.Total) == 10_012, "10k statistics sample counts");
+        Check(many.Count == 10_000 + fixtures.Count, "10k transactional write and reopen");
+        Check(StatisticsAnalysis.Build(many).Providers.Sum(row => row.Counts.Total) == 10_000 + fixtures.Count, "10k statistics sample counts");
         Check(Scalar(path, "SELECT COUNT(*) FROM pragma_integrity_check WHERE integrity_check='ok';") == 1, "database integrity after writes and rollback");
 
         // No connection pooling or persistent handles: deleting this isolated DB
@@ -161,6 +162,7 @@ internal static class StorageTests
     private static async Task<int> ProviderDiagnosticsTestsAsync(string directory, DateTimeOffset now)
     {
         int assertions = 0;
+        int providerCount = Enum.GetValues<ProviderKind>().Length;
         void Check(bool condition, string description)
         {
             assertions++;
@@ -186,11 +188,11 @@ internal static class StorageTests
                 "all diagnostic properties and Unicode survive restart for " + provider);
         }
         const string diagnosticCount = "SELECT COUNT(*) FROM AppMetadata WHERE Key LIKE 'ProviderStatusDiagnostics.v1.%';";
-        Check(Scalar(path, diagnosticCount) == 3, "exactly one bounded diagnostic entry per provider");
+        Check(Scalar(path, diagnosticCount) == providerCount, "exactly one bounded diagnostic entry per provider");
         for (int poll = 1; poll <= 5; poll++)
             await store.SaveProviderAsync(fixture with { CheckedAtUtc = now.AddMinutes(poll), LastSuccessfulCheckUtc = now.AddMinutes(poll) },
                 schedule, Recommendation.Check);
-        Check(Scalar(path, diagnosticCount) == 3, "repeated polls overwrite diagnostic entries without growth");
+        Check(Scalar(path, diagnosticCount) == providerCount, "repeated polls overwrite diagnostic entries without growth");
         Check(Scalar(path, "SELECT MAX(length(CAST(Value AS BLOB))) FROM AppMetadata WHERE Key LIKE 'ProviderStatusDiagnostics.v1.%';") <=
             UsageStore.MaximumProviderDiagnosticsBytes, "diagnostic entries fit within the eight-KiB byte limit");
 
@@ -245,7 +247,7 @@ internal static class StorageTests
             "a multibyte auxiliary entry over eight KiB is safely ignored by byte size");
         await store.SaveProviderAsync(fixture with { AssessmentIssue = new string('한', UsageStore.MaximumProviderDiagnosticsBytes) },
             schedule, Recommendation.Check);
-        Check(Scalar(path, diagnosticCount) == 2 &&
+        Check(Scalar(path, diagnosticCount) == providerCount - 1 &&
             (await reopened.ReadLatestStatusesAsync()).Single(row => row.Provider == ProviderKind.OpenAI).LastSuccessfulCheckUtc == now,
             "oversized new diagnostics remove the old auxiliary entry while retaining the core receipt");
         Check((await reopened.ReadLatestStatusesAsync()).Where(row => row.Provider != ProviderKind.OpenAI).All(row =>
@@ -289,7 +291,7 @@ internal static class StorageTests
         catch (SqliteException) { rejected = true; }
         Execute(path, "DROP TRIGGER RejectSyntheticDiagnostics;");
         Check(rejected && (await reopened.ReadLatestStatusesAsync()).Single(row => row.Provider == ProviderKind.OpenAI) == beforeFailure &&
-            Scalar(path, "SELECT COUNT(*) FROM ProviderStatusHistory;") == historyBefore && Scalar(path, diagnosticCount) == 2,
+            Scalar(path, "SELECT COUNT(*) FROM ProviderStatusHistory;") == historyBefore && Scalar(path, diagnosticCount) == providerCount - 1,
             "a diagnostic write failure rolls back both the status cache and history in the same transaction");
         Check(Scalar(path, "PRAGMA user_version;") == 2 &&
             Scalar(path, "SELECT COUNT(*) FROM pragma_table_info('ProviderStatusCache');") == 12,

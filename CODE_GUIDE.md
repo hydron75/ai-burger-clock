@@ -20,7 +20,9 @@
 
 코드를 한 줄씩 번역한 문서는 아닙니다. **각 파일이 무엇을 맡고, 서로 어떻게 연결되는지** 설명합니다. **Windows 2.8.0 배포 당시 소스 기준** 루트·Properties C#는 **89개(앱 기능 43 + 검사·진단 45 + 명찰 1)**, Mac 호스트·검사 11개, 공통 검사 입구 1개로 총 **101개**였고 공통 제품 원본 목록은 **31개**였습니다. #70의 조기 초기화 엔진 1개·공통 검사 2개·Windows UI 검사 1개를 포함하며 당시 버전 준비/배포에서 C#를 추가하거나 2.7.0 당시 결과를 바꾼 것이 아닙니다.
 
-아래 파일 지도는 **Windows 2.8.3·#91/#93 병합 기준**입니다. 루트·Properties C# **106개(앱 기능 49 + 검사·진단 56 + 명찰 1)**, Mac 호스트·검사 **20개**, 공통 검사 입구 **1개**로 총 **127개**이며 공통 제품 원본은 **33개 그대로**입니다. #82 뒤 2.8.1 당시에는 루트·Properties 96개(앱 기능 45 + 검사·진단 50 + 명찰 1), 전체 114개였고 #86에서 Windows 제품 파일 4개·검사 2개를 추가했습니다. #91은 공통 `QuotaLayoutKeyTests.cs`와 Windows `QuotaLayoutChecks.cs`를, #93은 Windows `ProviderBalloonChecks.cs`·`SmokeAsyncChecks.cs`를 더했습니다. Mac은 기존 17개에 #90의 알림 권한 원본·검사 2개와 #91의 `MacQuotaLayoutKeySmoke.cs` 1개를 더해 20개입니다. 이번 버전 PR이 C# 파일을 추가한 것은 아닙니다. `SharedTestSuite.cs`는 루트 검사에 포함하고 별도 입구는 `Shared.Tests/Program.cs`만 셉니다. C# 파일만 집계하므로 `Mac/tools/check-build-script.sh` 등 빌드 도구와 생성된 `bin`·`obj`·검증 `artifacts`는 제외합니다. 과거 배포 당시 검사·파일 수 기록은 위에 별도로 유지합니다.
+배포 당시 파일 지도는 **Windows 2.8.3·#91/#93 병합 기준**입니다. 루트·Properties C# **106개(앱 기능 49 + 검사·진단 56 + 명찰 1)**, Mac 호스트·검사 **20개**, 공통 검사 입구 **1개**로 총 **127개**이며 공통 제품 원본은 **33개 그대로**입니다. #82 뒤 2.8.1 당시에는 루트·Properties 96개(앱 기능 45 + 검사·진단 50 + 명찰 1), 전체 114개였고 #86에서 Windows 제품 파일 4개·검사 2개를 추가했습니다. #91은 공통 `QuotaLayoutKeyTests.cs`와 Windows `QuotaLayoutChecks.cs`를, #93은 Windows `ProviderBalloonChecks.cs`·`SmokeAsyncChecks.cs`를 더했습니다. Mac은 기존 17개에 #90의 알림 권한 원본·검사 2개와 #91의 `MacQuotaLayoutKeySmoke.cs` 1개를 더해 20개입니다. 이번 버전 PR이 C# 파일을 추가한 것은 아닙니다. `SharedTestSuite.cs`는 루트 검사에 포함하고 별도 입구는 `Shared.Tests/Program.cs`만 셉니다. C# 파일만 집계하므로 `Mac/tools/check-build-script.sh` 등 빌드 도구와 생성된 `bin`·`obj`·검증 `artifacts`는 제외합니다. 과거 배포 당시 검사·파일 수 기록은 위에 별도로 유지합니다.
+
+**현재 xAI 구현 Draft 파일 지도:** 루트·Properties C# **108개(앱 기능 50 + 검사·진단 57 + 명찰 1)**, Mac **20개**, 공통 검사 입구 **1개**, 합계 **129개**입니다. 공통 제품 원본은 **34개**입니다. 새 파일은 `XaiStatusFeed.cs`와 `XaiStatusTests.cs`이며 Mac 전용 파일·버전·배포 EXE는 바꾸지 않습니다. [제품 대응·정상/불확실 판정·Mac 전환 항목](XAI_STATUS.md).
 
 **#86의 Windows 검증 기준점:** self-test **255,761건(공통 255,062 + Windows 699)**·smoke **837 PASS**·빌드/publish 경고 0/오류 0입니다. 2.8.2 재검사 결과와 구분합니다. 단일 EXE는 Windows SDK projection으로 **3.89→28.19MiB**, 동일 합성 warm 경로 각 5회 중앙값은 firstIdle **344→371ms**, 작업 집합 **79.96→88.61MiB**, Private Bytes **25.39→25.84MiB**였습니다. 실제 계정 대기·등록된 COM 서버·cold start는 제외했고 같은 측정 hook 비용은 두 버전에 포함됩니다. 지연 생성은 [성능 후보](BACKLOG.md#성능-최적화-후보-보류)로만 남깁니다.
 
@@ -152,13 +154,14 @@ Windows 시간대 이름 `Eastern Standard Time`, `Pacific Standard Time`을 사
 
 [ProviderStatusClient.cs](ProviderStatusClient.cs)가 회사의 공개 상태 데이터를 읽습니다.
 
-브라우저 화면을 그림처럼 읽거나 HTML 모양에 의존하지 않습니다. 항목 이름과 값으로 정리된 **JSON**을 읽습니다. JSON은 컴퓨터끼리 주고받기 쉬운 목록 형식이라고 생각하면 됩니다.
+브라우저 화면을 그림처럼 읽거나 HTML 모양에 의존하지 않습니다. 항목 이름과 값으로 정리된 **JSON 또는 RSS XML**을 읽습니다.
 
 | Provider | 이 코드가 읽는 정보 |
 |---|---|
 | OpenAI | 공식 summary + 전체 components 목록의 합집합. incident 목록이 생략되어 있으면 공식 incident history도 추가 확인 |
 | Claude | 공식 summary의 구성 요소와 incident |
 | Gemini | Workspace의 제품 목록과 장애 이력에서 Gemini를 선택 |
+| xAI (Draft) | Grok·Cursor·Grok Bot RSS와 Cursor 호환 JSON 3종. 공식 사건 피드 기준 정상 판정·최악 상태 집계 |
 
 component는 서비스 안의 기능·구성 요소, incident는 회사가 공개한 장애 사건입니다. 모든 제품의 문제를 이 앱의 관심 서비스 문제로 취급하지 않습니다. 범위를 확실히 판단할 수 없으면 UNKNOWN으로 남깁니다.
 
@@ -347,7 +350,7 @@ Windows 내부 승인 형식은 알려진 경우만 해석합니다. 낯선 값�
 
 이름을 눌러 소스를 열 수 있습니다. 역할을 알고 필요한 파일부터 읽으면 됩니다.
 
-### 실제 앱 기능: 49개
+### 실제 앱 기능: 50개
 
 | 파일 | 맡은 일 |
 |---|---|
@@ -358,6 +361,7 @@ Windows 내부 승인 형식은 알려진 경우만 해석합니다. 낯선 값�
 | [WindowsQuotaToastRegistration.cs](WindowsQuotaToastRegistration.cs) | 실제 배포 EXE의 명시적 시작 메뉴/AUMID/CLSID 등록, 소유권·경로 검증, 해제·dry-run. 자동 시작과 별개 |
 | [WindowsQuotaToastIntegration.cs](WindowsQuotaToastIntegration.cs) | 고정 TEST AUMID·CLSID만 쓰는 별도 통합 검사 명령. 정상 실행과 기본 smoke에서는 시험 알림/등록을 만들지 않음 |
 | [StatusWindow.cs](StatusWindow.cs) | 작은 상태 창, 클릭과 설정 변경 전달, 저장 오류 안내 |
+| [XaiStatusFeed.cs](XaiStatusFeed.cs) | xAI RSS·Cursor 호환 JSON의 제품 대응·중복/최악 상태·부분 실패·소실 사건 24시간 해제/캐시 복원 판정 |
 | [MeasurementDialog.cs](MeasurementDialog.cs) | 기록 종류와 선택 메모 입력 |
 | [StatisticsWindow.cs](StatisticsWindow.cs) | Windows 통계 창 |
 | [StatisticsAnalysis.cs](StatisticsAnalysis.cs) | 두 OS가 함께 쓰는 통계 계산, 표본수와 No data |
@@ -401,7 +405,7 @@ Windows 내부 승인 형식은 알려진 경우만 해석합니다. 낯선 값�
 | [QuotaBarPalette.cs](QuotaBarPalette.cs) | Windows 막대의 실제 합성색 대비로 시간층 농도와 경계선 색을 선택. 고대비 시스템색·경계선 보완 |
 | [QuotaDetailPopup.cs](QuotaDetailPopup.cs) | Windows 비활성화 상세 팝업. 흰색·고정 폭·줄바꿈·포인터 근처/화면 경계 보정·긴 상세 세로 스크롤 |
 
-### 검사와 진단: 56개
+### 검사와 진단: 57개
 
 미완성 임시 코드가 아닙니다. **특별한 검사 명령 때만 쓰는 정식 검사 코드**입니다.
 
@@ -437,6 +441,7 @@ Windows 내부 승인 형식은 알려진 경우만 해석합니다. 낯선 값�
 | [RecordingTests.cs](RecordingTests.cs) | 공통 기록 캡처·메뉴·메모 제한·피드백 골든 검사 |
 | [StatisticsTextTests.cs](StatisticsTextTests.cs) | 공통 통계 본문·표 제목·기간·주의 문구 골든 검사 |
 | [ProviderStatusTests.cs](ProviderStatusTests.cs) | 정상·장애·잘못된 JSON·통신 실패의 해석 |
+| [XaiStatusTests.cs](XaiStatusTests.cs) | 합성 RSS/JSON의 제품·중복·해결/소실·상충·부분 실패·공식 링크·캐시 복원·정상화 오알림 방지 |
 | [MonitorTests.cs](MonitorTests.cs) | 권고, 갱신, STALE, 취소, 알림 기억. 가짜 HTTP 응답 담당도 포함 |
 | [StorageTests.cs](StorageTests.cs) | 임시 DB 저장·재열기·빈 기록·1만 건·통계 |
 | [HolidayStorageTests.cs](HolidayStorageTests.cs) | 이전 DB 보존·WAL 백업·설정·업그레이드 실패 |

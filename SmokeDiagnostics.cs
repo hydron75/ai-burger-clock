@@ -106,7 +106,8 @@ internal sealed class SmokeStatusHttpHandler(SmokeQueryActivity activity, HttpMe
     {
         string host = request.RequestUri!.Host;
         string provider = host.Contains("openai", StringComparison.Ordinal) ? "OpenAI"
-            : host.Contains("claude", StringComparison.Ordinal) || host.Contains("anthropic", StringComparison.Ordinal) ? "Claude" : "Gemini";
+            : host.Contains("claude", StringComparison.Ordinal) || host.Contains("anthropic", StringComparison.Ordinal) ? "Claude"
+            : host == "status.x.ai" ? "Xai" : "Gemini";
         using var query = activity.Begin("fake-status/" + provider);
         return await base.SendAsync(request, token).ConfigureAwait(false);
     }

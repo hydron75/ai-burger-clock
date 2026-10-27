@@ -447,6 +447,10 @@ internal static class ProviderStatusTests
                 ProviderStatusClient.GoogleProductsUrl => Catalog,
                 ProviderStatusClient.GoogleIncidentsUrl => "[]",
                 ProviderStatusClient.ClaudeSummaryUrl => Page([Component("Claude Code", "operational")]),
+                XaiStatusFeed.RssUrl => XaiStatusTests.EmptyRss,
+                XaiStatusFeed.SummaryUrl => XaiStatusTests.SummaryJson,
+                XaiStatusFeed.ComponentsUrl => XaiStatusTests.ComponentsJson,
+                XaiStatusFeed.IncidentsUrl => XaiStatusTests.IncidentsJson,
                 _ => Page([Component("Agent", "operational")])
             }, Encoding.UTF8, "application/json")
         }))))

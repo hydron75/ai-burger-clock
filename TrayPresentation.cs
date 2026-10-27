@@ -33,7 +33,9 @@ internal static class TrayPresentation
     public static (string Title, string Body) ProviderNotification(ProviderKind provider, Recommendation current, string reason,
         Func<ProviderKind, string>? displayName = null) =>
         current == Recommendation.Go
-            ? ((displayName?.Invoke(provider) ?? provider.ToString()) + " 정상화", "관련 서비스가 정상화되었습니다. 현재 FULL THROTTLE이므로 대규모 작업 재개 가능.")
+            ? ((displayName?.Invoke(provider) ?? provider.ToString()) + " 정상화", provider == ProviderKind.Xai
+                ? "Grok·Cursor·Grok Bot: " + reason + "\n현재 FULL THROTTLE이므로 대규모 작업 재개 가능."
+                : "관련 서비스가 정상화되었습니다. 현재 FULL THROTTLE이므로 대규모 작업 재개 가능.")
             : ((displayName?.Invoke(provider) ?? provider.ToString()) + " 작업 권고 변경",
                 $"현재 FULL THROTTLE이지만 공식 서비스 문제가 있습니다. {RecommendationPolicy.Label(current)}: 새 대형 작업을 미루세요.\n{reason}");
 
@@ -71,10 +73,12 @@ internal static class TrayPresentation
             if (official == OfficialStatus.Stale) label += "/STALE";
             return (displayName?.Invoke(provider) ?? provider.ToString()) + " " + label;
         }));
-        // Fixed provider names and bounded labels fit NotifyIcon's 127-character limit.
+        // With four long BURGER/STALE labels, omit only the redundant app-name prefix.
+        // Preserve every provider label, the schedule and the countdown within 127 characters.
         string remaining = minutePrecision
             ? DisplayFormatting.FormatRemainingMinutes(schedule.Remaining)
             : DisplayFormatting.FormatRemaining(schedule.Remaining);
-        return $"AI Burger Clock · {state}{holiday}\n전환까지 {remaining}\n{providers}";
+        string text = $"AI Burger Clock · {state}{holiday}\n전환까지 {remaining}\n{providers}";
+        return text.Length <= 127 ? text : $"{state}{holiday}\n전환까지 {remaining}\n{providers}";
     }
 }

@@ -1,5 +1,7 @@
 # AI Burger Clock 2.8.3
 
+**구현 Draft · 미배포:** xAI 공식 상태 카드(Grok·Cursor·Grok Bot), 제품별 상세·공식 대시보드 링크를 추가합니다. 한도 조회는 제외하며 Mac 전환·확인 전 병합하지 않습니다. [출처·판정·검사 계약](XAI_STATUS.md).
+
 **Windows 2.8.3 교체·실행 완료(2026-10-22 KST):** #91의 공통 상태 판정·일시 DB 잠금 복구·한도 레이아웃 ID 충돌·monitor 검사와 #93의 Windows 공식 알림 순차 전달·안전한 publish·smoke 경쟁 보완을 포함합니다. #93 병합 main `d22f40926dc6d067f819cdb352200889b5c8797d`에서 만든 **미병합 버전 커밋 `d671647c10a29aea9fa7bda96d2d02e1b2bb02fb`**의 단일 EXE를 사용자 승인으로 백업·검사 뒤 **21:45 KST에 교체, 21:46 KST에 실행**했습니다. 프로세스 응답·같은 자동 시작 경로·기존 운영 알림 바로가기/AUMID/COM 대상과 해제 dry-run 무변경을 확인했습니다. **실제 트레이·상태 창·한도 보기 정상은 사용자 확인**입니다. 재등록·시험 알림·설정 변경은 하지 않았으며 PR 병합은 사용자가 합니다. [검사·EXE 해시·백업/2.8.2 EXE 복원 기록](MAINTENANCE_2_8_3.md).
 
 **2.8.3 실제 검사:** SDK 10.0.402·Desktop Runtime 10.0.13 x64, 준비 build/Portable publish 경고 0·오류 0, 준비 bin/단일 EXE self-test **각 255,902건(공통 255,197 + Windows 705)·실제 ExitCode 0**. 고정 after 슬롯 smoke는 준비/최종 별도 **각 1회 858 PASS·실제 ExitCode 0**, 합성 PNG **22/22**·layout **16/16**은 각각 #93 최종과 바이트 동일입니다. 각 실행은 `Repeat=1`이므로 반복 트레이 기록 증가 억제는 **미평가(`NotEvaluated`, 비교 0건)**이고 새 키 관측 0개와 구분합니다. 기존 symlink fixture 1개 SKIP도 유지합니다. 최종 후보 smoke까지 마친 뒤 같은 해시의 파일로 교체했으며 운영 토스트 시험 발송·장기 운영·복원 시험은 하지 않았습니다.

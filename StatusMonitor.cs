@@ -106,7 +106,10 @@ internal sealed class StatusMonitor : IDisposable
                     var cached = await store.ReadLatestStatusesAsync(lifetime.Token).ConfigureAwait(false);
                     lock (sync)
                         foreach (var state in cached)
+                        {
+                            client.RestoreXai(state);
                             states[state.Provider] = WithFreshness(state, utcNow());
+                        }
                     RaiseChanged();
                 }
                 catch (OperationCanceledException) when (lifetime.IsCancellationRequested) { return; }
@@ -151,7 +154,7 @@ internal sealed class StatusMonitor : IDisposable
         {
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(token);
             timeout.CancelAfter(RequestTimeout);
-            var fetched = await client.FetchAsync(provider, timeout.Token).ConfigureAwait(false);
+            var fetched = await client.FetchAsync(provider, timeout.Token, token).ConfigureAwait(false);
             var now = utcNow();
             bool assessed = fetched.Status is not (OfficialStatus.Unknown or OfficialStatus.Stale);
             result = fetched with

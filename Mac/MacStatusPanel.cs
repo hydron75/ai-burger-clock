@@ -16,14 +16,19 @@ internal sealed class MacStatusPanel : IDisposable
     // Quota area grows with its boxes up to this height; only extra model-scoped rows scroll.
     // 340pt holds the three standard boxes (ChatGPT, Claude, Gemini: about 326pt with usage bars).
     private const int MaximumQuotaHeight = 340;
-    // On a short screen the quota area gives up height first, down to about one box.
+    // On a short screen the quota area gives up height first, down to about one box. Below that the whole panel
+    // scrolls (four provider cards plus a box do not fit a 1024x640 screen), with the quota area at its full height.
     private const int MinimumQuotaHeight = 90;
+    // Gap between the card heading and the xAI usage link on the heading line.
+    private const int HeadingGap = 8;
     // Room kept for the popover arrow and the gap below the menu bar.
     private const int ScreenMargin = 24;
     internal const string DefaultFeedback = "Provider 카드 클릭: 공식 페이지 · 우클릭: 기록";
 
     private readonly NSPopover popover;
     private readonly NSView content;
+    private readonly NSScrollView pageScroll;
+    private readonly NSView page;
     private readonly NSStackView root;
     private readonly NSLayoutConstraint quotaHeight;
     private readonly NSTextField title;
@@ -47,12 +52,13 @@ internal sealed class MacStatusPanel : IDisposable
     private string quotaLayoutKey = "";
     private string shownStorageError = "";
 
-    private sealed record Card(CardView View, NSTextField Heading, NSTextField Official, NSTextField Reason, NSMenu Menu);
+    private sealed record Card(CardView View, NSTextField Heading, NSTextField Official, NSTextField Reason, NSMenu Menu,
+        UsageLink? Link = null);
     private sealed record QuotaViews(CardView Box, NSTextField Heading, NSTextField? Scope,
         Dictionary<string, QuotaRowView> Rows, Dictionary<string, UsageBarView> Bars, NSTextField Metadata);
 
     internal MacStatusPanel(Action requestRefresh, Action showStatistics, Action<bool> changeHoliday,
-        Action<bool> changeAutoStart, Action<ProviderKind> openPage,
+        Action<bool> changeAutoStart, Action<ProviderKind> openPage, Action openXaiUsage,
         Action<ProviderKind, UsageEventType, bool> record, bool smoke)
     {
         this.smoke = smoke;
@@ -73,12 +79,13 @@ internal sealed class MacStatusPanel : IDisposable
 
         foreach (ProviderKind provider in Enum.GetValues<ProviderKind>())
         {
-            var card = CreateCard(provider, openPage, record);
+            var card = CreateCard(provider, openPage, openXaiUsage, record);
             cards.Add(provider, card);
             root.AddArrangedSubview(card.View);
             root.SetCustomSpacing(6, card.View);
         }
-        root.SetCustomSpacing(10, cards[ProviderKind.Gemini].View);
+        // The last provider card (xAI) ends the card group; the quota title follows with the wider gap.
+        root.SetCustomSpacing(10, cards[Enum.GetValues<ProviderKind>()[^1]].View);
 
         quotaTitle = Add(Line(QuotaPanelModel.AccessibleName, 13, bold: true));
         root.SetCustomSpacing(6, quotaTitle);
@@ -122,8 +129,25 @@ internal sealed class MacStatusPanel : IDisposable
 
         // Opaque background under the stack: the default popover material is translucent.
         content = new BackgroundView();
-        content.AddSubview(root);
-        Pin(root, content, 0, 0);
+        // The stack sits in a scroll view: when the screen is too short for the cards, the quota area and the
+        // controls, the whole panel scrolls instead of being cut off. Overlay scrollers take no width, so the
+        // stack keeps exactly PanelWidth.
+        page = new FlippedView { TranslatesAutoresizingMaskIntoConstraints = false };
+        page.AddSubview(root);
+        Pin(root, page, 0, 0);
+        pageScroll = new NSScrollView
+        {
+            HasVerticalScroller = true, HasHorizontalScroller = false, AutohidesScrollers = true, DrawsBackground = false,
+            ScrollerStyle = NSScrollerStyle.Overlay, VerticalScrollElasticity = NSScrollElasticity.None,
+            HorizontalScrollElasticity = NSScrollElasticity.None,
+            TranslatesAutoresizingMaskIntoConstraints = false, DocumentView = page
+        };
+        var pageClip = pageScroll.ContentView;
+        page.LeadingAnchor.ConstraintEqualTo(pageClip.LeadingAnchor).Active = true;
+        page.TrailingAnchor.ConstraintEqualTo(pageClip.TrailingAnchor).Active = true;
+        page.TopAnchor.ConstraintEqualTo(pageClip.TopAnchor).Active = true;
+        content.AddSubview(pageScroll);
+        Pin(pageScroll, content, 0, 0);
         popover = new NSPopover
         {
             Behavior = NSPopoverBehavior.Transient,
@@ -162,25 +186,27 @@ internal sealed class MacStatusPanel : IDisposable
     internal NSWindow? Window => popover.Shown ? popover.ContentViewController.View.Window : null;
 
     // The quota area fits its boxes (no gap, no scroll) unless the screen is too short; then it alone
-    // shrinks and scrolls so the rest of the popover is never cut off.
+    // shrinks and scrolls (down to MinimumQuotaHeight) so the rest of the popover is never cut off. If that is
+    // still too tall, the quota area keeps its full height and the whole panel scrolls (one scroller, no nesting).
     private void FitContent()
     {
         nfloat quota = (nfloat)Math.Min(MaximumQuotaHeight, Math.Ceiling(quotaStack.FittingSize.Height));
         quotaHeight.Constant = quota;
         content.LayoutSubtreeIfNeeded();
-        nfloat height = (nfloat)Math.Ceiling(content.FittingSize.Height);
-        if (height > availableHeight)
+        nfloat height = (nfloat)Math.Ceiling(root.FittingSize.Height);
+        if (height > availableHeight && quota - (height - availableHeight) >= MinimumQuotaHeight)
         {
-            quotaHeight.Constant = (nfloat)Math.Max(MinimumQuotaHeight, quota - (height - availableHeight));
+            quotaHeight.Constant = quota - (height - availableHeight);
             content.LayoutSubtreeIfNeeded();
-            height = (nfloat)Math.Ceiling(content.FittingSize.Height);
+            height = (nfloat)Math.Ceiling(root.FittingSize.Height);
         }
-        popover.ContentSize = new CGSize(PanelWidth, height);
+        nfloat visible = (nfloat)Math.Min(height, availableHeight);
+        popover.ContentSize = new CGSize(PanelWidth, visible);
         // Smoke with the popover not shown (screen checks skipped): give the content the size the popover would,
         // so the layout checks run on real frames without a window.
         if (smoke && !popover.Shown)
         {
-            content.Frame = new CGRect(0, 0, PanelWidth, height);
+            content.Frame = new CGRect(0, 0, PanelWidth, visible);
             content.LayoutSubtreeIfNeeded();
         }
     }
@@ -361,20 +387,35 @@ internal sealed class MacStatusPanel : IDisposable
         return menu;
     }
 
-    private Card CreateCard(ProviderKind provider, Action<ProviderKind> openPage, Action<ProviderKind, UsageEventType, bool> record)
+    private Card CreateCard(ProviderKind provider, Action<ProviderKind> openPage, Action openXaiUsage,
+        Action<ProviderKind, UsageEventType, bool> record)
     {
         // The whole card opens the official page; a label heading keeps one click target.
         var (view, stack) = Box(press: () => openPage(provider));
-        var heading = Line(ProviderNames.Provider(provider), 13, bold: true, width: ContentWidth - CardPadding * 2);
-        var official = Line("", 11, width: ContentWidth - CardPadding * 2);
-        var reason = Line("", 11, width: ContentWidth - CardPadding * 2);
+        int textWidth = ContentWidth - CardPadding * 2;
+        // Only the xAI card has a link: the fixed usage dashboard, to the right of the heading. It is not a quota value.
+        UsageLink? link = provider == ProviderKind.Xai ? new UsageLink(ProviderStatusPages.XaiUsageLabel, openXaiUsage) : null;
+        var heading = Line(ProviderNames.Provider(provider), 13, bold: true,
+            width: link is null ? textWidth : textWidth - link.Width - HeadingGap);
+        var official = Line("", 11, width: textWidth);
+        var reason = Line("", 11, width: textWidth);
         reason.TextColor = NSColor.SecondaryLabel;
-        stack.AddArrangedSubview(heading);
+        NSStackView? headingRow = null;
+        if (link is null) stack.AddArrangedSubview(heading);
+        else
+        {
+            headingRow = Stack(vertical: false, spacing: HeadingGap);
+            headingRow.AddArrangedSubview(heading);
+            headingRow.AddArrangedSubview(link);
+            stack.AddArrangedSubview(headingRow);
+            // Clicks inside the link rectangle open the dashboard; every other click on the card opens the status page.
+            view.SetLink(link);
+        }
         stack.AddArrangedSubview(official);
         stack.AddArrangedSubview(reason);
         NSMenu menu = RecordMenu(provider, record);
-        foreach (NSView child in new NSView[] { view, heading, official, reason }) child.Menu = menu;
-        return new(view, heading, official, reason, menu);
+        foreach (NSView child in new NSView?[] { view, headingRow, heading, link, official, reason }.OfType<NSView>()) child.Menu = menu;
+        return new(view, heading, official, reason, menu, link);
     }
 
     // A rounded box with the shared inner padding; provider cards and quota boxes both use it.
@@ -474,6 +515,7 @@ internal sealed class MacStatusPanel : IDisposable
     private sealed class CardView : NSView
     {
         private readonly Action? press;
+        private UsageLink? link;
         private NSTrackingArea? tracking;
         private bool hovered;
 
@@ -485,12 +527,28 @@ internal sealed class MacStatusPanel : IDisposable
             // Primary button only; right-click and control-click open the record menu instead.
             AddGestureRecognizer(new NSClickGestureRecognizer(() =>
             {
-                if (!MacApplication.IsContextClick(NSApplication.SharedApplication.CurrentEvent)) press();
+                NSEvent? click = NSApplication.SharedApplication.CurrentEvent;
+                if (!MacApplication.IsContextClick(click))
+                    Route(click is null ? null : ConvertPointFromView(click.LocationInWindow, null));
             }) { ButtonMask = 1 });
             AccessibilityRole = NSAccessibilityRoles.ButtonRole;
         }
 
         internal bool IsInteractive => press is not null;
+
+        internal void SetLink(UsageLink value) => link = value;
+
+        // The link's rectangle in this card's coordinates.
+        internal CGRect? LinkRect => link is null ? null : link.ConvertRectToView(link.Bounds, this);
+
+        // One click, one target: a click inside the link opens the usage dashboard only, any other click on the card
+        // opens the official status page only. A click without a position (no current event) is a card click.
+        internal void Route(CGPoint? pointInCard)
+        {
+            if (press is null) return;
+            if (link is not null && pointInCard is { } point && LinkRect is { } rect && rect.Contains(point)) link.Press();
+            else press();
+        }
 
         public override bool AccessibilityPerformPress()
         {
@@ -534,6 +592,45 @@ internal sealed class MacStatusPanel : IDisposable
             NSColor.Separator.SetStroke();
             path.LineWidth = 1;
             path.Stroke();
+        }
+    }
+
+    // The xAI usage link: underlined system link color text. It is a plain label whose click is routed by its card
+    // (CardView.Route), so the card's click recognizer and the link never both fire for one click. VoiceOver gets
+    // its own link element with a press action.
+    internal sealed class UsageLink : NSTextField
+    {
+        internal const string AccessibleHelp = "Grok 공식 대시보드를 엽니다. 한도 값은 앱에서 조회하지 않습니다.";
+        private readonly Action press;
+
+        internal UsageLink(string text, Action press)
+        {
+            this.press = press;
+            Editable = false; Selectable = false; Bordered = false; Bezeled = false; DrawsBackground = false;
+            TranslatesAutoresizingMaskIntoConstraints = false;
+            UsesSingleLineMode = true;
+            LineBreakMode = NSLineBreakMode.Clipping;
+            AttributedStringValue = new NSAttributedString(text, new NSStringAttributes
+            {
+                Font = MacControls.Font(11), ForegroundColor = NSColor.Link, UnderlineStyle = (int)NSUnderlineStyle.Single
+            });
+            Width = (int)Math.Ceiling(IntrinsicContentSize.Width) + 2;
+            WidthAnchor.ConstraintEqualTo(Width).Active = true;
+            ToolTip = text + ": " + ProviderStatusPages.XaiUsage.AbsoluteUri;
+            AccessibilityElement = true;
+            AccessibilityRole = NSAccessibilityRoles.LinkRole;
+            AccessibilityLabel = text;
+            AccessibilityHelp = AccessibleHelp;
+        }
+
+        internal int Width { get; }
+
+        internal void Press() => press();
+
+        public override bool AccessibilityPerformPress()
+        {
+            press();
+            return true;
         }
     }
 
@@ -793,8 +890,8 @@ internal sealed class MacStatusPanel : IDisposable
         if (state.StringValue != schedule.State || countdown.StringValue != schedule.Countdown ||
             next.StringValue != schedule.Next || next.ToolTip != schedule.NextDetail || timeZone.StringValue != schedule.TimeZone)
             throw new InvalidOperationException("Schedule lines differ from the shared panel model.");
-        if (cards.Count != 3)
-            throw new InvalidOperationException("The popover must show three provider cards.");
+        if (cards.Count != 4 || !cards.Keys.SequenceEqual(Enum.GetValues<ProviderKind>()))
+            throw new InvalidOperationException("The popover must show four provider cards (ChatGPT, Claude, Gemini, xAI).");
         foreach (ProviderCardText text in StatusPanelModel.Cards(states, snapshot.State))
         {
             Card card = cards[text.Provider];
@@ -810,6 +907,10 @@ internal sealed class MacStatusPanel : IDisposable
             if (!card.View.IsInteractive || card.View.GestureRecognizers is not [NSClickGestureRecognizer { ButtonMask: 1 }] ||
                 card.View.AccessibilityRole != NSAccessibilityRoles.ButtonRole.ToString())
                 throw new InvalidOperationException($"{text.Provider} card is not a whole-card click target.");
+            // The heading is never cut off, also next to the xAI link.
+            if (card.Heading.AttributedStringValue.Size.Width > card.Heading.Frame.Width + 0.5)
+                throw new InvalidOperationException($"{text.Provider} card heading is truncated.");
+            VerifyUsageLink(text.Provider, card);
         }
         if (cards[ProviderKind.OpenAI].Heading.StringValue.Split(' ')[0] != "ChatGPT")
             throw new InvalidOperationException("The OpenAI card does not show the ChatGPT product name.");
@@ -948,6 +1049,44 @@ internal sealed class MacStatusPanel : IDisposable
         return new(size, titleX, boxX, availableHeight, ContentWidth - CardPadding * 2);
     }
 
+    // A label's frame reaches about 2pt past where its text (alignment rect) starts and ends; the link may end that far
+    // past the card's inner edge (the heading before it is measured the same way), as long as it stays inside the card.
+    private const int LabelFramePadding = 3;
+
+    // Only the xAI card has the usage link: right of its heading, inside the card, and its own VoiceOver link element.
+    private void VerifyUsageLink(ProviderKind provider, Card card)
+    {
+        if ((provider == ProviderKind.Xai) != (card.Link is not null) || (card.Link is null) != (card.View.LinkRect is null))
+            throw new InvalidOperationException($"{provider} card has the wrong usage-link setup (only xAI has one).");
+        if (card.Link is not { } link) return;
+        CGRect inCard = card.View.LinkRect!.Value;
+        CGRect heading = card.Heading.ConvertRectToView(card.Heading.Bounds, card.View);
+        if (link.ToolTip != ProviderStatusPages.XaiUsageLabel + ": " + ProviderStatusPages.XaiUsage.AbsoluteUri ||
+            link.AttributedStringValue.Value != ProviderStatusPages.XaiUsageLabel ||
+            !link.AccessibilityElement || link.AccessibilityRole != NSAccessibilityRoles.LinkRole.ToString() ||
+            link.AccessibilityLabel != ProviderStatusPages.XaiUsageLabel || link.AccessibilityHelp != UsageLink.AccessibleHelp)
+            throw new InvalidOperationException("The xAI usage link text, tooltip or accessibility description is wrong.");
+        if (inCard.Width <= 0 || inCard.Height <= 0 || inCard.X < heading.Right - 0.5 || inCard.Right > card.View.Bounds.Width - CardPadding + LabelFramePadding ||
+            inCard.Y < 0 || inCard.Bottom > card.View.Bounds.Height || inCard.IntersectsWith(heading))
+            throw new InvalidOperationException($"The xAI usage link overlaps the heading or leaves the card (link {inCard}, heading {heading}, card {card.View.Bounds}).");
+        // Its label is not clipped.
+        if (link.AttributedStringValue.Size.Width > link.Frame.Width + 0.5)
+            throw new InvalidOperationException("The xAI usage link text is cut off.");
+    }
+
+    // Smoke: route a click at the center of the xAI link, or at a point of the card that is not the link
+    // (the card's top-left corner area), the way the card's click recognizer does.
+    internal void ClickCard(ProviderKind provider, bool onLink)
+    {
+        CardView view = cards[provider].View;
+        CGRect? link = view.LinkRect;
+        view.Route(onLink && link is { } rect ? new CGPoint(rect.GetMidX(), rect.GetMidY())
+            : new CGPoint(CardPadding + 2, view.Bounds.Height - CardPadding));
+    }
+
+    // Smoke: the xAI link as VoiceOver would press it.
+    internal bool PressUsageLink() => cards[ProviderKind.Xai].Link?.AccessibilityPerformPress() ?? false;
+
     // Smoke: the popover content as a PNG, only to save synthetic review images when a smoke run is asked to.
     internal NSData? SnapshotPng()
     {
@@ -956,6 +1095,59 @@ internal sealed class MacStatusPanel : IDisposable
         if (bitmap is null) return null;
         content.CacheDisplay(content.Bounds, bitmap);
         return bitmap.RepresentationUsingTypeProperties(NSBitmapImageFileType.Png, new NSDictionary());
+    }
+
+    // Smoke: for the layout last fitted, scroll the panel the way a user would and report the first control that cannot be
+    // brought fully into view (null when every card, the xAI link, the quota area and the controls can).
+    internal (nfloat Document, nfloat Visible, bool Scrolls, string? Unreachable) ScrollAudit()
+    {
+        NSClipView clip = SettledClip();
+        nfloat document = page.Frame.Height, visible = clip.Bounds.Height;
+        if (Math.Abs(visible - popover.ContentSize.Height) > 0.5)
+            return (document, visible, document > visible + 0.5, $"popover size ({popover.ContentSize.Height}pt) not applied to the scroll view ({visible}pt)");
+        nfloat maximum = (nfloat)Math.Max(0, document - visible);
+        var targets = new List<(string Name, NSView View)> { ("title", title) };
+        foreach (var (provider, card) in cards)
+        {
+            targets.Add((provider + " card", card.View));
+            if (card.Link is not null) targets.Add((provider + " usage link", card.Link));
+        }
+        targets.AddRange([("quota title", quotaTitle), ("quota area", quotaScroll), ("check times", checkedCaption),
+            ("Refresh", refresh), ("feedback", feedback), ("holiday option", holiday), ("auto start option", autoStart)]);
+        string? unreachable = null;
+        foreach (var (name, view) in targets)
+        {
+            CGRect inPage = view.ConvertRectToView(view.Bounds, page);
+            clip.ScrollToPoint(new CGPoint(0, Math.Clamp(inPage.Y, 0, maximum)));
+            pageScroll.ReflectScrolledClipView(clip);
+            CGRect seen = view.ConvertRectToView(view.Bounds, clip);
+            if (seen.Y < clip.Bounds.Y - 0.5 || seen.Bottom > clip.Bounds.Bottom + 0.5) unreachable ??= name;
+        }
+        clip.ScrollToPoint(CGPoint.Empty);
+        pageScroll.ReflectScrolledClipView(clip);
+        return (document, visible, document > visible + 0.5, unreachable);
+    }
+
+    // A shown popover may apply a new ContentSize a moment later; give it a few run-loop turns before the scroll view is read.
+    private NSClipView SettledClip()
+    {
+        content.LayoutSubtreeIfNeeded();
+        NSClipView clip = pageScroll.ContentView;
+        for (int turn = 0; turn < 10 && Math.Abs(clip.Bounds.Height - popover.ContentSize.Height) > 0.5; turn++)
+        {
+            NSRunLoop.Main.RunUntil(NSRunLoopMode.Default, NSDate.FromTimeIntervalSinceNow(0.05));
+            content.LayoutSubtreeIfNeeded();
+        }
+        return clip;
+    }
+
+    // Smoke: scroll the panel to its top or bottom (review pictures of a short screen).
+    internal void ScrollPanel(bool toBottom)
+    {
+        NSClipView clip = SettledClip();
+        nfloat maximum = (nfloat)Math.Max(0, page.Frame.Height - clip.Bounds.Height);
+        clip.ScrollToPoint(new CGPoint(0, toBottom ? maximum : 0));
+        pageScroll.ReflectScrolledClipView(clip);
     }
 
     // Smoke: the visible quota area height (shrinks and scrolls on a short screen).

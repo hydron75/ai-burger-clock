@@ -1,9 +1,10 @@
 namespace AiBurgerClock;
 
-internal enum ProviderKind { OpenAI, Claude, Gemini }
+internal enum ProviderKind { OpenAI, Claude, Gemini, Xai }
 internal enum OfficialStatus { Operational, Degraded, PartialOutage, MajorOutage, Unknown, Stale }
 internal enum Recommendation { Go, Hold, Stop, Check, BurgerTime, BurgerServiceIssue, BurgerCheck }
 internal enum UsageEventType { Success, Slow, Error, Interrupted }
+internal sealed record XaiMissingIncident(string Id, DateTimeOffset MissingSinceUtc);
 
 internal sealed record ProviderStatus(
     ProviderKind Provider,
@@ -24,6 +25,11 @@ internal sealed record ProviderStatus(
     public string UncertainIncidentId { get; init; } = "";
     public string UncertainIncidentTitle { get; init; } = "";
     public DateTimeOffset? LastKnownStatusUtc { get; init; }
+    // Historical tracking only, separate from the current visible incident and its failures.
+    public string PendingXaiIncidentIds { get; init; } = "";
+    public IReadOnlyList<XaiMissingIncident> XaiMissingIncidents { get; init; } = Array.Empty<XaiMissingIncident>();
+    public string XaiIncidentExpiryNote { get; init; } = "";
+    public bool XaiRecoveryUnconfirmed { get; init; }
 
     public static ProviderStatus Unknown(ProviderKind provider, string reason = "아직 확인하지 않음") =>
         new(provider, OfficialStatus.Unknown, DateTimeOffset.MinValue, null, reason);

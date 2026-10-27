@@ -6,7 +6,7 @@ internal static class ProviderNames
     internal static string Provider(ProviderKind provider) => Provider(provider.ToString());
 
     internal static string Provider(string provider) =>
-        provider == nameof(ProviderKind.OpenAI) ? "ChatGPT" : provider;
+        provider == nameof(ProviderKind.OpenAI) ? "ChatGPT" : provider == nameof(ProviderKind.Xai) ? "xAI" : provider;
 
     // The Codex account quota is shown under the ChatGPT product name (scope line: Work/Codex).
     internal static string Quota(QuotaProvider provider) =>

@@ -376,8 +376,8 @@ internal static class AccountQuotaUiChecks
         diagnostics.Record("quota.status-toggle-before-click");
         ClickQuotaButton("Restore official status view");
         diagnostics.Record("quota.status-toggle-before-check");
-        Check(!context.StatusWindow.QuotaView.Visible && context.StatusWindow.Controls.OfType<Panel>().Count(p => p.Visible) == 3,
-            "Status toggle restores all three official status rows including Gemini");
+        Check(!context.StatusWindow.QuotaView.Visible && context.StatusWindow.Controls.OfType<Panel>().Count(p => p.Visible) == 4,
+            "Status toggle restores all four official status rows including xAI");
         Check(title.Text == StatusPanelModel.Title && title.Bounds == titleBounds,
             "Status toggle restores the original title without moving either baseline");
         Check(context.StatusWindow.Controls.OfType<Label>().Any(l => l.Text.Contains("최근 조회 시도:")), "Status footer is restored immediately");

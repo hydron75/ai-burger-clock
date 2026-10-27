@@ -61,7 +61,11 @@ internal sealed class StatusTicker
         foreach (ProviderStatus status in statuses)
         {
             Recommendation current = RecommendationPolicy.Calculate(schedule.State, status.Status);
-            if (!notifications.Observe(status.Provider, schedule.State, current, alertsEnabled)) continue;
+            // An expired missing xAI item restores the incident-feed baseline, not a
+            // confirmed resolution. Consume GO silently until a new confirmed issue.
+            bool confirmedRecovery = status.Provider != ProviderKind.Xai || !status.XaiRecoveryUnconfirmed ||
+                status.Status != OfficialStatus.Operational;
+            if (!notifications.Observe(status.Provider, schedule.State, current, alertsEnabled && confirmedRecovery)) continue;
             var (title, body) = TrayPresentation.ProviderNotification(status.Provider, current, status.Reason, displayName);
             alerts.Add(new(status.Provider, current, current == Recommendation.Go, title, body));
         }

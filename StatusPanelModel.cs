@@ -82,6 +82,14 @@ internal static class StatusPanelModel
             "최근 조회 시도: " + attempted,
             "마지막 확인(응답 수신): " + success
         };
+        if (status.Provider == ProviderKind.Xai)
+        {
+            lines.Add("대상: Grok·Cursor·Grok Bot · 공식 사건 피드 기준");
+            lines.Add(ProviderStatusPages.XaiUsageLabel + ": " + ProviderStatusPages.XaiUsage.AbsoluteUri);
+            lines.Add("공유 주간 한도 값은 조회하지 않습니다.");
+            if (status.XaiIncidentExpiryNote.Length > 0)
+                lines.Add("과거 사건 해제: " + status.XaiIncidentExpiryNote);
+        }
         void Optional(string label, string? value)
         {
             if (!string.IsNullOrWhiteSpace(value)) lines.Add(label + value);
