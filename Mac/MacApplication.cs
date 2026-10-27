@@ -51,13 +51,15 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
     private int timerTicks;
     // Smoke: official-page requests that reached the host (the browser is not opened in a smoke run).
     private int statusPageRequests;
+    // Smoke: xAI usage-dashboard requests (counted apart from status-page requests; nothing is opened in a smoke run).
+    private int xaiUsageRequests;
     internal int ExitCode { get; private set; }
 
     public override void DidFinishLaunching(NSNotification notification)
     {
         NSApplication.SharedApplication.ActivationPolicy = NSApplicationActivationPolicy.Accessory;
         panel = new(RefreshAll, ShowStatistics, enabled => _ = ChangeHolidayAsync(enabled), ChangeAutoStart,
-            OpenStatusPage, (provider, type, note) => _ = RecordAsync(provider, type, note), smoke);
+            OpenStatusPage, OpenXaiUsage, (provider, type, note) => _ = RecordAsync(provider, type, note), smoke);
         quotaNotifications = new(() => stopping, enabled => store.SetQuotaRecoveryNotificationsEnabledAsync(enabled),
             enabled => store.SetQuotaEarlyResetNotificationsEnabledAsync(enabled),
             provider => quotaMonitor?.Snapshot().FirstOrDefault(state => state.Provider == provider),
@@ -370,6 +372,16 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
             panel?.SetFeedback("공식 상태 페이지를 열지 못했습니다. 기본 브라우저를 확인하세요.", error: true);
     }
 
+    // The fixed Grok dashboard link on the xAI card. It only opens the page; no quota value is read.
+    private void OpenXaiUsage()
+    {
+        xaiUsageRequests++;
+        if (stopping || smoke) return;
+        using var url = new NSUrl(ProviderStatusPages.XaiUsage.AbsoluteUri);
+        if (!NSWorkspace.SharedWorkspace.OpenUrl(url))
+            panel?.SetFeedback("사용량 페이지를 열지 못했습니다. 기본 브라우저를 확인하세요.", error: true);
+    }
+
     private async Task RecordAsync(ProviderKind provider, UsageEventType type, bool withNote)
     {
         try { await initialization; }
@@ -580,9 +592,36 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
         if (duplicateWarnings != warnings + 1 || kept.Providers[0].Status != OfficialStatus.Degraded)
             throw new InvalidOperationException("A duplicated provider must keep the first value and log once.");
 
+        // xAI through the same apply path: a confirmed issue alerts, a normalization caused only by the 24-hour expiry of a
+        // vanished incident (no official resolution) restores the baseline without an alert, and a later new issue and its
+        // explicit resolution alert as for any provider. The alert text names the xAI products.
+        ProviderStatus[] Xai(OfficialStatus xai, bool recoveryUnconfirmed) => Enum.GetValues<ProviderKind>().Select(provider =>
+            new ProviderStatus(provider, provider == ProviderKind.Xai ? xai : OfficialStatus.Operational,
+                DateTimeOffset.UtcNow, DateTimeOffset.UtcNow, provider + " fixture")
+            { XaiRecoveryUnconfirmed = provider == ProviderKind.Xai && recoveryUnconfirmed }).ToArray();
+        var xaiProbe = new StatusTicker(ProviderNames.Provider, strictInput: true);
+        smokeNotifications.Clear();
+        smokeNotificationLooks.Clear();
+        ApplyTick(xaiProbe.Tick(full, Xai(OfficialStatus.Operational, false), TickReason.Initial));
+        ApplyTick(xaiProbe.Tick(full, Xai(OfficialStatus.Degraded, false), TickReason.ProviderChanged));
+        var xaiIssue = TrayPresentation.ProviderNotification(ProviderKind.Xai, Recommendation.Hold, "Xai fixture", ProviderNames.Provider);
+        if (smokeNotifications is not [var firstXai] || firstXai != xaiIssue || !xaiIssue.Title.StartsWith("xAI ", StringComparison.Ordinal) ||
+            button.ToolTip?.Contains("xAI HOLD", StringComparison.Ordinal) != true)
+            throw new InvalidOperationException("A confirmed xAI issue must request one xAI alert.");
+        ApplyTick(xaiProbe.Tick(full, Xai(OfficialStatus.Operational, true), TickReason.ProviderChanged));
+        if (smokeNotifications.Count != 1 || smokeNotificationLooks!.Count != 1)
+            throw new InvalidOperationException("A 24-hour expiry normalization must not request a resolution alert.");
+        ApplyTick(xaiProbe.Tick(full, Xai(OfficialStatus.Degraded, false), TickReason.ProviderChanged));
+        ApplyTick(xaiProbe.Tick(full, Xai(OfficialStatus.Operational, false), TickReason.ProviderChanged));
+        var xaiRecovered = TrayPresentation.ProviderNotification(ProviderKind.Xai, Recommendation.Go, "Xai fixture", ProviderNames.Provider);
+        if (smokeNotifications.Count != 3 || smokeNotifications[1] != xaiIssue || smokeNotifications[2] != xaiRecovered ||
+            xaiRecovered.Title != "xAI 정상화" || !xaiRecovered.Body.StartsWith("Grok·Cursor·Grok Bot: ", StringComparison.Ordinal) ||
+            smokeNotificationLooks[2].Kind != MacNotificationKind.ProviderRecovered)
+            throw new InvalidOperationException("A new xAI issue and its explicit resolution must each request an alert (after an expiry normalization).");
+
         // Back to the real state for the rest of the smoke run.
         RefreshDisplay(TickReason.Initial);
-        return "display decisions via StatusTicker (no first alert, provider alert, normalization, transition only, icon reuse, notification picture appearance = menu-bar icon appearance, duplicate kept-first + logged once)";
+        return "display decisions via StatusTicker (no first alert, provider alert, normalization, transition only, icon reuse, notification picture appearance = menu-bar icon appearance, duplicate kept-first + logged once, xAI issue alert / 24-hour expiry normalization without alert / new issue and explicit resolution alerts)";
     }
 
     private async Task RunSmokeAsync()
@@ -664,6 +703,15 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
                         if (contrast < 4.5)
                             throw new InvalidOperationException($"{tone} text contrast {contrast:0.00}:1 on the {surface} is below 4.5:1 in {name}.");
                     }
+                }
+                // The xAI usage link text (system link color) keeps the same 4.5:1 on the card surfaces.
+                foreach (var (surface, background) in new (string, Func<NSColor>)[]
+                    { ("background", () => MacControls.PanelBackground), ("hovered card", MacControls.CardHoverBackground) })
+                {
+                    double linkContrast = MacControls.Contrast(NSColor.Link, background, appearance);
+                    weakest = Math.Min(weakest, linkContrast);
+                    if (linkContrast < 4.5)
+                        throw new InvalidOperationException($"The xAI usage link contrast {linkContrast:0.00}:1 on the {surface} is below 4.5:1 in {name}.");
                 }
                 // Usage-bar fills are graphical objects: provider colors keep at least 3:1 on the panel background.
                 foreach (QuotaProvider provider in Enum.GetValues<QuotaProvider>())
@@ -770,18 +818,69 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
             int requests = statusPageRequests;
             if (!panel.PressCard(ProviderKind.Claude) || statusPageRequests != requests + 1)
                 throw new InvalidOperationException("Pressing a provider card did not request its official page.");
-            // Screen fit: with three quota boxes a 1280x800 screen is a little too short, so there and on a
-            // 1024x640 screen (13-inch "larger text") the popover stays whole and only the quota area scrolls.
+            // Fourth card (xAI): its card opens the status page and only its link opens the usage dashboard. One click
+            // goes to one target, whether it comes from the pointer (routed by position) or from VoiceOver.
+            requests = statusPageRequests;
+            int usage = xaiUsageRequests;
+            if (!panel.PressCard(ProviderKind.Xai) || statusPageRequests != requests + 1 || xaiUsageRequests != usage)
+                throw new InvalidOperationException("Pressing the xAI card did not request only its status page.");
+            panel.ClickCard(ProviderKind.Xai, onLink: false);
+            if (statusPageRequests != requests + 2 || xaiUsageRequests != usage)
+                throw new InvalidOperationException("A click on the xAI card outside the link must open only the status page.");
+            panel.ClickCard(ProviderKind.Xai, onLink: true);
+            if (statusPageRequests != requests + 2 || xaiUsageRequests != usage + 1)
+                throw new InvalidOperationException("A click on the xAI usage link must open only the usage dashboard.");
+            if (!panel.PressUsageLink() || statusPageRequests != requests + 2 || xaiUsageRequests != usage + 2)
+                throw new InvalidOperationException("Pressing the xAI usage link as VoiceOver must open only the usage dashboard.");
+            panel.ClickCard(ProviderKind.Claude, onLink: true);
+            if (statusPageRequests != requests + 3 || xaiUsageRequests != usage + 2)
+                throw new InvalidOperationException("A card without a usage link must treat every click as a card click.");
+            if (ProviderStatusPages.XaiUsage.AbsoluteUri != "https://grok.com/dashboard" ||
+                ProviderStatusPages.For(ProviderKind.Xai).AbsoluteUri != "https://status.x.ai/")
+                throw new InvalidOperationException("The xAI card/usage link destinations are not the fixed official addresses.");
+            // xAI card with a confirmed issue, the longest recommendation label, and the 24-hour expiry note: the Mac
+            // card shows exactly the shared texts (tooltip = shared detail with the product line, the dashboard
+            // address, the no-quota notice and the exact expiry note) and the heading still fits beside the link.
+            const string ExpiryNote = "해결 표시 없이 피드에서 사라짐(24시간 경과로 해제)";
+            // The nearest BURGER TIME moment from now (the longest recommendation label), found by stepping hours.
+            ScheduleSnapshot burgerNow = Enumerable.Range(0, 24 * 7).Select(hours => Schedule(now.AddHours(hours)))
+                .First(snapshot => snapshot.State == AgentState.BurgerTime);
+            ProviderStatus[] xaiIssue = [.. healthy.Where(item => item.Provider != ProviderKind.Xai),
+                new ProviderStatus(ProviderKind.Xai, OfficialStatus.MajorOutage, now, now, "Cursor: Dashboard 장애 (합성 예시)")
+                    { XaiIncidentExpiryNote = ExpiryNote }];
+            xaiIssue = [.. xaiIssue.OrderBy(item => (int)item.Provider)];
+            panel.Update(burgerNow, xaiIssue, quotas, false, now.AddMinutes(5), "");
+            panel.Verify(burgerNow, xaiIssue, quotas);
+            string xaiDetail = StatusPanelModel.Cards(xaiIssue, burgerNow.State).Single(item => item.Provider == ProviderKind.Xai).Detail;
+            if (!xaiDetail.Contains("대상: Grok·Cursor·Grok Bot", StringComparison.Ordinal) ||
+                !xaiDetail.Contains("사용량 보기: https://grok.com/dashboard", StringComparison.Ordinal) ||
+                !xaiDetail.Contains("공유 주간 한도 값은 조회하지 않습니다.", StringComparison.Ordinal) ||
+                !xaiDetail.Contains("과거 사건 해제: " + ExpiryNote, StringComparison.Ordinal))
+                throw new InvalidOperationException("The xAI card detail misses the shared product line, usage address, no-quota notice or expiry note.");
+            panel.Update(Schedule(now), healthy, quotas, false, now.AddMinutes(5), "");
+            // Screen fit: with four provider cards and three quota boxes a 1280x800 screen is too short for the whole panel
+            // at full quota height, so the quota area scrolls there. A 1024x640 screen (13-inch "larger text") cannot hold
+            // the four cards plus even one box at the minimum quota height, so the whole panel scrolls. Either way the
+            // popover stays inside the screen and every card, the xAI link, the quota area and the controls can be scrolled into view.
             const int MenuBarAndMargin = 25 + 24;
             CGSize standard = panel.FitFor(800 - MenuBarAndMargin);
             nfloat standardQuota = panel.QuotaAreaHeight;
+            var standardScroll = panel.ScrollAudit();
             if (standard.Height > 800 - MenuBarAndMargin)
                 throw new InvalidOperationException($"Popover {standard.Height}pt is cut off on a 1280x800 screen.");
+            if (standardScroll.Unreachable is not null || standardQuota <= 0 || standardQuota > panel.QuotaRowsHeight + 0.5)
+                throw new InvalidOperationException($"On a 1280x800 screen {standardScroll.Unreachable ?? "the quota area"} cannot be scrolled into view.");
             CGSize small = panel.FitFor(640 - MenuBarAndMargin);
             nfloat smallQuota = panel.QuotaAreaHeight;
-            if (small.Height > 640 - MenuBarAndMargin || smallQuota >= panel.QuotaRowsHeight)
+            var smallScroll = panel.ScrollAudit();
+            if (small.Height > 640 - MenuBarAndMargin)
                 throw new InvalidOperationException($"Popover {small.Height}pt is cut off on a 1024x640 screen.");
+            if (smallScroll.Unreachable is not null || !smallScroll.Scrolls || smallScroll.Visible > small.Height + 0.5 ||
+                smallScroll.Document <= smallScroll.Visible)
+                throw new InvalidOperationException($"On a 1024x640 screen {smallScroll.Unreachable ?? "the panel"} cannot be scrolled into view.");
             panel.FitFor(layout.UsableHeight);
+            if (panel.ScrollAudit().Unreachable is { } unreachable)
+                throw new InvalidOperationException($"On this screen {unreachable} cannot be brought into view.");
             if (!panel.QuotaRowText(QuotaProvider.Codex, "session").Contains("100% 사용 · 약 15분 후 리셋", StringComparison.Ordinal))
                 throw new InvalidOperationException("Exhausted quota/countdown display failed.");
             panel.Update(Schedule(now.AddMinutes(1)), healthy, quotas, false, now.AddMinutes(5), "");
@@ -862,6 +961,7 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
             // Quota row name/value split (#80): the value stays whole, only the name is shortened, spoken once.
             string quotaRowResult = MacQuotaRowSmoke.Verify(panel, Schedule(now), healthy, quota, claudeQuota, now);
             MacQuotaRowImages.Render(panel, Schedule(now), healthy, quota, claudeQuota, now, "mac");
+            MacQuotaRowImages.RenderXai(panel, Schedule(now), healthy, quotas, now, layout.UsableHeight);
             panel.Update(Schedule(now), healthy, quotas, false, now.AddMinutes(5), "");
             panel.Verify(Schedule(now), healthy, quotas);
             // Early reset (#70): the remembered record shows only in its Provider detail; rows and height do not change.
@@ -904,7 +1004,7 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
                 Console.WriteLine($"SKIP: {skippedScreenChecks.Count} screen checks not run because a window of {covering.Value.Owner} covers display {covering.Value.ScreenNumber} " +
                     $"(opening ours would show the menu bar over it): {string.Join("; ", skippedScreenChecks)}. Run again with no full-screen app to check them.");
             string verdict = skippedScreenChecks.Count == 0 ? "PASS" : $"PASS with {skippedScreenChecks.Count} screen checks SKIPPED (not verified)";
-            Console.WriteLine($"{verdict}: bundle version, menu-tracking countdown timer, 20pt menu icon white/dark disc + color glyph light/dark 1x-2x pixels (glyph contrast min {iconContrast:0.0}:1), left/right/control-click routing, right-click menu, popover open/close/reopen, shared panel text/record menu/quota lines, {activationResult}, tone contrast >= 4.5:1 light+dark (min {weakest:0.0}:1), card text x = quota box text x ({layout.BoxTextX:0}pt; titles {layout.TitleX:0}pt), whole-card click/quota boxes read-only, shared quota title, usage bars (0% empty/100% full, provider colors >= 3:1 light+dark min {barWeakest:0.0}:1, muted when previous/elapsed, none without a value), time layer (tint-track/tint-used >= 1.5:1 min {tintWeakest:0.0}:1, marker >= 3:1 min {markerWeakest:0.0}:1 light+dark, dark tint-used >= 2.0:1 min {darkSeparationWeakest:0.0}:1, marker position/end points, hidden states, spoken row = shared reading text once), one shared Provider detail per quota box, three quota boxes incl. Gemini, popover {layout.Size.Width:0}x{layout.Size.Height:0}pt (this screen usable {layout.UsableHeight:0}pt; 1280x800 {standard.Height:0}pt not cut off, quota area {standardQuota:0}pt; 1024x640 {small.Height:0}pt with quota area {smallQuota:0}pt scrolling), 1,000-char note limit, temporary SQLite, four events/notes via shared factory, {displayResult}, {permissionResult}, {layoutKeyResult}, {notificationImageResult}, {recoveryResult}, {earlyResetResult}, {earlyResetControllerResult}, {decisionLogResult}, {lateCallbackResult}, {earlyResetUiResult}, {geminiModelResult}, {quotaRowResult}, {diagnosticResult}, statistics (shared text, explanation fits, Mac empty-state hint), injected quota countdown; no account/network/settings changes.");
+            Console.WriteLine($"{verdict}: bundle version, menu-tracking countdown timer, 20pt menu icon white/dark disc + color glyph light/dark 1x-2x pixels (glyph contrast min {iconContrast:0.0}:1), left/right/control-click routing, right-click menu, popover open/close/reopen, shared panel text/record menu/quota lines, {activationResult}, tone contrast >= 4.5:1 light+dark (min {weakest:0.0}:1), card text x = quota box text x ({layout.BoxTextX:0}pt; titles {layout.TitleX:0}pt), whole-card click/quota boxes read-only, shared quota title, usage bars (0% empty/100% full, provider colors >= 3:1 light+dark min {barWeakest:0.0}:1, muted when previous/elapsed, none without a value), time layer (tint-track/tint-used >= 1.5:1 min {tintWeakest:0.0}:1, marker >= 3:1 min {markerWeakest:0.0}:1 light+dark, dark tint-used >= 2.0:1 min {darkSeparationWeakest:0.0}:1, marker position/end points, hidden states, spoken row = shared reading text once), one shared Provider detail per quota box, four provider cards incl. xAI (card click vs usage link routing, link accessibility), three quota boxes incl. Gemini, popover {layout.Size.Width:0}x{layout.Size.Height:0}pt (this screen usable {layout.UsableHeight:0}pt; 1280x800 {standard.Height:0}pt not cut off, quota area {standardQuota:0}pt scrolling, every control reachable; 1024x640 {small.Height:0}pt not cut off, quota area {smallQuota:0}pt, whole panel {smallScroll.Document:0}pt scrolling, every control reachable), 1,000-char note limit, temporary SQLite, four events/notes via shared factory, {displayResult}, {permissionResult}, {layoutKeyResult}, {notificationImageResult}, {recoveryResult}, {earlyResetResult}, {earlyResetControllerResult}, {decisionLogResult}, {lateCallbackResult}, {earlyResetUiResult}, {geminiModelResult}, {quotaRowResult}, {diagnosticResult}, statistics (shared text, explanation fits, Mac empty-state hint), injected quota countdown; no account/network/settings changes.");
             ExitCode = 0;
         }
         catch (Exception error)

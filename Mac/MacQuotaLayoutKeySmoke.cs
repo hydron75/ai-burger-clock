@@ -26,7 +26,7 @@ internal static class MacQuotaLayoutKeySmoke
         var healthy = Enum.GetValues<ProviderKind>().Select(provider =>
             new ProviderStatus(provider, OfficialStatus.Operational, Now, Now, "관련 서비스 정상")).ToArray();
         ScheduleSnapshot schedule = AgentSchedule.GetSnapshot(Now);
-        using var panel = new MacStatusPanel(() => { }, () => { }, _ => { }, _ => { }, _ => { }, (_, _, _) => { }, smoke: true);
+        using var panel = new MacStatusPanel(() => { }, () => { }, _ => { }, _ => { }, _ => { }, () => { }, (_, _, _) => { }, smoke: true);
         int steps = 0;
 
         // Updates the panel and checks that it holds exactly the rows the model describes: the same box count, the same row IDs per box.
