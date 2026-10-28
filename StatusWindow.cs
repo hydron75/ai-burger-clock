@@ -321,23 +321,25 @@ internal sealed class StatusWindow : Form
         int width = Math.Max((int)Math.Round(374 * DeviceDpi / 96d),
             Controls.Cast<Control>().Max(control => control.Right) + 8);
         int available = Math.Max(1, area.Height - (Height - ClientSize.Height));
+        int gap = (int)Math.Round(6 * DeviceDpi / 96d);
+        bool fitQuotaFooter = quotaView.Visible && checkedLabel.Top - Math.Max(0, height - available) - gap > quotaView.Top;
         ClientSize = new Size(width, Math.Min(height, available));
         if (height > available)
         {
-            AutoScroll = true;
-            AutoScrollMinSize = new Size(0, height);
+            if (!fitQuotaFooter)
+            {
+                AutoScroll = true;
+                AutoScrollMinSize = new Size(0, height);
+            }
             ClientSize = new Size(width + SystemInformation.VerticalScrollBarWidth, available);
         }
         if (quotaView.Visible)
         {
-            int gap = (int)Math.Round(6 * DeviceDpi / 96d);
             int overflow = height - ClientSize.Height;
             // Keep the existing small-window size, but give the quota scroller the
             // remaining space above its footer. Extremely short areas retain outer scrolling.
-            if (checkedLabel.Top - overflow - gap > quotaView.Top)
+            if (fitQuotaFooter)
             {
-                AutoScroll = false;
-                AutoScrollMinSize = Size.Empty;
                 foreach (var control in footerControls) control.Top -= overflow;
                 quotaFooterOffset = overflow;
             }

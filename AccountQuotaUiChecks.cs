@@ -91,6 +91,7 @@ internal static class QuotaViewportUiChecks
                 var boxes = view.Controls.OfType<Panel>().ToArray();
                 var cardSizes = boxes.Select(box => box.Size).ToArray();
                 int gap = caption.Top - view.Bottom;
+                Check(view.Top == originalBounds[view].Top, prefix + ": quota viewport preserves its header baseline");
                 Check(view.Visible && boxes.Length == 3 && boxes.Sum(box => box.Controls.OfType<QuotaBalanceBar>().Count()) == 8,
                     prefix + ": three synthetic Providers include Gemini model weekly");
                 Check(gap >= 0 && gap <= Scale(6), prefix + ": quota bottom/caption gap is at most 6 DIP (actual=" + gap + "px)");
