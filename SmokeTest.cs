@@ -107,6 +107,7 @@ internal static class SmokeTest
                         timer.Stop();
                         now = new DateTimeOffset(2026, 9, 19, 12, 0, 0, TimeSpan.FromHours(9));
                         context.RefreshStatus(false);
+                        await QuotaViewportUiChecks.RunAsync(reportDirectory);
                         diagnostics.Phase = "ui.regression";
                         await UIRegressionChecks.RunAsync(context, testStore, statusHandler, reportDirectory, openedPages, now, value => now = value, diagnostics, () => notificationClock += 30000);
                         diagnostics.Phase = "provider.balloon-queue";
