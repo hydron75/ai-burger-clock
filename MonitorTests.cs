@@ -356,7 +356,7 @@ internal static class MonitorTests
         Check(burgerTitle == "BURGER TIME 시작" && burgerBody == "새로운 대형 Agent 작업은 다음 FULL THROTTLE까지 미뤄두세요.",
             "BURGER transition wording");
         Check(TrayPresentation.ProviderNotification(ProviderKind.Claude, Recommendation.Go, "ignored") ==
-            ("Claude 정상화", "관련 서비스가 정상화되었습니다. 현재 FULL THROTTLE이므로 대규모 작업 재개 가능."), "Provider recovery wording");
+            ("Claude 정상화", "Claude: 관련 서비스가 정상화되었습니다. 현재 FULL THROTTLE이므로 대규모 작업 재개 가능."), "Provider recovery wording");
         var (stopTitle, stopBody) = TrayPresentation.ProviderNotification(ProviderKind.OpenAI, Recommendation.Stop, "API 장애");
         Check(stopTitle == "OpenAI 작업 권고 변경" && stopBody.StartsWith("현재 FULL THROTTLE이지만 공식 서비스 문제가 있습니다. ", StringComparison.Ordinal) &&
             stopBody.EndsWith("\nAPI 장애", StringComparison.Ordinal), "Provider incident wording keeps the reason");
