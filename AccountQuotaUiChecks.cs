@@ -123,7 +123,8 @@ internal static class QuotaViewportUiChecks
                     var expectedViewBounds = view.Bounds;
                     var expectedFooter = footer.ToDictionary(control => control, control => control.Bounds);
                     string reopen = "quota-reopen-" + (reopenSmall ? "small" : "large");
-                    Capture(reopen + "-before-hide");
+                    Capture(reopen + "-expected");
+                    window.FitWorkArea(area);
                     window.Hide();
                     Check(!window.Visible && !view.Visible, prefix + ": hidden quota child has no effective visibility");
                     window.ShowNearTray(reopenArea);
