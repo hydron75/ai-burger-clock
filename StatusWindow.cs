@@ -322,7 +322,8 @@ internal sealed class StatusWindow : Form
             Controls.Cast<Control>().Max(control => control.Right) + 8);
         int available = Math.Max(1, area.Height - (Height - ClientSize.Height));
         int gap = (int)Math.Round(6 * DeviceDpi / 96d);
-        bool fitQuotaFooter = quotaView.Visible && checkedLabel.Top - Math.Max(0, height - available) - gap > quotaView.Top;
+        int quotaTop = timeZoneLabel.Bottom + gap;
+        bool fitQuotaFooter = quotaView.Visible && checkedLabel.Top - Math.Max(0, height - available) - gap > quotaTop;
         ClientSize = new Size(width, Math.Min(height, available));
         if (height > available)
         {
@@ -335,6 +336,9 @@ internal sealed class StatusWindow : Form
         }
         if (quotaView.Visible)
         {
+            // Hidden children are not scrolled like visible status controls; restore
+            // the quota origin from the unchanged header before assigning its height.
+            quotaView.Top = quotaTop;
             int overflow = height - ClientSize.Height;
             // Keep the existing small-window size, but give the quota scroller the
             // remaining space above its footer. Extremely short areas retain outer scrolling.
