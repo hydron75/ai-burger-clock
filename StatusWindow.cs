@@ -26,6 +26,9 @@ internal sealed class StatusWindow : Form
     private bool updatingHoliday;
     private int autoHideSuppressed;
     private readonly int fullClientHeight;
+    private readonly List<Control> footerControls = new();
+    private int quotaFooterOffset;
+    private Rectangle? workingArea;
 
     public event EventHandler? AutoStartChanged;
     public event EventHandler? HolidayAdjustmentChanged;
@@ -109,6 +112,7 @@ internal sealed class StatusWindow : Form
             titleLabel.Text = quotaView.Visible ? QuotaPanelModel.AccessibleName : StatusPanelModel.Title;
             quotaButton.Text = quotaView.Visible ? QuotaPanelModel.ShowStatus : QuotaPanelModel.ShowQuotas;
             SetQuotaCaption();
+            FitWorkArea(workingArea ?? Screen.FromControl(this).WorkingArea);
         };
         Controls.Add(quotaButton);
         details.SetToolTip(quotaButton, QuotaPanelModel.ToggleDetail);
@@ -127,6 +131,8 @@ internal sealed class StatusWindow : Form
         };
         details.SetToolTip(holidayCheckBox, StatusPanelModel.HolidayOptionDetail);
         Controls.Add(holidayCheckBox);
+        footerControls.AddRange([checkedLabel, refreshButton, statisticsButton, quotaButton,
+            feedbackLabel, autoStartCheckBox, holidayCheckBox]);
         Deactivate += (_, _) =>
         {
             if (autoHideSuppressed == 0) Hide();
@@ -303,7 +309,10 @@ internal sealed class StatusWindow : Form
     // when needed, and restore the full layout on a larger working area.
     internal void FitWorkArea(Rectangle area)
     {
+        workingArea = area;
         AutoScrollPosition = Point.Empty;
+        foreach (var control in footerControls) control.Top += quotaFooterOffset;
+        quotaFooterOffset = 0;
         AutoScrollMinSize = Size.Empty;
         AutoScroll = false;
         PerformLayout();
@@ -318,6 +327,21 @@ internal sealed class StatusWindow : Form
             AutoScroll = true;
             AutoScrollMinSize = new Size(0, height);
             ClientSize = new Size(width + SystemInformation.VerticalScrollBarWidth, available);
+        }
+        if (quotaView.Visible)
+        {
+            int gap = (int)Math.Round(6 * DeviceDpi / 96d);
+            int overflow = height - ClientSize.Height;
+            // Keep the existing small-window size, but give the quota scroller the
+            // remaining space above its footer. Extremely short areas retain outer scrolling.
+            if (checkedLabel.Top - overflow - gap > quotaView.Top)
+            {
+                AutoScroll = false;
+                AutoScrollMinSize = Size.Empty;
+                foreach (var control in footerControls) control.Top -= overflow;
+                quotaFooterOffset = overflow;
+            }
+            quotaView.Height = Math.Max(1, checkedLabel.Top - gap - quotaView.Top);
         }
         PerformLayout();
     }

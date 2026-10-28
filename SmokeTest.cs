@@ -163,6 +163,14 @@ internal static class SmokeTest
     internal static void RenderAndCheckLayout(StatusWindow window, string name, string? reportDirectory)
     {
         window.PerformLayout();
+        if (window.QuotaView.Visible)
+        {
+            var caption = window.Controls.OfType<Label>().Single(label => label.Text == QuotaPanelModel.Caption);
+            int gap = caption.Top - window.QuotaView.Bottom;
+            if (gap < 0 || gap > (int)Math.Round(6 * window.DeviceDpi / 96d))
+                throw new InvalidOperationException($"Quota viewport/caption gap exceeds 6 DIP: {gap}px at {window.DeviceDpi} DPI");
+            Console.WriteLine("PASS: Quota viewport ends within 6 DIP of its caption");
+        }
         foreach (Control control in window.Controls)
         {
             if (!window.ClientRectangle.Contains(control.Bounds))
