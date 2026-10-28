@@ -1,0 +1,98 @@
+[
+  {
+    "dpi": 96,
+    "area": "large",
+    "before": "artifacts\\quota-viewport-96\\windows-tests\\before\\20261028-210650-855-73ff96\\run-01\\images",
+    "after": "artifacts\\quota-viewport-96\\windows-tests\\after\\20261028-211723-313-a5d721\\run-01\\images",
+    "window_before": [
+      390,
+      697
+    ],
+    "window_after": [
+      390,
+      697
+    ],
+    "viewport_before": 214,
+    "viewport_after": 354,
+    "gap_before_px": 146,
+    "gap_after_px": 6,
+    "gap_before_dip": 146.0,
+    "gap_after_dip": 6.0,
+    "status_pixels_equal": true,
+    "status_return_pixels_equal": true,
+    "card_sizes_equal": true,
+    "card_gaps_equal": true
+  },
+  {
+    "dpi": 96,
+    "area": "small",
+    "before": "artifacts\\quota-viewport-96\\windows-tests\\before\\20261028-210650-855-73ff96\\run-01\\images",
+    "after": "artifacts\\quota-viewport-96\\windows-tests\\after\\20261028-211723-313-a5d721\\run-01\\images",
+    "window_before": [
+      407,
+      480
+    ],
+    "window_after": [
+      407,
+      480
+    ],
+    "viewport_before": 214,
+    "viewport_after": 137,
+    "gap_before_px": 133,
+    "gap_after_px": 6,
+    "gap_before_dip": 133.0,
+    "gap_after_dip": 6.0,
+    "status_pixels_equal": true,
+    "status_return_pixels_equal": true,
+    "card_sizes_equal": true,
+    "card_gaps_equal": true
+  },
+  {
+    "dpi": 192,
+    "area": "large",
+    "before": "artifacts\\quota-viewport-192\\windows-tests\\before\\20261028-210830-526-eb0bb2\\run-01\\images",
+    "after": "artifacts\\quota-viewport-192\\windows-tests\\after\\20261028-211553-764-ed5597\\run-01\\images",
+    "window_before": [
+      774,
+      1387
+    ],
+    "window_after": [
+      774,
+      1387
+    ],
+    "viewport_before": 428,
+    "viewport_after": 708,
+    "gap_before_px": 292,
+    "gap_after_px": 12,
+    "gap_before_dip": 146.0,
+    "gap_after_dip": 6.0,
+    "status_pixels_equal": true,
+    "status_return_pixels_equal": true,
+    "card_sizes_equal": true,
+    "card_gaps_equal": true
+  },
+  {
+    "dpi": 192,
+    "area": "small",
+    "before": "artifacts\\quota-viewport-192\\windows-tests\\before\\20261028-210830-526-eb0bb2\\run-01\\images",
+    "after": "artifacts\\quota-viewport-192\\windows-tests\\after\\20261028-211553-764-ed5597\\run-01\\images",
+    "window_before": [
+      808,
+      960
+    ],
+    "window_after": [
+      808,
+      960
+    ],
+    "viewport_before": 428,
+    "viewport_after": 281,
+    "gap_before_px": 273,
+    "gap_after_px": 12,
+    "gap_before_dip": 136.5,
+    "gap_after_dip": 6.0,
+    "status_pixels_equal": true,
+    "status_return_pixels_equal": true,
+    "card_sizes_equal": true,
+    "card_gaps_equal": true
+  }
+]
