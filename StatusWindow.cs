@@ -295,9 +295,10 @@ internal sealed class StatusWindow : Form
         SetDetail(feedbackLabel, text);
     }
 
-    public void ShowNearTray()
+    public void ShowNearTray() => ShowNearTray(Screen.FromPoint(Cursor.Position).WorkingArea);
+
+    internal void ShowNearTray(Rectangle area)
     {
-        Rectangle area = Screen.FromPoint(Cursor.Position).WorkingArea;
         FitWorkArea(area);
         Location = new Point(Math.Max(area.Left, area.Right - Width - 12), Math.Max(area.Top, area.Bottom - Height - 12));
         Show();
