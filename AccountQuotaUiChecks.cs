@@ -115,10 +115,42 @@ internal static class QuotaViewportUiChecks
                     Check(view.Height == smallHeight && window.Size == originalSize,
                         prefix + ": smaller working area restores the same quota viewport and window size");
                 }
+                foreach (bool reopenSmall in new[] { true, false })
+                {
+                    var reopenArea = new Rectangle(0, 0, Scale(1280), Scale(reopenSmall ? 480 : 900));
+                    window.FitWorkArea(reopenArea);
+                    var expectedSize = window.Size;
+                    var expectedViewBounds = view.Bounds;
+                    var expectedFooter = footer.ToDictionary(control => control, control => control.Bounds);
+                    string reopen = "quota-reopen-" + (reopenSmall ? "small" : "large");
+                    Capture(reopen + "-expected");
+                    window.FitWorkArea(area);
+                    window.Hide();
+                    Check(!window.Visible && !view.Visible, prefix + ": hidden quota child has no effective visibility");
+                    window.ShowNearTray(reopenArea);
+                    Check(window.Visible && view.Visible && window.QuotaButton.Text == QuotaPanelModel.ShowStatus,
+                        prefix + ": " + reopen + " retains quota mode through ShowNearTray");
+                    Check(window.Size == expectedSize && view.Bounds == expectedViewBounds &&
+                        expectedFooter.All(entry => entry.Key.Bounds == entry.Value),
+                        prefix + ": " + reopen + " restores viewport and footer bounds before showing");
+                    Check(!window.AutoScroll && caption.Top - view.Bottom is >= 0 && caption.Top - view.Bottom <= Scale(6) &&
+                        footer.All(control => window.ClientRectangle.Contains(control.Bounds)),
+                        prefix + ": " + reopen + " has no blank band or outer scrolling and keeps footer reachable");
+                    Check(boxes.Select(box => box.Size).SequenceEqual(cardSizes), prefix + ": " + reopen + " preserves card dimensions");
+                    Capture(reopen);
+                }
+                window.FitWorkArea(area);
                 window.QuotaButton.PerformClick();
                 Check(window.Size == originalSize && originalBounds.All(entry => entry.Key == view || entry.Key.Bounds == entry.Value),
                     prefix + ": returning to status restores every visible control bound");
                 Capture("status-return");
+                window.Hide();
+                window.ShowNearTray(area);
+                Check(window.Visible && !view.Visible && window.QuotaButton.Text == QuotaPanelModel.ShowQuotas,
+                    prefix + ": status reopening through ShowNearTray retains status mode");
+                Check(window.Size == originalSize && originalBounds.All(entry => entry.Key == view || entry.Key.Bounds == entry.Value),
+                    prefix + ": status reopening preserves the original window and visible control bounds");
+                Capture("status-reopen");
                 window.Hide();
                 return true;
 
