@@ -2278,3 +2278,33 @@ smoke의 선택 기능(`AIBURGERCLOCK_SMOKE_IMAGES`)으로 큰 화면·1280×800
 - 실제 VoiceOver 낭독과 이동([66절](#66-xai-공식-상태-카드98의-mac-전환) 참고). smoke는 링크의 접근성 속성과 누르기 동작만 검사했다.
 - 소실 시각의 재시작 보존·24시간 경계의 Mac 앱 안 확인(공통 검사의 범위).
 - 장시간 사용(실행 직후 사용자 확인만 했다). 이전 항목: MAC-01 실제 동작, 알림 배너 어두운 화면 가독성([64절](#64-086-정리) 참고).
+
+## 68. 0.8.9 정리
+
+2026-10-29 KST. 범위: **Mac만 변경**(버전·문서). 앱 코드는 바꾸지 않는다. `Mac/AiBurgerClock.Mac.csproj`의 버전(0.8.9 / 0.8.9.0 / 0.8.9.0, build 25)과 문서(`Mac/README.md`, 이 문서)만 바뀐다. 이유는 main에 병합된 **PR #106(공식 상태 정상화 알림 본문에 Provider 이름 추가)의 공통 문구**를 Mac 번들에 싣는 것이다. 알림 제목만으로는 Provider를 알기 어려웠던 경험(2026-10-28)에서 나온 변경이며, 문구는 공통 원본(`TrayPresentation.ProviderNotification`)이라 Mac 코드는 바뀌지 않았다. Windows는 2.8.6으로 같이 병합됐다(PR #107; Windows 배포·검증은 Windows 쪽 기록이다).
+
+### 기준
+| 항목 | 값 |
+|---|---|
+| main(작업 시작) | `52dfd0a`(PR #107 병합) — #106 병합 커밋 `7c165aa` 포함 |
+| #106 Mac 확인 | PR HEAD `e03a22a2e0801d9c7651b2fbd00eec650aa2572e`에서 Shared.Tests 291,077건·빌드·smoke 1회 PASS, [PR 코멘트](https://github.com/hydron75/ai-burger-clock/pull/106#issuecomment-6472780295) |
+| 버전 변경 커밋(앱 소스) | `8a9c6208c1dfe575a0084558cd77cf37ff00bd34` |
+| 도구 | SDK 10.0.403, macOS 워크로드 27.0.10742, Xcode 27.1(옵션 없는 빌드; 시작 시 새 워크로드·Xcode 지원 변화 없음 확인) |
+
+### 이 Mac에서 수행한 검증
+| 항목 | 결과 |
+|---|---|
+| **빌드 방식** | **옵션 없이** `bash Mac/build.sh`(임시 사본) 후 `bash Mac/build.sh --quit-running`(저장소 경로, 사용자 허락). `--allow-xcode-mismatch` 사용 안 함 |
+| 임시 사본 선검증 | 경고 0 / 오류 0, Shared.Tests **291,077건 PASS**, 번들 0.8.9 / 25. 전체 화면 앱을 내리고 다른 앱 창이 디스플레이를 덮지 않게 한 상태에서 `--smoke-test` **1회**: 종료 코드 0, SKIP·FAIL 없음(창을 여는 검사 포함) |
+| 저장소 경로 빌드 | 경고 0 / 오류 0, `codesign --verify --deep --strict` 통과, bundle **0.8.9 / 25**. 사용자 허락으로 실행 중이던 0.8.8 앱(PID 37754)에 종료 요청(정상 종료) 후 빌드 |
+| 번들 런타임 | `System.Private.CoreLib` 버전 10.0.1426대(10.0.14, 0.8.8과 같음) |
+| SHA-256 실행 파일 | `3c74555486cef10382d53135127583b51d0c20784595b3905a733f3a46428537` |
+| SHA-256 앱 DLL | `734acfb467f5c6952d23c6192858a0605c67c905f2494893fc76aaf817ebfaf9` (`Contents/MonoBundle/AI Burger Clock.dll`) |
+| 앱 실행 | 빌드 직후에는 앱을 실행하지 않았다. 사용자가 `open`으로 직접 실행한다 |
+
+### LaunchServices 등록 수 (임시 사본, 같은 번들 ID)
+임시 사본에서 smoke를 실행한 뒤 등록 수는 2였고, 삭제 전에 `lsregister -u "<사본>/Mac/bin/Release/net10.0-macos27.0/osx-arm64/AI Burger Clock.app"`로 해제해 1로 돌아왔다.
+
+### 수행하지 않은 검증
+- 실제 알림 센터·배너에서 새 정상화 본문(Provider 이름으로 시작)이 표시되는 모습. smoke는 합성 범위이며, 실제 정상화 알림은 공식 상태가 문제에서 돌아올 때만 나간다.
+- 새 번들의 실제 실행(사용자 실행 대기)·장시간 사용. 이전 항목: 실제 VoiceOver 낭독과 이동([66절](#66-xai-공식-상태-카드98의-mac-전환) 참고), 소실 시각의 재시작 보존·24시간 경계의 Mac 앱 안 확인, MAC-01 실제 동작, 알림 배너 어두운 화면 가독성([64절](#64-086-정리) 참고).
