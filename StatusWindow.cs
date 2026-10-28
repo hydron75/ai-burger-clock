@@ -28,6 +28,7 @@ internal sealed class StatusWindow : Form
     private readonly int fullClientHeight;
     private readonly List<Control> footerControls = new();
     private int quotaFooterOffset;
+    private bool quotaMode;
     private Rectangle? workingArea;
 
     public event EventHandler? AutoStartChanged;
@@ -107,10 +108,11 @@ internal sealed class StatusWindow : Form
         quotaButton = new Button { Text = QuotaPanelModel.ShowQuotas, Location = new Point(244, 458 + footerOffset), Size = new Size(114, 28) };
         quotaButton.Click += (_, _) =>
         {
-            quotaView.Visible = !quotaView.Visible;
-            foreach (var panel in statusPanels) panel.Visible = !quotaView.Visible;
-            titleLabel.Text = quotaView.Visible ? QuotaPanelModel.AccessibleName : StatusPanelModel.Title;
-            quotaButton.Text = quotaView.Visible ? QuotaPanelModel.ShowStatus : QuotaPanelModel.ShowQuotas;
+            quotaMode = !quotaMode;
+            quotaView.Visible = quotaMode;
+            foreach (var panel in statusPanels) panel.Visible = !quotaMode;
+            titleLabel.Text = quotaMode ? QuotaPanelModel.AccessibleName : StatusPanelModel.Title;
+            quotaButton.Text = quotaMode ? QuotaPanelModel.ShowStatus : QuotaPanelModel.ShowQuotas;
             SetQuotaCaption();
             FitWorkArea(workingArea ?? Screen.FromControl(this).WorkingArea);
         };
@@ -324,7 +326,7 @@ internal sealed class StatusWindow : Form
         int available = Math.Max(1, area.Height - (Height - ClientSize.Height));
         int gap = (int)Math.Round(6 * DeviceDpi / 96d);
         int quotaTop = timeZoneLabel.Bottom + gap;
-        bool fitQuotaFooter = quotaView.Visible && checkedLabel.Top - Math.Max(0, height - available) - gap > quotaTop;
+        bool fitQuotaFooter = quotaMode && checkedLabel.Top - Math.Max(0, height - available) - gap > quotaTop;
         ClientSize = new Size(width, Math.Min(height, available));
         if (height > available)
         {
@@ -335,7 +337,7 @@ internal sealed class StatusWindow : Form
             }
             ClientSize = new Size(width + SystemInformation.VerticalScrollBarWidth, available);
         }
-        if (quotaView.Visible)
+        if (quotaMode)
         {
             // Hidden children are not scrolled like visible status controls; restore
             // the quota origin from the unchanged header before assigning its height.
