@@ -51,6 +51,102 @@ internal sealed class TestAccountQuotaClient(Func<DateTimeOffset> clock, SmokeQu
     }
 }
 
+// Uses the current test process DPI; 96/192-DPI payloads are built separately without changing Windows settings.
+internal static class QuotaViewportUiChecks
+{
+    internal static async Task RunAsync(string? reportDirectory)
+    {
+        var now = new DateTimeOffset(2026, 9, 19, 12, 0, 0, TimeSpan.FromHours(9));
+        var client = new TestAccountQuotaClient(() => now);
+        var states = new List<QuotaState>();
+        foreach (var provider in Enum.GetValues<QuotaProvider>())
+            states.Add(new QuotaState(provider, await client.ReadAsync(provider, CancellationToken.None),
+                LastSuccessfulCheckUtc: now, NextCheckUtc: now.AddHours(1)));
+        var failures = new List<string>();
+        void Check(bool condition, string label)
+        {
+            if (!condition) failures.Add(label);
+            else Console.WriteLine("PASS: " + label);
+        }
+        foreach (bool small in new[] { false, true })
+        {
+            using var window = new StatusWindow();
+            window.WithoutAutoHide(() =>
+            {
+                window.Show();
+                int dpi = window.DeviceDpi;
+                Check(dpi > 0, $"Viewport fixture uses native {dpi} DPI");
+                int Scale(int value) => (int)Math.Round(value * window.DeviceDpi / 96d);
+                var area = new Rectangle(0, 0, Scale(1280), Scale(small ? 480 : 900));
+                window.FitWorkArea(area);
+                window.UpdateStatus(AgentSchedule.GetSnapshot(now));
+                window.UpdateQuotas(states, now);
+                string prefix = $"viewport-{dpi}dpi-{(small ? "small" : "large")}";
+                var originalSize = window.Size;
+                var originalBounds = window.Controls.Cast<Control>().ToDictionary(control => control, control => control.Bounds);
+                Capture("status");
+                window.QuotaButton.PerformClick();
+                var view = window.QuotaView;
+                var caption = window.Controls.OfType<Label>().Single(label => label.Text == QuotaPanelModel.Caption);
+                var boxes = view.Controls.OfType<Panel>().ToArray();
+                var cardSizes = boxes.Select(box => box.Size).ToArray();
+                int gap = caption.Top - view.Bottom;
+                Check(view.Top == originalBounds[view].Top, prefix + ": quota viewport preserves its header baseline");
+                Check(view.Visible && boxes.Length == 3 && boxes.Sum(box => box.Controls.OfType<QuotaBalanceBar>().Count()) == 8,
+                    prefix + ": three synthetic Providers include Gemini model weekly");
+                Check(gap >= 0 && gap <= Scale(6), prefix + ": quota bottom/caption gap is at most 6 DIP (actual=" + gap + "px)");
+                Check(window.Size == originalSize, prefix + ": quota toggle preserves window dimensions");
+                Check(view.VerticalScroll.Visible && !view.HorizontalScroll.Visible, prefix + ": quota contents retain vertical-only scrolling");
+                Capture("quota");
+                var last = boxes.Last().Controls.Cast<Control>().OrderBy(control => control.Bottom).Last();
+                view.ScrollControlIntoView(last);
+                Check(view.RectangleToScreen(view.ClientRectangle).Contains(last.RectangleToScreen(last.ClientRectangle)),
+                    prefix + ": final Gemini metadata is reachable by quota scrolling");
+                Check(boxes.Select(box => box.Size).SequenceEqual(cardSizes), prefix + ": scrolling preserves card dimensions");
+                Capture("quota-bottom");
+                var footer = window.Controls.Cast<Control>().Where(control => control is Button || control is CheckBox || control == caption || control == window.FeedbackLabel).ToArray();
+                Check(footer.All(control => window.ClientRectangle.Contains(control.Bounds)), prefix + ": footer controls remain directly reachable");
+                if (small)
+                {
+                    int smallHeight = view.Height;
+                    window.FitWorkArea(new Rectangle(0, 0, Scale(1280), Scale(900)));
+                    Check(view.Height > smallHeight, prefix + ": larger working area restores quota space");
+                    window.FitWorkArea(area);
+                    Check(view.Height == smallHeight && window.Size == originalSize,
+                        prefix + ": smaller working area restores the same quota viewport and window size");
+                }
+                window.QuotaButton.PerformClick();
+                Check(window.Size == originalSize && originalBounds.All(entry => entry.Key == view || entry.Key.Bounds == entry.Value),
+                    prefix + ": returning to status restores every visible control bound");
+                Capture("status-return");
+                window.Hide();
+                return true;
+
+                void Capture(string name)
+                {
+                    if (reportDirectory is null) return;
+                    Directory.CreateDirectory(reportDirectory);
+                    using var bitmap = new Bitmap(window.Width, window.Height);
+                    window.DrawToBitmap(bitmap, new Rectangle(Point.Empty, bitmap.Size));
+                    string path = Path.Combine(reportDirectory, prefix + "-" + name + ".png");
+                    bitmap.Save(path, System.Drawing.Imaging.ImageFormat.Png);
+                    var captionLabel = window.Controls.OfType<Label>().Single(label => label.Text ==
+                        (viewVisible() ? QuotaPanelModel.Caption : StatusPanelModel.WaitingCaption));
+                    File.WriteAllText(path + ".layout.json", System.Text.Json.JsonSerializer.Serialize(new
+                    {
+                        Dpi = window.DeviceDpi, window.Width, window.Height, Client = window.ClientSize,
+                        Quota = window.QuotaView.Bounds, Caption = captionLabel.Bounds,
+                        Gap = captionLabel.Top - window.QuotaView.Bottom,
+                        Cards = window.QuotaView.Controls.OfType<Panel>().Select(box => new { box.Name, box.Bounds }).ToArray()
+                    }));
+                    bool viewVisible() => window.QuotaView.Visible;
+                }
+            });
+        }
+        if (failures.Count > 0) throw new InvalidOperationException("Quota viewport regression: " + string.Join("; ", failures));
+    }
+}
+
 internal static class AccountQuotaUiChecks
 {
     internal static async Task RunAsync(TrayApplicationContext context, TestAccountQuotaClient client,
@@ -165,8 +261,9 @@ internal static class AccountQuotaUiChecks
             labels.Any(l => l.Text == "주간  92% 사용 · 약 2일 후 리셋"),
             "Used percentages keep shared tones while session and weekly rows use their own two-unit countdowns");
         Check(boxes.All(box => box.Controls.Cast<Control>().All(child => child.Bottom <= box.Height)) &&
-            context.StatusWindow.QuotaView.VerticalScroll.Visible && !context.StatusWindow.QuotaView.HorizontalScroll.Visible,
-            "Balance bars expand Provider cards inside the unchanged quota-only vertical viewport");
+            context.StatusWindow.QuotaView.VerticalScroll.Visible == (boxes.Max(box => box.Bottom) > context.StatusWindow.QuotaView.ClientSize.Height) &&
+            !context.StatusWindow.QuotaView.HorizontalScroll.Visible,
+            "Provider cards scroll vertically only when their content exceeds the available quota viewport");
         int Scale(int value) => (int)Math.Round(value * context.StatusWindow.QuotaView.DeviceDpi / 96.0);
         foreach (var box in boxes)
             Check(box.Controls.OfType<QuotaBalanceBar>().All(bar => bar.Left == Scale(8) && bar.Width == box.ClientSize.Width - Scale(16)),
@@ -432,8 +529,10 @@ internal static class AccountQuotaUiChecks
             context.StatusWindow.ClientSize == size,
             "Extra model-scoped quota rows scroll vertically without enlarging the popup");
         context.StatusWindow.UpdateQuotas(monitor.Snapshot().Where(s => s.Provider != QuotaProvider.Gemini).ToArray(), clock());
-        Check(context.StatusWindow.QuotaView.VerticalScroll.Visible && !context.StatusWindow.QuotaView.HorizontalScroll.Visible,
-            "Returning to two Providers retains only the vertical scrolling required by their balance bars");
+        var reducedView = context.StatusWindow.QuotaView;
+        Check(reducedView.VerticalScroll.Visible == (reducedView.Controls.OfType<Panel>().Max(box => box.Bottom) -
+                reducedView.AutoScrollPosition.Y > reducedView.ClientSize.Height) && !reducedView.HorizontalScroll.Visible,
+            "Returning to two Providers scrolls only when their cards exceed the expanded viewport");
         context.RefreshStatus(false);
         diagnostics.Phase = "quota.synthetic-held-response";
         diagnostics.Record("quota.synthetic-held-response-start");
