@@ -5,8 +5,8 @@
 범위는 **Windows만 변경(버전·문서)**입니다. 공통·Windows C#·검사·Mac 파일·의존성은 다시 고치지 않습니다.
 
 사용자는 **검증 후 같은 dist EXE 교체까지** 승인했습니다. 외부 정상 종료·실제 운영 데이터 백업과 후보 검증 뒤
-**22:04:13 KST**에 같은 dist 경로의 EXE만 2.8.5로 교체했습니다. **운영 앱 실행·운영 등록·실제 해제·시험 알림은 하지 않았습니다.**
-외부 등록 대상 확인/해제 dry-run과 앱 실행·화면 확인은 사용자 수행 대기이며 PR 병합도 사용자 결정입니다.
+**22:04:13 KST**에 같은 dist 경로의 EXE만 2.8.5로 교체했습니다. **Codex에서 운영 앱 실행·운영 등록·실제 해제·시험 알림을 하지 않았습니다.**
+이후 사용자가 외부에서 기존 등록 대상/해제 dry-run을 확인하고 앱을 실행했습니다. 트레이·상태 보기와 한도 화면의 빈 띠·스크롤·하단 컨트롤 정상은 **사용자 확인 완료**입니다. PR 병합은 사용자 결정입니다.
 
 ## 2.8.4 이후 포함하는 Windows 변경
 
@@ -89,17 +89,19 @@ Mac 전용 코드·빌드·검사도 이번 범위에서 실행하지 않습니�
 
 ## 사용자 외부 확인·실행
 
-EXE 교체를 마쳤으므로 다음 확인 도우미를 **Codex 밖**에서 실행합니다. 기존 바로가기·AUMID·CLSID·COM·자동 시작 대상과
+사용자가 다음 확인 도우미를 **Codex 밖**에서 실행했습니다. 기존 바로가기·AUMID·CLSID·COM·자동 시작 대상과
 해제 **dry-run만** 검사하며 등록/실제 해제/시험 알림/정상 앱 실행을 하지 않습니다. 경로가 같고 정상이면 재등록하지 않습니다.
 
 ~~~powershell
 & 'C:/Users/mc_bl/.codex/.chatgpt-projects/g-p-6aa5eb198fd88191b7382af0eb114af4/AiBurgerClock/artifacts/release-2.8.5-deployment-20261028/Inspect-ProductionOutsideCodex.ps1'
 ~~~
 
-기대값: `RegistrationSucceeded=True`, `RegistrationPerformed=False`, `AutoStartPathMatches=True`, `DryRunExitCode=0`, `DryRunChangedNothing=True`.
-Run 항목이 없으면 별도로 표시하고 자동으로 만들지 않습니다. 외부 실제 확인은 사용자 수행 대기입니다.
+**외부 실제 확인 완료(2026-10-28 22:59:56 KST):** 로컬 receipt에서 `RegistrationSucceeded=True`, `RegistrationPerformed=False`,
+`AutoStartRunEntryPresent=True`, `AutoStartPathMatches=True`, `DryRunExitCode=0`, `DryRunChangedNothing=True`를 대조했습니다.
+기존 바로가기 대상/AUMID/CLSID와 실제 HKCU의 AUMID/COM 대상이 같은 dist EXE를 가리키며, FileVersion 2.8.5.0·SHA-256도 위 기록과 일치합니다.
+재등록·실제 해제·시험 알림은 하지 않았습니다. 도우미의 `NormalAppLaunched=False`는 도우미 자체가 일반 앱을 시작하지 않았다는 뜻이며 이후 사용자 외부 실행과 구분합니다.
 
-확인에 성공하면 같은 외부 PowerShell에서 운영 앱을 시작합니다. 이 명령은 새 조회·캐시 쓰기·설정에 따른 실제 알림을 발생시킬 수 있습니다.
+확인에 성공한 뒤 사용자가 같은 외부 PowerShell에서 운영 앱을 시작했습니다. 이 명령은 새 조회·캐시 쓰기·설정에 따른 실제 알림을 발생시킬 수 있습니다.
 Codex에서 대신 실행하지 않습니다.
 
 ~~~powershell
@@ -108,7 +110,9 @@ Start-Process -FilePath 'C:/Users/mc_bl/.codex/.chatgpt-projects/g-p-6aa5eb198fd
 
 외부 실행 후 기대값은 단일 2.8.5 프로세스, 트레이/상태 창 정상, 큰 작업 영역에서 한도 안내 앞 여백 6 DIP,
 작은 영역의 한도 내부 스크롤·하단 접근, 기본 운영 DB/로그의 갱신입니다. 상태 보기·카드 크기/간격은 전과 같아야 합니다.
-실제 계정 값/캡처 대신 정상 여부만 기록합니다. 현재 이 외부 시작·화면 결과는 미확인입니다.
+**사용자 외부 실행·화면 확인 완료:** 사용자가 위 외부 명령으로 실행하고 트레이·상태 보기와 한도 화면의 빈 띠·스크롤·하단 컨트롤이 정상이라고 확인했습니다.
+읽기 전용 프로세스 확인에서도 같은 dist 경로의 단일 2.8.5.0 프로세스 응답과 기록된 SHA-256 일치를 대조했습니다. 사용자 화면 확인을 픽셀 수치 재측정이나 모든 창 크기 검증으로 확대하지 않습니다.
+실제 계정 값/캡처는 수집·게시하지 않았으며, 기본 운영 DB/로그의 최신 갱신 시각은 이번 추가 확인에서 읽지 않았습니다.
 
 ## 2.8.4 EXE만 복원하는 계획
 
