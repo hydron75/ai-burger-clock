@@ -528,8 +528,10 @@ internal static class AccountQuotaUiChecks
             context.StatusWindow.ClientSize == size,
             "Extra model-scoped quota rows scroll vertically without enlarging the popup");
         context.StatusWindow.UpdateQuotas(monitor.Snapshot().Where(s => s.Provider != QuotaProvider.Gemini).ToArray(), clock());
-        Check(context.StatusWindow.QuotaView.VerticalScroll.Visible && !context.StatusWindow.QuotaView.HorizontalScroll.Visible,
-            "Returning to two Providers retains only the vertical scrolling required by their balance bars");
+        var reducedView = context.StatusWindow.QuotaView;
+        Check(reducedView.VerticalScroll.Visible == (reducedView.Controls.OfType<Panel>().Max(box => box.Bottom) -
+                reducedView.AutoScrollPosition.Y > reducedView.ClientSize.Height) && !reducedView.HorizontalScroll.Visible,
+            "Returning to two Providers scrolls only when their cards exceed the expanded viewport");
         context.RefreshStatus(false);
         diagnostics.Phase = "quota.synthetic-held-response";
         diagnostics.Record("quota.synthetic-held-response-start");
