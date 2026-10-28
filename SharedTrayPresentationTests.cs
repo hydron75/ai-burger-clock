@@ -134,7 +134,16 @@ internal static class SharedTrayPresentationTests
         Check(namedStop.Title == "ChatGPT 작업 권고 변경" && namedStop.Body == stop.Body, "ChatGPT warning title preserves the original notification body");
         var recovery = TrayPresentation.ProviderNotification(ProviderKind.OpenAI, Recommendation.Go, "Fixture");
         var namedRecovery = TrayPresentation.ProviderNotification(ProviderKind.OpenAI, Recommendation.Go, "Fixture", ProviderNames.Provider);
-        Check(namedRecovery.Title == "ChatGPT 정상화" && namedRecovery.Body == recovery.Body, "ChatGPT recovery title preserves the original notification body");
+        Check(recovery == ("OpenAI 정상화", "OpenAI: 관련 서비스가 정상화되었습니다. 현재 FULL THROTTLE이므로 대규모 작업 재개 가능."),
+            "Recovery title and body default to the provider identity");
+        Check(namedRecovery == ("ChatGPT 정상화", "ChatGPT: 관련 서비스가 정상화되었습니다. 현재 FULL THROTTLE이므로 대규모 작업 재개 가능."),
+            "Recovery title and body use the host display name");
+        Check(TrayPresentation.ProviderNotification(ProviderKind.Gemini, Recommendation.Go, "ignored", ProviderNames.Provider) ==
+            ("Gemini 정상화", "Gemini: 관련 서비스가 정상화되었습니다. 현재 FULL THROTTLE이므로 대규모 작업 재개 가능."),
+            "Gemini recovery body names the provider");
+        Check(TrayPresentation.ProviderNotification(ProviderKind.Xai, Recommendation.Go, "Fixture", ProviderNames.Provider) ==
+            ("xAI 정상화", "Grok·Cursor·Grok Bot: Fixture\n현재 FULL THROTTLE이므로 대규모 작업 재개 가능."),
+            "xAI recovery title and product-scoped body stay unchanged");
 
         // Network-recovery refresh timing is checked with the shared scheduler in MonitorTests.
         return count;

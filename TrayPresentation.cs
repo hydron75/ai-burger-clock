@@ -35,7 +35,7 @@ internal static class TrayPresentation
         current == Recommendation.Go
             ? ((displayName?.Invoke(provider) ?? provider.ToString()) + " 정상화", provider == ProviderKind.Xai
                 ? "Grok·Cursor·Grok Bot: " + reason + "\n현재 FULL THROTTLE이므로 대규모 작업 재개 가능."
-                : "관련 서비스가 정상화되었습니다. 현재 FULL THROTTLE이므로 대규모 작업 재개 가능.")
+                : (displayName?.Invoke(provider) ?? provider.ToString()) + ": 관련 서비스가 정상화되었습니다. 현재 FULL THROTTLE이므로 대규모 작업 재개 가능.")
             : ((displayName?.Invoke(provider) ?? provider.ToString()) + " 작업 권고 변경",
                 $"현재 FULL THROTTLE이지만 공식 서비스 문제가 있습니다. {RecommendationPolicy.Label(current)}: 새 대형 작업을 미루세요.\n{reason}");
 
