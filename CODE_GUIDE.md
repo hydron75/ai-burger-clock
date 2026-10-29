@@ -1,5 +1,7 @@
 # 소스코드, 쉬운 말로 읽기
 
+**Windows 시간표·상태 알림 토스트 전환(Draft·미배포):** 시간표/공식 상태/공휴일과 한도에 Windows 전용 발송 요청·토스트·v2 진단을 적용합니다. Group/Header는 `status`/`시간표·상태`, `quota`/`한도`이며 상태 계열만 고정 정보/경고 이미지를 씁니다. Provider 문제·정상화 Tag는 서로 다르고 상태 계열은 11개 고정 슬롯, 한도는 개별 보관입니다. 기존 판정·문구·순서·6.5초·공휴일 4.5초·배너 종료/30초 상한과 무동작 COM은 유지합니다. 공통·Mac·버전·운영 등록·배포 EXE는 바꾸지 않습니다. [현재 계약과 배포 뒤 사용자 확인](WINDOWS_QUOTA_NOTIFICATIONS.md).
+
 **Windows 2.8.6 기준·#105/#106 병합 완료(2026-10-29 KST):** `StatusWindow`는 숨겨져도 유지하는 `quotaMode`로 재열기 전 한도 높이/하단 배치를 맞춥니다. `TrayPresentation.ProviderNotification`의 ChatGPT·Claude·Gemini 정상화 본문은 host 표시 이름으로 시작하며 xAI·제목·장애 본문·조건/간격은 그대로입니다. 이번 버전 PR은 버전 세 필드·문서만 바꾸고 C#·검사·Mac 파일을 다시 고치지 않습니다. build/publish 경고·오류 0, 준비/단일 EXE self-test 각 **291,782건**·smoke 각 **951 PASS·종료 코드 0**, PNG **44/44**·layout **38/38**은 #105 최종과 같습니다. 외부 백업 뒤 EXE만 교체했고 운영 실행·등록은 Codex에서 하지 않았습니다. 기존 등록·자동 시작 대상과 해제 dry-run 무변경은 외부에서 확인했고, 외부 실행·화면 정상은 사용자 확인입니다. [검사·소스·해시·백업·외부 명령](MAINTENANCE_2_8_6.md).
 
 **Windows 2.8.5 기준·#103 병합 완료(2026-10-28 KST):** 한도 모드의 남는 높이를 안내 바로 위까지 사용하고 작은 작업 영역의 하단 접근을 보완합니다. 상태 보기·창/카드 크기·간격·문구·공통 판정은 그대로입니다. 이번 버전 PR은 Windows 버전 세 필드·문서만 바꾸고 C#·검사·Mac 파일은 다시 고치지 않습니다. 준비/Portable publish 경고 0·오류 0, self-test 각 **291,779건**·smoke 각 **927 PASS·종료 코드 0**, PNG **34/34**·layout **28/28**은 #103과 같습니다. 외부 백업 뒤 EXE만 교체했고 기존 등록·자동 시작 대상과 해제 dry-run 무변경을 외부에서 확인했습니다. 외부 실행과 실제 화면 정상은 사용자 확인이며 Codex에서 운영 실행·등록을 하지 않았습니다. [검사·소스·해시·백업·외부 명령](MAINTENANCE_2_8_5.md).
@@ -28,7 +30,7 @@
 
 배포 당시 파일 지도는 **Windows 2.8.3·#91/#93 병합 기준**입니다. 루트·Properties C# **106개(앱 기능 49 + 검사·진단 56 + 명찰 1)**, Mac 호스트·검사 **20개**, 공통 검사 입구 **1개**로 총 **127개**이며 공통 제품 원본은 **33개 그대로**입니다. #82 뒤 2.8.1 당시에는 루트·Properties 96개(앱 기능 45 + 검사·진단 50 + 명찰 1), 전체 114개였고 #86에서 Windows 제품 파일 4개·검사 2개를 추가했습니다. #91은 공통 `QuotaLayoutKeyTests.cs`와 Windows `QuotaLayoutChecks.cs`를, #93은 Windows `ProviderBalloonChecks.cs`·`SmokeAsyncChecks.cs`를 더했습니다. Mac은 기존 17개에 #90의 알림 권한 원본·검사 2개와 #91의 `MacQuotaLayoutKeySmoke.cs` 1개를 더해 20개입니다. 이번 버전 PR이 C# 파일을 추가한 것은 아닙니다. `SharedTestSuite.cs`는 루트 검사에 포함하고 별도 입구는 `Shared.Tests/Program.cs`만 셉니다. C# 파일만 집계하므로 `Mac/tools/check-build-script.sh` 등 빌드 도구와 생성된 `bin`·`obj`·검증 `artifacts`는 제외합니다. 과거 배포 당시 검사·파일 수 기록은 위에 별도로 유지합니다.
 
-**현재 2.8.6·#105/#106 병합 파일 지도:** 루트·Properties C# **108개(앱 기능 50 + 검사·진단 57 + 명찰 1)**, Mac **20개**, 공통 검사 입구 **1개**, 합계 **129개**이며 공통 제품 원본은 **34개**입니다. #105/#106은 기존 Windows/공통 소스·검사만 수정했고 파일 수는 바뀌지 않았습니다. 이번 버전 PR도 C#·Mac 파일을 추가하거나 변경하지 않습니다.
+**현재 Windows 토스트 전환 Draft 파일 지도:** 루트·Properties C# **111개(앱 기능 52 + 검사·진단 58 + 명찰 1)**, Mac **20개**, 공통 검사 입구 **1개**, 합계 **132개**이며 공통 제품 원본은 **34개 그대로**입니다. Windows 제품 `WindowsNotificationRequest.cs`·`WindowsNotificationImages.cs` 두 개와 Windows 검사 `WindowsNotificationChecks.cs` 한 개만 더했습니다. #105/#106 병합·2.8.6 배포 당시에는 루트·Properties 108개, 전체 129개였으며 그 배포/검증 기록은 위에 유지합니다. 공통 원본 목록·Mac 파일·버전은 바꾸지 않습니다.
 
 **2.8.4·#98 병합 당시 파일 지도:** 루트·Properties C# **108개(앱 기능 50 + 검사·진단 57 + 명찰 1)**, Mac **20개**, 공통 검사 입구 **1개**, 합계 **129개**입니다. 공통 제품 원본은 **34개**입니다. #98에서 `XaiStatusFeed.cs`와 `XaiStatusTests.cs`를 더했고 Mac 전환도 병합했습니다. 이번 Windows 버전 PR은 C#·Mac 파일을 다시 고치지 않습니다. [제품 대응·정상/불확실 판정·양쪽 확인](XAI_STATUS.md).
 
@@ -358,14 +360,16 @@ Windows 내부 승인 형식은 알려진 경우만 해석합니다. 낯선 값�
 
 이름을 눌러 소스를 열 수 있습니다. 역할을 알고 필요한 파일부터 읽으면 됩니다.
 
-### 실제 앱 기능: 50개
+### 실제 앱 기능: 52개
 
 | 파일 | 맡은 일 |
 |---|---|
 | [Program.cs](Program.cs) | 실행 입구, 검사 모드 분기, 중복 실행 방지 |
 | [TrayApplicationContext.cs](TrayApplicationContext.cs) | 트레이·타이머·조회·저장·알림·절전 복귀·종료 연결 |
-| [WindowsQuotaNotificationDelivery.cs](WindowsQuotaNotificationDelivery.cs) | Windows 한도 토스트 발송·풍선 대체·차단 분리와 제목/본문/계정값 없는 256건/128KiB 발송 기록 |
+| [WindowsQuotaNotificationDelivery.cs](WindowsQuotaNotificationDelivery.cs) | Windows 모든 알림의 토스트 발송·풍선 대체·차단 분리와 제목/본문/계정값 없는 v2 256건/128KiB 발송 기록. 기존 v1은 보존 |
 | [WindowsQuotaToast.cs](WindowsQuotaToast.cs) | Windows SDK WinRT 토스트 API, MTA COM class factory·무동작 콜백·짧은 전용 활성화 수명 |
+| [WindowsNotificationRequest.cs](WindowsNotificationRequest.cs) | Windows 전용 종류/Provider·불변 발송 ID·Group/Header·Tag·정보/경고·기존 풍선 timeout 대응 |
+| [WindowsNotificationImages.cs](WindowsNotificationImages.cs) | 상태 계열의 고정 정보/경고 PNG 두 개만 지연 생성·보관. 한도 이미지 구성은 유지 |
 | [WindowsQuotaToastRegistration.cs](WindowsQuotaToastRegistration.cs) | 실제 배포 EXE의 명시적 시작 메뉴/AUMID/CLSID 등록, 소유권·경로 검증, 해제·dry-run. 자동 시작과 별개 |
 | [WindowsQuotaToastIntegration.cs](WindowsQuotaToastIntegration.cs) | 고정 TEST AUMID·CLSID만 쓰는 별도 통합 검사 명령. 정상 실행과 기본 smoke에서는 시험 알림/등록을 만들지 않음 |
 | [StatusWindow.cs](StatusWindow.cs) | 작은 상태 창, 클릭과 설정 변경 전달, 저장 오류 안내 |
@@ -413,7 +417,7 @@ Windows 내부 승인 형식은 알려진 경우만 해석합니다. 낯선 값�
 | [QuotaBarPalette.cs](QuotaBarPalette.cs) | Windows 막대의 실제 합성색 대비로 시간층 농도와 경계선 색을 선택. 고대비 시스템색·경계선 보완 |
 | [QuotaDetailPopup.cs](QuotaDetailPopup.cs) | Windows 비활성화 상세 팝업. 흰색·고정 폭·줄바꿈·포인터 근처/화면 경계 보정·긴 상세 세로 스크롤 |
 
-### 검사와 진단: 57개
+### 검사와 진단: 58개
 
 미완성 임시 코드가 아닙니다. **특별한 검사 명령 때만 쓰는 정식 검사 코드**입니다.
 
@@ -421,7 +425,8 @@ Windows 내부 승인 형식은 알려진 경우만 해석합니다. 낯선 값�
 |---|---|
 | [SelfTest.cs](SelfTest.cs) | SharedTestSuite를 한 번 실행한 뒤 Windows 전용 검사를 더해 결과 반환 |
 | [WindowsQuotaNotificationChecks.cs](WindowsQuotaNotificationChecks.cs) | 가짜 발송기·임시 파일로 토스트/풍선 대체·차단·중복 방지·비동기 실패·진단 필드/상한/쓰기 실패 323건 |
-| [WindowsQuotaToastChecks.cs](WindowsQuotaToastChecks.cs) | XML·ID 분리·배포 경로 guard·무동작 COM·수명/참조·Windows 차단 우선순위 69건. 실제 등록/알림 없이 실행 |
+| [WindowsQuotaToastChecks.cs](WindowsQuotaToastChecks.cs) | XML·ID 분리·배포 경로 guard·무동작 COM·수명/참조·Windows 차단 우선순위 70건. 실제 등록/알림 없이 실행 |
+| [WindowsNotificationChecks.cs](WindowsNotificationChecks.cs) | 모든 종류의 XML/Group/Header/Tag·정보/경고 이미지·v1 보존/v2 기록·개인정보 제외·실패 격리. smoke는 합성 시계·가짜 발송기로 4.5초/6.5초/30초·늦은 완료를 확인 |
 | [SharedTestSuite.cs](SharedTestSuite.cs) | 공통 검사 실행 목록 한 곳. Windows와 Shared.Tests가 RunAllAsync를 각각 한 번 호출 |
 | [QuotaRowTextTests.cs](QuotaRowTextTests.cs) | 이름/값/전체 읽기 분리와 이모지·결합문자 보호 중간 생략의 공통 합성 검사 |
 | [QuotaLayoutKeyTests.cs](QuotaLayoutKeyTests.cs) | 공통 레이아웃 키의 합성 검사. 구분자·Unicode·빈/긴 ID의 충돌 방지, Provider·행/박스 순서·Scope 유무 구분, 값·문구만 바뀔 때 키 유지와 문화권 독립성 |
@@ -457,7 +462,7 @@ Windows 내부 승인 형식은 알려진 경우만 해석합니다. 낯선 값�
 | [AutoStartTests.cs](AutoStartTests.cs) | 가짜 경로·승인값으로 자동 시작 판정만 검사 |
 | [SmokeTest.cs](SmokeTest.cs) | 실제 WinForms 실행 흐름의 검사 입구 |
 | [SmokeAsyncChecks.cs](SmokeAsyncChecks.cs) | Windows timer 단계 재진입 guard와 초기화 보류·해제, Gemini 응답 완료 gate·UI heartbeat의 합성 검사 |
-| [ProviderBalloonChecks.cs](ProviderBalloonChecks.cs) | 가짜 풍선 전송으로 동시 Provider 순차 전달·닫힘/클릭·최소 간격/이벤트 누락 fallback·최신 상태 재확인·공휴일 안내 충돌을 검사 |
+| [ProviderBalloonChecks.cs](ProviderBalloonChecks.cs) | 가짜 토스트 전송으로 동시 Provider 순차 전달·발송별 종료·최소 간격/30초 안전 상한·최신 상태 재확인·공휴일 충돌·문제/정상화 Tag 분리를 검사. 기존 가짜 풍선 이벤트 보조도 유지 |
 | [SmokeDiagnostics.cs](SmokeDiagnostics.cs) | smoke 실패 직전/시점의 창·버튼·Click·Provider별 가짜/monitor 조회와 경과 시간을 표준 오류의 DIAG JSON으로 기록. 일반 앱 실행 로그와 구분 |
 | [UIRegressionChecks.cs](UIRegressionChecks.cs) | 클릭·새로고침·기록·메모·통계 연결. 한도 모드에서 실제 잘림 메모 저장·박스·피드백·상태 복귀 통합 검사 |
 | [HolidayUiChecks.cs](HolidayUiChecks.cs) | 공휴일 옵션·색상·카운트다운·기록·알림 연결 |
