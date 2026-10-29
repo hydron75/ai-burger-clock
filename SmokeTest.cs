@@ -18,15 +18,20 @@ internal static class SmokeTest
         var quotaClient = new TestAccountQuotaClient(() => now, activity);
         var balloonRequests = new List<(string Title, string Body, ToolTipIcon Icon, int Timeout)>();
         var quotaRequests = new List<QuotaNotificationAlert>();
+        var toastRequests = new List<WindowsNotificationRequest>();
+        TrayApplicationContext? activeContext = null;
         long notificationClock = 0;
         using var context = new TrayApplicationContext(true, () => now, usageStore: testStore, statusHttpClient: statusHttp,
             openStatusPage: openedPages.Add, accountQuotaClient: quotaClient,
             quotaNotificationSink: quotaRequests.Add, notificationMilliseconds: () => notificationClock,
-            balloonNotificationSink: (icon, timeout) =>
+            balloonNotificationSink: (_, _) => throw new InvalidOperationException("Unexpected native balloon fallback"),
+            notificationSink: request =>
             {
-                balloonRequests.Add((icon.BalloonTipTitle, icon.BalloonTipText, icon.BalloonTipIcon, timeout));
-                ProviderBalloonChecks.CompleteNativeBalloon(icon);
+                toastRequests.Add(request);
+                balloonRequests.Add((request.Title, request.Body, request.Icon, request.BalloonTimeout));
+                activeContext?.CompleteNotification(request);
             });
+        activeContext = context;
         using var diagnostics = new SmokeDiagnostics(context, activity);
         using var timer = new Timer { Interval = 1500 };
         var notifications = new List<AgentState>();
@@ -112,6 +117,7 @@ internal static class SmokeTest
                         await UIRegressionChecks.RunAsync(context, testStore, statusHandler, reportDirectory, openedPages, now, value => now = value, diagnostics, () => notificationClock += 30000);
                         diagnostics.Phase = "provider.balloon-queue";
                         await ProviderBalloonChecks.RunAsync();
+                        await WindowsNotificationChecks.RunUiAsync();
                         diagnostics.Phase = "holiday";
                         await HolidayUiChecks.RunAsync(context, testStore, statusHandler, value => now = value, reportDirectory);
                         diagnostics.Phase = "quota";
@@ -127,6 +133,11 @@ internal static class SmokeTest
                             "Schedule, service and holiday notifications are captured without changing production balloon timeouts");
                         Check(quotaRequests.Count == 0 && balloonEvents == 0,
                             "Main smoke host keeps quota preferences OFF and emits zero native Windows notification events");
+                        Check(toastRequests.All(request => request.Group == "status" && request.Header == "시간표·상태") &&
+                            toastRequests.Any(request => request.Tag == "sched-full") && toastRequests.Any(request => request.Tag == "sched-burger"),
+                            "Main smoke submits schedule, service and holiday requests through the fake status toast sink");
+                        Check(WindowsQuotaToastSender.NativeSubmissionAttempts == 0,
+                            "Smoke completes with zero native toast submission attempts and no registration commands");
                         timer.Stop();
                         context.ExitApplication();
                         break;

@@ -7,18 +7,27 @@ namespace AiBurgerClock;
 
 internal sealed class WindowsQuotaToastSender(WindowsQuotaToastIdentity identity)
 {
+    private static long nativeSubmissionAttempts;
+    internal static long NativeSubmissionAttempts => Interlocked.Read(ref nativeSubmissionAttempts);
     private readonly Queue<ToastNotification> retained = new();
-    internal Action<QuotaNotificationAlert, int>? Failed { get; set; }
+    private readonly WindowsNotificationImages images = new();
+    internal Action<WindowsNotificationRequest, int>? Failed { get; set; }
+    internal Action<WindowsNotificationRequest>? Completed { get; set; }
 
-    internal void Send(QuotaNotificationAlert alert)
+    internal void Send(QuotaNotificationAlert alert) => Send(WindowsNotificationRequest.FromQuota(alert));
+
+    internal void Send(WindowsNotificationRequest alert)
     {
+        Interlocked.Increment(ref nativeSubmissionAttempts);
         var notifier = ToastNotificationManager.CreateToastNotifier(identity.Aumid);
         var setting = ReadSetting(() => notifier.Setting);
         CheckReady(setting, WindowsQuotaToastRegistration.IsRegistered(identity), identity.IsTest || WindowsQuotaToastActivation.ProductionActive);
         var xml = new XmlDocument();
-        xml.LoadXml(Content(alert.Title, alert.Body));
-        var toast = new ToastNotification(xml) { Tag = Guid.NewGuid().ToString("N")[..16], Group = "quota" };
-        toast.Failed += (_, args) => Failed?.Invoke(alert, args.ErrorCode.HResult);
+        xml.LoadXml(Content(alert, alert.IsQuota ? null : images.Get(alert.Icon)));
+        var toast = new ToastNotification(xml) { Tag = alert.Tag, Group = alert.Group };
+        toast.Failed += (_, args) => { Failed?.Invoke(alert, args.ErrorCode.HResult); Completed?.Invoke(alert); };
+        toast.Dismissed += (_, _) => Completed?.Invoke(alert);
+        toast.Activated += (_, _) => Completed?.Invoke(alert);
         // Keep projected event sources alive, bounded independently of Windows' history.
         retained.Enqueue(toast);
         while (retained.Count > 64) retained.Dequeue();
@@ -50,10 +59,18 @@ internal sealed class WindowsQuotaToastSender(WindowsQuotaToastIdentity identity
         catch (COMException error) when (error.HResult == unchecked((int)0x80070490)) { return null; }
     }
 
-    internal static string Content(string title, string body) =>
-        "<toast activationType=\"background\"><visual><binding template=\"ToastGeneric\"><text>" +
-        SecurityElement.Escape(title) + "</text><text>" + SecurityElement.Escape(body) +
-        "</text></binding></visual></toast>";
+    internal static string Content(string title, string body) => Content(new(WindowsQuotaNotificationKind.Recovery,
+        WindowsNotificationProvider.OpenAI, title, body));
+
+    internal static string Content(WindowsNotificationRequest alert, string? imageUri = null)
+    {
+        string image = !alert.IsQuota && Uri.TryCreate(imageUri, UriKind.Absolute, out var uri) && uri.IsFile
+            ? "<image placement=\"appLogoOverride\" src=\"" + SecurityElement.Escape(uri.AbsoluteUri) + "\"/>" : "";
+        return "<toast activationType=\"background\"><header id=\"" + alert.Group + "\" title=\"" + alert.Header +
+            "\" arguments=\"" + alert.Group + "\" activationType=\"foreground\"/><visual><binding template=\"ToastGeneric\"><text>" +
+            SecurityElement.Escape(alert.Title) + "</text><text>" + SecurityElement.Escape(alert.Body) +
+            "</text>" + image + "</binding></visual></toast>";
+    }
 }
 
 // This COM server has NO dependency on TrayApplicationContext, UsageStore,

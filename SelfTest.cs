@@ -23,7 +23,9 @@ internal static class SelfTest
             Console.WriteLine($"PASS Windows quota toast activation/registration guards: {quotaToast:N0} assertions (no persistent registration)");
             int quotaLayout = QuotaLayoutChecks.Run();
             Console.WriteLine($"PASS Windows quota layout identity: {quotaLayout:N0} assertions (off-screen, no tray or notifications)");
-            Console.WriteLine($"PASS ALL: {autoStart + shared + tray + quotaClient + warningLog + quotaNotifications + quotaToast + quotaLayout:N0} assertions");
+            int notifications = WindowsNotificationChecks.Run();
+            Console.WriteLine($"PASS Windows schedule/status/quota toast contracts: {notifications:N0} assertions (fake senders; zero native notifications)");
+            Console.WriteLine($"PASS ALL: {autoStart + shared + tray + quotaClient + warningLog + quotaNotifications + quotaToast + quotaLayout + notifications:N0} assertions");
             return 0;
         }
         catch (Exception error)

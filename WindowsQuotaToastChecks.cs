@@ -68,8 +68,10 @@ internal static class WindowsQuotaToastChecks
             "title and body survive XML escaping unchanged");
         check(root.Descendants("actions").Count() == 0 && root.Descendants("action").Count() == 0 &&
             root.Descendants("input").Count() == 0, "no button, input or click action introduced");
-        check(root.Descendants().Select(element => element.Name.LocalName).SequenceEqual(new[] { "visual", "binding", "text", "text" }),
-            "payload can only create the two original text nodes");
+        check(root.Descendants().Select(element => element.Name.LocalName).SequenceEqual(new[] { "header", "visual", "binding", "text", "text" }),
+            "quota payload adds only the header to its two original text nodes");
+        check(root.Element("header")?.Attribute("id")?.Value == "quota" && root.Element("header")?.Attribute("title")?.Value == "한도" &&
+            !root.Descendants("image").Any(), "quota header does not change its existing image composition");
         check(xml.Contains("&lt;quota&gt;", StringComparison.Ordinal) && xml.Contains("&amp;", StringComparison.Ordinal),
             "markup in existing messages cannot inject toast XML");
 
