@@ -96,7 +96,15 @@ if ($?) { Start-Process -FilePath "$burgerRepo/dist/win-x64/AI Burger Clock.exe"
 마지막 값은 도우미 자체가 정상 앱을 시작하지 않았다는 뜻이며 이후 사용자 외부 실행과 구분합니다.
 등록이 없거나 대상이 다르면 도우미가 멈춥니다. 승인 없이 재등록하지 않습니다.
 
-**현재 외부 대상 확인·운영 실행: 사용자 확인 대기.** Codex의 EXE 교체/해시 검증을 외부 Windows 등록 확인이나 운영 실행 완료로 해석하지 않습니다.
+**외부 실제 대상 확인 완료(2026-10-29 21:04:06 KST):** 외부 receipt에서 `RegistrationSucceeded=True`, `RegistrationPerformed=False`,
+`AutoStartRunEntryPresent=True`, `AutoStartPathMatches=True`, `DryRunExitCode=0`, `DryRunChangedNothing=True`를 대조했습니다.
+실제 시작 메뉴 바로가기 대상/AUMID/CLSID와 HKCU의 AUMID/COM 대상이 같은 dist EXE를 가리키며 FileVersion **2.8.7.0**과 위 SHA-256도 일치합니다.
+재등록·실제 해제·시험 알림은 하지 않았습니다. 도우미의 `NormalAppLaunched=False`와 이후 사용자의 외부 실행을 구분합니다.
+
+**사용자 외부 실행·화면 확인 완료:** 사용자가 같은 외부 PowerShell에서 앱을 실행하고 트레이·상태 보기·한도 보기가 정상이라고 확인했습니다.
+읽기 전용 프로세스 확인에서도 **21:04:07 KST 시작·같은 dist 경로·단일 2.8.7.0 프로세스·응답 정상**과 위 SHA-256 일치를 대조했습니다.
+이번 추가 확인에서 운영 DB/로그의 내용이나 최신 갱신 시각은 읽지 않았습니다.
+이 답변은 아래 실제 OS 알림의 앱 이름·두 묶음·200% 그림·보관·종료 후 본문/Header 클릭 확인을 뜻하지 않습니다. 해당 항목은 미확인으로 유지합니다.
 
 외부 실행 후 기대값은 같은 dist 경로의 단일 2.8.7 프로세스, 트레이·상태 보기·한도 보기 정상입니다.
 기본 운영 DB/로그는 `%LOCALAPPDATA%\AIBurgerClock`를 계속 쓰고 LocalCache DB는 백업으로 보존합니다.
