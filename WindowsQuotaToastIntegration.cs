@@ -33,7 +33,7 @@ internal static class WindowsQuotaToastIntegration
                 case "unregister-dry-run": WindowsQuotaToastRegistration.Unregister(id, true); return 0;
                 case "send":
                     var sender = new WindowsQuotaToastSender(id);
-                    sender.Send(new(QuotaProvider.Codex, 1, "AI Burger Clock quota TEST",
+                    sender.Send(new QuotaNotificationAlert(QuotaProvider.Codex, 1, "AI Burger Clock quota TEST",
                         "Synthetic notification: verify banner dismissal and notification-center retention.", null, null));
                     Console.WriteLine("TEST toast submitted; no account lookup.");
                     // Keep native Failed event observable briefly, not a delivery assertion delay.

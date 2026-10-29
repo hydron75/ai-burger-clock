@@ -33,9 +33,13 @@ namespace AiBurgerClock
         private readonly Dictionary<ProviderKind, ProviderAlert> pendingProviderAlerts = new();
         private long providerNotificationNotBefore;
         private long providerBalloonExpires;
+        private long providerNotificationId;
+        private WindowsNotificationRequest? fallbackNotification;
+        private bool fallbackCompletionAmbiguous;
         private readonly Func<long> notificationMilliseconds;
         private readonly Action<QuotaNotificationAlert> showQuotaNotification;
         private readonly Action<NotifyIcon, int> showBalloonNotification;
+        private readonly Action<WindowsNotificationRequest> showNotification;
         private long quotaNotificationNotBefore;
         private bool quotaRecoveryEnabled;
         private bool quotaRecoverySettingsReady;
@@ -70,21 +74,27 @@ namespace AiBurgerClock
         internal event Action<QuotaNotificationAlert>? QuotaNotificationRequested;
 
         // Normal runs use UTC now; the explicit smoke test supplies a clock without changing Windows time.
-        public TrayApplicationContext(bool startedAutomatically, Func<DateTimeOffset>? utcNow = null, bool enableServices = true, UsageStore? usageStore = null, HttpClient? statusHttpClient = null, Action<Uri>? openStatusPage = null, IAccountQuotaClient? accountQuotaClient = null, Func<long>? notificationMilliseconds = null, Action<QuotaNotificationAlert>? quotaNotificationSink = null, Action<NotifyIcon, int>? balloonNotificationSink = null)
+        public TrayApplicationContext(bool startedAutomatically, Func<DateTimeOffset>? utcNow = null, bool enableServices = true, UsageStore? usageStore = null, HttpClient? statusHttpClient = null, Action<Uri>? openStatusPage = null, IAccountQuotaClient? accountQuotaClient = null, Func<long>? notificationMilliseconds = null, Action<QuotaNotificationAlert>? quotaNotificationSink = null, Action<NotifyIcon, int>? balloonNotificationSink = null, Action<WindowsNotificationRequest>? notificationSink = null)
         {
             this.utcNow = utcNow ?? (() => DateTimeOffset.UtcNow);
             this.notificationMilliseconds = notificationMilliseconds ?? (() => Environment.TickCount64);
-            if (quotaNotificationSink is not null) showQuotaNotification = quotaNotificationSink;
+            // The native balloon API is reachable only through the error fallback.
+            showBalloonNotification = balloonNotificationSink ?? ((icon, timeout) => icon.ShowBalloonTip(timeout));
+            if (notificationSink is not null) showNotification = notificationSink;
+            else if (balloonNotificationSink is not null)
+            {
+                // Existing synthetic fixtures use this adapter; it never invokes an OS sender.
+                showNotification = ShowSyntheticNotification;
+            }
             else
             {
                 var toast = new WindowsQuotaToastSender(WindowsQuotaToastIdentity.Production);
-                var delivery = new WindowsQuotaNotificationDelivery(toast.Send, ShowNativeQuotaNotification);
+                var delivery = new WindowsQuotaNotificationDelivery(toast.Send, ShowFallbackNotification);
                 toast.Failed = delivery.RecordToastFailure;
-                showQuotaNotification = delivery.Send;
+                toast.Completed = CompleteNotification;
+                showNotification = delivery.Send;
             }
-            // Native smoke injects both transports. Production behavior is independent
-            // of service enablement and retains the original balloon durations.
-            showBalloonNotification = balloonNotificationSink ?? ((icon, timeout) => icon.ShowBalloonTip(timeout));
+            showQuotaNotification = quotaNotificationSink ?? (alert => SubmitNotification(WindowsNotificationRequest.FromQuota(alert)));
             this.openStatusPage = openStatusPage ?? ProviderStatusPages.Open;
             store = usageStore ?? new UsageStore();
             statusTicker = new StatusTicker(WindowsProviderNames.Provider, warn: new WindowsWarningLog().Write);
@@ -162,8 +172,8 @@ namespace AiBurgerClock
                     ShowWindow();
             };
             // The ShowBalloonTip timeout argument does not prove native display completion.
-            trayIcon.BalloonTipClosed += (_, _) => providerBalloonExpires = 0;
-            trayIcon.BalloonTipClicked += (_, _) => providerBalloonExpires = 0;
+            trayIcon.BalloonTipClosed += (_, _) => CompleteFallbackNotification();
+            trayIcon.BalloonTipClicked += (_, _) => CompleteFallbackNotification();
 
             timer = new Timer { Interval = 1000 };
             timer.Tick += delegate { RefreshStatus(true); };
@@ -254,7 +264,8 @@ namespace AiBurgerClock
                     // Do not immediately replace an important concurrent service alert.
                     (trayIcon.BalloonTipTitle, trayIcon.BalloonTipText) = FeedbackText.HolidayNotification(enabled, snapshot);
                     trayIcon.BalloonTipIcon = ToolTipIcon.Info;
-                    showBalloonNotification(trayIcon, 4000);
+                    SubmitNotification(new(enabled ? WindowsQuotaNotificationKind.HolidayOn : WindowsQuotaNotificationKind.HolidayOff,
+                        WindowsNotificationProvider.None, trayIcon.BalloonTipTitle, trayIcon.BalloonTipText));
                     DeferQuotaNotifications(4500);
                     DeferProviderNotifications(4500);
                 }
@@ -306,7 +317,8 @@ namespace AiBurgerClock
             bool full = snapshot.State == AgentState.FullThrottle;
             (trayIcon.BalloonTipTitle, trayIcon.BalloonTipText) = transition;
             trayIcon.BalloonTipIcon = full ? ToolTipIcon.Info : ToolTipIcon.Warning;
-            showBalloonNotification(trayIcon, 6000);
+            SubmitNotification(new(full ? WindowsQuotaNotificationKind.ScheduleFull : WindowsQuotaNotificationKind.ScheduleBurger,
+                WindowsNotificationProvider.None, transition.Title, transition.Body));
             DeferQuotaNotifications(6500);
             DeferProviderNotifications(6500);
             TransitionNotificationRequested?.Invoke(snapshot.State);
@@ -419,8 +431,11 @@ namespace AiBurgerClock
                 // Wait for Closed/Clicked, but don't block forever if Windows suppresses
                 // the balloon and emits no event. This is a fallback, not a display guarantee.
                 providerBalloonExpires = now + 30000;
+                var request = new WindowsNotificationRequest(alert.Recovered ? WindowsQuotaNotificationKind.ProviderRecovered : WindowsQuotaNotificationKind.ProviderIssue,
+                    WindowsNotificationRequest.ForProvider(provider), trayIcon.BalloonTipTitle, trayIcon.BalloonTipText);
+                providerNotificationId = request.Id;
                 DeferProviderNotifications(6500);
-                showBalloonNotification(trayIcon, 6000);
+                SubmitNotification(request);
                 DeferQuotaNotifications(6500);
                 ProviderNotificationRequested?.Invoke(provider, alert.Recommendation);
                 return; // Never submit multiple official balloons in one UI tick.
@@ -532,11 +547,51 @@ namespace AiBurgerClock
             }
         }
 
-        private void ShowNativeQuotaNotification(QuotaNotificationAlert alert)
+        private void SubmitNotification(WindowsNotificationRequest request)
         {
-            (trayIcon.BalloonTipTitle, trayIcon.BalloonTipText) = (alert.Title, alert.Body);
-            trayIcon.BalloonTipIcon = ToolTipIcon.Info;
-            showBalloonNotification(trayIcon, 6000);
+            (trayIcon.BalloonTipTitle, trayIcon.BalloonTipText) = (request.Title, request.Body);
+            trayIcon.BalloonTipIcon = request.Icon;
+            showNotification(request);
+        }
+
+        private void ShowFallbackNotification(WindowsNotificationRequest request)
+        {
+            // NotifyIcon's legacy completion event carries no submission ID. If an
+            // unclosed fallback is replaced, later raw events cannot be attributed
+            // safely. Keep the existing 30-second safety bound rather than release
+            // a newer Provider alert using an ambiguous old native event.
+            if (fallbackNotification is { } previous && previous.Id != request.Id) fallbackCompletionAmbiguous = true;
+            fallbackNotification = request;
+            (trayIcon.BalloonTipTitle, trayIcon.BalloonTipText) = (request.Title, request.Body);
+            trayIcon.BalloonTipIcon = request.Icon;
+            showBalloonNotification(trayIcon, request.BalloonTimeout);
+        }
+
+        private void ShowSyntheticNotification(WindowsNotificationRequest request)
+        {
+            fallbackNotification = request;
+            showBalloonNotification(trayIcon, request.BalloonTimeout);
+        }
+
+        private void CompleteFallbackNotification()
+        {
+            if (fallbackCompletionAmbiguous || fallbackNotification is not { } request) return;
+            fallbackNotification = null;
+            CompleteNotification(request);
+        }
+
+        internal void CompleteNotification(WindowsNotificationRequest request)
+        {
+            if (exiting || disposed || statusWindow.IsDisposed) return;
+            if (statusWindow.InvokeRequired)
+            {
+                try { statusWindow.BeginInvoke((Action)(() => CompleteNotification(request))); }
+                catch (InvalidOperationException) { }
+                return;
+            }
+            // Toast event sources retain their immutable request even when a late
+            // callback arrives after a later Provider alert has already been shown.
+            if (providerNotificationId == request.Id) providerBalloonExpires = 0;
         }
 
         private PendingQuotaAlert? CurrentPending(PendingQuotaAlert pending, QuotaReading reading,

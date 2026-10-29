@@ -39,7 +39,7 @@ internal static class WindowsQuotaNotificationChecks
 
     private static void Dispatch(Action<bool, string> check)
     {
-        QuotaNotificationAlert alert = Alert(QuotaProvider.Codex, recovery: true, earlyReset: false);
+        WindowsNotificationRequest alert = Alert(QuotaProvider.Codex, recovery: true, earlyReset: false);
         int toasts = 0, balloons = 0;
         List<WindowsQuotaNotificationDeliveryEntry> entries = [];
         var delivery = new WindowsQuotaNotificationDelivery(value => { toasts++; check(ReferenceEquals(value, alert), "toast payload unchanged"); },
@@ -98,7 +98,7 @@ internal static class WindowsQuotaNotificationChecks
 
     private static void Blocking(Action<bool, string> check)
     {
-        QuotaNotificationAlert alert = Alert(QuotaProvider.Claude, recovery: false, earlyReset: true);
+        WindowsNotificationRequest alert = Alert(QuotaProvider.Claude, recovery: false, earlyReset: true);
         foreach (WindowsToastBlockReason reason in Enum.GetValues<WindowsToastBlockReason>())
         {
             int balloons = 0;
@@ -114,7 +114,7 @@ internal static class WindowsQuotaNotificationChecks
     private static void KindsAndPrivateData(string root, Action<bool, string> check)
     {
         var defaults = new WindowsQuotaNotificationDeliveryLog();
-        check(defaults.LogPath == Path.Combine(AppPaths.DataDirectory, "logs", "quota-notification-delivery-v1.jsonl"),
+        check(defaults.LogPath == Path.Combine(AppPaths.DataDirectory, "logs", "notification-delivery-v2.jsonl"),
             "delivery audit has a separate Windows logs path");
         string directory = Path.Combine(root, "privacy");
         var log = new WindowsQuotaNotificationDeliveryLog(directory);
@@ -127,7 +127,8 @@ internal static class WindowsQuotaNotificationChecks
         delivery.Send(Alert(QuotaProvider.Gemini, recovery: true, earlyReset: true));
         check(captured.Select(entry => entry.Kind).SequenceEqual(new[] { WindowsQuotaNotificationKind.Recovery,
             WindowsQuotaNotificationKind.EarlyReset, WindowsQuotaNotificationKind.Combined }), "kind is derived without inspecting banner strings");
-        check(captured.Select(entry => entry.Provider).SequenceEqual(Enum.GetValues<QuotaProvider>()), "only stable Provider enum values are recorded");
+        check(captured.Select(entry => entry.Provider).SequenceEqual(new[] { WindowsNotificationProvider.OpenAI,
+            WindowsNotificationProvider.Claude, WindowsNotificationProvider.Gemini }), "quota providers map to the Windows-only provider domain");
         byte[] bytes = File.ReadAllBytes(log.LogPath);
         string text = new UTF8Encoding(false, true).GetString(bytes);
         check(bytes[0] == (byte)'{' && text.Count(character => character == '\n') == 3, "compact UTF-8 JSONL uses no BOM and one LF per row");
@@ -172,7 +173,7 @@ internal static class WindowsQuotaNotificationChecks
     {
         var log = new WindowsQuotaNotificationDeliveryLog(Path.Combine(root, "invalid"));
         var entry = Entry(DateTimeOffset.UtcNow);
-        check(!log.TryWrite(entry with { Provider = (QuotaProvider)42 }), "unknown Provider rejected before file creation");
+        check(!log.TryWrite(entry with { Provider = (WindowsNotificationProvider)42 }), "unknown Provider rejected before file creation");
         check(!log.TryWrite(entry with { RecordedAtUtc = DateTimeOffset.Now.ToOffset(TimeSpan.FromHours(9)) }), "non-UTC timestamp rejected");
         check(!log.TryWrite(entry with { Result = WindowsQuotaNotificationResult.Submitted, HResult = 5 }), "success cannot carry arbitrary failure metadata");
         check(!log.TryWrite(entry with { Result = WindowsQuotaNotificationResult.Blocked,
@@ -205,16 +206,16 @@ internal static class WindowsQuotaNotificationChecks
     }
 
     private static WindowsQuotaNotificationDeliveryEntry Entry(DateTimeOffset time) => new(time,
-        WindowsQuotaNotificationKind.Recovery, QuotaProvider.Codex, WindowsQuotaNotificationTransport.Toast,
+        WindowsQuotaNotificationKind.Recovery, WindowsNotificationProvider.OpenAI, WindowsQuotaNotificationTransport.Toast,
         WindowsQuotaNotificationResult.Submitted, WindowsQuotaNotificationReason.None, null);
 
-    private static QuotaNotificationAlert Alert(QuotaProvider provider, bool recovery, bool earlyReset)
+    private static WindowsNotificationRequest Alert(QuotaProvider provider, bool recovery, bool earlyReset)
     {
         const string text = "PRIVATE synthetic banner/account text 37.125% 2099-12-31T23:59:59Z";
         QuotaRecoveryAlert? recoveryAlert = recovery ? new(provider, 7, text, text, ["PRIVATE-window-id"]) : null;
         QuotaEarlyResetAlert? earlyAlert = earlyReset ? new(provider, 7, 1, DateTimeOffset.UtcNow,
             [new("PRIVATE-window-id", text, 10080, 72.125, 3.125,
                 DateTimeOffset.UtcNow.AddDays(6), DateTimeOffset.UtcNow.AddDays(7))]) : null;
-        return new(provider, 7, text, text, recoveryAlert, earlyAlert);
+        return WindowsNotificationRequest.FromQuota(new(provider, 7, text, text, recoveryAlert, earlyAlert));
     }
 }

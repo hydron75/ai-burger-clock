@@ -21,7 +21,11 @@ internal sealed class WindowsToastBlockedException(WindowsToastBlockReason reaso
         ? reason : throw new ArgumentOutOfRangeException(nameof(reason));
 }
 
-internal enum WindowsQuotaNotificationKind { Recovery, EarlyReset, Combined }
+internal enum WindowsQuotaNotificationKind
+{
+    Recovery, EarlyReset, Combined, ScheduleFull, ScheduleBurger,
+    ProviderIssue, ProviderRecovered, HolidayOn, HolidayOff
+}
 internal enum WindowsQuotaNotificationTransport { Toast, Balloon }
 internal enum WindowsQuotaNotificationResult { Submitted, Failed, Blocked }
 internal enum WindowsQuotaNotificationReason
@@ -40,7 +44,7 @@ internal enum WindowsQuotaNotificationReason
 internal sealed record WindowsQuotaNotificationDeliveryEntry(
     DateTimeOffset RecordedAtUtc,
     WindowsQuotaNotificationKind Kind,
-    QuotaProvider Provider,
+    WindowsNotificationProvider Provider,
     WindowsQuotaNotificationTransport Transport,
     WindowsQuotaNotificationResult Result,
     WindowsQuotaNotificationReason Reason,
@@ -48,12 +52,12 @@ internal sealed record WindowsQuotaNotificationDeliveryEntry(
 
 internal sealed class WindowsQuotaNotificationDelivery
 {
-    private readonly Action<QuotaNotificationAlert> toastSender;
-    private readonly Action<QuotaNotificationAlert> balloonSender;
+    private readonly Action<WindowsNotificationRequest> toastSender;
+    private readonly Action<WindowsNotificationRequest> balloonSender;
     private readonly Action<WindowsQuotaNotificationDeliveryEntry> record;
 
-    internal WindowsQuotaNotificationDelivery(Action<QuotaNotificationAlert> toastSender,
-        Action<QuotaNotificationAlert> balloonSender, Action<WindowsQuotaNotificationDeliveryEntry>? record = null)
+    internal WindowsQuotaNotificationDelivery(Action<WindowsNotificationRequest> toastSender,
+        Action<WindowsNotificationRequest> balloonSender, Action<WindowsQuotaNotificationDeliveryEntry>? record = null)
     {
         this.toastSender = toastSender ?? throw new ArgumentNullException(nameof(toastSender));
         this.balloonSender = balloonSender ?? throw new ArgumentNullException(nameof(balloonSender));
@@ -63,7 +67,7 @@ internal sealed class WindowsQuotaNotificationDelivery
     // Submitted means the synchronous API completed, not that Windows showed a
     // banner or retained it in Action Center. A candidate is never resubmitted
     // merely because no visible banner or persistence confirmation arrives.
-    internal void Send(QuotaNotificationAlert alert)
+    internal void Send(WindowsNotificationRequest alert)
     {
         ArgumentNullException.ThrowIfNull(alert);
         try
@@ -109,20 +113,17 @@ internal sealed class WindowsQuotaNotificationDelivery
 
     // An eventual Windows failure is diagnostic only: retrying/falling back at
     // this point could duplicate an already submitted notification.
-    internal void RecordToastFailure(QuotaNotificationAlert alert, int hresult) =>
+    internal void RecordToastFailure(WindowsNotificationRequest alert, int hresult) =>
         Record(alert, WindowsQuotaNotificationTransport.Toast, WindowsQuotaNotificationResult.Failed,
             WindowsQuotaNotificationReason.AsynchronousFailure, hresult);
 
-    private void Record(QuotaNotificationAlert alert, WindowsQuotaNotificationTransport transport,
+    private void Record(WindowsNotificationRequest alert, WindowsQuotaNotificationTransport transport,
         WindowsQuotaNotificationResult result, WindowsQuotaNotificationReason reason, int? hresult)
     {
         try
         {
-            if (!Enum.IsDefined(alert.Provider) || alert.Recovery is null && alert.EarlyReset is null) return;
-            WindowsQuotaNotificationKind kind = alert.Recovery is not null && alert.EarlyReset is not null
-                ? WindowsQuotaNotificationKind.Combined
-                : alert.Recovery is not null ? WindowsQuotaNotificationKind.Recovery : WindowsQuotaNotificationKind.EarlyReset;
-            record(new(DateTimeOffset.UtcNow, kind, alert.Provider, transport, result, reason, hresult));
+            if (!Enum.IsDefined(alert.Provider) || !Enum.IsDefined(alert.Kind)) return;
+            record(new(DateTimeOffset.UtcNow, alert.Kind, alert.Provider, transport, result, reason, hresult));
         }
         catch (Exception error) when (IsDeliveryFailure(error))
         {
@@ -145,7 +146,7 @@ internal sealed class WindowsQuotaNotificationDeliveryLog
     internal WindowsQuotaNotificationDeliveryLog(string? directory = null)
     {
         this.directory = directory ?? Path.Combine(AppPaths.DataDirectory, "logs");
-        LogPath = Path.Combine(this.directory, "quota-notification-delivery-v1.jsonl");
+        LogPath = Path.Combine(this.directory, "notification-delivery-v2.jsonl");
     }
 
     internal string LogPath { get; }
@@ -228,7 +229,7 @@ internal sealed class WindowsQuotaNotificationDeliveryLog
             var entry = new WindowsQuotaNotificationDeliveryEntry(
                 row.GetProperty("RecordedAtUtc").GetDateTimeOffset(),
                 ReadEnum<WindowsQuotaNotificationKind>(row, "Kind"),
-                ReadEnum<QuotaProvider>(row, "Provider"),
+                ReadProvider(row),
                 ReadEnum<WindowsQuotaNotificationTransport>(row, "Transport"),
                 ReadEnum<WindowsQuotaNotificationResult>(row, "Result"),
                 ReadEnum<WindowsQuotaNotificationReason>(row, "Reason"),
@@ -245,6 +246,16 @@ internal sealed class WindowsQuotaNotificationDeliveryLog
         value.ToString() == row.GetProperty(name).GetString()
             ? value : throw new InvalidDataException("Invalid notification delivery enum.");
 
+    private static WindowsNotificationProvider ReadProvider(JsonElement row) => row.GetProperty("Provider").GetString() switch
+    {
+        "None" => WindowsNotificationProvider.None,
+        "OpenAI" => WindowsNotificationProvider.OpenAI,
+        "Claude" => WindowsNotificationProvider.Claude,
+        "Gemini" => WindowsNotificationProvider.Gemini,
+        "xAI" => WindowsNotificationProvider.Xai,
+        _ => throw new InvalidDataException("Invalid notification Provider.")
+    };
+
     private static byte[] Serialize(IEnumerable<WindowsQuotaNotificationDeliveryEntry> entries)
     {
         using MemoryStream stream = new();
@@ -255,7 +266,7 @@ internal sealed class WindowsQuotaNotificationDeliveryLog
                 writer.WriteStartObject();
                 writer.WriteString("RecordedAtUtc", entry.RecordedAtUtc);
                 writer.WriteString("Kind", entry.Kind.ToString());
-                writer.WriteString("Provider", entry.Provider.ToString());
+                writer.WriteString("Provider", entry.Provider == WindowsNotificationProvider.Xai ? "xAI" : entry.Provider.ToString());
                 writer.WriteString("Transport", entry.Transport.ToString());
                 writer.WriteString("Result", entry.Result.ToString());
                 writer.WriteString("Reason", entry.Reason.ToString());
@@ -271,6 +282,14 @@ internal sealed class WindowsQuotaNotificationDeliveryLog
     private static bool Valid(WindowsQuotaNotificationDeliveryEntry? entry) => entry is not null &&
         entry.RecordedAtUtc != default && entry.RecordedAtUtc.Offset == TimeSpan.Zero &&
         Enum.IsDefined(entry.Kind) && Enum.IsDefined(entry.Provider) && Enum.IsDefined(entry.Transport) &&
+        (entry.Kind switch
+        {
+            WindowsQuotaNotificationKind.ScheduleFull or WindowsQuotaNotificationKind.ScheduleBurger or
+                WindowsQuotaNotificationKind.HolidayOn or WindowsQuotaNotificationKind.HolidayOff => entry.Provider == WindowsNotificationProvider.None,
+            WindowsQuotaNotificationKind.Recovery or WindowsQuotaNotificationKind.EarlyReset or WindowsQuotaNotificationKind.Combined =>
+                entry.Provider is WindowsNotificationProvider.OpenAI or WindowsNotificationProvider.Claude or WindowsNotificationProvider.Gemini,
+            _ => entry.Provider != WindowsNotificationProvider.None
+        }) &&
         Enum.IsDefined(entry.Result) && Enum.IsDefined(entry.Reason) && (entry.Result switch
         {
             WindowsQuotaNotificationResult.Submitted => entry.Reason == WindowsQuotaNotificationReason.None && entry.HResult is null,

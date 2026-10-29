@@ -2,7 +2,7 @@ using System.Reflection;
 
 namespace AiBurgerClock;
 
-// Windows-only smoke: synthetic status decisions and fake balloon transport.
+// Windows-only smoke: synthetic status decisions and fake toast transport.
 internal static class ProviderBalloonChecks
 {
     // Fake transports explicitly complete their native lifecycle instead of using
@@ -21,14 +21,19 @@ internal static class ProviderBalloonChecks
         var now = new DateTimeOffset(2026, 9, 19, 5, 0, 0, TimeSpan.Zero);
         long milliseconds = 0;
         var sent = new List<(long At, string Title, string Body, ToolTipIcon Icon, int Timeout)>();
+        var requests = new List<WindowsNotificationRequest>();
         var events = new List<ProviderKind>();
         try
         {
             using var context = new TrayApplicationContext(true, () => now, enableServices: false,
                 usageStore: new UsageStore(Path.Combine(directory, "synthetic.db")),
                 notificationMilliseconds: () => milliseconds, quotaNotificationSink: _ => throw new InvalidOperationException("Unexpected quota send"),
-                balloonNotificationSink: (icon, timeout) => sent.Add((milliseconds, icon.BalloonTipTitle,
-                    icon.BalloonTipText, icon.BalloonTipIcon, timeout)));
+                balloonNotificationSink: (_, _) => throw new InvalidOperationException("Unexpected native fallback"),
+                notificationSink: request =>
+                {
+                    requests.Add(request);
+                    sent.Add((milliseconds, request.Title, request.Body, request.Icon, request.BalloonTimeout));
+                });
             await context.Initialization;
             // Own the test clock and decisions; the product timer must not inject UNKNOWN snapshots.
             var timer = (System.Windows.Forms.Timer)typeof(TrayApplicationContext)
@@ -36,7 +41,7 @@ internal static class ProviderBalloonChecks
             timer.Stop();
             context.ProviderNotificationRequested += (provider, _) => events.Add(provider);
             var apply = typeof(TrayApplicationContext).GetMethod("UpdateProviderDisplay", BindingFlags.Instance | BindingFlags.NonPublic)!;
-            void CloseBalloon() => CompleteNativeBalloon(context.TrayIcon);
+            void CloseBalloon() => context.CompleteNotification(requests[^1]);
             var ticker = new StatusTicker(WindowsProviderNames.Provider);
             var schedule = AgentSchedule.GetSnapshot(now, false);
             ProviderStatus[] States(params OfficialStatus[] statuses) => Enum.GetValues<ProviderKind>()
@@ -60,11 +65,14 @@ internal static class ProviderBalloonChecks
             Apply(outages);
             Check(sent.Count == 2 && events.SequenceEqual([ProviderKind.OpenAI, ProviderKind.Claude]),
                 "Native balloon completion releases the next Provider in the original order");
-            CompleteNativeBalloon(context.TrayIcon, clicked: true);
+            context.CompleteNotification(requests[0]);
             milliseconds = 12999;
             Apply(outages);
-            Check(sent.Count == 2, "Early completion still preserves the explicit 6.5-second minimum spacing");
+            Check(sent.Count == 2, "An old completion cannot bypass the 6.5-second minimum spacing");
             milliseconds = 13000;
+            Apply(outages);
+            Check(sent.Count == 2, "A late completion from the first submission cannot release the second Provider");
+            context.CompleteNotification(requests[1]);
             Apply(outages);
             Check(sent.Count == 3 && events[^1] == ProviderKind.Gemini, "Third Provider retains its original queue position");
             CloseBalloon();
@@ -84,6 +92,9 @@ internal static class ProviderBalloonChecks
             Apply(healthy);
             Check(sent.Count == 5 && sent[^1].Title == "ChatGPT 정상화" && sent[^1].Icon == ToolTipIcon.Info,
                 "A missing native close event has a bounded 30-second fallback instead of blocking the queue forever");
+            Check(requests[0].Tag == "svc-openai-issue" && requests[4].Tag == "svc-openai-recovered" &&
+                requests[0].Group == requests[4].Group && requests.All(request => request.Header == "시간표·상태"),
+                "Provider issue and recovery use independent fixed tags under the status header");
             var newer = States(OfficialStatus.Operational, OfficialStatus.Unknown, OfficialStatus.Degraded, OfficialStatus.Unknown);
             Apply(newer);
             CloseBalloon();
