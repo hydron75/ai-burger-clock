@@ -35,6 +35,7 @@ namespace AiBurgerClock
         private long providerBalloonExpires;
         private long providerNotificationId;
         private WindowsNotificationRequest? fallbackNotification;
+        private bool fallbackCompletionAmbiguous;
         private readonly Func<long> notificationMilliseconds;
         private readonly Action<QuotaNotificationAlert> showQuotaNotification;
         private readonly Action<NotifyIcon, int> showBalloonNotification;
@@ -555,6 +556,11 @@ namespace AiBurgerClock
 
         private void ShowFallbackNotification(WindowsNotificationRequest request)
         {
+            // NotifyIcon's legacy completion event carries no submission ID. If an
+            // unclosed fallback is replaced, later raw events cannot be attributed
+            // safely. Keep the existing 30-second safety bound rather than release
+            // a newer Provider alert using an ambiguous old native event.
+            if (fallbackNotification is { } previous && previous.Id != request.Id) fallbackCompletionAmbiguous = true;
             fallbackNotification = request;
             (trayIcon.BalloonTipTitle, trayIcon.BalloonTipText) = (request.Title, request.Body);
             trayIcon.BalloonTipIcon = request.Icon;
@@ -569,7 +575,7 @@ namespace AiBurgerClock
 
         private void CompleteFallbackNotification()
         {
-            if (fallbackNotification is not { } request) return;
+            if (fallbackCompletionAmbiguous || fallbackNotification is not { } request) return;
             fallbackNotification = null;
             CompleteNotification(request);
         }

@@ -150,10 +150,11 @@ internal static class WindowsNotificationChecks
             var now = new DateTimeOffset(2026, 9, 19, 5, 0, 0, TimeSpan.Zero);
             long milliseconds = 0;
             var requests = new List<WindowsNotificationRequest>();
+            int fallbackCalls = 0;
             using var context = new TrayApplicationContext(true, () => now, enableServices: false,
                 usageStore: new UsageStore(Path.Combine(directory, "synthetic.db")), notificationMilliseconds: () => milliseconds,
                 quotaNotificationSink: _ => throw new InvalidOperationException("Unexpected quota request"),
-                balloonNotificationSink: (_, _) => throw new InvalidOperationException("Unexpected OS fallback"), notificationSink: requests.Add);
+                balloonNotificationSink: (_, _) => fallbackCalls++, notificationSink: requests.Add);
             await context.Initialization;
             _ = context.StatusWindow.Handle;
             var timer = (System.Windows.Forms.Timer)typeof(TrayApplicationContext).GetField("timer",
@@ -217,6 +218,23 @@ internal static class WindowsNotificationChecks
             milliseconds = 47500;
             Apply(States(OfficialStatus.Operational));
             Check(requests.Count == 5, "The next pending request submits at exactly 6.5 seconds after an early completion");
+            Check(fallbackCalls == 0, "Normal status dispatch makes zero balloon calls");
+            var fallback = typeof(TrayApplicationContext).GetMethod("ShowFallbackNotification",
+                System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
+            fallback.Invoke(context, [first]);
+            ProviderBalloonChecks.CompleteNativeBalloon(context.TrayIcon);
+            Apply(States(OfficialStatus.Degraded));
+            milliseconds = 54000;
+            Apply(States(OfficialStatus.Degraded));
+            Check(requests.Count == 5, "A late native fallback completion cannot release a newer toast's banner wait");
+            fallback.Invoke(context, [first]);
+            fallback.Invoke(context, [requests[^1]]);
+            ProviderBalloonChecks.CompleteNativeBalloon(context.TrayIcon);
+            Apply(States(OfficialStatus.Degraded));
+            Check(requests.Count == 5 && fallbackCalls == 3, "Overlapping fallback events without a submission ID are ignored instead of releasing the wrong request");
+            milliseconds = 77500;
+            Apply(States(OfficialStatus.Degraded));
+            Check(requests.Count == 6, "An ambiguous fallback completion still respects the unchanged 30-second safety upper bound");
             Check(WindowsQuotaToastSender.NativeSubmissionAttempts == 0, "UI notification fixtures make zero native toast API attempts");
         }
         finally { Directory.Delete(directory, recursive: true); }
