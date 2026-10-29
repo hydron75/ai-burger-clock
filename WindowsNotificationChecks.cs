@@ -156,6 +156,10 @@ internal static class WindowsNotificationChecks
                 quotaNotificationSink: _ => throw new InvalidOperationException("Unexpected quota request"),
                 balloonNotificationSink: (_, _) => fallbackCalls++, notificationSink: requests.Add);
             await context.Initialization;
+            // Services are disabled in this fixture. Model completed settings load,
+            // as the existing holiday fixture does, without starting any monitors.
+            typeof(TrayApplicationContext).GetField("holidaySettingsReady",
+                System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.SetValue(context, true);
             _ = context.StatusWindow.Handle;
             var timer = (System.Windows.Forms.Timer)typeof(TrayApplicationContext).GetField("timer",
                 System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.GetValue(context)!;
@@ -195,7 +199,7 @@ internal static class WindowsNotificationChecks
             Apply(States(OfficialStatus.Operational));
             milliseconds = 34499;
             Apply(States(OfficialStatus.Operational));
-            Check(requests.Count == 2, "An undisclosed banner still holds the Provider queue until the 30-second safety boundary");
+            Check(requests.Count == 2, "An uncompleted banner still holds the Provider queue until the 30-second safety boundary");
             milliseconds = 34500;
             Apply(States(OfficialStatus.Operational));
             Check(requests.Count == 3 && requests[^1].Kind == WindowsQuotaNotificationKind.ProviderRecovered,
