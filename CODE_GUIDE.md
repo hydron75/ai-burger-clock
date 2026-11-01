@@ -1,5 +1,7 @@
 # 소스코드, 쉬운 말로 읽기
 
+**Windows 2.8.8 기준·#111 병합 완료(2026-11-02 KST):** Windows 전용 `WindowsQuotaExport*`는 기본 꺼짐의 모바일 사이트 한도 송신기·설정·자격 증명·허용 필드 JSON을 맡습니다. 기존 모니터의 실제 완료를 Windows 관찰기로 구분하며 공통 원본·조회/알림 기준은 그대로입니다. 이번 버전 PR은 Windows 버전 세 필드와 문서만 변경합니다. 외부 백업과 준비/단일 EXE self-test 각 **292,188건·smoke 각 990 PASS·종료 코드 0** 뒤 같은 dist EXE만 교체했습니다. PNG **45/45**·layout **38/38**은 #111과 같으며 외부 receipt로 기존 등록·자동 시작 대상/해제 dry-run 불변을 대조했습니다. 외부 실행·트레이·상태/한도 보기·새 메뉴 기본 꺼짐은 사용자 확인이며 실제 사이트 연결은 미실행입니다. 운영 실행·등록은 사용자 외부 수행이고 실제 사이트 연결은 별도 3단계입니다. [검사·EXE·백업·외부 명령·실제 연결 절차](MAINTENANCE_2_8_8.md), [송신 계약](WINDOWS_QUOTA_EXPORT.md). 아래 이전 버전 기록은 당시 기준으로 유지합니다.
+
 **Windows 2.8.7 기준·#109 병합 완료(2026-10-29 KST):** 시간표/공식 상태/공휴일과 한도에 Windows 전용 발송 요청·토스트·v2 진단을 적용합니다. Group/Header는 `status`/`시간표·상태`, `quota`/`한도`이며 상태 계열만 고정 정보/경고 이미지를 씁니다. Provider 문제·정상화 Tag는 서로 다르고 상태 계열은 11개 고정 슬롯, 한도는 개별 보관입니다. 기존 판정·문구·순서·6.5초·공휴일 4.5초·배너 종료/30초 상한과 무동작 COM은 유지합니다. 이번 버전 PR은 Windows 버전 세 필드·문서만 바꾸며 C#·공통·Mac·운영 등록은 유지합니다. [현재 알림 계약](WINDOWS_QUOTA_NOTIFICATIONS.md), [2.8.7 검사·해시·백업·외부 명령·사용자 확인 항목](MAINTENANCE_2_8_7.md). 준비/Portable publish 경고·오류 0, self-test 각 **291,988건**·smoke 각 **969 PASS·종료 코드 0**, PNG **44/44**·layout **38/38**은 #109와 같습니다. 외부 백업 뒤 같은 EXE만 교체했고, 기존 등록·자동 시작 대상/해제 dry-run 무변경을 외부 receipt로 대조했습니다. 외부 실행·트레이·상태 보기·한도 보기 정상은 사용자 확인이며 실제 OS 알림 표시·보관·클릭은 미확인입니다.
 
 **Windows 2.8.6 기준·#105/#106 병합 완료(2026-10-29 KST):** `StatusWindow`는 숨겨져도 유지하는 `quotaMode`로 재열기 전 한도 높이/하단 배치를 맞춥니다. `TrayPresentation.ProviderNotification`의 ChatGPT·Claude·Gemini 정상화 본문은 host 표시 이름으로 시작하며 xAI·제목·장애 본문·조건/간격은 그대로입니다. 이번 버전 PR은 버전 세 필드·문서만 바꾸고 C#·검사·Mac 파일을 다시 고치지 않습니다. build/publish 경고·오류 0, 준비/단일 EXE self-test 각 **291,782건**·smoke 각 **951 PASS·종료 코드 0**, PNG **44/44**·layout **38/38**은 #105 최종과 같습니다. 외부 백업 뒤 EXE만 교체했고 운영 실행·등록은 Codex에서 하지 않았습니다. 기존 등록·자동 시작 대상과 해제 dry-run 무변경은 외부에서 확인했고, 외부 실행·화면 정상은 사용자 확인입니다. [검사·소스·해시·백업·외부 명령](MAINTENANCE_2_8_6.md).
@@ -30,7 +32,7 @@
 
 배포 당시 파일 지도는 **Windows 2.8.3·#91/#93 병합 기준**입니다. 루트·Properties C# **106개(앱 기능 49 + 검사·진단 56 + 명찰 1)**, Mac 호스트·검사 **20개**, 공통 검사 입구 **1개**로 총 **127개**이며 공통 제품 원본은 **33개 그대로**입니다. #82 뒤 2.8.1 당시에는 루트·Properties 96개(앱 기능 45 + 검사·진단 50 + 명찰 1), 전체 114개였고 #86에서 Windows 제품 파일 4개·검사 2개를 추가했습니다. #91은 공통 `QuotaLayoutKeyTests.cs`와 Windows `QuotaLayoutChecks.cs`를, #93은 Windows `ProviderBalloonChecks.cs`·`SmokeAsyncChecks.cs`를 더했습니다. Mac은 기존 17개에 #90의 알림 권한 원본·검사 2개와 #91의 `MacQuotaLayoutKeySmoke.cs` 1개를 더해 20개입니다. 이번 버전 PR이 C# 파일을 추가한 것은 아닙니다. `SharedTestSuite.cs`는 루트 검사에 포함하고 별도 입구는 `Shared.Tests/Program.cs`만 셉니다. C# 파일만 집계하므로 `Mac/tools/check-build-script.sh` 등 빌드 도구와 생성된 `bin`·`obj`·검증 `artifacts`는 제외합니다. 과거 배포 당시 검사·파일 수 기록은 위에 별도로 유지합니다.
 
-**현재 Windows 2.8.7 파일 지도:** 루트·Properties C# **111개(앱 기능 52 + 검사·진단 58 + 명찰 1)**, Mac **20개**, 공통 검사 입구 **1개**, 합계 **132개**이며 공통 제품 원본은 **34개 그대로**입니다. #109가 Windows 제품 `WindowsNotificationRequest.cs`·`WindowsNotificationImages.cs` 두 개와 Windows 검사 `WindowsNotificationChecks.cs` 한 개를 더했습니다. #105/#106 병합·2.8.6 배포 당시에는 루트·Properties 108개, 전체 129개였으며 그 배포/검증 기록은 위에 유지합니다. 이번 버전 PR은 C#·공통 원본 목록·Mac 파일을 바꾸지 않습니다.
+**이전 Windows 2.8.7 배포 당시 파일 지도(보존):** 루트·Properties C# **111개(앱 기능 52 + 검사·진단 58 + 명찰 1)**, Mac **20개**, 공통 검사 입구 **1개**, 합계 **132개**이며 공통 제품 원본은 **34개 그대로**입니다. #109가 Windows 제품 `WindowsNotificationRequest.cs`·`WindowsNotificationImages.cs` 두 개와 Windows 검사 `WindowsNotificationChecks.cs` 한 개를 더했습니다. #105/#106 병합·2.8.6 배포 당시에는 루트·Properties 108개, 전체 129개였으며 그 배포/검증 기록은 위에 유지합니다. 이번 버전 PR은 C#·공통 원본 목록·Mac 파일을 바꾸지 않습니다.
 
 **2.8.4·#98 병합 당시 파일 지도:** 루트·Properties C# **108개(앱 기능 50 + 검사·진단 57 + 명찰 1)**, Mac **20개**, 공통 검사 입구 **1개**, 합계 **129개**입니다. 공통 제품 원본은 **34개**입니다. #98에서 `XaiStatusFeed.cs`와 `XaiStatusTests.cs`를 더했고 Mac 전환도 병합했습니다. 이번 Windows 버전 PR은 C#·Mac 파일을 다시 고치지 않습니다. [제품 대응·정상/불확실 판정·양쪽 확인](XAI_STATUS.md).
 
@@ -62,7 +64,7 @@
 
 ## 1. 작은 안내소라고 생각해 보세요
 
-**다음 Windows Draft(미배포)의 파일 지도:** Windows 제품 6개와 검사 2개를 추가해 루트·Properties C# **119개(앱 기능 58 + 검사·진단 60 + 명찰 1)**, Mac **20개**, 공통 검사 입구 **1개**, 합계 **140개**입니다. 공통 제품 원본 **34개**는 그대로입니다. `WindowsQuotaExport*`만 Windows에서 컴파일하며, 위 2.8.7 배포 당시 파일 수·검증 기록과 구분합니다. [수신 계약·콜백/백그라운드 분리](WINDOWS_QUOTA_EXPORT.md).
+**현재 Windows 2.8.8 파일 지도:** #111이 Windows 제품 6개와 검사 2개를 추가해 루트·Properties C# **119개(앱 기능 58 + 검사·진단 60 + 명찰 1)**, Mac **20개**, 공통 검사 입구 **1개**, 합계 **140개**입니다. 공통 제품 원본 **34개**는 그대로입니다. `WindowsQuotaExport*`만 Windows에서 컴파일하며, 위 2.8.7 배포 당시 파일 수·검증 기록과 구분합니다. 이번 버전 PR은 C# 파일을 추가/수정하지 않습니다. [수신 계약·콜백/백그라운드 분리](WINDOWS_QUOTA_EXPORT.md).
 
 이 앱에는 다섯 가지 역할이 있습니다.
 
