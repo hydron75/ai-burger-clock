@@ -57,6 +57,10 @@ namespace AiBurgerClock
         private readonly HttpClient? ownedHttpClient; // Null when the caller supplied the client.
         private readonly StatusMonitor? monitor;
         private readonly AccountQuotaMonitor? quotaMonitor;
+        private readonly WindowsQuotaExportService mobileExport;
+        private readonly WindowsQuotaExportBridge? mobileExportBridge;
+        private readonly ToolStripMenuItem mobileExportMenuItem;
+        private WindowsQuotaExportWindow? mobileExportWindow;
         private StatisticsWindow? statisticsWindow;
         private readonly HashSet<Task> pendingWrites = new();
         private readonly StatusTicker statusTicker;
@@ -74,7 +78,7 @@ namespace AiBurgerClock
         internal event Action<QuotaNotificationAlert>? QuotaNotificationRequested;
 
         // Normal runs use UTC now; the explicit smoke test supplies a clock without changing Windows time.
-        public TrayApplicationContext(bool startedAutomatically, Func<DateTimeOffset>? utcNow = null, bool enableServices = true, UsageStore? usageStore = null, HttpClient? statusHttpClient = null, Action<Uri>? openStatusPage = null, IAccountQuotaClient? accountQuotaClient = null, Func<long>? notificationMilliseconds = null, Action<QuotaNotificationAlert>? quotaNotificationSink = null, Action<NotifyIcon, int>? balloonNotificationSink = null, Action<WindowsNotificationRequest>? notificationSink = null)
+        public TrayApplicationContext(bool startedAutomatically, Func<DateTimeOffset>? utcNow = null, bool enableServices = true, UsageStore? usageStore = null, HttpClient? statusHttpClient = null, Action<Uri>? openStatusPage = null, IAccountQuotaClient? accountQuotaClient = null, Func<long>? notificationMilliseconds = null, Action<QuotaNotificationAlert>? quotaNotificationSink = null, Action<NotifyIcon, int>? balloonNotificationSink = null, Action<WindowsNotificationRequest>? notificationSink = null, WindowsQuotaExportService? mobileExportService = null)
         {
             this.utcNow = utcNow ?? (() => DateTimeOffset.UtcNow);
             this.notificationMilliseconds = notificationMilliseconds ?? (() => Environment.TickCount64);
@@ -125,6 +129,8 @@ namespace AiBurgerClock
                 Enabled = false, ToolTipText = QuotaEarlyResetText.MenuDetail
             };
             quotaEarlyResetMenuItem.Click += async (_, _) => await SetQuotaEarlyResetNotificationsAsync(!quotaEarlyResetEnabled);
+            mobileExportMenuItem = new ToolStripMenuItem(WindowsQuotaExportWindow.MenuLabel);
+            mobileExportMenuItem.Click += (_, _) => ShowMobileExport();
             ToolStripMenuItem exitItem = new ToolStripMenuItem("종료");
 
             showItem.Click += delegate { ShowWindow(); };
@@ -154,6 +160,7 @@ namespace AiBurgerClock
             menu.Items.Add(quotaEarlyResetMenuItem);
             menu.Items.Add(autoStartMenuItem);
             menu.Items.Add(holidayMenuItem);
+            menu.Items.Add(mobileExportMenuItem);
             menu.Items.Add(new ToolStripSeparator());
             menu.Items.Add(exitItem);
             menu.ShowItemToolTips = true;
@@ -176,7 +183,6 @@ namespace AiBurgerClock
             trayIcon.BalloonTipClicked += (_, _) => CompleteFallbackNotification();
 
             timer = new Timer { Interval = 1000 };
-            timer.Tick += delegate { RefreshStatus(true); };
 
             if (enableServices)
             {
@@ -195,6 +201,14 @@ namespace AiBurgerClock
                 networkRefresh = new NetworkRefreshScheduler(() => RefreshAll(queueWhileRefreshing: true));
                 NetworkChange.NetworkAvailabilityChanged += OnNetworkAvailabilityChanged;
             }
+            var exportCredentials = new WindowsQuotaExportCredentials();
+            mobileExport = mobileExportService ?? new WindowsQuotaExportService(
+                new WindowsQuotaExportSettingsStore(Path.Combine(Path.GetDirectoryName(Path.GetFullPath(store.DatabasePath))!, WindowsQuotaExportSettingsStore.FileName)),
+                exportCredentials, new WindowsQuotaExportTransport(exportCredentials),
+                () => quotaMonitor?.Snapshot() ?? Enum.GetValues<QuotaProvider>().Select(p => new QuotaState(p)).ToArray(),
+                typeof(TrayApplicationContext).Assembly.GetName().Version!.ToString(3));
+            if (quotaMonitor is not null) mobileExportBridge = new(quotaMonitor, mobileExport.Completed);
+            timer.Tick += delegate { RefreshStatus(true); mobileExport.Tick(); };
             RefreshAutoStartChecks();
             RefreshStatus(false);
             timer.Start();
@@ -205,6 +219,15 @@ namespace AiBurgerClock
         }
 
         private ScheduleSnapshot GetSchedule(DateTimeOffset instant) => AgentSchedule.GetSnapshot(instant, holidayAdjustmentEnabled);
+
+        private void ShowMobileExport()
+        {
+            if (exiting || disposed) return;
+            if (mobileExportWindow is null || mobileExportWindow.IsDisposed)
+                mobileExportWindow = new WindowsQuotaExportWindow(mobileExport);
+            mobileExportWindow.Show();
+            mobileExportWindow.Activate();
+        }
 
         private async Task InitializeServicesAsync(bool enableServices)
         {
@@ -861,6 +884,9 @@ namespace AiBurgerClock
         {
             if (exiting) return;
             exiting = true;
+            mobileExportBridge?.Dispose();
+            mobileExport.Stop();
+            mobileExportWindow?.Close();
             pendingQuotaAlerts.Clear();
             pendingProviderAlerts.Clear();
             Interlocked.Increment(ref quotaNotificationEpoch);
@@ -886,6 +912,7 @@ namespace AiBurgerClock
         internal StatusMonitor? ProviderMonitor => monitor;
         internal AccountQuotaMonitor? QuotaMonitor => quotaMonitor;
         internal Task Initialization => initialization;
+        internal ToolStripMenuItem MobileExportMenuItem => mobileExportMenuItem;
         internal bool HolidayAdjustmentEnabled => holidayAdjustmentEnabled;
         internal ToolStripMenuItem HolidayMenuItem => holidayMenuItem;
         internal TrayAppearance? CurrentAppearance => currentAppearance;
@@ -901,6 +928,9 @@ namespace AiBurgerClock
             if (disposing && !disposed)
             {
                 disposed = true;
+                mobileExportBridge?.Dispose();
+                mobileExport.Dispose();
+                mobileExportWindow?.Dispose();
                 if (monitor is not null)
                 {
                     monitor.Changed -= OnProviderChanged;
