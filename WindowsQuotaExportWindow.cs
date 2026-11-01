@@ -19,6 +19,7 @@ internal sealed class WindowsQuotaExportWindow : Form
 
     internal WindowsQuotaExportWindow(WindowsQuotaExportService service)
     {
+        SuspendLayout();
         this.service = service;
         Text = "모바일 사이트 연동";
         AutoScaleDimensions = new SizeF(96, 96);
@@ -59,8 +60,13 @@ internal sealed class WindowsQuotaExportWindow : Form
         Shown += async (_, _) =>
         {
             var area = Screen.FromControl(this).WorkingArea;
+            // Form client dimensions assigned during construction can remain at 96-DPI
+            // pixels even after the child controls have scaled. Size from DIPs explicitly.
+            var desired = SizeFromClientSize(new Size((int)Math.Round(490 * DeviceDpi / 96d),
+                (int)Math.Round(430 * DeviceDpi / 96d)));
             MinimumSize = new Size(Math.Min(MinimumSize.Width, area.Width), Math.Min(MinimumSize.Height, area.Height));
-            Size = new Size(Math.Min(Width, area.Width), Math.Min(Height, area.Height));
+            Size = new Size(Math.Min(desired.Width, area.Width), Math.Min(desired.Height, area.Height));
+            Location = new Point(area.Left + (area.Width - Width) / 2, area.Top + (area.Height - Height) / 2);
             await service.Initialization;
             if (IsDisposed) return;
             enabled.Checked = service.Status.Enabled; site.Text = service.Status.SiteUrl;
@@ -70,6 +76,7 @@ internal sealed class WindowsQuotaExportWindow : Form
         };
         service.Changed += OnServiceChanged;
         UpdateButtons(); UpdateStatus();
+        ResumeLayout(false);
     }
 
     private void Edited() { if (!loading) { dirty = true; feedback.Text = "변경한 내용은 저장 후 적용됩니다. 테스트 전송도 먼저 저장해 주세요."; UpdateButtons(); } }

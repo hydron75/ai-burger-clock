@@ -40,6 +40,16 @@ internal static class WindowsQuotaExportUiChecks
         using var window = Application.OpenForms.OfType<WindowsQuotaExportWindow>().Single();
         window.Text += " (합성 데이터)";
         await Wait(() => window.SaveButton.Enabled);
+        var area = Screen.FromControl(window).WorkingArea;
+        var desired = new Size((int)Math.Round(490 * window.DeviceDpi / 96d) + window.Width - window.ClientSize.Width,
+            (int)Math.Round(430 * window.DeviceDpi / 96d) + window.Height - window.ClientSize.Height);
+        Check(window.Width == Math.Min(desired.Width, area.Width) && window.Height == Math.Min(desired.Height, area.Height),
+            "new settings window scales its client size to native DPI within the work area");
+        var layout = window.Controls.OfType<TableLayoutPanel>().Single();
+        layout.ScrollControlIntoView(window.SaveButton.Parent!);
+        Check(layout.ClientRectangle.Contains(layout.RectangleToClient(window.SaveButton.RectangleToScreen(window.SaveButton.ClientRectangle))),
+            "Save remains reachable in the scrollable settings area");
+        layout.AutoScrollPosition = Point.Empty;
         Check(!window.EnabledCheck.Checked && !fixture.Service.Status.Enabled, "setting defaults OFF");
         Check(window.CredentialLabel.Text.Contains("저장됨") && !window.CredentialLabel.Text.Contains(WindowsQuotaExportChecks.Credentials.SyntheticToken), "vault presence does not reveal value");
         Check(window.TokenInput.UseSystemPasswordChar && window.TokenInput.TextLength == 0, "replacement field is masked and never prefilled");
