@@ -126,6 +126,8 @@ internal static class SmokeTest
                         await QuotaRecoveryUiChecks.RunAsync();
                         diagnostics.Phase = "quota.early-reset-notifications";
                         await QuotaEarlyResetUiChecks.RunAsync();
+                        diagnostics.Phase = "quota.mobile-export";
+                        await WindowsQuotaExportUiChecks.RunAsync(reportDirectory);
                         if (verifyAutoStart)
                             VerifyAutoStart(context, reportDirectory);
                         Check(balloonRequests.Count > 2 && balloonRequests.Any(request => request.Timeout == 4000) &&

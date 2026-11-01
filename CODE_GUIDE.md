@@ -62,6 +62,8 @@
 
 ## 1. 작은 안내소라고 생각해 보세요
 
+**다음 Windows Draft(미배포)의 파일 지도:** Windows 제품 6개와 검사 2개를 추가해 루트·Properties C# **119개(앱 기능 58 + 검사·진단 60 + 명찰 1)**, Mac **20개**, 공통 검사 입구 **1개**, 합계 **140개**입니다. 공통 제품 원본 **34개**는 그대로입니다. `WindowsQuotaExport*`만 Windows에서 컴파일하며, 위 2.8.7 배포 당시 파일 수·검증 기록과 구분합니다. [수신 계약·콜백/백그라운드 분리](WINDOWS_QUOTA_EXPORT.md).
+
 이 앱에는 다섯 가지 역할이 있습니다.
 
 - **시간표 담당:** 미국 업무시간과 공휴일을 보고 FULL/BURGER를 정합니다.
@@ -366,6 +368,12 @@ Windows 내부 승인 형식은 알려진 경우만 해석합니다. 낯선 값�
 |---|---|
 | [Program.cs](Program.cs) | 실행 입구, 검사 모드 분기, 중복 실행 방지 |
 | [TrayApplicationContext.cs](TrayApplicationContext.cs) | 트레이·타이머·조회·저장·알림·절전 복귀·종료 연결 |
+| [WindowsQuotaExportSnapshot.cs](WindowsQuotaExportSnapshot.cs) | Windows 한도 완료 전이 관찰, 허용 필드 DTO와 소스 생성 JSON. 시작/캐시 제외, 원본 모니터는 변경하지 않음 |
+| [WindowsQuotaExportSettings.cs](WindowsQuotaExportSettings.cs) | DB와 별도인 Windows 설정, 원자적 sourceId/seq 저장과 HTTPS origin 검증 |
+| [WindowsQuotaExportCredentials.cs](WindowsQuotaExportCredentials.cs) | 고정 Windows 자격 증명 저장소의 UTF-8 토큰 존재 확인·읽기·교체. 파일/DB/로그에 값 없음 |
+| [WindowsQuotaExportTransport.cs](WindowsQuotaExportTransport.cs) | HTTPS PUT·15초·1MiB·리다이렉트 금지·기본 인증서 검증, 응답 본문을 읽지 않는 결과 분류 |
+| [WindowsQuotaExportService.cs](WindowsQuotaExportService.cs) | 단일 배경 전송·대기 최신 1건·15분 하트비트·상한 재시도·설정 세대/종료 취소 |
+| [WindowsQuotaExportWindow.cs](WindowsQuotaExportWindow.cs) | 기본 꺼짐 트레이 설정 창, 주소·토큰 교체·명시적 테스트·일반화한 전송 상태 |
 | [WindowsQuotaNotificationDelivery.cs](WindowsQuotaNotificationDelivery.cs) | Windows 모든 알림의 토스트 발송·풍선 대체·차단 분리와 제목/본문/계정값 없는 v2 256건/128KiB 발송 기록. 기존 v1은 보존 |
 | [WindowsQuotaToast.cs](WindowsQuotaToast.cs) | Windows SDK WinRT 토스트 API, MTA COM class factory·무동작 콜백·짧은 전용 활성화 수명 |
 | [WindowsNotificationRequest.cs](WindowsNotificationRequest.cs) | Windows 전용 종류/Provider·불변 발송 ID·Group/Header·Tag·정보/경고·기존 풍선 timeout 대응 |
@@ -424,6 +432,8 @@ Windows 내부 승인 형식은 알려진 경우만 해석합니다. 낯선 값�
 | 파일 | 확인하는 것 |
 |---|---|
 | [SelfTest.cs](SelfTest.cs) | SharedTestSuite를 한 번 실행한 뒤 Windows 전용 검사를 더해 결과 반환 |
+| [WindowsQuotaExportChecks.cs](WindowsQuotaExportChecks.cs) | 가짜 HTTP/자격 증명·임시 파일, 원자 저장·계약·실패/재시도·병렬 완료/캐시 제외·비밀 비직렬화 |
+| [WindowsQuotaExportUiChecks.cs](WindowsQuotaExportUiChecks.cs) | native smoke의 합성 설정 창·저장/교체/테스트·느린 서버 중 UI/조회 응답성. 실제 사이트/자격 증명 API는 호출하지 않음 |
 | [WindowsQuotaNotificationChecks.cs](WindowsQuotaNotificationChecks.cs) | 가짜 발송기·임시 파일로 토스트/풍선 대체·차단·중복 방지·비동기 실패·진단 필드/상한/쓰기 실패 323건 |
 | [WindowsQuotaToastChecks.cs](WindowsQuotaToastChecks.cs) | XML·ID 분리·배포 경로 guard·무동작 COM·수명/참조·Windows 차단 우선순위 70건. 실제 등록/알림 없이 실행 |
 | [WindowsNotificationChecks.cs](WindowsNotificationChecks.cs) | 모든 종류의 XML/Group/Header/Tag·정보/경고 이미지·v1 보존/v2 기록·개인정보 제외·실패 격리. smoke는 합성 시계·가짜 발송기로 4.5초/6.5초/30초·늦은 완료를 확인 |
