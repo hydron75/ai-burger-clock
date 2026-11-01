@@ -98,6 +98,29 @@ internal static class WindowsQuotaExportChecks
         protected override bool TryComputeLength(out long length) { length = int.MaxValue; return true; }
     }
 
+    private sealed class IgnoringCancellationTransport : IWindowsQuotaExportTransport
+    {
+        internal readonly TaskCompletionSource<WindowsQuotaExportResult> First = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        internal readonly TaskCompletionSource<WindowsQuotaExportResult> Second = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        internal readonly List<(Uri Uri, byte[] Body, CancellationToken Token)> Requests = new();
+        internal int Count { get { lock (Requests) return Requests.Count; } }
+        public Task<WindowsQuotaExportResult> SendAsync(Uri endpoint, byte[] body, CancellationToken cancellationToken)
+        {
+            int index; lock (Requests) { index = Requests.Count; Requests.Add((endpoint, body, cancellationToken)); }
+            return index == 0 ? First.Task : Second.Task; // Intentionally ignore cancellation to exercise the epoch guard.
+        }
+        public void Dispose() { First.TrySetResult(new(false, false, WindowsQuotaExportFailure.Network)); Second.TrySetResult(new(false, false, WindowsQuotaExportFailure.Network)); }
+    }
+
+    private sealed class FailingSettings(IWindowsQuotaExportSettingsStore inner) : IWindowsQuotaExportSettingsStore
+    {
+        private int updates;
+        public WindowsQuotaExportSettings Load() => inner.Load();
+        public WindowsQuotaExportSettings ReserveSequence() => inner.ReserveSequence();
+        public WindowsQuotaExportSettings Update(bool enabled, string siteUrl) => ++updates == 2
+            ? throw new IOException("Synthetic final settings write failure") : inner.Update(enabled, siteUrl);
+    }
+
     internal static async Task<int> RunAsync()
     {
         int count = 0;
@@ -285,6 +308,58 @@ internal static class WindowsQuotaExportChecks
             await f.Service.TestAsync(); await f.Service.WaitForIdleAsync();
             f.Time.Advance(TimeSpan.FromMinutes(30)); f.Service.Tick(); await f.Service.WaitForIdleAsync();
             Check(f.Http.Count == 1 && f.Service.Status.RetryAtUtc is null, "OFF explicit test does not start automatic retries");
+        }
+
+        foreach (bool oldSuccess in new[] { false, true })
+        {
+            using var f = new Fixture();
+            using var sender = new IgnoringCancellationTransport();
+            using var service = new WindowsQuotaExportService(f.Store, f.Vault, sender, () => f.States, "0.0.0-synthetic", f.Time);
+            await service.Initialization;
+            service.Completed(f.States); await Wait(() => sender.Count == 1);
+            f.Time.Advance(TimeSpan.FromMinutes(1));
+            Check(await service.SaveAsync(true, "https://changed.example.test", "SYNTHETIC-ROTATED-TOKEN"), "change address/token while old request ignores cancellation");
+            service.Completed(Readings(f.Time.GetUtcNow(), 42));
+            Check(sender.Requests[0].Token.IsCancellationRequested && sender.Count == 1, "cancel old request without starting a parallel request");
+            sender.First.SetResult(new(oldSuccess, !oldSuccess, oldSuccess ? WindowsQuotaExportFailure.None : WindowsQuotaExportFailure.Server));
+            await Wait(() => sender.Count == 2);
+            Check(service.Status.LastSuccessUtc is null && service.Status.RetryAtUtc is null && service.Status.Failure == WindowsQuotaExportFailure.None,
+                "late old 2xx/5xx cannot update new success/failure/backoff");
+            Check(sender.Requests[0].Uri.Host == "quota.example.test" && sender.Requests[1].Uri.Host == "changed.example.test", "next request uses saved new address");
+            using var oldBody = JsonDocument.Parse(sender.Requests[0].Body); using var newBody = JsonDocument.Parse(sender.Requests[1].Body);
+            Check(newBody.RootElement.GetProperty("seq").GetInt64() > oldBody.RootElement.GetProperty("seq").GetInt64(), "reconfiguration preserves source sequence");
+            sender.Second.SetResult(new(true, false, WindowsQuotaExportFailure.None)); await service.WaitForIdleAsync();
+            Check(service.Status.LastSuccessUtc == f.Time.GetUtcNow(), "new generation alone records success");
+        }
+
+        foreach (bool failVault in new[] { false, true })
+        {
+            using var f = new Fixture(); f.Vault.Fail = failVault;
+            IWindowsQuotaExportSettingsStore interruptedStore = failVault ? f.Store : new FailingSettings(f.Store);
+            using var transport = new WindowsQuotaExportTransport(f.Vault, new Handler());
+            using var service = new WindowsQuotaExportService(interruptedStore, f.Vault, transport, () => f.States, "0.0.0-synthetic", f.Time);
+            await service.Initialization;
+            var identity = f.Store.Load();
+            Check(!await service.SaveAsync(true, "https://quota.example.test", "SYNTHETIC-ROTATED-TOKEN"), "token/config partial failure reports failure");
+            var persisted = new WindowsQuotaExportSettingsStore(f.SettingsPath).Load();
+            Check(!persisted.Enabled && persisted.SourceId == identity.SourceId && persisted.Seq == identity.Seq, "partial token save persists OFF and preserves identity");
+            Check(service.Status.Failure == (failVault ? WindowsQuotaExportFailure.Credential : WindowsQuotaExportFailure.Settings), "failed credential/file phase is generalized accurately");
+            Check(!File.ReadAllText(f.SettingsPath).Contains("SYNTHETIC-ROTATED-TOKEN"), "partial save never places token in file");
+            using var restartHttp = new Handler();
+            using var restarted = new WindowsQuotaExportService(new WindowsQuotaExportSettingsStore(f.SettingsPath), f.Vault,
+                new WindowsQuotaExportTransport(f.Vault, restartHttp), () => f.States, "0.0.0-synthetic", f.Time);
+            await restarted.Initialization; restarted.Completed(f.States); f.Time.Advance(TimeSpan.FromHours(1)); restarted.Tick(); await restarted.WaitForIdleAsync();
+            Check(!restarted.Status.Enabled && restartHttp.Count == 0 && f.Vault.Reads == 0, "restart after either partial failure cannot send old/new token automatically");
+        }
+
+        using (var f = new Fixture())
+        {
+            await f.Service.Initialization;
+            var row = f.States[0].Reading!.Windows[0] with { Label = new string('x', 81) };
+            var invalid = f.States.ToArray(); invalid[0] = invalid[0] with { Reading = new(QuotaProvider.Codex, [row]) };
+            f.Service.Completed(invalid); await f.Service.WaitForIdleAsync();
+            Check(f.Http.Count == 0 && f.Service.Status.Failure == WindowsQuotaExportFailure.Payload && f.Service.Status.RetryAtUtc is null, "out-of-contract label fails export without truncating app data");
+            Check(invalid[0].Reading!.Windows[0].Label.Length == 81, "sender never edits the existing reading");
         }
 
         using (var f = new Fixture())

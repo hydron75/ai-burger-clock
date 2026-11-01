@@ -132,6 +132,7 @@ internal sealed class WindowsQuotaExportService : IDisposable
         await Task.Run(async () =>
         {
             await settingsGate.WaitAsync().ConfigureAwait(false);
+            var failedPhase = WindowsQuotaExportFailure.Settings;
             try
             {
                 // A token/configuration update cannot be atomic across two Windows stores.
@@ -139,7 +140,9 @@ internal sealed class WindowsQuotaExportService : IDisposable
                 if (replacementToken is not null)
                 {
                     store.Update(false, siteUrl);
+                    failedPhase = WindowsQuotaExportFailure.Credential;
                     credentials.Replace(replacementToken);
+                    failedPhase = WindowsQuotaExportFailure.Settings;
                 }
                 var updated = store.Update(enabled, siteUrl);
                 lock (sync)
@@ -154,7 +157,7 @@ internal sealed class WindowsQuotaExportService : IDisposable
                 lock (sync)
                 {
                     if (settings is not null) settings = settings with { Enabled = false };
-                    failure = WindowsQuotaExportFailure.Settings;
+                    failure = failedPhase;
                 }
             }
             finally { settingsGate.Release(); lock (sync) saving = false; }
