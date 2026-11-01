@@ -21,8 +21,9 @@ internal sealed class WindowsQuotaExportWindow : Form
     {
         this.service = service;
         Text = "모바일 사이트 연동";
+        AutoScaleDimensions = new SizeF(96, 96);
         AutoScaleMode = AutoScaleMode.Dpi;
-        ClientSize = new Size(490, 390);
+        ClientSize = new Size(490, 430);
         MinimumSize = new Size(440, 390);
         StartPosition = FormStartPosition.CenterScreen;
         ShowInTaskbar = false;
@@ -40,7 +41,7 @@ internal sealed class WindowsQuotaExportWindow : Form
         var buttons = new FlowLayoutPanel { AutoSize = true, Dock = DockStyle.Fill };
         var close = new Button { Text = "닫기", AutoSize = true };
         buttons.Controls.Add(save); buttons.Controls.Add(test); buttons.Controls.Add(close); layout.Controls.Add(buttons);
-        foreach (RowStyle row in layout.RowStyles) row.SizeType = SizeType.AutoSize;
+        for (int i = 0; i < layout.RowCount; i++) layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         Controls.Add(layout);
         AcceptButton = save; CancelButton = close;
         close.Click += (_, _) => Close();
@@ -57,6 +58,9 @@ internal sealed class WindowsQuotaExportWindow : Form
         };
         Shown += async (_, _) =>
         {
+            var area = Screen.FromControl(this).WorkingArea;
+            MinimumSize = new Size(Math.Min(MinimumSize.Width, area.Width), Math.Min(MinimumSize.Height, area.Height));
+            Size = new Size(Math.Min(Width, area.Width), Math.Min(Height, area.Height));
             await service.Initialization;
             if (IsDisposed) return;
             enabled.Checked = service.Status.Enabled; site.Text = service.Status.SiteUrl;

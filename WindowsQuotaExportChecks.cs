@@ -302,10 +302,12 @@ internal static class WindowsQuotaExportChecks
         using (var f = new Fixture(false))
         {
             await f.Service.Initialization;
-            Check(await f.Service.SaveAsync(false, "https://quota.example.test", Credentials.SyntheticToken), "replace credential through isolated vault");
-            Check(f.Vault.Writes == 1 && !File.ReadAllText(f.SettingsPath).Contains(Credentials.SyntheticToken), "replacement does not enter settings");
+            const string rotated = "SYNTHETIC-NEW-SERVICE-TOKEN";
+            Check(await f.Service.SaveAsync(false, "https://quota.example.test", rotated), "replace credential through isolated vault");
+            Check(f.Vault.Writes == 1 && !File.ReadAllText(f.SettingsPath).Contains(rotated), "replacement does not enter settings");
             f.Http.Reply = (_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.ServiceUnavailable));
             await f.Service.TestAsync(); await f.Service.WaitForIdleAsync();
+            Check(f.Http.Last.Header == "Bearer " + rotated, "dispatch reads the newly replaced token rather than a cached token");
             f.Time.Advance(TimeSpan.FromMinutes(30)); f.Service.Tick(); await f.Service.WaitForIdleAsync();
             Check(f.Http.Count == 1 && f.Service.Status.RetryAtUtc is null, "OFF explicit test does not start automatic retries");
         }
@@ -378,6 +380,16 @@ internal static class WindowsQuotaExportChecks
             Check(f.Http.Count == 0, "failed reservation never transmits");
             f.Time.Advance(TimeSpan.FromSeconds(30)); f.Service.Tick(); await f.Service.WaitForIdleAsync();
             Check(f.Http.Count == 1 && Seq(f.Http.Last) == 1, "released storage lock permits a durably reserved retry");
+        }
+
+        using (var f = new Fixture())
+        {
+            await f.Service.Initialization;
+            byte[] before = File.ReadAllBytes(f.SettingsPath);
+            using (File.Open(f.SettingsPath, FileMode.Open, FileAccess.Read, FileShare.Read))
+                Check(!await f.Service.SaveAsync(true, "https://quota.example.test", "SYNTHETIC-UNSAVED-TOKEN"), "failed OFF pre-save prevents token replacement");
+            Check(f.Vault.Writes == 0 && File.ReadAllBytes(f.SettingsPath).SequenceEqual(before), "OFF pre-save failure leaves both old stores unchanged");
+            Check(!f.Service.Status.Enabled && f.Http.Count == 0, "failed pre-save pauses this session without sending");
         }
 
         using (var f = new Fixture(false))
