@@ -5,7 +5,7 @@
 공통·Windows C#·검사·Mac 파일·의존성·사이트 코드는 다시 고치지 않습니다.
 사용자는 **검증 후 같은 dist EXE 교체까지** 승인했습니다. 외부 정상 종료·실제 운영 데이터 백업과
 준비/단일 EXE 검사를 끝내고 **2026-11-02 00:16:35 KST**에 EXE만 교체했습니다.
-**외부 등록 확인·운영 실행·실제 사이트 연결은 아직 미확인**이며 각각 따로 기록합니다.
+**외부 등록 확인·운영 실행·기본 화면은 확인 완료**, 실제 사이트 연결은 아직 미확인이며 따로 기록합니다.
 운영 앱 실행·운영 등록·실제 해제·시험 알림·실제 사이트 전송은 Codex에서 하지 않습니다.
 병합은 사용자가 결정합니다. 실제 연결은 아래 3단계 절차로 사용자가 외부 실행한 앱에서 확인합니다.
 
@@ -89,23 +89,39 @@ Codex가 가상화된 DB 사본으로 실제 운영 DB를 검증했다고 하지
 ## 사용자 외부 등록 확인·운영 실행
 
 같은 dist 경로의 바로가기·AUMID·CLSID·COM·자동 시작 대상을 확인하고 해제 **dry-run만** 실행합니다.
-재등록·실제 해제·시험 알림은 하지 않습니다. 운영 실행은 이 확인 뒤 사용자가 외부에서 수행합니다.
+재등록·실제 해제·시험 알림은 하지 않습니다. **EXE 교체 완료 후** 먼저 다음 확인 명령만 실행합니다.
 
 ~~~powershell
-$burgerRepo = 'C:/Users/mc_bl/.codex/.chatgpt-projects/g-p-6aa5eb198fd88191b7382af0eb114af4/AiBurgerClock'
-& "$burgerRepo/artifacts/release-2.8.8-deployment-20261102/Inspect-ProductionOutsideCodex.ps1"
-if ($?) { Start-Process -FilePath "$burgerRepo/dist/win-x64/AI Burger Clock.exe" }
+& 'C:/Users/mc_bl/.codex/.chatgpt-projects/g-p-6aa5eb198fd88191b7382af0eb114af4/AiBurgerClock/artifacts/release-2.8.8-deployment-20261102/Inspect-ProductionOutsideCodex.ps1'
 ~~~
 
-**EXE 교체 완료 후에만 실행합니다.** 정상 기대값:
+정상 기대값:
 `RegistrationSucceeded=True`, `RegistrationPerformed=False`, `AutoStartPathMatches=True`,
 `FileVersion=2.8.8.0`, 위 SHA-256 일치, `DryRunExitCode=0`, `DryRunChangedNothing=True`,
 `TestToastSent=False`, `NormalAppLaunched=False`.
-마지막 값은 도우미 자체가 일반 앱을 시작하지 않았다는 뜻이며 다음 줄 사용자 실행과 구분합니다.
+마지막 값은 도우미 자체가 일반 앱을 시작하지 않았다는 뜻이며 다음 사용자 실행과 구분합니다.
 등록이 없거나 경로가 다르면 멈추고 결과를 보고합니다. 자동 재등록하지 않습니다.
+**위 확인이 모두 정상일 때만** 사용자가 외부 PowerShell에서 앱을 실행합니다.
+
+~~~powershell
+Start-Process -FilePath 'C:/Users/mc_bl/.codex/.chatgpt-projects/g-p-6aa5eb198fd88191b7382af0eb114af4/AiBurgerClock/dist/win-x64/AI Burger Clock.exe'
+~~~
+
 외부 실행 뒤 단일 2.8.8 프로세스·트레이·상태/한도 보기·새 설정 메뉴가 정상이어야 합니다.
 운영 DB/로그는 `%LOCALAPPDATA%\AIBurgerClock`를 계속 쓰며 LocalCache DB는 백업으로 보존합니다.
 기본 OFF이므로 기존 토큰이 있어도 설정을 켜거나 테스트하기 전 자동 사이트 전송은 없습니다.
+
+**외부 등록 확인 완료(2026-11-02 00:22:57 KST):** 사용자 외부 실행 receipt에서
+`RegistrationSucceeded=True`, `RegistrationPerformed=False`, `AutoStartRunEntryPresent=True`,
+`AutoStartPathMatches=True`, `FileVersion=2.8.8.0`, 위 EXE SHA-256 일치,
+`DryRunExitCode=0`, `DryRunChangedNothing=True`, `TestToastSent=False`, `NormalAppLaunched=False`를 대조했습니다.
+실제 바로가기·AUMID·CLSID·COM이 같은 dist EXE를 가리키며 재등록·실제 해제·시험 알림은 하지 않았습니다.
+
+**외부 운영 실행·화면 정상은 사용자 확인:** 트레이·상태 보기·한도 보기와 ‘모바일 사이트 연동…’의
+기본 꺼짐이 정상이라고 확인했습니다. 별도 읽기 전용 프로세스 확인에서도 **00:23:33 KST 시작**, 같은 dist 경로의
+단일 **2.8.8.0** 프로세스와 위 SHA-256 일치를 대조했습니다. 제한된 파일/프로세스 보기에서의 부재를 운영 종료로
+단정하지 않고 접근이 허용된 읽기 전용 프로세스 목록으로 확인했습니다. 이번 확인에서 운영 DB/로그 내용이나 갱신 시각은 읽지 않았습니다.
+외부 앱의 정상 한도 조회는 검사 코드의 가짜 CLI 실행과 별개이며 실제 사이트 전송 성공을 뜻하지 않습니다.
 
 ## 3단계: 실제 연결 절차 — 사용자 확인 대기
 
