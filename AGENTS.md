@@ -80,6 +80,15 @@ Windows 앱 검사는 앱 EXE에 옵션을 붙여 실행합니다. 분기는 [Pr
 - **상대 OS 요청:** 확인 항목은 PR 본문·코멘트에 적고, 실제 작업 지시는 사용자가 메인에서 정해 전달합니다.
 - 이 문서의 기존 규칙(작업 분담·PR 확인 범위·배포 절차·계정 정보 보호)은 그대로입니다. 전달받은 지시가 이 규칙과 충돌하면 작업 전에 보고합니다.
 
+## 모바일 조회 사이트 (2026-11-02)
+
+- 아이폰 Safari에서 보는 조회 전용 사이트를 ChatGPT Sites의 개인 비공개 사이트로 운영합니다. 사이트 제작과 수정은 Windows(ChatGPT) 채팅이 맡고, 사이트 소스는 Sites에 있으며 이 저장소에는 없습니다. 사이트 주소는 공개 저장소에 적지 않습니다.
+- 사이트는 시간표·공식 상태 판정과 한도 표시 규칙을 TypeScript로 옮겨 쓰며, 화면 하단에 옮긴 기준 커밋을 표시합니다.
+- 다음 파일의 판정·문구를 바꾸는 PR은 본문에 **"모바일 사이트 반영 필요"** 항목과 바뀐 규칙을 적습니다: AgentSchedule.cs, UsFederalHolidays.cs, ProviderStatusClient.cs, XaiStatusFeed.cs, Phase2Models.cs(권고 규칙), StatusPanelModel.cs, QuotaPanelModel.cs, QuotaPacing.cs, DisplayFormatting.cs. Provider를 추가·삭제할 때도 같습니다.
+- 한도 송신 계약([WINDOWS_QUOTA_EXPORT.md](WINDOWS_QUOTA_EXPORT.md))을 바꾸는 변경은 Windows 앱과 사이트를 함께 고칩니다. 하위 호환이 깨지면 schemaVersion을 올립니다.
+- 해당 PR이 병합되면 메인 채팅에서 사이트 담당 채팅에 반영을 지시합니다. 작업 채팅이 사이트를 직접 고치지 않습니다.
+- 공개 저장소 규칙은 사이트에도 적용합니다. 저장소 문서·PR에는 합성 데이터만 쓰고, 사이트에 저장된 실제 한도 값·토큰은 적지 않습니다.
+
 ## 작업 흐름: PR과 Windows 검증
 
 Windows 빌드와 검사는 ChatGPT에서 진행합니다. 코드를 고치는 쪽은 PR을 올리고, ChatGPT에서 그 PR로 빌드와 검사를 합니다.
