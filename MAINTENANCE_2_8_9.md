@@ -1,9 +1,11 @@
-# AI Burger Clock 2.8.9 — Windows xAI 카탈로그 수정 배포 준비
+# AI Burger Clock 2.8.9 — Windows xAI 카탈로그 수정 배포 기록
 
-기록일: **2026-11-05 KST**. #115 병합 main을 받은 뒤 Windows 버전 세 필드와 문서만 올립니다.
-공통·Windows `.cs`와 Mac 파일은 수정하지 않습니다. `XaiStatusFeed.cs` 주석의 `BugBot`도 그대로 둡니다.
-**후보 EXE 준비만 수행하며 실제 dist EXE 교체·운영 실행·기존 등록 확인은 사용자가 Codex 밖에서 직접 합니다.**
-이번 준비에서 운영 등록·해제·시험 알림·실제 계정 조회·DB/캐시/설정 변경은 하지 않습니다.
+기록일: **2026-11-05 KST**. #115 병합 main을 받은 뒤 Windows 버전 세 필드와 문서만 올렸습니다.
+공통·Windows `.cs`와 Mac 파일은 수정하지 않았습니다. `XaiStatusFeed.cs` 주석의 `BugBot`도 그대로입니다.
+당초 후보 준비 후, 사용자가 EXE 직접 교체를 추가 승인했습니다. 사용자 외부 백업을 확인한 뒤
+**2026-11-05 21:45:00 KST에 Codex가 검증된 EXE만 교체**했습니다.
+**운영 등록 확인·앱 실행은 사용자가 Codex 밖에서 수행했고 트레이·상태 보기·한도 보기·xAI 카드 정상은 사용자 확인 완료**입니다.
+이번 준비에서 운영 등록·실제 해제·시험 알림·실제 계정 조회·DB/캐시/설정 변경은 하지 않았습니다.
 개인 비공개 사이트 주소·토큰·실제 한도 값은 이 문서와 공개 PR에 적지 않습니다.
 
 ## 2.8.8 이후 포함하는 Windows 변경
@@ -18,23 +20,24 @@
 조회 주기·알림 문구/조건/대기열·모바일 한도 송신 계약·DB schema·화면 배치는 유지합니다.
 상세 판정 계약은 [XAI_STATUS](XAI_STATUS.md)에 있습니다.
 
-## Git 기준점과 후보 EXE
+## Git 기준점과 배포 EXE
 
 | 기준 | 커밋 |
 |---|---|
 | 기존 2.8.8 EXE 소스 | `73e70a1c6d0fe1f29cd594acc4a0b0a75496d2bd` |
 | #115 검증 HEAD | `593f916d8620490afb75e0c01afb6dec0d6f05aa` |
 | #115 병합 / 이번 출발 main | `1257baac698cc1ff0e9c76c23826738e9ff98e9a` |
-| Windows 버전 / 후보 EXE 소스 | `1ca68a2d7dd37b31a86da58ed8701c0def0a188c` |
-| 이번 버전 PR 병합 | 미병합, 사용자 결정 |
+| Windows 버전 / 실제 EXE 소스 | `1ca68a2d7dd37b31a86da58ed8701c0def0a188c` |
+| 버전 PR #118 병합 | `4e3cd29929cc07b204d5bd2ede38d0da4154e219` |
 
-후보: `artifacts/release-2.8.9-preparation-20261105/candidate/AI Burger Clock.exe`.
+검증 후보는 `artifacts/release-2.8.9-preparation-20261105/candidate/AI Burger Clock.exe`,
+실제 배포 경로는 **`dist/win-x64/AI Burger Clock.exe`**입니다.
 FileVersion/AssemblyVersion **2.8.9.0**, framework-dependent 단일 EXE이며 .NET 10 Desktop Runtime x64가 필요합니다.
 ProductVersion **`2.8.9+1ca68a2d7dd37b31a86da58ed8701c0def0a188c`**, 크기 **29,931,451 bytes**,
 SHA-256 **`D400468B1163A7C0738D42EE75FFD2AC90C22DFC42EB9044A833B3F99252B399`**입니다.
 후속 기록 커밋과 이 실제 EXE 소스 커밋은 구분합니다.
-기존 dist는 **2.8.8.0**, SHA-256
-`3EEC46E3CAFDA6C6E10CE4388C1C3DC7A0277D0AFA49B6FA4EC03E5FB88D75D0`로 보존합니다.
+교체 전 dist **2.8.8.0**은 아래 백업에 SHA-256
+`3EEC46E3CAFDA6C6E10CE4388C1C3DC7A0277D0AFA49B6FA4EC03E5FB88D75D0`로 보존했습니다.
 
 ## 검사 결과
 
@@ -62,9 +65,10 @@ SDK **10.0.403**, Desktop Runtime **10.0.14 x64**입니다. 설치/업데이트�
 버전/문서만 바꾸므로 #115 이후 검사 기대값은 늘리지 않습니다. 합성 검사와 실제 공개 상태 조회를 구분합니다.
 실제 한도/CLI 계정 조회·사이트 전송·운영 알림/등록·Mac 빌드/검사는 이번 준비에서 하지 않습니다.
 
-## 사용자 외부 백업·교체·확인
+## 외부 백업·승인된 EXE 교체·사용자 확인
 
-아래 도우미는 준비 후 제공하며 **Codex에서 실행하지 않습니다.** 사용자만 Codex 밖 PowerShell에서 순서대로 실행합니다.
+백업·운영 등록 확인·앱 실행은 사용자 외부 PowerShell에서 수행했습니다. EXE 교체 도우미만 사용자 추가 승인 후
+Codex에서 실행했습니다. 아래는 수행 순서 기록이며 **완료한 백업·교체 단계는 다시 실행하지 않습니다.**
 
 1. 기존 2.8.8을 트레이 → 종료로 정상 종료합니다.
 2. `artifacts/release-2.8.9-preparation-20261105/Backup-OutsideCodex.ps1`을 실행합니다. 실제 기본 DB 경로와 프로세스 부재·WAL/SHM 부재, 이전 EXE·DB·로그 백업 및 해시 일치를 확인합니다. `BackupSucceeded=True`여야 하며 WAL을 임의로 삭제하지 않습니다.
@@ -72,8 +76,15 @@ SDK **10.0.403**, Desktop Runtime **10.0.14 x64**입니다. 설치/업데이트�
 4. `Inspect-ProductionOutsideCodex.ps1`로 기존 바로가기·AUMID·CLSID·COM·자동 시작 대상과 해제 dry-run 무변경을 확인합니다. 경로가 같고 등록이 정상이면 재등록하지 않습니다.
 5. 위 단계가 모두 정상일 때만 기존 dist EXE를 외부에서 실행하고 트레이·상태 보기·한도 보기, xAI 카드와 공식 페이지 링크를 확인합니다.
 
-외부 백업의 예상 새 위치는 `../backups/release-2.8.9-<KST 시각>-<고유값>/`입니다.
-실제 백업 경로·교체·운영 실행은 **미실행**이며 사용자 결과가 오기 전 완료로 기록하지 않습니다.
+**외부 백업 완료:** `BackupSucceeded=True` 사용자 답변과 **21:43:45 KST**의 외부 receipt에서
+기본 DB 실제 열린 경로·프로세스 부재·WAL/SHM 부재·이전 EXE/DB 복사 해시 일치를 확인했습니다.
+백업 경로는 **`../backups/release-2.8.9-20261105-214345-48fa4dd3/`**입니다.
+이전 EXE/ZIP·DB·로그와 교체 단계에서 생성한 `source-before-2.8.8.zip`·`source-2.8.9.zip`을 보존합니다.
+
+**EXE 교체 완료:** 교체 직전 프로세스 부재·후보/기존/백업의 버전·해시와 reparse 부재를 재확인하고
+21:45:00 KST에 같은 dist 경로를 `File.Replace`로 교체했습니다. 후보·dist·`deployed-2.8.9.exe`는 위 새 해시와 일치하고,
+`previous-2.8.8.exe`·`replaced-2.8.8.exe`는 위 이전 해시와 같습니다. 단계 파일은 남지 않았고 복원은 수행하지 않았습니다.
+Codex는 정상 앱 실행·운영 등록/실제 해제·DB/캐시 변경을 하지 않았습니다.
 기본 `%LOCALAPPDATA%/AIBurgerClock`과 LocalCache의 두 DB는 보존하고 병합·이관·과거 백업 복원을 하지 않습니다.
 
 정상 기대값: 후보/교체 EXE 버전 **2.8.9.0**, 기록 SHA-256 일치, `RegistrationSucceeded=True`,
@@ -82,7 +93,7 @@ SDK **10.0.403**, Desktop Runtime **10.0.14 x64**입니다. 설치/업데이트�
 
 ### 외부 PowerShell 명령
 
-현재 앱을 정상 종료한 뒤 **한 단계씩** 실행합니다. 오류가 있으면 다음 단계로 넘어가지 않습니다.
+아래는 수행 순서와 명령의 보존 기록입니다. 완료한 단계는 반복하지 않고, 오류가 있으면 다음 단계로 넘어가지 않습니다.
 
 ~~~powershell
 & 'C:/Users/mc_bl/.codex/.chatgpt-projects/g-p-6aa5eb198fd88191b7382af0eb114af4/AiBurgerClock/artifacts/release-2.8.9-preparation-20261105/Backup-OutsideCodex.ps1'
@@ -107,7 +118,20 @@ Start-Process -FilePath 'C:/Users/mc_bl/.codex/.chatgpt-projects/g-p-6aa5eb198fd
 ~~~
 
 도우미 3개는 기존 2.8.8 절차의 버전·소스·해시 pin만 2.8.9에 맞춰 준비했으며 PowerShell 구문 오류 0입니다.
-Codex에서는 실행하지 않았고 사용자 백업/교체/등록 확인 결과도 아직 받지 않았습니다.
+백업과 등록 검사는 사용자 외부 실행, EXE 교체는 사용자 추가 승인 후 Codex 실행으로 구분합니다.
+
+### 외부 등록 확인·실행·실제 화면
+
+**21:48:18 KST 외부 receipt:** `RegistrationSucceeded=True`, `RegistrationPerformed=False`,
+`FileVersion=2.8.9.0`, 위 EXE 해시 일치, 바로가기 대상/AUMID/CLSID·AUMID/COM 실행 대상 일치,
+`AutoStartPathMatches=True`, `DryRunExitCode=0`, `DryRunChangedNothing=True`를 대조했습니다.
+같은 배포 경로를 유지해 재등록하지 않았으며 시험 알림·실제 해제도 없었습니다.
+검사 도우미의 `NormalAppLaunched=False`는 검사 자체가 정상 앱을 시작하지 않았다는 뜻입니다.
+
+그 뒤 **사용자가 외부에서 앱 실행**, **트레이·상태 보기·한도 보기·xAI 카드 정상**을 확인했습니다.
+별도 읽기 전용 프로세스 확인에서도 **21:48:54 KST 시작**, 같은 dist 경로의 단일 **2.8.9.0** 프로세스와 응답 정상,
+위 EXE SHA-256 일치를 대조했습니다. 운영 DB/로그의 실행 후 내용·변경 시각이나 실제 한도 값은 읽지 않았습니다.
+첫 smoke 잘림 실패의 원인·장시간 운영·이번 사이트 배포의 아이폰 실기 확인은 여전히 미확인입니다.
 
 ## 2.8.8으로 되돌리기
 
