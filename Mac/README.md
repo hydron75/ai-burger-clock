@@ -1,8 +1,17 @@
-# AI Burger Clock · macOS preview 0.8.9
+# AI Burger Clock · macOS preview 0.8.10
 
 Apple Silicon / macOS 27을 위한 C# AppKit 메뉴바 앱입니다. 함께 쓰는 Windows 2.8.6 배포본과 별도 앱이지만, 시간표·공식 상태·권고·한도 조회·기록·통계 계산 코드는 같은 저장소의 원본 소스를 링크해서 사용합니다. Windows 코드를 복사해 따로 유지하지 않습니다.
 
 이 폴더는 **일반 사용 검증을 진행 중인 preview 소스**입니다. 2026-10-03 KST **0.1.2의 실제 Mac 공통 검사 244,347건·Release `.app`·서명·ARM64 SQLite·native smoke PASS에 이어, 일반 실행의 커진 컬러 아이콘과 양쪽 메뉴막대 표시도 확인했습니다.** 앞선 0.1.1의 한 화면 배치·두 계정 한도 수신도 확인했습니다. 이후 이 Mac에서 직접 빌드해 보니 **이전 bundle은 `Info.plist` 버전이 0.1.0 / 1로 남아 있었습니다.** 소스 `66fb868`에서 버전을 csproj로 옮겨 0.1.2 / 3이 반영되도록 고쳤고, native smoke가 bundle 버전도 검사합니다. 절전 복귀·연결 복구 자동 조회와 재로그인 자동 실행·로그아웃 정상 종료도 실제로 확인했습니다. OS 알림·장기 사용은 남아 있습니다. [재로그인 확인](../MACOS_PORT.md#27-로그아웃-정상-종료와-재로그인-자동-실행-실제-확인), [절전·연결 복구 확인](../MACOS_PORT.md#26-연결-복구절전-복귀-실제-확인), [버전 수정과 로컬 검증](../MACOS_PORT.md#24-012-bundle-버전-미반영-수정과-첫-로컬-mac-검증), [실제 Mac 빌드](../MACOS_PORT.md#21-012-실제-mac-release-빌드-성공), [native 검사](../MACOS_PORT.md#22-012-아이콘-native-smoke-pass), [실제 메뉴막대](../MACOS_PORT.md#23-012-실제-컬러-아이콘과-양쪽-메뉴막대-확인)
+
+## 0.8.10: xAI 공식 상태 필수 목록 갱신
+
+Windows와 함께 main에 들어간 공통 원본 변경(PR #115, `XaiStatusFeed.cs`)을 Mac 번들에 싣는 빌드입니다. xAI 호환 JSON의 구성 요소 목록이 바뀌어(Review Agents 빠짐, Third-party models 추가) 진행 중인 장애가 없어도 xAI 카드가 "필수 구성 요소 누락"으로 CHECK가 되던 문제를 고칩니다. Mac은 앱 코드를 바꾸지 않았습니다(버전·build 번호만 변경).
+
+- **필수 목록:** Review Agents(`2x2chyqwmkzl`)를 필수에서 빼고 Third-party models(`third-party-models`)를 Cursor 범위로 추가합니다. RSS의 `review-agents`는 다시 나오면 인식하고, 표시 이름은 `Bugbot`입니다.
+- **Imagine:** RSS의 `imagine` 경로는 작업 판정에서 제외합니다. 같은 사건 ID를 쓰는 다른 제품의 장애·해결·24시간 소실 판정은 그대로입니다.
+- **빌드 조건:** Xcode 27.2와 워크로드 27.0.10742(요구 Xcode 27.1)가 어긋나 `--allow-xcode-mismatch`로 빌드했습니다. 27.2를 지원하는 워크로드가 나오면 옵션 없이 다시 확인합니다([BACKLOG](../BACKLOG.md)).
+- 기록: [69절](../MACOS_PORT.md#69-0810-정리).
 
 ## 0.8.9: 정상화 알림 본문에 Provider 이름
 
