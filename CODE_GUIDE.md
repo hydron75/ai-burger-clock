@@ -534,6 +534,10 @@ Windows 내부 승인 형식은 알려진 경우만 해석합니다. 낯선 값�
 | [AiBurgerClock.sln](AiBurgerClock.sln) | Visual Studio에서 여는 프로젝트 묶음 |
 | [global.json](global.json) | SDK 범위. 10.0.100 기준에서 같은 10.0의 최신 기능 밴드 허용 |
 | [build.ps1](build.ps1) | 빌드와 자체 검사를 실행하는 순서 |
+| [deploy-windows.ps1](deploy-windows.ps1) | 사용자 외부 PowerShell용 백업 → 교체 → 등록 불변/dry-run 확인 → 실행 요청 입구. [영수증·실패·EXE 복원 계약](WINDOWS_DEPLOYMENT.md) |
+| [tools/WindowsDeployment.ps1](tools/WindowsDeployment.ps1) | Windows 배포 단계·실제 경로/해시/등록 확인·EXE만 복원하는 함수. 읽기/실행 경계는 합성 검사에서 대체 |
+| [tools/New-WindowsDeploymentReceipt.ps1](tools/New-WindowsDeploymentReceipt.ps1) | Codex 준비 단계에서 후보 파일과 이전 배포 기록으로 영수증 생성. 운영 dist·DB·등록에 접근하지 않음 |
+| [tools/Test-WindowsDeployment.ps1](tools/Test-WindowsDeployment.ps1) | 고정 before/after 슬롯의 가짜 경로만 사용한 배포 실패·중단·EXE 복원 검사. 실제 앱·운영 등록·OS 알림 호출 0건 |
 | [tools/Test-WindowsBuildScripts.ps1](tools/Test-WindowsBuildScripts.ps1) | 운영 dist·레지스트리·실제 프로세스 실행 없이 격리 합성 publish 실패/교체 보호와 runner 1회/반복 결과 구분 검사 |
 | [Portable.pubxml](Properties/PublishProfiles/Portable.pubxml) | 배포용 단일 EXE 설정 |
 | [app.manifest](app.manifest) | Windows 권한·호환 설정. 관리자 권한으로 자동 상승하지 않음 |
