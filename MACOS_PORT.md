@@ -2331,17 +2331,19 @@ smoke의 선택 기능(`AIBURGERCLOCK_SMOKE_IMAGES`)으로 큰 화면·1280×800
 | 빌드 | 경고 0 / 오류 0, `codesign --verify --deep --strict` 통과, bundle **0.8.10 / 26**, 번들 `System.Private.CoreLib` 10.0.1426대(0.8.9와 같음) |
 | Shared.Tests | **291,104건 PASS**(PR #115 HEAD와 같음; `build.sh`가 실행) |
 | smoke 2회(임시 사본) | 두 번 모두 종료 코드 0, FAIL 없음, 출력 동일. **다만 두 번 모두 Windows App의 전체 화면 창이 디스플레이 2를 덮고 있어 창을 여는 검사 6건(팝오버 열기·닫기·다시 열기, 통계 창 표시·닫기·다시 열기)을 건너뛰었다**(`PASS with 6 screen checks SKIPPED (not verified)`). 나머지(번들 버전, 아이콘 픽셀, 클릭 라우팅, 오른쪽 클릭 메뉴, 공통 패널 문구, 네 Provider 카드(xAI 포함), xAI 알림·24시간 소실·해결 알림 규칙 등)는 통과했다 |
+| **smoke 3회째(임시 사본을 다시 만듦; 앱 소스는 같고 문서만 다른 `9a4ef2ed411cc708c0f70e22e0041bbafd6e61e4`)** | 사용자가 Windows App 전체 화면을 해제한 뒤 실행: 종료 코드 0, **SKIP 0건·FAIL 0건**, 출력은 `PASS: bundle version, …`(건너뛴 검사 문구 없음). 앞의 두 번에서 건너뛴 창을 여는 검사 6건(팝오버 열기·닫기·다시 열기, 통계 창 표시·닫기·다시 열기)이 이번에는 실행되어 통과했다. 이 빌드도 경고 0 / 오류 0, Shared.Tests 291,104건 PASS, `codesign` 통과, `--allow-xcode-mismatch` |
 | SHA-256 실행 파일(임시 사본) | `bb95cf8774ce68e131a34a55b2c6351dd6320e753d4c9b2dbd66c59104b90ed8` |
 | SHA-256 앱 DLL(임시 사본) | `5c8a0b1c4a9bb1ba4a04a6ec8b5f15b05b9fbe2e30ac823d9491cdbe3ad39021` (`Contents/MonoBundle/AI Burger Clock.dll`) |
 | 실제 공개 상태 조회(#115 확인 때) | xAI 공개 출처 4곳을 읽는 임시 프로브(저장소 밖)로 main 코드는 `Unknown`("필수 구성 요소 누락"), PR 코드는 `Operational`("정상 · 진행 중 장애 없음")이었다. 계정 조회·DB 접근 없음 |
 
+3회째 임시 사본 빌드(`9a4ef2e`)의 SHA-256은 실행 파일 `09bc2e2ca6586615271cc66307167a4ee5e70d44fda09798582aa58b7ba5a128`, 앱 DLL `970ecd0bf2cd81383d4ae4ead508272e172a532b3b7244ceb3c27ab4355eecf6`이다. 같은 앱 소스여도 빌드 사본마다(경로, 빌드 때의 git 커밋) 값이 달라 첫 빌드의 값과 다르다.
+
 위 SHA-256은 **임시 사본 빌드**의 값이다. 저장소 경로 빌드는 사용자가 교체할 때 만들어지므로 그 값과의 대조는 교체 뒤 기록한다.
 
 ### LaunchServices 등록 수 (임시 사본, 같은 번들 ID)
-임시 사본에서 smoke를 실행한 뒤 등록 수는 2였고, 삭제 전에 `lsregister -u "<사본>/Mac/bin/Release/net10.0-macos27.0/osx-arm64/AI Burger Clock.app"`로 해제해 1로 돌아왔다. 임시 worktree는 삭제했다.
+임시 사본(첫 빌드와 3회째 재빌드 모두)에서 smoke를 실행한 뒤 등록 수는 각각 2였고, 삭제 전에 `lsregister -u "<사본>/Mac/bin/Release/net10.0-macos27.0/osx-arm64/AI Burger Clock.app"`로 해제해 1로 돌아왔다. 임시 worktree는 삭제했다.
 
 ### 수행하지 않은 검증
-- **창을 여는 smoke 6건**(위): 전체 화면 앱 없이 다시 실행해야 검증된 것이다.
 - **Mac 팝오버에 실제로 뜨는 xAI 카드 문구.** smoke는 합성 데이터만 쓰고 네트워크를 쓰지 않는다. 실행 중인 앱은 교체 전까지 0.8.9다. 교체 뒤 사용자가 확인한다.
 - 저장소 경로 빌드·실제 앱 교체·실행(사용자가 직접 수행), 교체 뒤 실행 파일·앱 DLL SHA-256 대조.
 - 옵션 없는 빌드(Xcode 27.2를 지원하는 워크로드 이후, [BACKLOG](BACKLOG.md)). 알림 센터 실제 표시와 장시간 사용, 실제 VoiceOver 낭독, 알림 배너 어두운 화면 가독성은 이전 절의 미확인 항목 그대로다.
