@@ -2311,3 +2311,37 @@ smoke의 선택 기능(`AIBURGERCLOCK_SMOKE_IMAGES`)으로 큰 화면·1280×800
 ### 수행하지 않은 검증
 - 실제 알림 센터·배너에서 새 정상화 본문(Provider 이름으로 시작)이 표시되는 모습. smoke는 합성 범위이며, 실제 정상화 알림은 공식 상태가 문제에서 돌아올 때만 나간다.
 - 장시간 사용(실행 직후 사용자 확인만 했다). 이전 항목: 실제 VoiceOver 낭독과 이동([66절](#66-xai-공식-상태-카드98의-mac-전환) 참고), 소실 시각의 재시작 보존·24시간 경계의 Mac 앱 안 확인, MAC-01 실제 동작, 알림 배너 어두운 화면 가독성([64절](#64-086-정리) 참고).
+
+## 69. 0.8.10 정리
+
+2026-11-05 KST. 범위: **Mac만 변경**(버전·문서). 앱 코드는 바꾸지 않는다. `Mac/AiBurgerClock.Mac.csproj`의 버전(0.8.10 / 0.8.10.0 / 0.8.10.0, build 26)과 문서(`Mac/README.md`, `BACKLOG.md`, 이 문서)만 바뀐다. 이유는 main에 병합된 **PR #115(xAI 상태 목록 갱신)의 공통 원본 `XaiStatusFeed.cs`**를 Mac 번들에 싣는 것이다. xAI 호환 JSON의 구성 요소 목록에서 Review Agents가 빠지고 Third-party models가 생겨, 진행 중인 장애가 없는데도 필수 구성 요소 누락으로 xAI 카드가 CHECK가 되던 문제를 고친다(Windows는 별도 버전·배포로 진행하며 그 기록은 Windows 쪽이다).
+
+### 기준
+| 항목 | 값 |
+|---|---|
+| main(작업 시작) | `1257baac698cc1ff0e9c76c23826738e9ff98e9a`(PR #115 병합) |
+| #115 Mac 확인 | PR HEAD `593f916d8620490afb75e0c01afb6dec0d6f05aa`에서 Shared.Tests 291,104건(main `ee68dbf` 291,077건 대비 +27, xAI 그룹 389→416건)·임시 사본 빌드·smoke 1회 통과 |
+| 버전 변경 커밋(앱 소스) | `3e9933d15d79dfa7508a9fd0ac19494020f5277a` |
+| 도구 | SDK 10.0.403, macOS 워크로드 27.0.10742(요구 Xcode 27.1), **Xcode 27.2 (27B52)**. 받을 수 있는 최신 macOS 워크로드 매니페스트는 27.0.10742 그대로(2026-11-05 확인) |
+
+### 이 Mac에서 수행한 검증
+| 항목 | 결과 |
+|---|---|
+| **빌드 방식** | `bash Mac/build.sh --allow-xcode-mismatch`(임시 사본). 옵션 없이는 E0191("requires Xcode 27.1. The current version of Xcode is 27.2")로 멈춘다. 옵션 사용 기록은 사본의 `artifacts/mac-build/xcode-mismatch.log`(Git 제외)에 남았고 종료 코드 0이다. 저장소 경로 빌드는 이 PR에서 하지 않았다 |
+| 빌드 | 경고 0 / 오류 0, `codesign --verify --deep --strict` 통과, bundle **0.8.10 / 26**, 번들 `System.Private.CoreLib` 10.0.1426대(0.8.9와 같음) |
+| Shared.Tests | **291,104건 PASS**(PR #115 HEAD와 같음; `build.sh`가 실행) |
+| smoke 2회(임시 사본) | 두 번 모두 종료 코드 0, FAIL 없음, 출력 동일. **다만 두 번 모두 Windows App의 전체 화면 창이 디스플레이 2를 덮고 있어 창을 여는 검사 6건(팝오버 열기·닫기·다시 열기, 통계 창 표시·닫기·다시 열기)을 건너뛰었다**(`PASS with 6 screen checks SKIPPED (not verified)`). 나머지(번들 버전, 아이콘 픽셀, 클릭 라우팅, 오른쪽 클릭 메뉴, 공통 패널 문구, 네 Provider 카드(xAI 포함), xAI 알림·24시간 소실·해결 알림 규칙 등)는 통과했다 |
+| SHA-256 실행 파일(임시 사본) | `bb95cf8774ce68e131a34a55b2c6351dd6320e753d4c9b2dbd66c59104b90ed8` |
+| SHA-256 앱 DLL(임시 사본) | `5c8a0b1c4a9bb1ba4a04a6ec8b5f15b05b9fbe2e30ac823d9491cdbe3ad39021` (`Contents/MonoBundle/AI Burger Clock.dll`) |
+| 실제 공개 상태 조회(#115 확인 때) | xAI 공개 출처 4곳을 읽는 임시 프로브(저장소 밖)로 main 코드는 `Unknown`("필수 구성 요소 누락"), PR 코드는 `Operational`("정상 · 진행 중 장애 없음")이었다. 계정 조회·DB 접근 없음 |
+
+위 SHA-256은 **임시 사본 빌드**의 값이다. 저장소 경로 빌드는 사용자가 교체할 때 만들어지므로 그 값과의 대조는 교체 뒤 기록한다.
+
+### LaunchServices 등록 수 (임시 사본, 같은 번들 ID)
+임시 사본에서 smoke를 실행한 뒤 등록 수는 2였고, 삭제 전에 `lsregister -u "<사본>/Mac/bin/Release/net10.0-macos27.0/osx-arm64/AI Burger Clock.app"`로 해제해 1로 돌아왔다. 임시 worktree는 삭제했다.
+
+### 수행하지 않은 검증
+- **창을 여는 smoke 6건**(위): 전체 화면 앱 없이 다시 실행해야 검증된 것이다.
+- **Mac 팝오버에 실제로 뜨는 xAI 카드 문구.** smoke는 합성 데이터만 쓰고 네트워크를 쓰지 않는다. 실행 중인 앱은 교체 전까지 0.8.9다. 교체 뒤 사용자가 확인한다.
+- 저장소 경로 빌드·실제 앱 교체·실행(사용자가 직접 수행), 교체 뒤 실행 파일·앱 DLL SHA-256 대조.
+- 옵션 없는 빌드(Xcode 27.2를 지원하는 워크로드 이후, [BACKLOG](BACKLOG.md)). 알림 센터 실제 표시와 장시간 사용, 실제 VoiceOver 낭독, 알림 배너 어두운 화면 가독성은 이전 절의 미확인 항목 그대로다.

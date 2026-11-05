@@ -6,6 +6,15 @@
 - 기본 꺼짐 트레이 ‘모바일 사이트 연동…’, HTTPS 주소·자격 증명 저장소의 고정 토큰, 원자적인 설치 sourceId/seq, 15분 하트비트와 진행 1건/대기 최신 1건, 30초→2분→5분→15분 재시도를 추가한다. 기존 조회·알림·화면 판정은 바꾸지 않는다.
 - #111과 이번 후보 검사는 가짜 HTTP·자격 증명 저장소와 합성 자료만 쓴다. **실제 사이트/계정 연결은 사용자 외부 실행 앱의 3단계**, 병합·배포는 사용자 결정이다. 외부 백업과 준비/단일 EXE self-test 각 292,188건·smoke 각 990 PASS 뒤 00:16:35 KST EXE 교체를 완료했다. PNG 45개/layout 38개는 #111과 같고 외부 receipt로 기존 등록·자동 시작 대상/해제 dry-run 불변을 대조했고 외부 실행·트레이·상태/한도 보기·새 메뉴 기본 꺼짐은 사용자 확인이다. 실제 사이트 연결은 미실행이다. 운영 앱 실행·등록·실제 전송은 Codex에서 하지 않는다. [Windows 동작·수신 계약](WINDOWS_QUOTA_EXPORT.md) · [2.8.8 검사·해시·백업·외부 실행·3단계 절차/기대값/실패 확인](MAINTENANCE_2_8_8.md).
 
+## Mac 후속: Xcode 27.2를 지원하는 워크로드가 나오면 옵션 없이 재빌드
+
+- Mac 0.8.10(build 26)은 Xcode 27.2와 .NET macOS 워크로드 27.0.10742(요구 Xcode 27.1)가 어긋난 상태에서 `--allow-xcode-mismatch`로 빌드했다. 같은 조건의 빌드·smoke는 통과했다([MACOS_PORT 69절](MACOS_PORT.md#69-0810-정리)).
+- 27.2를 지원하는 워크로드가 나오면 옵션 없이 `bash Mac/build.sh`로 다시 빌드해 Shared.Tests·smoke를 확인하고 결과를 MACOS_PORT에 기록한다. 확인은 Mac 작업을 시작할 때마다 하는 워크로드 갱신 확인(`dotnet workload update --print-download-link-only`)에 함께 둔다.
+
+## 완료: 병합된 PR의 헤드 브랜치 자동 삭제
+
+- 저장소 설정 "Automatically delete head branches"가 이미 켜져 있다(`gh api`의 `delete_branch_on_merge`가 `true`). #114 병합 때 원격 브랜치가 병합 직후 이미 지워져 있는 것도 확인했다. 병합 뒤 정리는 로컬 브랜치 삭제와 `git remote prune`만 하면 된다.
+
 ## 보류: 모바일 사이트 후속
 
 - 모바일 사이트: Mac 앱의 한도 송신(같은 계약, sourceId별 저장). Windows 송신이 안정된 뒤 필요하면 검토. 보류.
