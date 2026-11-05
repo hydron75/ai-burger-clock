@@ -45,7 +45,7 @@ internal sealed class XaiStatusFeed
                 missingSince[missing.Id] = missing.MissingSinceUtc;
     }
 
-    // Public service paths and Cursor compatibility IDs checked on 2026-10-27.
+    // Public service paths and Cursor compatibility IDs checked on 2026-11-05.
     // In particular Cursor CLI is not Grok Build, and BugBot is not Grok Bot.
     private static readonly Dictionary<string, string> Services = new(StringComparer.Ordinal)
     {
@@ -55,17 +55,21 @@ internal sealed class XaiStatusFeed
         ["api-global"] = "Grok API · Global", ["api-us"] = "Grok API · US",
         ["cursor-desktop"] = "Cursor · Desktop", ["cursor-ios"] = "Cursor · iOS",
         ["cursor-cli"] = "Cursor · CLI", ["cloud-agents"] = "Cursor · Cloud Agents",
-        ["automations"] = "Cursor · Automations", ["bugbot"] = "Cursor · BugBot",
+        ["automations"] = "Cursor · Automations", ["bugbot"] = "Cursor · Bugbot",
+        ["third-party-models"] = "Cursor · Third-party models",
         ["review-agents"] = "Cursor · Review Agents", ["cursor-com"] = "Cursor · cursor.com",
         ["origin"] = "Cursor · Origin", ["enterprise-dashboard"] = "Cursor · Enterprise Dashboard",
         ["grok-bot"] = "Grok Bot"
     };
 
+    // Recognized products outside coding/work recommendations, including incident tracking.
+    private static readonly HashSet<string> ExcludedRssServices = new(StringComparer.Ordinal) { "imagine" };
+
     private static readonly Dictionary<string, string> Components = new(StringComparer.Ordinal)
     {
         ["cursor-ios"] = "cursor-ios", ["rflc60xp5jp2"] = "cursor-desktop",
         ["mwv1g9sc7kdh"] = "cloud-agents", ["vsny1qv7v86c"] = "cursor-cli",
-        ["k0trcq273dr6"] = "automations", ["bugbot"] = "bugbot", ["2x2chyqwmkzl"] = "review-agents",
+        ["k0trcq273dr6"] = "automations", ["bugbot"] = "bugbot", ["third-party-models"] = "third-party-models",
         ["sm5wkcnqkvr9"] = "grok-bot", ["jh0714rgjgt4"] = "cursor-com", ["xwjpvdf81qh9"] = "origin",
         ["enterprise-dashboard"] = "enterprise-dashboard"
     };
@@ -190,6 +194,13 @@ internal sealed class XaiStatusFeed
         foreach (var item in channel.Elements("item"))
         {
             string id = ((string?)item.Element("guid") ?? "").Trim();
+            bool trustedLink = Uri.TryCreate((string?)item.Element("link"), UriKind.Absolute, out var link) &&
+                link.Scheme == "https" && link.Host == "status.x.ai" && link.IsDefaultPort &&
+                link.UserInfo.Length == 0 && link.Query.Length == 0 && link.Fragment.Length == 0;
+            string[] segments = trustedLink ? link!.AbsolutePath.Split('/', StringSplitOptions.RemoveEmptyEntries) : [];
+            bool identifiedPath = segments.Length == 2 && segments[1] == id;
+            // Ignore before Seen: an Imagine-only entry must not pin a work incident's expiry.
+            if (id.Length is > 0 and <= 128 && identifiedPath && ExcludedRssServices.Contains(segments[0])) continue;
             if (id.Length is > 0 and <= 128) reading.Seen.Add(id);
             string title = Clean((string?)item.Element("title") ?? "", 500);
             string description = Clean(Tags.Replace(WebUtility.HtmlDecode((string?)item.Element("description") ?? ""), " "), 100_000);
@@ -200,12 +211,9 @@ internal sealed class XaiStatusFeed
             if (id.Length is 0 or > 128 || title.Length == 0 || !header.Success ||
                 !categories.Contains(state) || !categories.Contains(severity))
             { reading.Issues.Add("RSS 사건 필수 필드/상태 형식 이상"); continue; }
-            if (!Uri.TryCreate((string?)item.Element("link"), UriKind.Absolute, out var link) ||
-                link.Scheme != "https" || link.Host != "status.x.ai" || !link.IsDefaultPort ||
-                link.UserInfo.Length > 0 || link.Query.Length > 0 || link.Fragment.Length > 0)
+            if (!trustedLink)
             { Uncertain(reading, id, title, "RSS 사건의 제품 경로를 확인할 수 없음"); continue; }
-            string[] segments = link.AbsolutePath.Split('/', StringSplitOptions.RemoveEmptyEntries);
-            if (segments.Length != 2 || segments[1] != id || !Services.TryGetValue(segments[0], out var service))
+            if (!identifiedPath || !Services.TryGetValue(segments[0], out var service))
             {
                 if (state != "resolved") Uncertain(reading, id, title, "RSS 진행 사건의 제품 범위를 확인할 수 없음");
                 continue;
