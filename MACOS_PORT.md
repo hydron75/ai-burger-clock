@@ -2338,12 +2338,26 @@ smoke의 선택 기능(`AIBURGERCLOCK_SMOKE_IMAGES`)으로 큰 화면·1280×800
 
 3회째 임시 사본 빌드(`9a4ef2e`)의 SHA-256은 실행 파일 `09bc2e2ca6586615271cc66307167a4ee5e70d44fda09798582aa58b7ba5a128`, 앱 DLL `970ecd0bf2cd81383d4ae4ead508272e172a532b3b7244ceb3c27ab4355eecf6`이다. 같은 앱 소스여도 빌드 사본마다(경로, 빌드 때의 git 커밋) 값이 달라 첫 빌드의 값과 다르다.
 
-위 SHA-256은 **임시 사본 빌드**의 값이다. 저장소 경로 빌드는 사용자가 교체할 때 만들어지므로 그 값과의 대조는 교체 뒤 기록한다.
+위 SHA-256은 **임시 사본 빌드**의 값이다. 저장소 경로 빌드의 값은 아래 "저장소 경로 빌드와 교체"에 있다.
+
+### 저장소 경로 빌드와 교체 (사용자 수행, 2026-11-05 21시대)
+사용자가 PR #116 병합(main `dbbb86bf017b77ffb3b1beb7dc64be8d34873581`) 뒤 저장소 경로에서 직접 `bash Mac/build.sh --quit-running --allow-xcode-mismatch`로 빌드하고 `open`으로 실행했다. 이 작업의 확인은 사용자가 알린 뒤 읽기 전용으로만 했다(앱·설정 변경 없음).
+
+| 항목 | 결과 |
+|---|---|
+| 빌드 기록 | `artifacts/mac-build/xcode-mismatch.log`(Git 제외): 21:12:08 옵션 사용(`Xcode 27.2 (27B52), macos workload 27.0.10742/10.0.100 requires Xcode 27.1, .NET SDK 10.0.403, git dbbb86b`), 21:12:44 `exit 0` |
+| 번들 | `CFBundleShortVersionString` **0.8.10**, `CFBundleVersion` **26**, `codesign --verify --deep --strict` 통과, `System.Private.CoreLib` 10.0.1426대(0.8.9와 같음) |
+| 프로세스 | **1개**(PID 72431, 21:13:28 시작, 경로는 위 저장소 경로 번들). 빌드 종료(21:12:44) 뒤에 시작했다 |
+| SHA-256 실행 파일 | `e85506d540438829f8e68af45e59ba877589fd306a1d36373d647e0b05165519` |
+| SHA-256 앱 DLL | `b90435e1076371322e4ff5d7a5623a0f04c4d01e4d1744a1a3195872d3a76b16` (`Contents/MonoBundle/AI Burger Clock.dll`) |
+| LaunchServices 등록 수 | `lsregister -dump`에서 번들 ID `com.hydron75.aiburgerclock`의 등록 수 = **1**(저장소 경로 번들). 저장소 안 `Mac/obj/.../codesign` 경로 두 개는 기존 빌드 부산물이다 |
+
+임시 사본 빌드의 값(위 표)과 다른 것은 정상이다. 같은 앱 소스여도 빌드 경로와 빌드 때의 git 커밋(`dbbb86b`)이 다르기 때문이다.
 
 ### LaunchServices 등록 수 (임시 사본, 같은 번들 ID)
 임시 사본(첫 빌드와 3회째 재빌드 모두)에서 smoke를 실행한 뒤 등록 수는 각각 2였고, 삭제 전에 `lsregister -u "<사본>/Mac/bin/Release/net10.0-macos27.0/osx-arm64/AI Burger Clock.app"`로 해제해 1로 돌아왔다. 임시 worktree는 삭제했다.
 
 ### 수행하지 않은 검증
 - **Mac 팝오버에 실제로 뜨는 xAI 카드 문구.** smoke는 합성 데이터만 쓰고 네트워크를 쓰지 않는다. 실행 중인 앱은 교체 전까지 0.8.9다. 교체 뒤 사용자가 확인한다.
-- 저장소 경로 빌드·실제 앱 교체·실행(사용자가 직접 수행), 교체 뒤 실행 파일·앱 DLL SHA-256 대조.
+- 실행 뒤 장시간 동작. 저장소 경로 빌드의 실행 파일·앱 DLL은 실행 직후의 읽기 전용 확인만 했다(실행 중 파일과 디스크 파일의 대조는 같은 경로의 번들이 빌드 뒤 21:13에 시작됐다는 시각으로 갈음했다).
 - 옵션 없는 빌드(Xcode 27.2를 지원하는 워크로드 이후, [BACKLOG](BACKLOG.md)). 알림 센터 실제 표시와 장시간 사용, 실제 VoiceOver 낭독, 알림 배너 어두운 화면 가독성은 이전 절의 미확인 항목 그대로다.
