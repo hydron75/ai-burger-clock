@@ -25,18 +25,40 @@
 | 기존 2.8.8 EXE 소스 | `73e70a1c6d0fe1f29cd594acc4a0b0a75496d2bd` |
 | #115 검증 HEAD | `593f916d8620490afb75e0c01afb6dec0d6f05aa` |
 | #115 병합 / 이번 출발 main | `1257baac698cc1ff0e9c76c23826738e9ff98e9a` |
-| Windows 버전 / 후보 EXE 소스 | 후보 생성 뒤 기록 |
+| Windows 버전 / 후보 EXE 소스 | `1ca68a2d7dd37b31a86da58ed8701c0def0a188c` |
 | 이번 버전 PR 병합 | 미병합, 사용자 결정 |
 
 후보: `artifacts/release-2.8.9-preparation-20261105/candidate/AI Burger Clock.exe`.
 FileVersion/AssemblyVersion **2.8.9.0**, framework-dependent 단일 EXE이며 .NET 10 Desktop Runtime x64가 필요합니다.
-후보 크기·ProductVersion·SHA-256은 검증 뒤 기록합니다.
+ProductVersion **`2.8.9+1ca68a2d7dd37b31a86da58ed8701c0def0a188c`**, 크기 **29,931,451 bytes**,
+SHA-256 **`D400468B1163A7C0738D42EE75FFD2AC90C22DFC42EB9044A833B3F99252B399`**입니다.
+후속 기록 커밋과 이 실제 EXE 소스 커밋은 구분합니다.
 기존 dist는 **2.8.8.0**, SHA-256
 `3EEC46E3CAFDA6C6E10CE4388C1C3DC7A0277D0AFA49B6FA4EC03E5FB88D75D0`로 보존합니다.
 
 ## 검사 결과
 
-build·bin self-test·Portable 후보 self-test·고정 after 슬롯 smoke·공개 `--check-providers` 결과를 완료 뒤 기록합니다.
+| 항목 | 결과 |
+|---|---|
+| `build.ps1 -ReportGroup release-2-8-9` | 경고 0·오류 0 |
+| bin / Portable 단일 EXE self-test | 각각 **292,215 PASS**, 실제 ExitCode 0 |
+| 공통 / Windows 전용 | **291,104 / 1,111**. xAI 그룹 416건이며 버전 PR의 검사 증감은 0 |
+| 별도 candidate 경로 Portable publish | 경고 0·오류 0·종료 코드 0. dist를 쓰지 않음 |
+| 후보 최종 고정 after 슬롯 smoke | **990 PASS**, 실제 ExitCode 0, 합성 PNG 45개. 별도 1회이므로 트레이 증가 억제는 NotEvaluated |
+| 공개 `--check-providers` | 실제 ExitCode 0. OpenAI·Claude·Gemini·xAI 모두 Operational. xAI는 네 출처 응답 수신·공식 사건 피드 기준 정상·판정 문제 없음 |
+
+SDK **10.0.403**, Desktop Runtime **10.0.14 x64**입니다. 설치/업데이트는 하지 않았습니다.
+후보 최종 PNG **45/45**·레이아웃 JSON **38/38**은 기존 2.8.8의 고정 before 슬롯 결과와 SHA-256 바이트가 같습니다.
+
+기존 합성 symlink fixture 1개 SKIP은 유지합니다. 로그는 `artifacts/release-2-8-9/`와
+`artifacts/release-2.8.9-preparation-20261105/`, 최종 smoke는 `artifacts/release-2-8-9-candidate-final/`에 둡니다.
+
+**초기 smoke 실패도 보존:** 첫 후보 검사에서 `Windows 자동 실행 · 다른 경로` 컨트롤의
+`Control clipped` 오류로 19 PASS 뒤 종료 코드 1이었습니다. 기존 2.8.8을 고정 before 슬롯에서 비교하면
+990 PASS·종료 코드 0이었고, **후보/검사 코드/대기 시간/Windows 설정을 바꾸지 않은 단독 재검사**는
+990 PASS·종료 코드 0으로 통과했습니다. 최초 실패 원인은 미확정이며 확인한 실패를 성공으로 합산하지 않습니다.
+공통/Windows `.cs`를 고치거나 레이아웃 검사를 건너뛰지 않았습니다. 운영 화면 검증과 초기 실패의 원인 조사는 구분합니다.
+
 버전/문서만 바꾸므로 #115 이후 검사 기대값은 늘리지 않습니다. 합성 검사와 실제 공개 상태 조회를 구분합니다.
 실제 한도/CLI 계정 조회·사이트 전송·운영 알림/등록·Mac 빌드/검사는 이번 준비에서 하지 않습니다.
 
@@ -58,6 +80,35 @@ build·bin self-test·Portable 후보 self-test·고정 after 슬롯 smoke·공�
 `RegistrationPerformed=False`, `AutoStartPathMatches=True`, `DryRunExitCode=0`, `DryRunChangedNothing=True`.
 기존 모바일 사이트 연동 설정은 유지하며 토큰 교체나 실제 테스트 전송은 이번 절차에 포함하지 않습니다.
 
+### 외부 PowerShell 명령
+
+현재 앱을 정상 종료한 뒤 **한 단계씩** 실행합니다. 오류가 있으면 다음 단계로 넘어가지 않습니다.
+
+~~~powershell
+& 'C:/Users/mc_bl/.codex/.chatgpt-projects/g-p-6aa5eb198fd88191b7382af0eb114af4/AiBurgerClock/artifacts/release-2.8.9-preparation-20261105/Backup-OutsideCodex.ps1'
+~~~
+
+`BackupSucceeded=True`와 실제 백업 경로를 확인한 뒤 교체합니다.
+
+~~~powershell
+& 'C:/Users/mc_bl/.codex/.chatgpt-projects/g-p-6aa5eb198fd88191b7382af0eb114af4/AiBurgerClock/artifacts/release-2.8.9-preparation-20261105/Replace-VerifiedExe.ps1'
+~~~
+
+`ExeReplaced=True`, `FileVersion=2.8.9.0`, 위 SHA-256 일치를 확인한 뒤 기존 운영 등록을 검사합니다.
+
+~~~powershell
+& 'C:/Users/mc_bl/.codex/.chatgpt-projects/g-p-6aa5eb198fd88191b7382af0eb114af4/AiBurgerClock/artifacts/release-2.8.9-preparation-20261105/Inspect-ProductionOutsideCodex.ps1'
+~~~
+
+위 등록/자동 시작/dry-run 기대값이 모두 정상이면 사용자가 운영 앱을 실행합니다.
+
+~~~powershell
+Start-Process -FilePath 'C:/Users/mc_bl/.codex/.chatgpt-projects/g-p-6aa5eb198fd88191b7382af0eb114af4/AiBurgerClock/dist/win-x64/AI Burger Clock.exe'
+~~~
+
+도우미 3개는 기존 2.8.8 절차의 버전·소스·해시 pin만 2.8.9에 맞춰 준비했으며 PowerShell 구문 오류 0입니다.
+Codex에서는 실행하지 않았고 사용자 백업/교체/등록 확인 결과도 아직 받지 않았습니다.
+
 ## 2.8.8으로 되돌리기
 
 문제가 있으면 앱을 정상 종료하고 외부 백업의 `previous-2.8.8.exe` 해시가 위 기존 해시와 같은지 확인한 뒤
@@ -66,6 +117,13 @@ DB·캐시·송신 설정·알림 등록은 자동 복원하거나 삭제하지 
 
 ## 모바일 사이트
 
-#115와 같은 규칙의 준비본을 병합 확인 뒤 별도로 배포합니다. 화면 기준 커밋은 #115 병합 커밋으로 표시합니다.
-C# 기준 비교·사이트 검사·배포 결과와 실제 브라우저의 xAI 카드 상태는 확인 뒤 계정 값/주소 없이 기록합니다.
+#115 병합 확인 뒤 사이트 **버전 11**, 소스 **`654c295cb3b7a963b104a1525cce6c64fee593ba`**를
+개인 소유자만 접근하는 기존 범위 그대로 배포했습니다. 화면/API 기준 커밋은 **`1257baa`**입니다.
+새/옛 구성 요소 목록, Third-party models·Review Agents RSS, Imagine 진행/해결·깨진 필드·신뢰하지 않는 링크,
+동일 ID의 작업 제품과 24시간 소실/복원 경계를 포함해 실제 C# 원본과 **상태 161단계 중 xAI 118단계 전부 일치**했습니다.
+시간표·권고·신선도까지 네 그룹 **20,192건 일치**, 사이트 Node **74/74**, typecheck·Worker build·ESM validation 통과입니다.
+기준 C# 원본 사본 5개는 병합 main 파일과 해시가 같고 합성 기준 자료는 저장소 밖에만 보관합니다.
+**배포 후 실제 브라우저 확인(2026-11-05 21:08 KST):** xAI 카드가 **GO**, **Official: 정상**,
+`정상 · 진행 중 장애 없음(공식 사건 피드 기준)`으로 표시되고 하단 `기준 커밋 1257baa`, Refresh 활성 상태를 확인했습니다.
+카드/하단만 읽었으며 실제 한도 값·사이트 주소·토큰·화면 캡처는 기록하지 않았습니다. 아이폰 실기 재확인은 미실행입니다.
 Windows 버전 후보의 소스·검사·해시와 사이트 소스·검증은 구분합니다.

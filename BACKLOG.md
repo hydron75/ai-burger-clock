@@ -4,6 +4,7 @@
 
 - #115는 main `1257baac698cc1ff0e9c76c23826738e9ff98e9a`에 병합했다. 필수 JSON 구성 요소에서 Review Agents를 빼고 Third-party models를 Cursor로 추가하며, 기존 Review Agents RSS 대응은 유지한다. Bugbot 표기를 맞추고 Imagine은 작업 판정·미해결 사건 추적에서 제외한다. 필수 ID가 빠지면 CHECK인 기준은 유지한다.
 - 이번 Windows 버전 PR은 버전·문서만 변경한다. 공통 `.cs`와 Mac은 수정하지 않으며 EXE 교체·운영 실행은 사용자 담당이다. 모바일 사이트의 같은 규칙 반영·C# 비교·배포는 별도로 확인한다. [2.8.9 후보 검사·해시·외부 절차](MAINTENANCE_2_8_9.md).
+- 2.8.9 후보 build/Portable publish·self-test 각 292,215건·최종 smoke 990 PASS·공식 xAI 정상 확인을 마쳤다. 첫 smoke 잘림 실패 1회는 원인 미확인으로 기록하며 같은 후보의 재검사와 PNG 45개/layout 38개의 기존 2.8.8 동일 결과를 구분한다. 운영 EXE 교체·실행은 아직 하지 않았다. 모바일 사이트는 #115 병합 기준으로 배포했고 실제 브라우저 xAI GO/정상을 확인했다. 주소·토큰·한도 값은 기록하지 않는다.
 
 ## #111 병합 완료 · Windows 2.8.8 교체·외부 실행 완료: 모바일 사이트 한도 송신기 (2단계)
 
