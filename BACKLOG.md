@@ -1,5 +1,10 @@
 # 다음 개선 항목
 
+## Draft 검토: 다음 Windows 배포의 외부 실행 묶음
+
+- 2026-11-05 결정대로 버전별 외부 도우미 대신 저장소의 `deploy-windows.ps1`과 Codex 생성 준비 영수증을 재사용한다. 사용자 외부 실행 한 번으로 백업 → EXE 교체 → 기존 등록/자동 시작 불변·해제 dry-run 확인 → 실행 요청을 처리한다. 첫 실패 중단·교체 후 이전 EXE만 복원하며 DB는 복원하지 않는다.
+- 고정 before/after 가짜 경로 각각 33개 시나리오·186개 검사 통과. 실제 dist·운영 DB·등록·앱 실행은 이번 작업에서 접근하지 않았다. 다음 배포에서의 실제 외부 실행과 화면 확인은 미확인으로 남긴다. 버전·배포는 이번 변경에 포함하지 않는다. [영수증·단계·복원·검사 계약](WINDOWS_DEPLOYMENT.md).
+
 ## #115/#118 병합 완료 · Windows 2.8.9 교체·외부 실행 완료: xAI 카탈로그 갱신
 
 - #115는 main `1257baac698cc1ff0e9c76c23826738e9ff98e9a`에 병합했다. 필수 JSON 구성 요소에서 Review Agents를 빼고 Third-party models를 Cursor로 추가하며, 기존 Review Agents RSS 대응은 유지한다. Bugbot 표기를 맞추고 Imagine은 작업 판정·미해결 사건 추적에서 제외한다. 필수 ID가 빠지면 CHECK인 기준은 유지한다.
