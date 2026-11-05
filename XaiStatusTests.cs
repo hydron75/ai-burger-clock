@@ -15,8 +15,8 @@ internal static class XaiStatusTests
     private static readonly (string Id, string Name)[] Catalog =
     [
         ("cursor-ios", "Cursor IDE (iOS)"), ("rflc60xp5jp2", "IDE"), ("mwv1g9sc7kdh", "Cloud Agents"),
-        ("vsny1qv7v86c", "CLI"), ("k0trcq273dr6", "Automations"), ("bugbot", "BugBot"),
-        ("2x2chyqwmkzl", "Review Agents"), ("sm5wkcnqkvr9", "Grok Bot"), ("jh0714rgjgt4", "cursor.com"),
+        ("vsny1qv7v86c", "CLI"), ("k0trcq273dr6", "Automations"), ("bugbot", "Bugbot"),
+        ("third-party-models", "Third-party models"), ("sm5wkcnqkvr9", "Grok Bot"), ("jh0714rgjgt4", "cursor.com"),
         ("xwjpvdf81qh9", "Origin"), ("enterprise-dashboard", "Enterprise Dashboard")
     ];
     internal static string ComponentsJson => Components();
@@ -54,6 +54,17 @@ internal static class XaiStatusTests
         Check(RecommendationPolicy.Calculate(AgentState.FullThrottle, healthy.Status) == Recommendation.Go,
             "incident-free xAI is GO, not permanently gray");
         Check(healthy.LastSuccessfulCheckUtc == Now && healthy.AssessmentIssue.Length == 0, "normal receipt uses the injected clock");
+        var legacyCatalog = JsonNode.Parse(ComponentsJson)!;
+        var legacyComponent = legacyCatalog["components"]!.AsArray().Single(item => (string?)item!["id"] == "third-party-models")!;
+        legacyComponent["id"] = "2x2chyqwmkzl"; legacyComponent["name"] = "Review Agents";
+        var legacySummary = JsonNode.Parse(SummaryJson)!;
+        legacySummary["components"] = legacyCatalog["components"]!.DeepClone();
+        var legacy = Parse(summary: legacySummary.ToJsonString(), components: legacyCatalog.ToJsonString());
+        Check(legacy.Status == OfficialStatus.Unknown && legacy.AssessmentIssue.Contains("필수 구성 요소 누락", StringComparison.Ordinal),
+            "legacy Review Agents catalog cannot replace the required Third-party models component");
+        var thirdPartyIncident = Parse(history: JsonSerializer.Serialize(new { incidents = new[] { Incident(components: ["third-party-models"]) } }));
+        Check(thirdPartyIncident.Status == OfficialStatus.PartialOutage && thirdPartyIncident.RelevantComponent == "Cursor · Third-party models",
+            "Third-party models JSON incident contributes to Cursor work status");
         Check(Enum.GetValues<QuotaProvider>().Length == 3 && ProviderNames.Provider(ProviderKind.Xai) == "xAI", "xAI status adds no quota provider");
         Check(ProviderStatusPages.For(ProviderKind.Xai).AbsoluteUri == "https://status.x.ai/" &&
             ProviderStatusPages.XaiUsage.AbsoluteUri == "https://grok.com/dashboard", "fixed official status and usage destinations");
@@ -64,7 +75,8 @@ internal static class XaiStatusTests
             ("grok-in-x", "Grok · X"), ("grok-build", "Grok Build"), ("voice", "Grok · Voice"),
             ("office-workspace-plugins", "Grok · Office/Workspace Plugins"), ("api-global", "Grok API · Global"), ("api-us", "Grok API · US"),
             ("cursor-desktop", "Cursor · Desktop"), ("cursor-ios", "Cursor · iOS"), ("cursor-cli", "Cursor · CLI"),
-            ("cloud-agents", "Cursor · Cloud Agents"), ("automations", "Cursor · Automations"), ("bugbot", "Cursor · BugBot"),
+            ("cloud-agents", "Cursor · Cloud Agents"), ("automations", "Cursor · Automations"), ("bugbot", "Cursor · Bugbot"),
+            ("third-party-models", "Cursor · Third-party models"),
             ("review-agents", "Cursor · Review Agents"), ("cursor-com", "Cursor · cursor.com"), ("origin", "Cursor · Origin"),
             ("enterprise-dashboard", "Cursor · Enterprise Dashboard"), ("grok-bot", "Grok Bot")
         ];
@@ -74,6 +86,35 @@ internal static class XaiStatusTests
             Check(status.Status == OfficialStatus.PartialOutage && status.RelevantComponent == label, "RSS product mapping: " + path);
             Check(status.IncidentId == "synthetic-incident", "public incident ID preserved: " + path);
         }
+        foreach (string state in new[] { "investigating", "identified", "monitoring", "ongoing", "resolved" })
+        foreach (string severity in new[] { "info", "disruption", "outage" })
+        {
+            var ignored = Parse(Rss(Item("imagine", state: state, severity: severity)));
+            Check(ignored.Status == OfficialStatus.Operational && ignored.AssessmentIssue.Length == 0 &&
+                ignored.IncidentId.Length == 0 && ignored.PendingXaiIncidentIds.Length == 0 && ignored.XaiMissingIncidents.Count == 0,
+                "Imagine is outside work status and tracking: " + state + "/" + severity);
+        }
+        foreach (bool imagineFirst in new[] { false, true })
+        foreach (string state in new[] { "investigating", "resolved" })
+        {
+            var items = new[] { Item("grok-bot"), Item("imagine", state: state, severity: "outage") };
+            if (imagineFirst) Array.Reverse(items);
+            var mixed = Parse(Rss(items));
+            Check(mixed.Status == OfficialStatus.PartialOutage && mixed.RelevantComponent == "Grok Bot" && mixed.AssessmentIssue.Length == 0,
+                "ignored Imagine observation neither escalates nor resolves another product sharing the ID");
+        }
+        var ignoredTracker = new XaiStatusFeed();
+        _ = ignoredTracker.Parse(Rss(Item("grok-bot")), SummaryJson, ComponentsJson, IncidentsJson, Now);
+        var ignoredOnly = ignoredTracker.Parse(Rss(Item("imagine")), SummaryJson, ComponentsJson, IncidentsJson, Now.AddHours(1));
+        Check(ignoredOnly.Status == OfficialStatus.Unknown && ignoredOnly.XaiMissingIncidents.Count == 1,
+            "Imagine alone does not hide disappearance of a previously affected work product");
+        var ignoredRestart = new XaiStatusFeed(); ignoredRestart.Restore(ignoredOnly);
+        var ignoredExpired = ignoredRestart.Parse(Rss(Item("imagine")), SummaryJson, ComponentsJson, IncidentsJson, Now.AddHours(25));
+        Check(ignoredExpired.Status == OfficialStatus.Operational && ignoredExpired.XaiRecoveryUnconfirmed && ignoredExpired.PendingXaiIncidentIds.Length == 0,
+            "Imagine does not pin a work incident ID past its persisted 24-hour disappearance period");
+        var unsafeImagine = Item("imagine");
+        unsafeImagine.Element("link")!.Value = "https://untrusted.example/imagine/synthetic-incident";
+        Check(Parse(Rss(unsafeImagine)).Status == OfficialStatus.Unknown, "Imagine exclusion never bypasses the trusted-link boundary");
         foreach (var item in Catalog)
         {
             var status = Parse(components: Components(changed: item.Id, value: "degraded_performance"));
