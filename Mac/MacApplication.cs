@@ -732,7 +732,8 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
                     Math.Abs(geminiRgb.BlueComponent * 255 - geminiExpected[2]) > 0.6)
                     throw new InvalidOperationException($"Gemini bar color is wrong in {name}.");
                 foreach (NSColor fill in new[] { MacControls.QuotaBarColor(QuotaProvider.Codex), MacControls.QuotaBarColor(QuotaProvider.Claude),
-                    MacControls.QuotaBarColor(QuotaProvider.Gemini), MacControls.Color(PanelTone.Muted) })
+                    MacControls.QuotaBarColor(QuotaProvider.Gemini), MacControls.QuotaBarColor(QuotaProvider.Xai),
+                    MacControls.Color(PanelTone.Muted) })
                 {
                     MacControls.BarPalette palette = MacControls.BarPaletteFor(fill, darkAppearance);
                     if (!palette.HasDistinctTint || !palette.MeetsTargets)
@@ -807,13 +808,17 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
                 [new("gemini-5h", "5시간", 0, now.AddHours(5), 300),
                  new("gemini-weekly", "주간", 0.4, now.AddDays(6), 10080)]),
                 LastSuccessfulCheckUtc: now, NextCheckUtc: now.AddHours(6));
-            QuotaState[] quotas = [quota, claudeQuota, geminiQuota];
+            // xAI weekly credits (Grok CLI) is the fourth standard box: one synthetic row.
+            QuotaState xaiQuota = MacXaiQuotaSmoke.Reading(now, 37);
+            QuotaState[] quotas = [quota, claudeQuota, geminiQuota, xaiQuota];
             ProviderStatus[] healthy = Enum.GetValues<ProviderKind>().Select(provider =>
                 new ProviderStatus(provider, OfficialStatus.Operational, now, now, "관련 서비스 정상")).ToArray();
             panel.Update(Schedule(now), healthy, quotas, false, now.AddMinutes(5), "");
             MacStatusPanel.Layout layout = panel.Verify(Schedule(now), healthy, quotas);
             if (!panel.QuotaRowText(QuotaProvider.Gemini, "gemini-5h").StartsWith("5시간  0% 사용 · 약 5시간 후 리셋", StringComparison.Ordinal))
                 throw new InvalidOperationException("The Gemini quota box did not show its rows.");
+            if (!panel.QuotaRowText(QuotaProvider.Xai, AccountQuotaParsers.GrokWeeklyWindowId).StartsWith("주간 크레딧  37% 사용 · 약 ", StringComparison.Ordinal))
+                throw new InvalidOperationException("The xAI quota box did not show its weekly credit row.");
             // The whole card opens the official page (VoiceOver press and click share the action).
             int requests = statusPageRequests;
             if (!panel.PressCard(ProviderKind.Claude) || statusPageRequests != requests + 1)
@@ -858,8 +863,8 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
                 !xaiDetail.Contains("과거 사건 해제: " + ExpiryNote, StringComparison.Ordinal))
                 throw new InvalidOperationException("The xAI card detail misses the shared product line, usage address, no-quota notice or expiry note.");
             panel.Update(Schedule(now), healthy, quotas, false, now.AddMinutes(5), "");
-            // Screen fit: with four provider cards and three quota boxes a 1280x800 screen is too short for the whole panel
-            // at full quota height, so the quota area scrolls there. A 1024x640 screen (13-inch "larger text") cannot hold
+            // Screen fit: with four provider cards and four quota boxes (the quota area is capped, so the last box scrolls) a
+            // 1280x800 screen is too short for the whole panel at full quota height, so the quota area scrolls there. A 1024x640 screen (13-inch "larger text") cannot hold
             // the four cards plus even one box at the minimum quota height, so the whole panel scrolls. Either way the
             // popover stays inside the screen and every card, the xAI link, the quota area and the controls can be scrolled into view.
             const int MenuBarAndMargin = 25 + 24;
@@ -889,8 +894,10 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
             // Bars follow the model's used percentage: 0% empty, 100% full, small values still visible.
             if (panel.QuotaBarFill(QuotaProvider.Gemini, "gemini-5h") != 0 ||
                 panel.QuotaBarFill(QuotaProvider.Codex, "session") != layout.BoxTextWidth ||
-                panel.QuotaBarFill(QuotaProvider.Gemini, "gemini-weekly") < 2 || panel.QuotaBarCount != 7)
-                throw new InvalidOperationException("Usage bars do not show the used percentages (0% empty, 100% full, 7 bars).");
+                panel.QuotaBarFill(QuotaProvider.Gemini, "gemini-weekly") < 2 || panel.QuotaBarCount != 8 ||
+                panel.QuotaBarFill(QuotaProvider.Xai, AccountQuotaParsers.GrokWeeklyWindowId) < 2 ||
+                panel.QuotaBarFill(QuotaProvider.Xai, AccountQuotaParsers.GrokWeeklyWindowId) >= layout.BoxTextWidth)
+                throw new InvalidOperationException("Usage bars do not show the used percentages (0% empty, 100% full, 8 bars incl. the xAI weekly row).");
             // Previous and elapsed values draw muted bars (Verify checks the color per row); a waiting or
             // failed reading has no bar at all.
             QuotaState[] edgeStates =
@@ -901,11 +908,12 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
                      new("weekly_all", "주간 전체", 63, null, 10080)]),
                     LastSuccessfulCheckUtc: now, NextCheckUtc: now.AddMinutes(5)),
                 new(QuotaProvider.Gemini, null, Error: "조회 실패 예시"),
+                xaiQuota with { IsPrevious = true, Error = "조회 실패 예시" },
             ];
             panel.Update(Schedule(now), healthy, edgeStates, false, now.AddMinutes(5), "");
             panel.Verify(Schedule(now), healthy, edgeStates);
-            if (panel.QuotaBarCount != 4)
-                throw new InvalidOperationException("Previous/elapsed rows must keep their bars and a failed reading must have none.");
+            if (panel.QuotaBarCount != 5)
+                throw new InvalidOperationException("Previous/elapsed rows (incl. the xAI one) must keep their bars and a failed reading must have none.");
             panel.Update(Schedule(now), healthy, quotas, false, now.AddMinutes(5), "");
             panel.Verify(Schedule(now), healthy, quotas);
             // Time layer at the standard fixture: elapsed comes from the shared model (receipt time = now),
@@ -938,6 +946,9 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
                     [new("gemini-5h", "5시간", 55, now.AddHours(3), 300),            // would compare, but the value is previous
                      new("gemini-weekly", "주간", 10, now.AddDays(3), 10080)]),
                     LastSuccessfulCheckUtc: now.AddHours(-1), NextCheckUtc: now.AddMinutes(5), IsPrevious: true),
+                new(QuotaProvider.Xai, new(QuotaProvider.Xai,
+                    [new(AccountQuotaParsers.GrokWeeklyWindowId, "주간 크레딧", 63, now.AddDays(2), AccountQuotaParsers.GrokWeeklyWindowMinutes)]),
+                    LastSuccessfulCheckUtc: now, NextCheckUtc: now.AddMinutes(5)),   // current: time layer in the xAI colors
             ];
             panel.Update(Schedule(now), healthy, timeStates, false, now.AddMinutes(5), "");
             panel.Verify(Schedule(now), healthy, timeStates);
@@ -955,7 +966,12 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
                     throw new InvalidOperationException($"{provider} {windowId}: hidden comparison still shows a time layer or spoken suffix.");
             }
             // Gemini model-specific weekly rows (#62): three rows in the Gemini box, 8 bars, capped height.
-            string geminiModelResult = MacGeminiModelRowSmoke.Verify(panel, Schedule(now), healthy, quota, claudeQuota, now);
+            string geminiModelResult = MacGeminiModelRowSmoke.Verify(panel, Schedule(now), healthy, quota, claudeQuota, xaiQuota, now);
+            panel.Update(Schedule(now), healthy, quotas, false, now.AddMinutes(5), "");
+            panel.Verify(Schedule(now), healthy, quotas);
+            // xAI weekly credit box: four boxes, +1 bar, colors, previous/none states, VoiceOver, capped height.
+            string xaiQuotaResult = MacXaiQuotaSmoke.Verify(panel, Schedule(now), healthy, quota, claudeQuota, geminiQuota, xaiQuota, now);
+            MacQuotaRowImages.RenderXaiQuota(panel, Schedule(now), healthy, quota, claudeQuota, geminiQuota, now, layout.UsableHeight);
             panel.Update(Schedule(now), healthy, quotas, false, now.AddMinutes(5), "");
             panel.Verify(Schedule(now), healthy, quotas);
             // Quota row name/value split (#80): the value stays whole, only the name is shortened, spoken once.
@@ -1004,7 +1020,7 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
                 Console.WriteLine($"SKIP: {skippedScreenChecks.Count} screen checks not run because a window of {covering.Value.Owner} covers display {covering.Value.ScreenNumber} " +
                     $"(opening ours would show the menu bar over it): {string.Join("; ", skippedScreenChecks)}. Run again with no full-screen app to check them.");
             string verdict = skippedScreenChecks.Count == 0 ? "PASS" : $"PASS with {skippedScreenChecks.Count} screen checks SKIPPED (not verified)";
-            Console.WriteLine($"{verdict}: bundle version, menu-tracking countdown timer, 20pt menu icon white/dark disc + color glyph light/dark 1x-2x pixels (glyph contrast min {iconContrast:0.0}:1), left/right/control-click routing, right-click menu, popover open/close/reopen, shared panel text/record menu/quota lines, {activationResult}, tone contrast >= 4.5:1 light+dark (min {weakest:0.0}:1), card text x = quota box text x ({layout.BoxTextX:0}pt; titles {layout.TitleX:0}pt), whole-card click/quota boxes read-only, shared quota title, usage bars (0% empty/100% full, provider colors >= 3:1 light+dark min {barWeakest:0.0}:1, muted when previous/elapsed, none without a value), time layer (tint-track/tint-used >= 1.5:1 min {tintWeakest:0.0}:1, marker >= 3:1 min {markerWeakest:0.0}:1 light+dark, dark tint-used >= 2.0:1 min {darkSeparationWeakest:0.0}:1, marker position/end points, hidden states, spoken row = shared reading text once), one shared Provider detail per quota box, four provider cards incl. xAI (card click vs usage link routing, link accessibility), three quota boxes incl. Gemini, popover {layout.Size.Width:0}x{layout.Size.Height:0}pt (this screen usable {layout.UsableHeight:0}pt; 1280x800 {standard.Height:0}pt not cut off, quota area {standardQuota:0}pt scrolling, every control reachable; 1024x640 {small.Height:0}pt not cut off, quota area {smallQuota:0}pt, whole panel {smallScroll.Document:0}pt scrolling, every control reachable), 1,000-char note limit, temporary SQLite, four events/notes via shared factory, {displayResult}, {permissionResult}, {layoutKeyResult}, {notificationImageResult}, {recoveryResult}, {earlyResetResult}, {earlyResetControllerResult}, {decisionLogResult}, {lateCallbackResult}, {earlyResetUiResult}, {geminiModelResult}, {quotaRowResult}, {diagnosticResult}, statistics (shared text, explanation fits, Mac empty-state hint), injected quota countdown; no account/network/settings changes.");
+            Console.WriteLine($"{verdict}: bundle version, menu-tracking countdown timer, 20pt menu icon white/dark disc + color glyph light/dark 1x-2x pixels (glyph contrast min {iconContrast:0.0}:1), left/right/control-click routing, right-click menu, popover open/close/reopen, shared panel text/record menu/quota lines, {activationResult}, tone contrast >= 4.5:1 light+dark (min {weakest:0.0}:1), card text x = quota box text x ({layout.BoxTextX:0}pt; titles {layout.TitleX:0}pt), whole-card click/quota boxes read-only, shared quota title, usage bars (0% empty/100% full, provider colors >= 3:1 light+dark min {barWeakest:0.0}:1, muted when previous/elapsed, none without a value), time layer (tint-track/tint-used >= 1.5:1 min {tintWeakest:0.0}:1, marker >= 3:1 min {markerWeakest:0.0}:1 light+dark, dark tint-used >= 2.0:1 min {darkSeparationWeakest:0.0}:1, marker position/end points, hidden states, spoken row = shared reading text once), one shared Provider detail per quota box, four provider cards incl. xAI (card click vs usage link routing, link accessibility), four quota boxes incl. Gemini and xAI weekly credits, popover {layout.Size.Width:0}x{layout.Size.Height:0}pt (this screen usable {layout.UsableHeight:0}pt; 1280x800 {standard.Height:0}pt not cut off, quota area {standardQuota:0}pt scrolling, every control reachable; 1024x640 {small.Height:0}pt not cut off, quota area {smallQuota:0}pt, whole panel {smallScroll.Document:0}pt scrolling, every control reachable), 1,000-char note limit, temporary SQLite, four events/notes via shared factory, {displayResult}, {permissionResult}, {layoutKeyResult}, {notificationImageResult}, {recoveryResult}, {earlyResetResult}, {earlyResetControllerResult}, {decisionLogResult}, {lateCallbackResult}, {earlyResetUiResult}, {geminiModelResult}, {xaiQuotaResult}, {quotaRowResult}, {diagnosticResult}, statistics (shared text, explanation fits, Mac empty-state hint), injected quota countdown; no account/network/settings changes.");
             ExitCode = 0;
         }
         catch (Exception error)

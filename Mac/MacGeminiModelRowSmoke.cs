@@ -18,7 +18,7 @@ internal static class MacGeminiModelRowSmoke
     }
 
     internal static string Verify(MacStatusPanel panel, ScheduleSnapshot schedule, IReadOnlyList<ProviderStatus> providers,
-        QuotaState codex, QuotaState claude, DateTimeOffset now)
+        QuotaState codex, QuotaState claude, QuotaState xai, DateTimeOffset now)
     {
         const string ModelId = "gemini-model:14:Gemini 4 Argongemini-argon-wtu-weekly";
         const string SecondModelId = "gemini-model:12:Gemini 5 Flashgemini-flash-weekly";
@@ -100,7 +100,31 @@ internal static class MacGeminiModelRowSmoke
         Check(panel.QuotaRowSpoken(QuotaProvider.Gemini, LongModelId).StartsWith(panel.QuotaRowText(QuotaProvider.Gemini, LongModelId), StringComparison.Ordinal),
             "a long model name must still be spoken in full.");
 
+        // With the fourth box (xAI weekly credits) the quota area is already at its limit before any model row is added:
+        // every Gemini row still adds exactly one bar (+1 against the three-box counts above) but never any popover height.
+        MacStatusPanel.Layout ShowFour(QuotaState gemini)
+        {
+            QuotaState[] states = [codex, claude, gemini, xai];
+            panel.Update(schedule, providers, states, false, now.AddMinutes(5), "");
+            return panel.Verify(schedule, providers, states);
+        }
+        MacStatusPanel.Layout fourTwo = ShowFour(Gemini(five, week));
+        Check(panel.QuotaBarCount == 8, $"with xAI, the two-row Gemini box must give 8 bars in total, found {panel.QuotaBarCount}.");
+        MacStatusPanel.Layout fourThree = ShowFour(Gemini(five, week, model));
+        Check(panel.QuotaBarCount == 9, $"with xAI, three Gemini rows must give 9 bars in total, found {panel.QuotaBarCount}.");
+        MacStatusPanel.Layout fourFour = ShowFour(Gemini(five, week, model, second));
+        Check(panel.QuotaBarCount == 10, $"with xAI, two model rows must give 10 bars in total, found {panel.QuotaBarCount}.");
+        Check(Math.Abs(fourThree.Size.Height - fourTwo.Size.Height) < 0.5 && Math.Abs(fourFour.Size.Height - fourTwo.Size.Height) < 0.5 &&
+              panel.QuotaAreaHeight <= MaximumQuotaAreaHeight + 0.5,
+            "with xAI, extra Gemini rows must scroll inside the quota area instead of growing the popover.");
+        Check(panel.QuotaBoxScrollsIntoView(QuotaProvider.Gemini) && panel.QuotaBoxScrollsIntoView(QuotaProvider.Xai),
+            "with xAI and model rows, the Gemini and xAI boxes must both scroll into view.");
+        MacStatusPanel.Layout fourLong = ShowFour(Gemini(five, week, longModel));
+        Check(panel.QuotaBarCount == 9 && fourLong.Size.Height <= fourLong.UsableHeight, "with xAI, a long model name broke the layout.");
+        panel.FitFor(four.UsableHeight);
+
         return $"Gemini model weekly rows (2 rows 7 bars {two.Size.Height:0}pt -> 3 rows 8 bars {three.Size.Height:0}pt, capped quota area scrolls, " +
-               $"1280x800 {fitted[0]:0}pt and 1024x640 {fitted[1]:0}pt not cut off, weekly row shape + spoken comparison, long name keeps layout)";
+               $"1280x800 {fitted[0]:0}pt and 1024x640 {fitted[1]:0}pt not cut off, weekly row shape + spoken comparison, long name keeps layout; " +
+               $"with the xAI box +1 bar each: 8/9/10 bars at {fourTwo.Size.Height:0}pt, extra rows scroll)";
     }
 }
