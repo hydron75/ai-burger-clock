@@ -324,8 +324,14 @@ internal static class AccountQuotaUiChecks
         context.RefreshStatus(false);
         boxes = context.StatusWindow.QuotaView.Controls.OfType<Panel>().ToArray();
         labels = QuotaLabels();
-        Check(boxes.Select(box => box.Name).SequenceEqual(new[] { "CodexQuotaBox", "ClaudeQuotaBox", "GeminiQuotaBox" }),
-            "Gemini has a third Provider box after ChatGPT and Claude");
+        Check(boxes.Select(box => box.Name).SequenceEqual(new[] { "CodexQuotaBox", "ClaudeQuotaBox", "GeminiQuotaBox", "XaiQuotaBox" }),
+            "Gemini and xAI follow ChatGPT and Claude without another status card");
+        var xaiBox = Box(QuotaProvider.Xai);
+        Check(xaiBox.Controls.OfType<QuotaBalanceBar>() is var xaiBars && xaiBars.Count() == 1 &&
+            xaiBars.Single().ElapsedPercent is > 42 and < 43 &&
+            ProviderLabels(QuotaProvider.Xai).Any(label => label.Text.StartsWith("주간 크레딧  37.5% 사용", StringComparison.Ordinal)) &&
+            context.StatusWindow.QuotaView.DetailFor(xaiBox).Contains("최소 10분", StringComparison.Ordinal),
+            "xAI has one weekly-credit row, time boundary and ten-minute scheduled-policy detail");
         var geminiBox = Box(QuotaProvider.Gemini);
         Check(geminiBox.BackColor == Color.White && geminiBox.BorderStyle == boxes[0].BorderStyle &&
             geminiBox.Width == boxes[0].Width && geminiBox.Cursor == Cursors.Default &&
@@ -357,9 +363,9 @@ internal static class AccountQuotaUiChecks
         Check(context.StatusWindow.ClientSize == size && context.StatusWindow.QuotaView.VerticalScroll.Visible &&
             !context.StatusWindow.QuotaView.HorizontalScroll.Visible && boxes.All(box =>
                 box.Controls.OfType<Label>().All(label => label.Bottom <= box.Height)),
-            "Three Provider boxes scroll only inside the existing quota viewport without enlarging the popup");
+            "Four Provider boxes scroll only inside the existing quota viewport without enlarging the popup");
         Check(labels.All(l => l.Height >= TextRenderer.MeasureText(l.Text, l.Font).Height),
-            "All three Provider boxes accommodate DPI-scaled text height");
+            "All four Provider boxes accommodate DPI-scaled text height");
         foreach (var section in QuotaPanelModel.Sections(monitor.Snapshot(), clock()))
         {
             var providerLabels = ProviderLabels(section.Provider);
@@ -468,7 +474,7 @@ internal static class AccountQuotaUiChecks
             () => new { claudeBefore = before, claudeNow = client.Calls(QuotaProvider.Claude), claudeAdvanced = client.Calls(QuotaProvider.Claude) > before, allIdle = monitor.Snapshot().All(s => !s.IsRefreshing) });
         Check(monitor.Snapshot().All(s => !s.IsPrevious) &&
             Enum.GetValues<QuotaProvider>().All(provider => client.Calls(provider) > callsBeforeRefresh[provider]),
-            "Existing Refresh button recovers all three independent quota displays");
+            "Existing Refresh button recovers all four independent quota displays");
         before = client.Calls(QuotaProvider.Claude);
         context.OnPowerModeChanged(null, new PowerModeChangedEventArgs(PowerModes.Resume));
         await Wait(() => client.Calls(QuotaProvider.Claude) > before && monitor.Snapshot().All(s => !s.IsRefreshing), "Resume",
