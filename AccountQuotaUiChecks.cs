@@ -251,7 +251,7 @@ internal static class AccountQuotaUiChecks
             monitor.Snapshot().Select(state => state.NextCheckUtc).SequenceEqual(dueBeforeOpen),
             "Opening and toggling quota view never requests a query or changes its existing schedule");
         Check(context.StatusWindow.QuotaView.Visible, "Quota toggle shows ChatGPT Work/Codex and Claude without enlarging the popup");
-        context.StatusWindow.UpdateQuotas(monitor.Snapshot().Where(s => s.Provider != QuotaProvider.Gemini).ToArray(), clock());
+        context.StatusWindow.UpdateQuotas(monitor.Snapshot().Where(s => s.Provider is QuotaProvider.Codex or QuotaProvider.Claude).ToArray(), clock());
         var labels = QuotaLabels();
         var boxes = context.StatusWindow.QuotaView.Controls.OfType<Panel>().ToArray();
         Check(boxes.Length == 2 && boxes[0].Name == "CodexQuotaBox" && boxes[1].Name == "ClaudeQuotaBox",
@@ -570,7 +570,7 @@ internal static class AccountQuotaUiChecks
         Check(context.StatusWindow.QuotaView.VerticalScroll.Visible && !context.StatusWindow.QuotaView.HorizontalScroll.Visible &&
             context.StatusWindow.ClientSize == size,
             "Extra model-scoped quota rows scroll vertically without enlarging the popup");
-        context.StatusWindow.UpdateQuotas(monitor.Snapshot().Where(s => s.Provider != QuotaProvider.Gemini).ToArray(), clock());
+        context.StatusWindow.UpdateQuotas(monitor.Snapshot().Where(s => s.Provider is QuotaProvider.Codex or QuotaProvider.Claude).ToArray(), clock());
         var reducedView = context.StatusWindow.QuotaView;
         Check(reducedView.VerticalScroll.Visible == (reducedView.Controls.OfType<Panel>().Max(box => box.Bottom) -
                 reducedView.AutoScrollPosition.Y > reducedView.ClientSize.Height) && !reducedView.HorizontalScroll.Visible,
