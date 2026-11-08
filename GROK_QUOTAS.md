@@ -64,10 +64,45 @@ xAI 박스의 한 행/막대/시간층/성공·다음 시각을 연결하며 기
 
 ## 검증과 미확인
 
-Windows `build.ps1`·self-test·smoke, 합성 팔레트·기존 상태 PNG 비교를 수행하고 결과는 PR 본문에 기록합니다.
+2026-11-09, .NET SDK 10.0.403에서 확인했습니다. 코드 검증 HEAD는
+`51c8b183468e09a1eec1af9be9beca993d6c75ac`이며 이후 커밋은 결과 문서와 합성 PNG만 추가합니다.
+
+| 항목 | 결과 |
+|---|---|
+| `build.ps1 -ReportGroup grok-weekly-quota` | 경고 0 / 오류 0, self-test 292,876 assertions PASS (기준 292,215 대비 +661) |
+| `Shared.Tests` | 291,755 assertions PASS. 이 Windows 임시 파일시스템의 기존 symlink fixture 1건은 권한 제한으로 SKIP |
+| 고정 before / after 슬롯 native smoke | 990 → 1,012 PASS, 실제 종료 코드 모두 0. PNG 45 → 49장 |
+| 기존 상태 화면 픽셀 비교 | 시간표·공휴일·장애·범위 미확인·작은/큰 작업 영역 숨김/재열기 13/13 동일 |
+| xAI 합성 팔레트 | 라이트/다크, 100%/200% 현재 값·이전 값 대비 3:1 이상, 조회 없음에 막대 없음 |
+| 사이트 준비본 (배포하지 않음) | 합성 검사 82 PASS, typecheck/build/Worker 검증 PASS, C# 표시·시간 비교 기준 240/240 일치 |
+
+Windows 결과는 `artifacts/grok-weekly-quota/`에 보관합니다. smoke는 각 슬롯 1회이므로
+트레이 기록의 반복 실행 무증가는 이번 결과로 주장하지 않습니다. native 토스트 제출·등록 명령과
+실제 계정 CLI·사이트 전송은 실행하지 않았습니다. 기존 배포 EXE·사용자 DB는 교체/변경하지 않았습니다.
+
 공통 검사는 정상/0%/100%, 모든 실패 판정, headless·고정 RPC·취소·크기 제한, 경로, 10분 경계,
 이전 값/없음, 캐시·진단 구버전 보존, 회복/조기 초기화·중복을 포함합니다. OS 알림과 실제 사이트 요청은 가짜 발송기만 씁니다.
 사이트는 합성 API v1/v2와 C# 기준 표시/시간 비교를 검증합니다. 실제 계정 값/화면은 예시로 사용하지 않습니다.
+
+## 합성 화면
+
+모든 수치·시각·모델명은 합성 검사 fixture입니다. 기존 크기 안에서 xAI 박스 하나가 추가되며 한도 영역만 스크롤합니다.
+
+| 200% 변경 전 | 200% 변경 후 (하단으로 스크롤) |
+|---|---|
+| ![합성 한도 화면 변경 전](docs/images/grok-weekly/quota-before-200.png) | ![합성 한도 화면 xAI 추가 후](docs/images/grok-weekly/quota-after-200.png) |
+
+현재 값은 라이트의 짙은 무채색 / 다크의 밝은 무채색, 이전 값은 기존 회색입니다. 조회 없음은 막대 없이 문구만 표시합니다.
+
+| 라이트 100% | 다크 100% |
+|---|---|
+| ![합성 현재·이전·없음 라이트 100%](docs/images/grok-weekly/xai-neutral-light-100.png) | ![합성 현재·이전·없음 다크 100%](docs/images/grok-weekly/xai-neutral-dark-100.png) |
+
+| 라이트 200% | 다크 200% |
+|---|---|
+| ![합성 현재·이전·없음 라이트 200%](docs/images/grok-weekly/xai-neutral-light-200.png) | ![합성 현재·이전·없음 다크 200%](docs/images/grok-weekly/xai-neutral-dark-200.png) |
+
+## Mac PR B 확인 항목
 
 Mac B 확인: 공통 검사 건수/환경별 skip 설명, `Mac/build.sh`, native smoke, Finder PATH의 Grok 탐색,
 네 박스/기존 fixture 대비 막대 +1, 라이트·다크 색/시간층/경계선, 팝오버 높이·스크롤·VoiceOver,
