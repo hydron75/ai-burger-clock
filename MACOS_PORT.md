@@ -2363,3 +2363,58 @@ smoke의 선택 기능(`AIBURGERCLOCK_SMOKE_IMAGES`)으로 큰 화면·1280×800
 ### 수행하지 않은 검증
 - 실행 뒤 장시간 동작. 저장소 경로 빌드의 실행 파일·앱 DLL은 실행 직후의 읽기 전용 확인만 했다(실행 중 파일과 디스크 파일의 대조는 같은 경로의 번들이 빌드 뒤 21:13에 시작됐다는 시각으로 갈음했다).
 - 옵션 없는 빌드(Xcode 27.2를 지원하는 워크로드 이후, [BACKLOG](BACKLOG.md)). 알림 센터 실제 표시와 장시간 사용, 실제 VoiceOver 낭독, 알림 배너 어두운 화면 가독성은 이전 절의 미확인 항목 그대로다.
+
+## 70. Grok 주간 크레딧(PR #122)의 Mac 전환
+
+2026-11-09 KST. PR #122(`codex/grok-weekly-quota`, 공통 코드 + Windows 연결)의 Mac 전환(PR B)이다. **버전은 올리지 않는다**(0.8.10 / build 26 그대로). 공통 원본과 Windows 파일은 고치지 않았고 `Mac/`의 파일과 이 문서·이미지만 바꿨다. 이 절의 화면 이미지는 모두 **합성 데이터**이며 실제 계정의 요금제·사용률·리셋 시각이 아니다.
+
+### 기준
+| 항목 | 값 |
+|---|---|
+| 기준 PR A HEAD(전환 전) | `22e942a0063861e8251e774bf68b2393f3c608f7` |
+| main(작업 시작) | `4e3cd29929cc07b204d5bd2ede38d0da4154e219` |
+| Mac 전환 커밋(앱 코드) | `da3a933`(박스·색·스크롤·smoke), `17c536bbc9d3a1cc050a08c2c6a10a1e96ae89a0`(진단 v2 이름 반영) |
+| 도구 | SDK 10.0.403, macOS 워크로드 27.0.10742(요구 Xcode 27.1), **Xcode 27.2 (27B52)**. 이 작업의 빌드는 `--allow-xcode-mismatch`(임시 사본)로 했다 |
+
+### 공통 코드 확인
+- 임시 사본 `bash Mac/build.sh --allow-xcode-mismatch`: 경고 0 / 오류 0. Shared.Tests **291,755건 PASS**, PR A 본문의 값과 같다(차이 없음). PR A는 Windows가 심볼릭 링크 검사 1건을 건너뛴다고 적었고, 이 Mac 실행에서는 건너뛴 검사가 없다.
+- 공통 코드에서 Mac이 막히는 문제는 찾지 못했다. 공통 파일은 바꾸지 않았다. PR A 수정 요청 없음.
+- 공통 `AccountQuotaMonitor`가 모든 `QuotaProvider`를 도므로 enum에 `Xai`가 들어오면 xAI 한도 박스는 자동으로 생긴다. 고친 것은 그 뒤의 고정 가정이다(아래).
+
+### 바꾼 것(Mac)
+| 위치 | 변경 |
+|---|---|
+| 한도 박스 | xAI 박스 1개, 행 1개(`주간 크레딧`, 창 id `grok:weekly-credits`). 행 문구·이전 값 표시는 공통(`QuotaPanelModel`)이 만든 그대로 쓴다 |
+| 막대 색 | `MacControls.QuotaBarColor(Xai)`: 라이트 `#202020`, 다크 `#EBEBEB`(Windows와 같은 기준, `BarXai` 컬러셋). 기존 `_ =>` 분기가 Gemini 파랑이라 xAI가 파랗게 보이던 것을 막는다 |
+| 이전 값 막대 | xAI만 회색 `#808080`(`BarXaiPrevious`). 기존 이전 값 색(Muted: 라이트 `#606060`, 다크 `#A8A8A8`)은 xAI 현재 값 색과 가까워(대비 라이트 2.6:1, 다크 1.99:1) 헷갈린다. `#808080`은 xAI 현재 값 색과 패널 배경 모두에서 라이트·다크 3:1 이상이다. 조회 없음은 막대가 없다(문구 행만) |
+| 팝오버 높이 | 한도 영역 최대 340pt 유지. 세 박스(≈326pt)는 그대로 들어가고 네 박스는 한도 영역 안에서 스크롤한다. 팝오버 전체 높이는 한도 영역 상한이 정한다 |
+| VoiceOver | 막대가 행의 요소 하나: 이름 = 공통 행 문구 + 시간 경과 비교, 설명(툴팁·도움말) = 공통 xAI 상세(제품·주간 크레딧·모든 시각 KST). 도움말도 툴팁과 같은 문구임을 smoke가 확인한다 |
+| smoke | 한도 박스 4개, 막대 7→8(모델 행 fixture 8/9/10), 진단 검사를 PR A의 v2 파일 이름·`Version 2`로, 옛 v1 파일이 그대로 남는지, xAI 자체 항목(정기 1시간·리셋 구간 10분·최소 10분 문구), `MacXaiQuotaSmoke` 신규 |
+| 합성 이미지 | `AIBURGERCLOCK_SMOKE_IMAGES`로 `mac-xai-quota-{light,dark}-{current,previous,none}.png` 생성(`MacQuotaRowImages.RenderXaiQuota`) |
+
+### 이 Mac에서 수행한 검증
+| 항목 | 결과 |
+|---|---|
+| smoke 1회째 | FAIL: `Polling diagnostics: no diagnostic file was written`. 원인은 PR A가 진단 파일을 v2 이름(`quota-polling-diagnostics-v2.json`, 버전 2, `quota-early-reset-decisions-v2.jsonl`)으로 옮겼는데 Mac smoke가 v1 이름을 쓴 것(Mac 쪽 smoke 수정으로 해결, 앱 동작 문제 아님) |
+| smoke 2회째(소스 `17c536b`, 임시 사본 새 빌드 경고 0 / 오류 0) | **PASS / 종료 코드 0, SKIP 0건·FAIL 0건**. 창을 여는 검사 포함. xAI 박스 4개·막대 8개, 막대 색·대비(라이트·다크), 이전 값·실패·대기·100% 행, 한도 영역 상한과 모든 박스의 스크롤 도달, 1280×800·1024×640 잘림 없음 |
+| 실행 파일 SHA-256(임시 사본) | `464b6e5188d8243039beac0a6bfb8d78807de622d9bb602d868a757a0e3f7ab4` |
+| 앱 DLL SHA-256(임시 사본) | `287efb707ac21d7423ddc6e2bbd1d0a01e6f7380220e0d68d9b071a8a7ce065f` |
+| 실제 조회 1회 | PR A와 같은 인자(`grok --no-auto-update agent --no-leader stdio`)로 `initialize` → headless `authenticate` → `_x.ai/billing`: **성공, 0.8초, CLI 종료 코드 0**. 값은 기록하지 않았다 |
+| 짧은 PATH(Finder 실행 방식) | `PATH=/usr/bin:/bin:/usr/sbin:/sbin`에서 PR A의 `MacCliPaths` 후보 8개 중 처음 존재하는 것은 `~/.grok/bin/grok`. 같은 PATH로 실제 `AccountQuotaClient`가 읽기에 성공(1.1초, 창 1개·id·10,080분 일치, 값 범위 정상). 읽기 뒤 남은 `grok` 프로세스 0개 |
+| LaunchServices | smoke 뒤 등록 수 2 → `lsregister -u`로 임시 사본 해제 후 1(아래 정리 참고) |
+
+### 화면 이미지 (합성)
+라이트·다크의 현재 값(37%)·이전 값·조회 없음. 값·시각은 모두 만든 예시다. 네 박스가 한도 영역(340pt) 안에서 스크롤되므로, 이미지는 xAI 박스가 보이도록 한도 영역을 맨 아래까지 내린 상태다. 맨 위 상태는 smoke가 별도로 확인한다.
+
+| | 라이트 | 다크 |
+|---|---|---|
+| 현재 값 | ![라이트 현재 값](docs/images/grok-weekly-mac/mac-xai-quota-light-current.png) | ![다크 현재 값](docs/images/grok-weekly-mac/mac-xai-quota-dark-current.png) |
+| 이전 값 | ![라이트 이전 값](docs/images/grok-weekly-mac/mac-xai-quota-light-previous.png) | ![다크 이전 값](docs/images/grok-weekly-mac/mac-xai-quota-dark-previous.png) |
+| 조회 없음 | ![라이트 조회 없음](docs/images/grok-weekly-mac/mac-xai-quota-light-none.png) | ![다크 조회 없음](docs/images/grok-weekly-mac/mac-xai-quota-dark-none.png) |
+
+### 수행하지 않은 검증
+- 실제 Mac 앱(저장소 경로 빌드)에서 xAI 박스를 보는 것. 이 PR은 임시 사본 검증까지이며 배포는 하지 않았다. 실제 계정 화면 캡처는 남기지 않았다.
+- 실제 VoiceOver 낭독과 이동(속성·문구만 smoke로 검사).
+- 한도 영역 스크롤의 실제 마우스·트랙패드 조작(smoke는 스크롤 위치를 코드로 옮겨 모든 박스가 보이는지 확인).
+- 장시간 자동 조회(10분 간격 최소 규칙은 공통 검사와 진단 smoke가 가짜 시계로 확인한 범위).
+- 옵션 없는 빌드(Xcode 27.2를 지원하는 워크로드 이후).
