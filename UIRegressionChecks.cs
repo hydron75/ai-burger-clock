@@ -525,8 +525,8 @@ internal static class UIRegressionChecks
                 context.ShowWindow();
                 var quotaView = context.StatusWindow.Controls.OfType<AccountQuotaView>().Single();
                 Check(quotaView.Visible && quotaView.Controls.OfType<Panel>().Select(p => p.Name)
-                    .SequenceEqual(new[] { "CodexQuotaBox", "ClaudeQuotaBox", "GeminiQuotaBox" }) && panels.All(p => !p.Visible),
-                    "Combined quota/note save keeps all three Provider boxes visible and status cards hidden");
+                    .SequenceEqual(new[] { "CodexQuotaBox", "ClaudeQuotaBox", "GeminiQuotaBox", "XaiQuotaBox" }) && panels.All(p => !p.Visible),
+                    "Combined quota/note save keeps all four Provider boxes visible and status cards hidden");
                 Check(feedback.Text == expectedFeedback && feedback.ForeColor == Color.DimGray,
                     "Combined quota/note save shows the truncation feedback in quota mode");
                 SaveFormImage(context.StatusWindow, "account-quotas-note-truncated.png", reportDirectory);

@@ -115,7 +115,7 @@ internal static class QuotaEarlyResetUiChecks
         }
         JsonElement[] Decisions()
         {
-            string path = Path.Combine(directory, "logs", "quota-early-reset-decisions-v1.jsonl");
+            string path = Path.Combine(directory, "logs", "quota-early-reset-decisions-v2.jsonl");
             if (!File.Exists(path)) return [];
             var entries = new List<JsonElement>();
             foreach (string line in File.ReadLines(path))

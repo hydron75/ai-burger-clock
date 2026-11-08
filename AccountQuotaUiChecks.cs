@@ -8,6 +8,7 @@ internal sealed class TestAccountQuotaClient(Func<DateTimeOffset> clock, SmokeQu
     private int codexCalls;
     private int claudeCalls;
     private int geminiCalls;
+    private int xaiCalls;
     private TaskCompletionSource? geminiResponseGate;
     internal bool FailClaude { get; set; }
     internal bool FailGemini { get; set; }
@@ -16,6 +17,7 @@ internal sealed class TestAccountQuotaClient(Func<DateTimeOffset> clock, SmokeQu
     {
         QuotaProvider.Codex => Volatile.Read(ref codexCalls),
         QuotaProvider.Claude => Volatile.Read(ref claudeCalls),
+        QuotaProvider.Xai => Volatile.Read(ref xaiCalls),
         _ => Volatile.Read(ref geminiCalls)
     };
     public async Task<QuotaReading> ReadAsync(QuotaProvider provider, CancellationToken cancellationToken)
@@ -25,6 +27,7 @@ internal sealed class TestAccountQuotaClient(Func<DateTimeOffset> clock, SmokeQu
         {
             case QuotaProvider.Codex: Interlocked.Increment(ref codexCalls); break;
             case QuotaProvider.Claude: Interlocked.Increment(ref claudeCalls); break;
+            case QuotaProvider.Xai: Interlocked.Increment(ref xaiCalls); break;
             case QuotaProvider.Gemini:
                 Interlocked.Increment(ref geminiCalls);
                 break;
@@ -39,6 +42,7 @@ internal sealed class TestAccountQuotaClient(Func<DateTimeOffset> clock, SmokeQu
         {
             QuotaProvider.Codex => [new("session", "5시간", 18, now.AddHours(2), 300), new("weekly", "주간", 92, now.AddDays(2), 10080)],
             QuotaProvider.Claude => [new("session", "5시간", 0, now.AddMinutes(12), 300), new("weekly", "주간", 45, now.AddDays(3), 10080), new("fable", "주간 · Fable", 1, now.AddDays(3), 10080)],
+            QuotaProvider.Xai => [new(AccountQuotaParsers.GrokWeeklyWindowId, "주간 크레딧", 37.5, now.AddDays(4), 10080)],
             _ => AccountQuotaParsers.ParseGemini($$"""
                 {"groups":[{"name":"Gemini Models","buckets":[
                   {"id":"gemini-5h","window":"5h","remaining_fraction":0.9799,"reset_time":"{{now.AddHours(3):O}}"},
@@ -92,8 +96,8 @@ internal static class QuotaViewportUiChecks
                 var cardSizes = boxes.Select(box => box.Size).ToArray();
                 int gap = caption.Top - view.Bottom;
                 Check(view.Top == originalBounds[view].Top, prefix + ": quota viewport preserves its header baseline");
-                Check(view.Visible && boxes.Length == 3 && boxes.Sum(box => box.Controls.OfType<QuotaBalanceBar>().Count()) == 8,
-                    prefix + ": three synthetic Providers include Gemini model weekly");
+                Check(view.Visible && boxes.Length == 4 && boxes.Sum(box => box.Controls.OfType<QuotaBalanceBar>().Count()) == 9,
+                    prefix + ": four synthetic Providers include Gemini model weekly and xAI weekly credits");
                 Check(gap >= 0 && gap <= Scale(6), prefix + ": quota bottom/caption gap is at most 6 DIP (actual=" + gap + "px)");
                 Check(window.Size == originalSize, prefix + ": quota toggle preserves window dimensions");
                 Check(view.VerticalScroll.Visible && !view.HorizontalScroll.Visible, prefix + ": quota contents retain vertical-only scrolling");

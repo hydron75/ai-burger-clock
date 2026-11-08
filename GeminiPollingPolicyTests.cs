@@ -295,7 +295,7 @@ internal static class GeminiPollingPolicyTests
         {
             await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
             await MonitorTests.WaitUntilAsync(() => monitor.Snapshot().All(state => state.CheckedAtUtc.HasValue && !state.IsRefreshing));
-            check(client.Calls == 3, "all initial reads have returned while the synthetic success callback still holds its provider gate");
+            check(client.Calls == Enum.GetValues<QuotaProvider>().Length, "all initial reads have returned while the synthetic success callback still holds its provider gate");
             Task completed = WaitForInitialReadsAsync(monitor);
             check(!completed.IsCompleted, "the fixture must not mistake idle display state for completed success callbacks");
             release.TrySetResult();

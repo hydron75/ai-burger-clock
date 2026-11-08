@@ -122,6 +122,7 @@ internal static class SmokeTest
                         await HolidayUiChecks.RunAsync(context, testStore, statusHandler, value => now = value, reportDirectory);
                         diagnostics.Phase = "quota";
                         await AccountQuotaUiChecks.RunAsync(context, quotaClient, () => now, value => now = value, reportDirectory, diagnostics);
+                        GrokQuotaUiChecks.Run(Check, reportDirectory);
                         diagnostics.Phase = "quota.recovery-notifications";
                         await QuotaRecoveryUiChecks.RunAsync();
                         diagnostics.Phase = "quota.early-reset-notifications";

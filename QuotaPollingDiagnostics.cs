@@ -27,14 +27,14 @@ internal sealed class QuotaPollingDiagnosticLog
 {
     internal const int MaximumEntries = 256;
     internal const int MaximumBytes = 128 * 1024;
-    private const int CurrentVersion = 1;
+    private const int CurrentVersion = 2;
     private readonly object gate = new();
     private readonly string directory;
 
     internal QuotaPollingDiagnosticLog(string directory)
     {
         this.directory = directory;
-        LogPath = Path.Combine(directory, "quota-polling-diagnostics.json");
+        LogPath = Path.Combine(directory, "quota-polling-diagnostics-v2.json");
     }
 
     internal string LogPath { get; }
@@ -129,7 +129,7 @@ internal sealed class QuotaPollingDiagnosticLog
             QuotaJsonContext.Default.QuotaPollingDiagnosticFile);
 
     private static bool IsValid(QuotaPollingDiagnostic? entry) => entry is not null
-        && entry.Provider is "Codex" or "Claude" or "Gemini"
+        && entry.Provider is "Codex" or "Claude" or "Gemini" or "Xai"
         && entry.Reason is "Regular" or "LowRemaining" or "Exhausted" or "ResetPeriod"
             or "ResetEntry" or "FailureRetry" or "Overdue"
         && IsUtc(entry.AttemptedAtUtc) && IsUtc(entry.RecordedAtUtc) && IsUtc(entry.NextCheckUtc)

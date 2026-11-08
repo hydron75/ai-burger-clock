@@ -161,7 +161,7 @@ internal sealed class AccountQuotaMonitor : IDisposable
             try
             {
                 using var timeout = CancellationTokenSource.CreateLinkedTokenSource(linked.Token);
-                timeout.CancelAfter(TimeSpan.FromSeconds(40));
+                timeout.CancelAfter(provider == QuotaProvider.Xai ? AccountQuotaClient.GrokTimeout : TimeSpan.FromSeconds(40));
                 linked.Token.ThrowIfCancellationRequested();
                 readStarted = true;
                 var candidate = await client.ReadAsync(provider, timeout.Token).ConfigureAwait(false);

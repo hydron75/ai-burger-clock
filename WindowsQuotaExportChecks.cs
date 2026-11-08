@@ -156,8 +156,9 @@ internal static class WindowsQuotaExportChecks
             Check(f.Http.Count == 1 && f.Service.Status.LastSuccessUtc == f.Time.GetUtcNow(), "successful completed read is sent");
             using var doc = Body(f.Http.Last); var root = doc.RootElement;
             Check(root.EnumerateObject().Select(p => p.Name).SequenceEqual(new[] { "schema", "schemaVersion", "type", "sourceId", "seq", "appVersion", "generatedAtUtc", "heartbeatSeconds", "providers" }), "envelope allowlist");
-            Check(root.GetProperty("schema").GetString() == "aiburgerclock.export" && root.GetProperty("heartbeatSeconds").GetInt32() == 900, "schema and heartbeat contract");
-            Check(root.GetProperty("providers").EnumerateArray().Select(p => p.GetProperty("provider").GetString()).SequenceEqual(new[] { "Codex", "Claude", "Gemini" }), "exact Provider order");
+            Check(root.GetProperty("schema").GetString() == "aiburgerclock.export" && root.GetProperty("schemaVersion").GetInt32() == 2
+                && root.GetProperty("heartbeatSeconds").GetInt32() == 900, "v2 schema and unchanged heartbeat contract");
+            Check(root.GetProperty("providers").EnumerateArray().Select(p => p.GetProperty("provider").GetString()).SequenceEqual(new[] { "Codex", "Claude", "Gemini", "Xai" }), "exact Provider order");
             foreach (var provider in root.GetProperty("providers").EnumerateArray())
             {
                 Check(provider.EnumerateObject().Select(p => p.Name).SequenceEqual(new[] { "provider", "reading", "lastSuccessUtc", "nextCheckUtc", "rows" }), "Provider allowlist");
@@ -247,7 +248,7 @@ internal static class WindowsQuotaExportChecks
             {
                 client.Fail = round % 2 == 1;
                 await Task.WhenAll(Enum.GetValues<QuotaProvider>().Select(p => monitor.RefreshOnceAsync(p))).WaitAsync(TimeSpan.FromSeconds(3));
-                Check(completions == (round + 1) * 3, "parallel completion round has no missed or duplicate success/failure");
+                Check(completions == (round + 1) * Enum.GetValues<QuotaProvider>().Length, "parallel completion round has no missed or duplicate success/failure");
             }
             Check(f.Http.Count <= 1, "slow sender never holds Provider callbacks");
             blocked.TrySetResult(new HttpResponseMessage(HttpStatusCode.OK)); await f.Service.WaitForIdleAsync();
@@ -270,9 +271,9 @@ internal static class WindowsQuotaExportChecks
                 await Wait(() => monitor.Snapshot().All(s => s.IsRefreshing && s.Reading is not null));
                 Check(completions == 0 && f.Http.Count == 0 && f.Vault.Reads == 0, "startup/cache/start events do not export");
                 client.Gate.SetResult();
-                await Wait(() => Volatile.Read(ref completions) == 3);
+                await Wait(() => Volatile.Read(ref completions) == Enum.GetValues<QuotaProvider>().Length);
                 await f.Service.WaitForIdleAsync();
-                Check(completions == 3 && f.Http.Count > 0, "only completed live startup reads export");
+                Check(completions == Enum.GetValues<QuotaProvider>().Length && f.Http.Count > 0, "only completed live startup reads export");
             }
             finally { await monitor.StopAsync(); Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools(); }
         }

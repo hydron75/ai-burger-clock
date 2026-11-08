@@ -13,9 +13,12 @@ internal static class MacCliPaths
             QuotaProvider.Codex => "codex",
             QuotaProvider.Claude => "claude",
             QuotaProvider.Gemini => "agy",
+            QuotaProvider.Xai => "grok",
             _ => throw new ArgumentOutOfRangeException(nameof(provider))
         };
-        var directories = pathEntries.Concat([homeDirectory.TrimEnd('/') + "/.local/bin",
+        var directories = pathEntries.Concat(provider == QuotaProvider.Xai
+            ? new[] { homeDirectory.TrimEnd('/') + "/.grok/bin" } : Array.Empty<string>())
+            .Concat([homeDirectory.TrimEnd('/') + "/.local/bin",
             "/opt/homebrew/bin", "/usr/local/bin"]);
         return directories.Select(entry => entry.Trim().Trim('"').TrimEnd('/'))
             .Where(path => path.StartsWith('/') && path.Length > 1 &&

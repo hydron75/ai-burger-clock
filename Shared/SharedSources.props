@@ -15,6 +15,7 @@
     <Compile Include="$(MSBuildThisFileDirectory)../QuotaEarlyResetDiagnostics.cs" Link="Shared/QuotaEarlyResetDiagnostics.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)../AccountQuotaModels.cs" Link="Shared/AccountQuotaModels.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)../AccountQuotaClient.cs" Link="Shared/AccountQuotaClient.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)../GrokQuotaProtocol.cs" Link="Shared/GrokQuotaProtocol.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)../AccountQuotaParsers.cs" Link="Shared/AccountQuotaParsers.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)../AccountQuotaPolicy.cs" Link="Shared/AccountQuotaPolicy.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)../AccountQuotaMonitor.cs" Link="Shared/AccountQuotaMonitor.cs" />

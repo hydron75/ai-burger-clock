@@ -1,7 +1,7 @@
 namespace AiBurgerClock;
 
 // Append new providers: cached v1 JSON stores the existing numeric identities.
-internal enum QuotaProvider { Codex, Claude, Gemini }
+internal enum QuotaProvider { Codex, Claude, Gemini, Xai }
 
 internal static class QuotaNames
 {
@@ -10,6 +10,7 @@ internal static class QuotaNames
         QuotaProvider.Codex => "Work / Codex",
         QuotaProvider.Claude => "Claude",
         QuotaProvider.Gemini => "Gemini",
+        QuotaProvider.Xai => "xAI",
         _ => throw new ArgumentOutOfRangeException(nameof(provider))
     };
 }

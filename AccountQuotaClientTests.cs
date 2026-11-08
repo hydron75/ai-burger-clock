@@ -22,6 +22,13 @@ internal static class AccountQuotaClientTests
         try { await new AccountQuotaClient(claudeExecutable: "claude.exe").ReadAsync(QuotaProvider.Claude, CancellationToken.None); }
         catch (FileNotFoundException) { relativeRejected = true; }
         Check(relativeRejected, "relative executable cannot resolve against working directory");
+        foreach (string path in new[] { @"C:\invalid\grok.exe", "grok.exe" })
+        {
+            bool rejected = false;
+            try { await new AccountQuotaClient(grokExecutable: path).ReadAsync(QuotaProvider.Xai, CancellationToken.None); }
+            catch (FileNotFoundException) { rejected = true; }
+            Check(rejected, "missing/relative Grok fails before launch, never a zero quota");
+        }
         return count;
     }
 }

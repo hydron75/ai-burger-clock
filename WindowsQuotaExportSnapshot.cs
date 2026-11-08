@@ -33,7 +33,7 @@ internal static class WindowsQuotaExportSnapshot
                 else if (char.IsLowSurrogate(value[i])) return false;
             return true;
         }
-        if (states.Count != 3 || !Guid.TryParseExact(settings.SourceId, "D", out _) || settings.Seq < 1 ||
+        if (states.Count != 4 || !Guid.TryParseExact(settings.SourceId, "D", out _) || settings.Seq < 1 ||
             settings.Seq > WindowsQuotaExportSettingsStore.MaximumSequence || !Text(appVersion, 64))
             throw new InvalidDataException("Invalid quota export envelope.");
         var providers = Enum.GetValues<QuotaProvider>().Select(provider =>
@@ -52,7 +52,7 @@ internal static class WindowsQuotaExportSnapshot
                 none ? null : state.LastSuccessfulCheckUtc?.ToUniversalTime(), state.NextCheckUtc?.ToUniversalTime(), rows);
         }).ToArray();
         byte[] body = JsonSerializer.SerializeToUtf8Bytes(new WindowsQuotaExportEnvelope(
-            "aiburgerclock.export", 1, "quota", settings.SourceId, settings.Seq, appVersion,
+            "aiburgerclock.export", 2, "quota", settings.SourceId, settings.Seq, appVersion,
             generatedAtUtc.ToUniversalTime(), 900, providers), WindowsQuotaExportJson.Default.WindowsQuotaExportEnvelope);
         if (body.Length > MaximumBytes) throw new InvalidDataException("Quota export exceeds its size limit.");
         return body;

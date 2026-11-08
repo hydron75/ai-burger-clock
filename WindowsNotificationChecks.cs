@@ -126,8 +126,8 @@ internal static class WindowsNotificationChecks
             foreach (var request in requests)
                 new WindowsQuotaNotificationDelivery(_ => { }, _ => throw new InvalidOperationException("Unexpected fallback"), log.Write).Send(request);
             Check(File.ReadAllBytes(legacy).SequenceEqual(legacyBytes), "v1 is never read, rewritten, appended or removed");
-            Check(Path.GetFileName(log.LogPath) == "notification-delivery-v2.jsonl" && File.ReadAllLines(log.LogPath).Length == requests.Count,
-                "all kinds are appended only to v2");
+            Check(Path.GetFileName(log.LogPath) == "notification-delivery-v3.jsonl" && File.ReadAllLines(log.LogPath).Length == requests.Count,
+                "all kinds are appended only to v3");
             string json = File.ReadAllText(log.LogPath);
             Check(!json.Contains(title, StringComparison.Ordinal) && !json.Contains(body, StringComparison.Ordinal) && !json.Contains("synthetic-weekly", StringComparison.Ordinal),
                 "banner text and window identifiers do not enter delivery diagnostics");
@@ -135,7 +135,7 @@ internal static class WindowsNotificationChecks
                 "Windows diagnostics distinguish xAI and notifications without a Provider");
             Check(log.TryWrite(new(DateTimeOffset.UtcNow, WindowsQuotaNotificationKind.ProviderIssue, WindowsNotificationProvider.Xai,
                 WindowsQuotaNotificationTransport.Toast, WindowsQuotaNotificationResult.Submitted, WindowsQuotaNotificationReason.None, null)),
-                "v2 rows reload and validate all allowed Provider values");
+                "v3 rows reload and validate all allowed Provider values");
             Check(WindowsQuotaToastSender.NativeSubmissionAttempts == 0, "all checks use fake senders; native toast submission attempts are zero");
         }
         finally { Directory.Delete(directory, recursive: true); }

@@ -48,6 +48,7 @@ internal static class QuotaRecoveryNotificationTests
             {
                 QuotaProvider.Codex => "ChatGPT (Work/Codex)",
                 QuotaProvider.Gemini => "Gemini (Antigravity)",
+                QuotaProvider.Xai => "xAI",
                 _ => "Claude"
             };
             Check(alert.Title == scopedName + " 계정 한도 회복 확인", provider + " quota scope in shared title");

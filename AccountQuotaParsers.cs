@@ -5,6 +5,23 @@ namespace AiBurgerClock;
 
 internal static class AccountQuotaParsers
 {
+    // One approved duration guard; do not round or infer a week from the label.
+    internal const int GrokWeeklyWindowMinutes = 10080;
+    internal const string GrokWeeklyWindowId = "grok:weekly-credits";
+
+    public static QuotaReading ParseGrok(string json) => Parse(json, root =>
+    {
+        JsonElement config = RequiredObject(root, "config");
+        JsonElement period = RequiredObject(config, "currentPeriod");
+        if (RequiredString(period, "type") != "USAGE_PERIOD_TYPE_WEEKLY") throw Invalid();
+        DateTimeOffset? start = IsoReset(period, "start");
+        DateTimeOffset? end = IsoReset(period, "end");
+        if (start is null || end is null || end.Value - start.Value != TimeSpan.FromMinutes(GrokWeeklyWindowMinutes))
+            throw Invalid();
+        return new(QuotaProvider.Xai, [new(GrokWeeklyWindowId, "주간 크레딧",
+            Percent(config, "creditUsagePercent"), end, GrokWeeklyWindowMinutes)]);
+    });
+
     private const int MaximumWindows = 64;
     private const int MaximumPayloadChars = 2_000_000;
 
