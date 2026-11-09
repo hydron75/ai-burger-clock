@@ -20,8 +20,6 @@ internal sealed class MacStatusPanel : IDisposable
     // On a short screen the quota area gives up height first, down to about one box. Below that the whole panel
     // scrolls (four provider cards plus a box do not fit a 1024x640 screen), with the quota area at its full height.
     private const int MinimumQuotaHeight = 90;
-    // Gap between the card heading and the xAI usage link on the heading line.
-    private const int HeadingGap = 8;
     // Room kept for the popover arrow and the gap below the menu bar.
     private const int ScreenMargin = 24;
     internal const string DefaultFeedback = "Provider 카드 클릭: 공식 페이지 · 우클릭: 기록";
@@ -53,13 +51,12 @@ internal sealed class MacStatusPanel : IDisposable
     private string quotaLayoutKey = "";
     private string shownStorageError = "";
 
-    private sealed record Card(CardView View, NSTextField Heading, NSTextField Official, NSTextField Reason, NSMenu Menu,
-        UsageLink? Link = null);
+    private sealed record Card(CardView View, NSTextField Heading, NSTextField Official, NSTextField Reason, NSMenu Menu);
     private sealed record QuotaViews(CardView Box, NSTextField Heading, NSTextField? Scope,
         Dictionary<string, QuotaRowView> Rows, Dictionary<string, UsageBarView> Bars, NSTextField Metadata);
 
     internal MacStatusPanel(Action requestRefresh, Action showStatistics, Action<bool> changeHoliday,
-        Action<bool> changeAutoStart, Action<ProviderKind> openPage, Action openXaiUsage,
+        Action<bool> changeAutoStart, Action<ProviderKind> openPage,
         Action<ProviderKind, UsageEventType, bool> record, bool smoke)
     {
         this.smoke = smoke;
@@ -80,7 +77,7 @@ internal sealed class MacStatusPanel : IDisposable
 
         foreach (ProviderKind provider in Enum.GetValues<ProviderKind>())
         {
-            var card = CreateCard(provider, openPage, openXaiUsage, record);
+            var card = CreateCard(provider, openPage, record);
             cards.Add(provider, card);
             root.AddArrangedSubview(card.View);
             root.SetCustomSpacing(6, card.View);
@@ -388,35 +385,22 @@ internal sealed class MacStatusPanel : IDisposable
         return menu;
     }
 
-    private Card CreateCard(ProviderKind provider, Action<ProviderKind> openPage, Action openXaiUsage,
+    private Card CreateCard(ProviderKind provider, Action<ProviderKind> openPage,
         Action<ProviderKind, UsageEventType, bool> record)
     {
-        // The whole card opens the official page; a label heading keeps one click target.
+        // The whole card opens the official page; a label heading keeps one click target. All four cards share one layout.
         var (view, stack) = Box(press: () => openPage(provider));
         int textWidth = ContentWidth - CardPadding * 2;
-        // Only the xAI card has a link: the fixed usage dashboard, to the right of the heading. It is not a quota value.
-        UsageLink? link = provider == ProviderKind.Xai ? new UsageLink(ProviderStatusPages.XaiUsageLabel, openXaiUsage) : null;
-        var heading = Line(ProviderNames.Provider(provider), 13, bold: true,
-            width: link is null ? textWidth : textWidth - link.Width - HeadingGap);
+        var heading = Line(ProviderNames.Provider(provider), 13, bold: true, width: textWidth);
         var official = Line("", 11, width: textWidth);
         var reason = Line("", 11, width: textWidth);
         reason.TextColor = NSColor.SecondaryLabel;
-        NSStackView? headingRow = null;
-        if (link is null) stack.AddArrangedSubview(heading);
-        else
-        {
-            headingRow = Stack(vertical: false, spacing: HeadingGap);
-            headingRow.AddArrangedSubview(heading);
-            headingRow.AddArrangedSubview(link);
-            stack.AddArrangedSubview(headingRow);
-            // Clicks inside the link rectangle open the dashboard; every other click on the card opens the status page.
-            view.SetLink(link);
-        }
+        stack.AddArrangedSubview(heading);
         stack.AddArrangedSubview(official);
         stack.AddArrangedSubview(reason);
         NSMenu menu = RecordMenu(provider, record);
-        foreach (NSView child in new NSView?[] { view, headingRow, heading, link, official, reason }.OfType<NSView>()) child.Menu = menu;
-        return new(view, heading, official, reason, menu, link);
+        foreach (NSView child in new NSView[] { view, heading, official, reason }) child.Menu = menu;
+        return new(view, heading, official, reason, menu);
     }
 
     // A rounded box with the shared inner padding; provider cards and quota boxes both use it.
@@ -516,7 +500,6 @@ internal sealed class MacStatusPanel : IDisposable
     private sealed class CardView : NSView
     {
         private readonly Action? press;
-        private UsageLink? link;
         private NSTrackingArea? tracking;
         private bool hovered;
 
@@ -528,28 +511,12 @@ internal sealed class MacStatusPanel : IDisposable
             // Primary button only; right-click and control-click open the record menu instead.
             AddGestureRecognizer(new NSClickGestureRecognizer(() =>
             {
-                NSEvent? click = NSApplication.SharedApplication.CurrentEvent;
-                if (!MacApplication.IsContextClick(click))
-                    Route(click is null ? null : ConvertPointFromView(click.LocationInWindow, null));
+                if (!MacApplication.IsContextClick(NSApplication.SharedApplication.CurrentEvent)) press();
             }) { ButtonMask = 1 });
             AccessibilityRole = NSAccessibilityRoles.ButtonRole;
         }
 
         internal bool IsInteractive => press is not null;
-
-        internal void SetLink(UsageLink value) => link = value;
-
-        // The link's rectangle in this card's coordinates.
-        internal CGRect? LinkRect => link is null ? null : link.ConvertRectToView(link.Bounds, this);
-
-        // One click, one target: a click inside the link opens the usage dashboard only, any other click on the card
-        // opens the official status page only. A click without a position (no current event) is a card click.
-        internal void Route(CGPoint? pointInCard)
-        {
-            if (press is null) return;
-            if (link is not null && pointInCard is { } point && LinkRect is { } rect && rect.Contains(point)) link.Press();
-            else press();
-        }
 
         public override bool AccessibilityPerformPress()
         {
@@ -593,45 +560,6 @@ internal sealed class MacStatusPanel : IDisposable
             NSColor.Separator.SetStroke();
             path.LineWidth = 1;
             path.Stroke();
-        }
-    }
-
-    // The xAI usage link: underlined system link color text. It is a plain label whose click is routed by its card
-    // (CardView.Route), so the card's click recognizer and the link never both fire for one click. VoiceOver gets
-    // its own link element with a press action.
-    internal sealed class UsageLink : NSTextField
-    {
-        internal const string AccessibleHelp = "Grok 공식 대시보드를 엽니다. 한도 값은 앱에서 조회하지 않습니다.";
-        private readonly Action press;
-
-        internal UsageLink(string text, Action press)
-        {
-            this.press = press;
-            Editable = false; Selectable = false; Bordered = false; Bezeled = false; DrawsBackground = false;
-            TranslatesAutoresizingMaskIntoConstraints = false;
-            UsesSingleLineMode = true;
-            LineBreakMode = NSLineBreakMode.Clipping;
-            AttributedStringValue = new NSAttributedString(text, new NSStringAttributes
-            {
-                Font = MacControls.Font(11), ForegroundColor = NSColor.Link, UnderlineStyle = (int)NSUnderlineStyle.Single
-            });
-            Width = (int)Math.Ceiling(IntrinsicContentSize.Width) + 2;
-            WidthAnchor.ConstraintEqualTo(Width).Active = true;
-            ToolTip = text + ": " + ProviderStatusPages.XaiUsage.AbsoluteUri;
-            AccessibilityElement = true;
-            AccessibilityRole = NSAccessibilityRoles.LinkRole;
-            AccessibilityLabel = text;
-            AccessibilityHelp = AccessibleHelp;
-        }
-
-        internal int Width { get; }
-
-        internal void Press() => press();
-
-        public override bool AccessibilityPerformPress()
-        {
-            press();
-            return true;
         }
     }
 
@@ -908,11 +836,20 @@ internal sealed class MacStatusPanel : IDisposable
             if (!card.View.IsInteractive || card.View.GestureRecognizers is not [NSClickGestureRecognizer { ButtonMask: 1 }] ||
                 card.View.AccessibilityRole != NSAccessibilityRoles.ButtonRole.ToString())
                 throw new InvalidOperationException($"{text.Provider} card is not a whole-card click target.");
-            // The heading is never cut off, also next to the xAI link.
+            // The heading is never cut off.
             if (card.Heading.AttributedStringValue.Size.Width > card.Heading.Frame.Width + 0.5)
                 throw new InvalidOperationException($"{text.Provider} card heading is truncated.");
-            VerifyUsageLink(text.Provider, card);
         }
+        // All four cards share one geometry: xAI (the last card) has no heading exception, so its heading is as wide and its card as
+        // tall as the other three, and the cards are stacked with the same gap.
+        Card[] ordered = [.. Enum.GetValues<ProviderKind>().Select(provider => cards[provider])];
+        if (ordered.Select(card => Math.Round(card.Heading.Frame.Width, 1)).Distinct().Count() != 1 ||
+            ordered.Select(card => Math.Round(card.View.Frame.Width, 1)).Distinct().Count() != 1 ||
+            ordered.Select(card => Math.Round(card.View.Frame.Height, 1)).Distinct().Count() != 1)
+            throw new InvalidOperationException("The four provider cards differ in heading width, card width or card height.");
+        double[] gaps = [.. ordered.Zip(ordered.Skip(1), (upper, lower) => Math.Round(Math.Abs(upper.View.Frame.Y - lower.View.Frame.Y) - upper.View.Frame.Height, 1))];
+        if (gaps.Distinct().Count() != 1)
+            throw new InvalidOperationException($"The provider cards are not evenly spaced ({string.Join(", ", gaps)}pt).");
         if (cards[ProviderKind.OpenAI].Heading.StringValue.Split(' ')[0] != "ChatGPT")
             throw new InvalidOperationException("The OpenAI card does not show the ChatGPT product name.");
         var sections = QuotaPanelModel.Sections(quotaStates, snapshot.NowUtc, recentEarlyResets);
@@ -1050,43 +987,12 @@ internal sealed class MacStatusPanel : IDisposable
         return new(size, titleX, boxX, availableHeight, ContentWidth - CardPadding * 2);
     }
 
-    // A label's frame reaches about 2pt past where its text (alignment rect) starts and ends; the link may end that far
-    // past the card's inner edge (the heading before it is measured the same way), as long as it stays inside the card.
-    private const int LabelFramePadding = 3;
-
-    // Only the xAI card has the usage link: right of its heading, inside the card, and its own VoiceOver link element.
-    private void VerifyUsageLink(ProviderKind provider, Card card)
+    // Smoke: the size the four provider cards share (xAI is the last one), for the smoke summary.
+    internal string CardGeometry()
     {
-        if ((provider == ProviderKind.Xai) != (card.Link is not null) || (card.Link is null) != (card.View.LinkRect is null))
-            throw new InvalidOperationException($"{provider} card has the wrong usage-link setup (only xAI has one).");
-        if (card.Link is not { } link) return;
-        CGRect inCard = card.View.LinkRect!.Value;
-        CGRect heading = card.Heading.ConvertRectToView(card.Heading.Bounds, card.View);
-        if (link.ToolTip != ProviderStatusPages.XaiUsageLabel + ": " + ProviderStatusPages.XaiUsage.AbsoluteUri ||
-            link.AttributedStringValue.Value != ProviderStatusPages.XaiUsageLabel ||
-            !link.AccessibilityElement || link.AccessibilityRole != NSAccessibilityRoles.LinkRole.ToString() ||
-            link.AccessibilityLabel != ProviderStatusPages.XaiUsageLabel || link.AccessibilityHelp != UsageLink.AccessibleHelp)
-            throw new InvalidOperationException("The xAI usage link text, tooltip or accessibility description is wrong.");
-        if (inCard.Width <= 0 || inCard.Height <= 0 || inCard.X < heading.Right - 0.5 || inCard.Right > card.View.Bounds.Width - CardPadding + LabelFramePadding ||
-            inCard.Y < 0 || inCard.Bottom > card.View.Bounds.Height || inCard.IntersectsWith(heading))
-            throw new InvalidOperationException($"The xAI usage link overlaps the heading or leaves the card (link {inCard}, heading {heading}, card {card.View.Bounds}).");
-        // Its label is not clipped.
-        if (link.AttributedStringValue.Size.Width > link.Frame.Width + 0.5)
-            throw new InvalidOperationException("The xAI usage link text is cut off.");
+        Card xai = cards[ProviderKind.Xai];
+        return $"{xai.View.Frame.Width:0}x{xai.View.Frame.Height:0}pt, heading {xai.Heading.Frame.Width:0}x{xai.Heading.Frame.Height:0}pt";
     }
-
-    // Smoke: route a click at the center of the xAI link, or at a point of the card that is not the link
-    // (the card's top-left corner area), the way the card's click recognizer does.
-    internal void ClickCard(ProviderKind provider, bool onLink)
-    {
-        CardView view = cards[provider].View;
-        CGRect? link = view.LinkRect;
-        view.Route(onLink && link is { } rect ? new CGPoint(rect.GetMidX(), rect.GetMidY())
-            : new CGPoint(CardPadding + 2, view.Bounds.Height - CardPadding));
-    }
-
-    // Smoke: the xAI link as VoiceOver would press it.
-    internal bool PressUsageLink() => cards[ProviderKind.Xai].Link?.AccessibilityPerformPress() ?? false;
 
     // Smoke: the popover content as a PNG, only to save synthetic review images when a smoke run is asked to.
     internal NSData? SnapshotPng()
@@ -1099,7 +1005,7 @@ internal sealed class MacStatusPanel : IDisposable
     }
 
     // Smoke: for the layout last fitted, scroll the panel the way a user would and report the first control that cannot be
-    // brought fully into view (null when every card, the xAI link, the quota area and the controls can).
+    // brought fully into view (null when every card, the quota area and the controls can).
     internal (nfloat Document, nfloat Visible, bool Scrolls, string? Unreachable) ScrollAudit()
     {
         NSClipView clip = SettledClip();
@@ -1108,11 +1014,7 @@ internal sealed class MacStatusPanel : IDisposable
             return (document, visible, document > visible + 0.5, $"popover size ({popover.ContentSize.Height}pt) not applied to the scroll view ({visible}pt)");
         nfloat maximum = (nfloat)Math.Max(0, document - visible);
         var targets = new List<(string Name, NSView View)> { ("title", title) };
-        foreach (var (provider, card) in cards)
-        {
-            targets.Add((provider + " card", card.View));
-            if (card.Link is not null) targets.Add((provider + " usage link", card.Link));
-        }
+        foreach (var (provider, card) in cards) targets.Add((provider + " card", card.View));
         targets.AddRange([("quota title", quotaTitle), ("quota area", quotaScroll), ("check times", checkedCaption),
             ("Refresh", refresh), ("feedback", feedback), ("holiday option", holiday), ("auto start option", autoStart)]);
         string? unreachable = null;
@@ -1180,8 +1082,14 @@ internal sealed class MacStatusPanel : IDisposable
     }
 
     // Smoke: draw the popover content under a fixed appearance (review pictures of light and dark); null follows the system.
-    internal void SetSmokeAppearance(bool? dark) => content.Appearance = dark is null ? null
-        : NSAppearance.GetAppearance(dark.Value ? NSAppearance.NameDarkAqua : NSAppearance.NameAqua);
+    // The app appearance is set too: semantic label colors (secondary text) only resolve for the picture when the app has it.
+    internal void SetSmokeAppearance(bool? dark)
+    {
+        NSAppearance? appearance = dark is null ? null
+            : NSAppearance.GetAppearance(dark.Value ? NSAppearance.NameDarkAqua : NSAppearance.NameAqua);
+        content.Appearance = appearance;
+        NSApplication.SharedApplication.Appearance = appearance;
+    }
 
     // Smoke: what a quota bar tells VoiceOver: its name (label), the tooltip and the accessibility help.
     internal (string Label, string? ToolTip, string? Help) QuotaBarAccessibility(QuotaProvider provider, string windowId)
