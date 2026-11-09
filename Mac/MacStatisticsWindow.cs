@@ -136,6 +136,13 @@ internal sealed class MacStatisticsWindow : IDisposable
         return explanation.StringValue == StatisticsText.Explanation && needed.Height <= explanation.Frame.Height + 0.5;
     }
 
+    // Smoke: center the window on the given display (a smoke run chooses the display; see MacScreenGuard.Choose).
+    internal void PlaceOn(NSScreen screen)
+    {
+        CGRect area = screen.VisibleFrame;
+        Window.SetFrameOrigin(new CGPoint(area.X + (area.Width - Window.Frame.Width) / 2, area.Y + (area.Height - Window.Frame.Height) / 2));
+    }
+
     internal void Show()
     {
         if (disposed || stopping) return;
