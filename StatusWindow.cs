@@ -37,7 +37,6 @@ internal sealed class StatusWindow : Form
     public event EventHandler? StatisticsRequested;
     public event Action<ProviderKind, UsageEventType, bool>? RecordRequested;
     public event Action<ProviderKind>? StatusPageRequested;
-    internal event Action? XaiUsageRequested;
 
     public StatusWindow()
     {
@@ -66,20 +65,6 @@ internal sealed class StatusWindow : Form
         {
             var panel = new Panel { Location = new Point(16, 146 + index++ * 89), Size = new Size(342, 83), BackColor = Color.White };
             var heading = new Label { Location = new Point(8, 4), Size = new Size(326, 20), Font = OwnedFont(10F, FontStyle.Bold) };
-            if (provider == ProviderKind.Xai)
-            {
-                heading.Width = 220;
-                var usage = new LinkLabel
-                {
-                    Text = ProviderStatusPages.XaiUsageLabel, Location = new Point(238, 6), Size = new Size(96, 18),
-                    Font = OwnedFont(8.5F), AccessibleName = ProviderStatusPages.XaiUsageLabel,
-                    AccessibleDescription = "Grok 공식 대시보드를 엽니다. 한도 값은 앱에서 조회하지 않습니다.",
-                    LinkBehavior = LinkBehavior.HoverUnderline, TabStop = true
-                };
-                usage.LinkClicked += (_, _) => XaiUsageRequested?.Invoke();
-                details.SetToolTip(usage, ProviderStatusPages.XaiUsage.AbsoluteUri);
-                panel.Controls.Add(usage);
-            }
             var official = new Label { Location = new Point(8, 25), Size = new Size(326, 34), Font = OwnedFont(8.5F) };
             var reason = new Label { Location = new Point(8, 61), Size = new Size(326, 17), Font = OwnedFont(8.5F), AutoEllipsis = true, ForeColor = Color.DimGray };
             var menu = CreateRecordingMenu(provider, (p, e, note) => RecordRequested?.Invoke(p, e, note));

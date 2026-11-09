@@ -68,8 +68,8 @@ internal static class XaiStatusTests
         Check(Enum.GetValues<QuotaProvider>().SequenceEqual([QuotaProvider.Codex, QuotaProvider.Claude, QuotaProvider.Gemini, QuotaProvider.Xai])
             && ProviderNames.Provider(ProviderKind.Xai) == "xAI" && ProviderNames.Quota(QuotaProvider.Xai) == "xAI",
             "xAI weekly quota is appended without changing the existing official status provider");
-        Check(ProviderStatusPages.For(ProviderKind.Xai).AbsoluteUri == "https://status.x.ai/" &&
-            ProviderStatusPages.XaiUsage.AbsoluteUri == "https://grok.com/dashboard", "fixed official status and usage destinations");
+        Check(ProviderStatusPages.For(ProviderKind.Xai).AbsoluteUri == "https://status.x.ai/",
+            "xAI retains the fixed official status destination");
 
         (string Path, string Label)[] mappings =
         [
@@ -222,7 +222,11 @@ internal static class XaiStatusTests
         CheckMissingIncidentRelease(Check);
         CheckMissingIncidentExpiry(Check);
         var detail = StatusPanelModel.Card(baseline, AgentState.FullThrottle);
-        Check(detail.Detail.Contains("공식 사건 피드 기준", StringComparison.Ordinal) && detail.Detail.Contains("사용량 보기: https://grok.com/dashboard", StringComparison.Ordinal), "shared detail declares incident-feed scope and usage link only");
+        Check(detail.Detail.Contains("공식 사건 피드 기준", StringComparison.Ordinal) &&
+            !detail.Detail.Contains("사용량 보기", StringComparison.Ordinal) &&
+            !detail.Detail.Contains("grok.com/dashboard", StringComparison.Ordinal) &&
+            !detail.Detail.Contains("공유 주간 한도 값은 조회하지 않습니다.", StringComparison.Ordinal),
+            "shared xAI detail retains incident-feed scope without a usage link or obsolete quota exclusion");
         Check(TrayPresentation.ProviderNotification(ProviderKind.Xai, Recommendation.Stop, open.Reason, ProviderNames.Provider).Body.Contains("Grok Bot", StringComparison.Ordinal), "problem notification includes affected product");
         Check(TrayPresentation.ProviderNotification(ProviderKind.Xai, Recommendation.Go, closed.Reason, ProviderNames.Provider).Body.Contains("Grok·Cursor·Grok Bot", StringComparison.Ordinal), "recovery notification names the product scope without claiming runtime availability");
 

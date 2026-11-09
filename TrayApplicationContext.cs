@@ -108,7 +108,6 @@ namespace AiBurgerClock
             statusWindow.StatisticsRequested += (_, _) => ShowStatistics();
             statusWindow.RecordRequested += RecordMeasurement;
             statusWindow.StatusPageRequested += OpenStatusPage;
-            statusWindow.XaiUsageRequested += () => OpenOfficialPage(ProviderStatusPages.XaiUsage);
             statusWindow.HolidayAdjustmentChanged += async (_, _) => await SetHolidayAdjustmentAsync(statusWindow.HolidayAdjustmentChecked);
 
             menu = new ContextMenuStrip();

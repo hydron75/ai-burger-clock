@@ -14,9 +14,6 @@ internal static class ProviderStatusPages
         _ => throw new ArgumentOutOfRangeException(nameof(provider))
     });
 
-    internal const string XaiUsageLabel = "사용량 보기";
-    internal static Uri XaiUsage => new("https://grok.com/dashboard");
-
     internal static void Open(Uri uri)
     {
         using var browser = Process.Start(StartInfo(uri));
