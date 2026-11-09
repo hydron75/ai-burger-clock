@@ -2680,8 +2680,28 @@ smoke의 선택 기능(`AIBURGERCLOCK_SMOKE_IMAGES`)으로 큰 화면·1280×800
 
 위 SHA-256은 **임시 사본 빌드**의 값이다. 같은 앱 소스여도 빌드 경로와 빌드 때의 git 커밋이 다르면 값이 달라진다. 저장소 경로 빌드의 값은 배포 뒤 이 절에 이어 쓴다.
 
+### 저장소 경로 빌드와 교체 (Claude Code 수행, 2026-11-09 21시대)
+메인 채팅의 "배포 진행" 지시(PR #137 병합 뒤, main `972c20c23c5c0845dc773cb63f7d83f420b1113e`)에 따라 AGENTS.md "Mac 배포" 절 순서로 진행했다. 저장소 경로에서 `bash Mac/build.sh --quit-running --allow-xcode-mismatch`로 빌드하고 `open`으로 실행했다.
+
+| 항목 | 결과 |
+|---|---|
+| 시작 전 | 실행 중이던 0.9.0 앱(PID 46321) 1개. `--quit-running`이 종료를 요청했고 정상 종료됐다 |
+| 빌드 기록 | `artifacts/mac-build/xcode-mismatch.log`(Git 제외): 21:10:46 옵션 사용(`Xcode 27.2 (27B52), macos workload 27.0.10742/10.0.100 requires Xcode 27.1, .NET SDK 10.0.403, git 972c20c`), 21:11:17 `exit 0`. 받을 수 있는 최신 워크로드 매니페스트는 27.0.10742 그대로(같은 날 `dotnet workload update --print-download-link-only` 확인) |
+| 빌드 | 경고 0 / 오류 0, Shared.Tests **291,907건 PASS**(`build.sh`가 실행) |
+| 번들 | `CFBundleShortVersionString` **0.9.1**, `CFBundleVersion` **28**, `codesign --verify --deep --strict` 통과, `System.Private.CoreLib` 10.0.1426대(0.9.0과 같음) |
+| 프로세스 | **1개**(PID 88209, 21:11:24 시작, 경로는 저장소 경로 번들). 빌드 종료(21:11:17) 뒤에 시작했다. 실행 20초 뒤에도 1개이고 남은 `grok` 프로세스는 0개 |
+| SHA-256 실행 파일 | `b91e994a300acfddfcd9ef4a04d04032aa05dec8d8aff408f3fd65d9ec5d1428` |
+| SHA-256 앱 DLL | `6a2c4b8e635ca096c37a1f1e82f9c175794c8bfdf6bc17aa8f1168bbf83dd121` (`Contents/MonoBundle/AI Burger Clock.dll`) |
+| LaunchServices 등록 수 | `lsregister -dump`에서 번들 ID `com.hydron75.aiburgerclock`의 등록 수 = **1**(저장소 경로 번들) |
+| 진단 파일(이름·갱신 시각만 확인) | 실행 직후 v2 파일(`quota-polling-diagnostics-v2.json`, `quota-early-reset-decisions-v2.jsonl`)이 21:11:31에 갱신됐고, 옛 v1 파일은 09:30 그대로(수정되지 않음). 내용은 열지 않았다 |
+
+위 SHA-256은 앞의 임시 사본 값(실행 파일 `8bbc501a…`, 앱 DLL `6c8d118d…`)과 다르다. 같은 앱 소스여도 빌드 경로와 빌드 때의 git 커밋(`972c20c`)이 다르기 때문이다. 이 작업은 실행 직후의 읽기 전용 확인만 했다(앱·설정 변경 없음, 실제 값은 열지 않음).
+
+### 사용자 확인
+0.9.1 팝오버·상세 팁의 실제 화면 문구는 사용자가 따로 확인한다(이 기록 시점에는 미확인). Claude Code가 화면을 확인한 것이 아니다.
+
 ### 수행하지 않은 검증
-- 저장소 경로 빌드·실행(배포 단계에서 메인 채팅의 "배포 진행" 지시 뒤 한다).
+- ~~저장소 경로 빌드·실행~~: 배포 단계에서 했다(위 "저장소 경로 빌드와 교체"). 팝오버·상세 팁의 실제 화면은 사용자 확인 대기.
 - 실제 마우스 휠·스크롤러 드래그로 긴 팁을 읽는 동작, VoiceOver 낭독, 다크 모드·여러 디스플레이에서의 긴 팁([73절](#73-상태-카드한도-상세의-공통-틀과-고정-폭-팁pr-130의-mac-전환) 미확인 항목 그대로).
 - 상태 항목이 덮인 디스플레이에 있을 때의 앵커 창 경로와 모든 디스플레이가 덮였을 때의 SKIP 출력(74절 미확인 항목 그대로).
 - 옵션 없는 빌드(Xcode 27.2를 지원하는 워크로드 이후, [BACKLOG](BACKLOG.md)).
