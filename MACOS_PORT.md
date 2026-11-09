@@ -2437,15 +2437,18 @@ smoke의 선택 기능(`AIBURGERCLOCK_SMOKE_IMAGES`)으로 큰 화면·1280×800
 | 빌드 | 경고 0 / 오류 0, `codesign --verify --deep --strict` 통과, bundle **0.9.0 / 27** |
 | Shared.Tests | **291,755건 PASS**(PR #122 본문·70절과 같음; `build.sh`가 실행) |
 | smoke 1회(임시 사본) | 종료 코드 0, **FAIL 0건**. **다만 Windows App의 창이 디스플레이 2를 덮고 있어 창을 여는 검사 6건(팝오버 열기·닫기·다시 열기, 통계 창 표시·닫기·다시 열기)을 건너뛰었다**(SKIP 출력, 확인되지 않음). 나머지(번들 버전, 아이콘 픽셀, 클릭 라우팅, 공통 패널 문구, 한도 박스 네 개와 xAI 박스, 진단 v2 등)는 통과했다. 앱 소스는 70절의 smoke 2회째(SKIP 0, 창 검사 포함 통과)와 같고 달라진 것은 버전뿐이다 |
+| **smoke 2회째(임시 사본을 다시 만듦; 앱 소스는 같고 문서만 다른 `9a45901d13266f7e2d336cff7b47575cefe70ce6`)** | 사용자가 Windows App 창을 내린 뒤 실행: 종료 코드 0, **SKIP 0건·FAIL 0건**, 출력은 `PASS: bundle version, …`(건너뛴 검사 문구 없음). 앞의 1회에서 건너뛴 창을 여는 검사 6건이 이번에는 실행되어 통과했다. 이 빌드도 경고 0 / 오류 0, Shared.Tests 291,755건 PASS, `codesign` 통과, bundle 0.9.0 / 27, `--allow-xcode-mismatch` |
+| SHA-256 2회째 실행 파일(임시 사본) | `b1371ff2140a9223ad397d8ef46d0d1947a9b8b6775e274ccef7028311b2059a` |
+| SHA-256 2회째 앱 DLL(임시 사본) | `fe3dcc43cc97e480cefd8c06ea14b5f5b951708351c7543cb99a97be6de28b21` |
 | SHA-256 실행 파일(임시 사본) | `376f949f48099232439035a38b5b14734b30fb95ca155600af1ce1fc6aab80e8` |
 | SHA-256 앱 DLL(임시 사본) | `919e71643ca7d0cb2242e58bc6ed18cc7b187c0dcfd45d6859617e9c4f994c76` (`Contents/MonoBundle/AI Burger Clock.dll`) |
 
 위 SHA-256은 **임시 사본 빌드**의 값이다. 같은 앱 소스여도 빌드 경로와 빌드 때의 git 커밋이 다르면 값이 달라진다. 저장소 경로 빌드의 값은 배포 뒤 이 절에 이어 쓴다.
 
 ### LaunchServices 등록 수 (임시 사본, 같은 번들 ID)
-smoke 실행 뒤 등록 수는 2였고, 삭제 전에 `lsregister -u "<사본>/Mac/bin/Release/net10.0-macos27.0/osx-arm64/AI Burger Clock.app"`로 해제해 1로 돌아왔다. 임시 worktree는 삭제했다.
+1회째·2회째 모두 smoke 실행 뒤 등록 수는 2였고, 삭제 전에 `lsregister -u "<사본>/Mac/bin/Release/net10.0-macos27.0/osx-arm64/AI Burger Clock.app"`로 해제해 1로 돌아왔다. 임시 worktree는 삭제했다.
 
 ### 수행하지 않은 검증
-- 창을 여는 검사 6건(위 SKIP). 전체 화면 Windows App을 내린 뒤 한 번 더 실행하면 확인된다.
+- ~~창을 여는 검사 6건(위 1회째 SKIP)~~: 2회째에서 SKIP 0으로 확인했다.
 - 저장소 경로 빌드·실행·팝오버의 실제 xAI 박스 확인은 병합 뒤 배포 단계에서 한다. 실제 VoiceOver 낭독과 장시간 동작은 이전 절의 미확인 항목 그대로다.
 - 옵션 없는 빌드(Xcode 27.2를 지원하는 워크로드 이후, [BACKLOG](BACKLOG.md)).
