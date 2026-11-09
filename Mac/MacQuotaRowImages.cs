@@ -86,6 +86,22 @@ internal static class MacQuotaRowImages
         panel.FitFor(restoreUsableHeight);
     }
 
+    // Synthetic review pictures of the fixed-width Provider details: status card tip and quota box tip, four Providers each,
+    // light appearance. The statuses, URLs and readings are made up (MacDetailTipSmoke); nothing is an account's or a provider's real state.
+    internal static void RenderDetailTips(ScheduleSnapshot schedule, DateTimeOffset now,
+        QuotaState codex, QuotaState claude, QuotaState gemini, QuotaState xai)
+    {
+        string? folder = Environment.GetEnvironmentVariable(EnvironmentVariable);
+        if (string.IsNullOrEmpty(folder)) return;
+        Directory.CreateDirectory(folder);
+        foreach (ProviderCardText card in StatusPanelModel.Cards(MacDetailTipSmoke.Statuses(now), schedule.State))
+            if (MacDetailTip.SnapshotPng(card.Detail, dark: false) is { } png)
+                File.WriteAllBytes(Path.Combine(folder, $"mac-detail-status-{card.Provider}-light.png"), png.ToArray());
+        foreach (QuotaSectionText section in QuotaPanelModel.Sections(MacDetailTipSmoke.Quotas(codex, claude, gemini, xai), now))
+            if (MacDetailTip.SnapshotPng(section.Detail, dark: false) is { } png)
+                File.WriteAllBytes(Path.Combine(folder, $"mac-detail-quota-{section.Provider}-light.png"), png.ToArray());
+    }
+
     internal static void Render(MacStatusPanel panel, ScheduleSnapshot schedule, IReadOnlyList<ProviderStatus> providers,
         QuotaState codex, QuotaState claude, DateTimeOffset now, string prefix)
     {

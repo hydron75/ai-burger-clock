@@ -153,6 +153,7 @@ internal sealed class MacStatusPanel : IDisposable
             Animates = !smoke,
             ContentViewController = new NSViewController { View = content }
         };
+        NSNotificationCenter.DefaultCenter.AddObserver(NSPopover.DidCloseNotification, _ => MacDetailTip.Hide(), popover);
     }
 
     internal bool IsShown => popover.Shown;
@@ -219,6 +220,7 @@ internal sealed class MacStatusPanel : IDisposable
 
     internal void Close()
     {
+        MacDetailTip.Hide();
         if (popover.Shown) popover.Close();
     }
 
@@ -245,7 +247,8 @@ internal sealed class MacStatusPanel : IDisposable
             if (card.View.AccessibilityLabel != text.Heading) card.View.AccessibilityLabel = text.Heading;
             SetText(card.Official, text.Official);
             SetText(card.Reason, text.Reason);
-            foreach (NSView view in new NSView[] { card.View, card.Heading, card.Official, card.Reason }) SetTip(view, text.Detail);
+            // One fixed-width shared detail for the whole card (the card's tracking area covers its lines).
+            SetDetail(card.View, text.Detail);
         }
 
         UpdateQuotas(quotaStates, snapshot.NowUtc, recentEarlyResets);
@@ -312,14 +315,14 @@ internal sealed class MacStatusPanel : IDisposable
         foreach (QuotaSectionText section in sections)
         {
             QuotaViews views = quotas[section.Provider];
-            // One Provider detail for the whole box: the box, its lines and its bars share it.
+            // One Provider detail for the whole box (its tracking area covers the lines and bars); VoiceOver gets it as help on the box and the bars.
             string detail = section.Detail;
-            SetTip(views.Box, detail);
-            Apply(views.Heading, section.Heading, detail);
-            if (views.Scope is not null && section.Scope is not null) Apply(views.Scope, section.Scope, detail);
+            SetDetail(views.Box, detail);
+            Apply(views.Heading, section.Heading);
+            if (views.Scope is not null && section.Scope is not null) Apply(views.Scope, section.Scope);
             foreach (QuotaLine row in section.Rows)
             {
-                views.Rows[row.WindowId].Apply(row, MacControls.Color(row.Tone), detail);
+                views.Rows[row.WindowId].Apply(row, MacControls.Color(row.Tone));
                 if (views.Bars.TryGetValue(row.WindowId, out UsageBarView? bar) && row.UsedPercent is { } used)
                 {
                     // One element per row: the bar speaks "row text. comparison"; its text field is hidden.
@@ -329,10 +332,10 @@ internal sealed class MacStatusPanel : IDisposable
                     bool muted = row.Tone == PanelTone.Muted;
                     bar.Set(used, muted ? null : row.ElapsedPercent,
                         muted ? MacControls.QuotaBarPreviousColor(section.Provider) : MacControls.QuotaBarColor(section.Provider));
-                    SetTip(bar, detail);
+                    SetHelp(bar, detail);
                 }
             }
-            Apply(views.Metadata, section.Metadata, detail);
+            Apply(views.Metadata, section.Metadata);
         }
     }
 
@@ -343,11 +346,10 @@ internal sealed class MacStatusPanel : IDisposable
         return line;
     }
 
-    private static void Apply(NSTextField field, QuotaLine line, string detail)
+    private static void Apply(NSTextField field, QuotaLine line)
     {
         SetText(field, line.Text);
         SetColor(field, MacControls.Color(line.Tone));
-        SetTip(field, detail);
     }
 
     internal void SetHoliday(bool enabled, bool ready)
@@ -488,6 +490,19 @@ internal sealed class MacStatusPanel : IDisposable
         if (view.ToolTip != tip) view.ToolTip = tip;
     }
 
+    // The shared Provider detail of a card or quota box: shown as a fixed-width tip (MacDetailTip) and given to
+    // VoiceOver as the help text that the system tooltip used to supply. Written only when it changes.
+    private static void SetDetail(CardView view, string detail)
+    {
+        view.Detail = detail;
+        SetHelp(view, detail);
+    }
+
+    private static void SetHelp(NSView view, string help)
+    {
+        if (view.AccessibilityHelp != help) view.AccessibilityHelp = help;
+    }
+
     // The row's accessibility label (what VoiceOver reads); assigned only when it changes, because
     // reassigning every tick would interrupt a reading.
     private static void SetSpoken(NSView element, string spoken)
@@ -502,6 +517,19 @@ internal sealed class MacStatusPanel : IDisposable
         private readonly Action? press;
         private NSTrackingArea? tracking;
         private bool hovered;
+        private string detail = "";
+
+        // The fixed-width detail tip of this card or box (empty: none).
+        internal string Detail
+        {
+            get => detail;
+            set
+            {
+                if (detail == value) return;
+                detail = value;
+                MacDetailTip.TextChanged(this);
+            }
+        }
 
         internal CardView(Action? press)
         {
@@ -528,20 +556,27 @@ internal sealed class MacStatusPanel : IDisposable
         public override void UpdateTrackingAreas()
         {
             base.UpdateTrackingAreas();
-            if (press is null) return;
             if (tracking is not null) RemoveTrackingArea(tracking);
             tracking = new NSTrackingArea(Bounds, NSTrackingAreaOptions.MouseEnteredAndExited |
                 NSTrackingAreaOptions.ActiveAlways | NSTrackingAreaOptions.InVisibleRect, this, null);
             AddTrackingArea(tracking);
         }
 
-        public override void MouseEntered(NSEvent theEvent) => SetHovered(true);
+        public override void MouseEntered(NSEvent theEvent)
+        {
+            SetHovered(true);
+            if (detail.Length > 0) MacDetailTip.Arm(this, () => detail);
+        }
 
-        public override void MouseExited(NSEvent theEvent) => SetHovered(false);
+        public override void MouseExited(NSEvent theEvent)
+        {
+            SetHovered(false);
+            MacDetailTip.Cancel(this);
+        }
 
         private void SetHovered(bool value)
         {
-            if (hovered == value) return;
+            if (press is null || hovered == value) return;
             hovered = value;
             NeedsDisplay = true;
         }
@@ -733,7 +768,7 @@ internal sealed class MacStatusPanel : IDisposable
             value.AccessibilityElement = false;
         }
 
-        internal void Apply(QuotaLine line, NSColor color, string detail)
+        internal void Apply(QuotaLine line, NSColor color)
         {
             FullText = line.Text;
             if (line.NameText is { } nameText && line.ValueText is { } valueText)
@@ -772,9 +807,6 @@ internal sealed class MacStatusPanel : IDisposable
             if (!Split && name.StringValue != line.Text) name.StringValue = line.Text;
             if (!name.TextColor!.Equals(color)) name.TextColor = color;
             if (!value.TextColor!.Equals(color)) value.TextColor = color;
-            if (ToolTip != detail) ToolTip = detail;
-            if (name.ToolTip != detail) name.ToolTip = detail;
-            if (value.ToolTip != detail) value.ToolTip = detail;
         }
 
         // Smoke: the painted row is exactly the shared split, the value is whole and the name fits its room.
@@ -825,7 +857,8 @@ internal sealed class MacStatusPanel : IDisposable
         {
             Card card = cards[text.Provider];
             if (card.Heading.StringValue != text.Heading || card.Official.StringValue != text.Official ||
-                card.Reason.StringValue != text.Reason || card.View.ToolTip != text.Detail ||
+                card.Reason.StringValue != text.Reason || card.View.Detail != text.Detail || card.View.ToolTip is not null ||
+                card.Heading.ToolTip is not null || card.Official.ToolTip is not null || card.Reason.ToolTip is not null ||
                 card.View.AccessibilityLabel != text.Heading)
                 throw new InvalidOperationException($"{text.Provider} card differs from the shared panel model.");
             string[] titles = card.Menu.Items.Select(item => item.IsSeparatorItem ? "-" : item.Title).ToArray();
@@ -876,10 +909,13 @@ internal sealed class MacStatusPanel : IDisposable
                     throw new InvalidOperationException($"{section.Provider} row {row.WindowId} is not spoken once as the shared reading text.");
                 field.VerifyAgainst(row, section.Provider.ToString());
             }
-            // One Provider detail per box: the box, every line and every bar carry the same shared text.
-            NSView[] tipped = new NSView?[] { views.Box, views.Heading, views.Scope, views.Metadata }
+            // One Provider detail per box: the box carries the shared text as its fixed-width tip (its tracking area covers
+            // every line and bar), no line or bar has a system tooltip of its own, and VoiceOver help on the box and the bars is the same text.
+            NSView[] lines = new NSView?[] { views.Heading, views.Scope, views.Metadata }
                 .OfType<NSView>().Concat(views.Rows.Values).Concat(views.Bars.Values).ToArray();
-            if (section.Detail.Length == 0 || tipped.Any(view => view.ToolTip != section.Detail))
+            if (section.Detail.Length == 0 || views.Box.Detail != section.Detail || views.Box.ToolTip is not null ||
+                lines.Any(view => view.ToolTip is not null) ||
+                views.Box.AccessibilityHelp != section.Detail || views.Bars.Values.Any(bar => bar.AccessibilityHelp != section.Detail))
                 throw new InvalidOperationException($"{section.Provider} quota box does not show the single shared Provider detail.");
             // A usage bar per row with a value (none for a waiting or failed row), drawn from the model's
             // used percentage; previous/elapsed (Muted) values use the muted color, never the provider color.
@@ -1091,11 +1127,25 @@ internal sealed class MacStatusPanel : IDisposable
         NSApplication.SharedApplication.Appearance = appearance;
     }
 
-    // Smoke: what a quota bar tells VoiceOver: its name (label), the tooltip and the accessibility help.
-    internal (string Label, string? ToolTip, string? Help) QuotaBarAccessibility(QuotaProvider provider, string windowId)
+    // Smoke: what a quota bar tells VoiceOver: its name (label), the detail tip hovering it shows (its box's) and the accessibility help.
+    internal (string Label, string? Tip, string? Help) QuotaBarAccessibility(QuotaProvider provider, string windowId)
     {
-        UsageBarView bar = quotas[provider].Bars[windowId];
-        return (bar.AccessibilityLabel ?? "", bar.ToolTip, bar.AccessibilityHelp);
+        QuotaViews views = quotas[provider];
+        UsageBarView bar = views.Bars[windowId];
+        return (bar.AccessibilityLabel ?? "", views.Box.Detail, bar.AccessibilityHelp);
+    }
+
+    // Smoke: the fixed-width detail tip text each card and quota box carries.
+    internal string CardDetail(ProviderKind provider) => cards[provider].View.Detail;
+    internal string QuotaDetail(QuotaProvider provider) => quotas[provider].Box.Detail;
+
+    // Smoke: show the real tip (the popover must be shown) for a card or a quota box at a point inside it, and return its frame.
+    internal CGRect? ShowDetailTip(ProviderKind? card, QuotaProvider? quota)
+    {
+        CardView view = card is { } kind ? cards[kind].View : quotas[quota!.Value].Box;
+        CGPoint inside = view.Window!.ConvertPointToScreen(view.ConvertPointToView(new CGPoint(view.Bounds.Width / 2, view.Bounds.Height / 2), null));
+        MacDetailTip.Present(view, view.Detail, inside);
+        return MacDetailTip.ShownFrame;
     }
 
     // Smoke: the visible quota area height (shrinks and scrolls on a short screen).

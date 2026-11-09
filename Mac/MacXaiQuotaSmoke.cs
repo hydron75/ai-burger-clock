@@ -61,7 +61,7 @@ internal static class MacXaiQuotaSmoke
             $"the row is not spoken as row text, comparison and age: '{spoken}'.");
         var access = panel.QuotaBarAccessibility(QuotaProvider.Xai, RowId);
         Check(access.Label == spoken, "the bar name differs from the spoken row.");
-        Check(access.ToolTip == section.Detail && section.Detail.Contains("xAI", StringComparison.Ordinal) &&
+        Check(access.Tip == section.Detail && section.Detail.Contains("xAI", StringComparison.Ordinal) &&
               section.Detail.Contains("주간 크레딧", StringComparison.Ordinal) && section.Detail.Contains("모든 시각 KST", StringComparison.Ordinal),
             "the bar description must be the shared xAI detail (provider, weekly credits, KST).");
         bool helpIsDetail = access.Help == section.Detail;
