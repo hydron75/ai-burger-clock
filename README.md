@@ -1,6 +1,6 @@
 # AI Burger Clock 2.9.1
 
-**Windows 2.9.1 후보 준비(2026-11-09 KST):** main `9c687a5`에 병합된 #128 xAI 사용량 링크 제거, #130 상태·한도 상세 틀/고정 폭과 긴 본문 스크롤 보정, #134 Microsoft.Data.Sqlite 10.0.14, #135 배포 receipt 누락의 `ReceiptNotFound`를 포함합니다. #136은 Mac smoke 화면 선택 보정이며 Windows 동작을 추가로 바꾸지 않습니다. 이번 PR은 Windows 버전 세 필드와 문서만 바꿉니다. 별도 단일 EXE 후보 build·self-test **각 293,036건**, 공통 **291,907건**, smoke **1,174 PASS**·종료 코드 0을 확인했습니다. 합성 PNG **60/60**·layout JSON **41/41**은 #130 최종과 같습니다. 기본 SQLitePCLRaw **2.1.13**·실제 SQLite 엔진 **3.53.3**입니다. [후보 신원·검사·receipt·외부 명령](MAINTENANCE_2_9_1.md).
+**Windows 2.9.1 후보 준비(2026-11-09 KST):** main `972c20c`에 병합된 #128 xAI 사용량 링크 제거, #130 상태·한도 상세 틀/고정 폭과 긴 본문 스크롤 보정, #134 Microsoft.Data.Sqlite 10.0.14, #135 배포 receipt 누락의 `ReceiptNotFound`를 포함합니다. #136은 Mac smoke 화면 선택 보정이며 Windows 동작을 추가로 바꾸지 않습니다. 준비 중 추가된 #137도 Mac 버전/문서만 바꾸며 후보의 Windows 입력은 같습니다. 이번 PR은 Windows 버전 세 필드와 문서만 바꿉니다. 별도 단일 EXE 후보 build·self-test **각 293,036건**, 공통 **291,907건**, smoke **1,174 PASS**·종료 코드 0을 확인했습니다. 합성 PNG **60/60**·layout JSON **41/41**은 #130 최종과 같습니다. 기본 SQLitePCLRaw **2.1.13**·실제 SQLite 엔진 **3.53.3**입니다. [후보 신원·검사·receipt·외부 명령](MAINTENANCE_2_9_1.md).
 
 **2.9.1 배포 순서:** 버전 PR 병합 → 사용자의 ‘사이트 배포’ 지시 후 준비본 배포 → 사용자의 외부 앱 배포입니다. xAI 링크 제거·상태 상세 사이트 준비본은 최신 main C#과 **47/47 일치**, 합성 검사 **85/85**이며 아직 배포하지 않았습니다. 운영 dist·DB·알림 등록은 변경하지 않았고 smoke 후 기존 2.9.0 외부 재실행 완료는 사용자 확인입니다. 아래 2.9.0 이하의 당시 준비·검증 기록은 보존합니다.
 

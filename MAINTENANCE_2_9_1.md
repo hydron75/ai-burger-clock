@@ -1,6 +1,8 @@
 # AI Burger Clock 2.9.1 — 링크·상세·SQLite·외부 배포 준비
 
-2026-11-09 KST. main `9c687a5f6feb6116861741077221bff79aadbe79`에서 준비합니다.
+2026-11-09 KST. main `9c687a5f6feb6116861741077221bff79aadbe79`에서 후보를 준비했고,
+추가된 #137(Mac 버전/문서만)을 포함한 최신 main `972c20c23c5c0845dc773cb63f7d83f420b1113e`도 브랜치에 반영했습니다.
+후보 소스와 현재 브랜치의 공통/Windows C#·Windows csproj·Shared.Tests csproj·공통 원본 목록 차이는 0입니다.
 이번 PR은 **Windows 버전 세 필드와 문서만** 바꿉니다. 공통/Windows C#·Mac·패키지·배포 스크립트는 다시 바꾸지 않습니다.
 운영 EXE 교체·등록·실행과 사이트 배포는 수행하지 않았습니다. smoke 후 기존 2.9.0 외부 재실행 완료는 사용자 확인입니다.
 
@@ -19,7 +21,7 @@ framework-dependent 단일 EXE이며 .NET 10 Desktop Runtime x64를 사용합니
 
 | 항목 | 준비 결과 |
 |---|---|
-| 기능 기준 main | `9c687a5f6feb6116861741077221bff79aadbe79` |
+| 기능 기준 main / 추가 반영 main | `9c687a5f6feb6116861741077221bff79aadbe79` / `972c20c23c5c0845dc773cb63f7d83f420b1113e` (#137은 Mac 버전/문서만) |
 | 후보 소스·버전 커밋 | `be23038be09a43d76de610e321523bcea3a7f550` |
 | FileVersion / AssemblyVersion | `2.9.1.0` |
 | ProductVersion | `2.9.1+be23038be09a43d76de610e321523bcea3a7f550` |
