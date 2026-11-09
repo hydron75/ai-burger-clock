@@ -112,3 +112,15 @@ RegistrationPerformed=false, AppLaunchRequested=false였습니다. 운영 EXE는
   수정 전 재현은 저장소 밖 `diagnostics/deployment-cwd-fix-20261109/`에 보관합니다. 테스트 fixture도 보존합니다.
 - 이 수정 PR 병합 뒤 **기존 2.9.0 후보를 재빌드/교체하지 않고** 공식 생성기로 새 이름의 receipt를 준비합니다.
   이미 사용한 receipt/`.run`/미완료 백업을 재사용·삭제하지 않습니다. 운영 재시도는 새 receipt와 MSI PowerShell 전체 경로의 한 줄 명령으로 사용자가 외부에서 수행합니다.
+
+## Receipt 파일 누락의 실패 코드 (2026-11-09, Draft)
+
+`Read-WDReceipt`는 기존 절대 경로·허용된 artifacts 하위 경로·reparse 검사를 먼저 유지한 뒤, receipt가 없으면 `ReceiptNotFound`로 중단합니다. 이전에는 `Get-Item`의 파일 없음 예외가 일반 `UnexpectedFailure`로 표시됐습니다. 다른 파일 읽기 오류·형식/신원·후보·프로세스·DB/WAL·백업·교체·등록·dry-run·복원 검사는 바꾸지 않습니다.
+
+- 누락 시 `Receipt=Failed`, 나머지 다섯 단계는 `NotRun`입니다. 백업·`.run`·교체·복원·등록 조회·dry-run·앱 실행을 하지 않습니다.
+- 같은 새 합성 검사가 수정 전 코드에서는 `missing receipt has a specific failure code`로 실패했습니다.
+- 수정 뒤 고정 before/after 각각 **36개 시나리오·208개 검사 PASS·종료 코드 0**입니다. 기존 35개 시나리오·202개 검사에 누락 1개 시나리오·6개 검사를 더했습니다. 실제 fixture Git archive는 각 슬롯 31회로 같습니다.
+- 누락 코드·단계 중단·가짜 EXE/DB 해시 불변·후속 호출 0회·백업/복원 없음·`.run` 미생성을 확인합니다. 파서 4개 파일 오류 0과 기존 실패/복원 시나리오도 유지합니다.
+- 운영 dist·DB·등록 접근, 실제 앱 실행·OS 알림 호출은 **0회**입니다. 앱 코드·패키지·버전 변경이 없어 앱 build/self-test/smoke는 이 PR에서 반복하지 않습니다.
+- 로그는 `artifacts/receipt-not-found-red.txt`, `artifacts/receipt-not-found-before.txt`, `artifacts/receipt-not-found-after.txt`, 요약은 `artifacts/windows-external-deployment/summary-before.json`·`summary-after.json`입니다. 이번에 만든 가짜 fixture는 삭제하지 않고 `artifacts/preserved-fixtures/`로 옮겨 보관했으며 원래 경로 대응은 `artifacts/fixture-preservation.json`에 남겼습니다. 고정 앱 슬롯의 기존 실행 파일은 변경하지 않았습니다.
+- 실제 외부 배포는 수행하지 않습니다. 다음 승인된 배포에서 사용자가 MSI PowerShell 전체 경로로 실행합니다.

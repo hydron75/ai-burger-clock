@@ -81,7 +81,9 @@ function Invoke-Fixture([string]$Mode = 'Success') {
     if ($Mode -eq 'ReusedReceipt') { [IO.Directory]::CreateDirectory([IO.Path]::ChangeExtension($receiptPath, '.run')) | Out-Null }
     if ($Mode -eq 'LockedDist') { $state.Lock = [IO.File]::Open($dist, 'Open', 'Read', 'Read') }
     if ($Mode -eq 'DeploymentInProgress') { $state.Lock = [IO.File]::Open((Join-Path (Split-Path -Parent $dist) '.deployment.lock'), 'OpenOrCreate', 'ReadWrite', 'None') }
-    $receipt | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $receiptPath -Encoding utf8
+    if ($Mode -ne 'MissingReceipt') {
+        $receipt | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $receiptPath -Encoding utf8
+    }
 
     # Production has no -Test/-Skip checks. Only these test-scope boundary functions
     # are substituted; real backup, hashes, sidecar checks, replace and rollback run.
@@ -195,6 +197,14 @@ foreach ($snapshot in @(@('source-before.zip','synthetic old source'), @('source
         finally { $reader.Dispose() }
     } finally { $archive.Dispose() }
 }
+
+$missing = Invoke-Fixture 'MissingReceipt'
+Assert-Test (-not $missing.Result.Succeeded -and $missing.Result.Failure -eq 'ReceiptNotFound') 'missing receipt has a specific failure code'
+Assert-Test (($missing.Result.Stages.Result -join ',') -eq 'Failed,NotRun,NotRun,NotRun,NotRun,NotRun') 'missing receipt stops at Receipt with every later stage not run'
+Assert-Test ($missing.CurrentHash -eq $missing.OldHash -and $missing.DbHash -eq $missing.OriginalDbHash) 'missing receipt preserves fake EXE and DB'
+Assert-Test ($missing.State.Calls.Count -eq 0 -and $missing.State.RegistrationReads -eq 0 -and $missing.State.Archives -eq 0 -and $missing.State.DryRuns -eq 0 -and $missing.State.Launches -eq 0) 'missing receipt makes no registration, archive, dry-run or launch calls'
+Assert-Test ($null -eq $missing.Result.BackupRoot -and $missing.Result.Rollback -eq 'NotNeeded') 'missing receipt creates no backup or rollback'
+Assert-Test (-not (Test-Path -LiteralPath ([IO.Path]::ChangeExtension($missing.ReceiptPath, '.run')))) 'missing receipt does not create run evidence'
 
 foreach ($mode in @('Packaged','Wal','Shm','Running','PreviousHash','CandidateHash','CandidateVersion','SourceCommit','ReceiptSchema','WrongRepository','CandidateOutside','ReparseLogs','ReusedReceipt','DeploymentInProgress','BackupExeCorrupt','BackupDbCorrupt','ArchiveFailure','LogsChanged','RegistrationMissing','RegistrationBefore','LockedDist')) {
     $case = Invoke-Fixture $mode
