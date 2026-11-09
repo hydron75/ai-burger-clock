@@ -229,9 +229,9 @@ internal static class UIRegressionChecks
         Check(receivedUnknown.Status == OfficialStatus.Unknown && receivedUnknown.LastSuccessfulCheckUtc == receivedUnknown.CheckedAtUtc &&
             panels[0].Controls.OfType<Label>().Any(l => l.Text == "ChatGPT   CHECK"),
             "Received unscoped incident is fresh CHECK, not STALE or a confirmed outage");
-        var statusDetails = (ToolTip)typeof(StatusWindow).GetField("details", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.GetValue(context.StatusWindow)!;
+        var statusDetails = context.StatusWindow.StatusDetails;
         var detailLabel = panels[0].Controls.OfType<Label>().Single(l => l.Font.Bold);
-        string receivedDetail = statusDetails.GetToolTip(detailLabel) ?? "";
+        string receivedDetail = statusDetails.DetailFor(detailLabel);
         Check(receivedDetail.Contains("범위 미확인 사건: Synthetic reporting delay", StringComparison.Ordinal) &&
             receivedDetail.Contains("현재 판정: " + receivedUnknown.Reason, StringComparison.Ordinal) &&
             !receivedDetail.Contains("최근 판정 실패 이유:", StringComparison.Ordinal) &&
@@ -250,13 +250,13 @@ internal static class UIRegressionChecks
         Check(codexOutage.Status == OfficialStatus.PartialOutage && codexOutage.RelevantComponent.Contains("CLI", StringComparison.Ordinal) &&
             panels[0].Controls.OfType<Label>().Any(l => l.Text == "ChatGPT   STOP"),
             "Codex component missing from summary participates in native STOP judgment");
-        Check((statusDetails.GetToolTip(detailLabel) ?? "").Contains("범위 미확인 사건: Synthetic reporting delay", StringComparison.Ordinal),
+        Check(statusDetails.DetailFor(detailLabel).Contains("범위 미확인 사건: Synthetic reporting delay", StringComparison.Ordinal),
             "Known Codex outage retains a separate unscoped incident diagnostic");
         handler.OpenAiJson = null;
         handler.OpenAiComponentsJson = null;
         await monitor.RefreshOnceAsync();
         RefreshStatus();
-        Check(!(statusDetails.GetToolTip(detailLabel) ?? "").Contains("범위 미확인 사건", StringComparison.Ordinal),
+        Check(!statusDetails.DetailFor(detailLabel).Contains("범위 미확인 사건", StringComparison.Ordinal),
             "Fresh healthy response clears uncertain incident details");
 
         // Synchronous sequence: the 1-second UI timer cannot run between these calls.
@@ -588,7 +588,7 @@ internal static class UIRegressionChecks
         Check(expired.Status == OfficialStatus.Operational && expired.PendingXaiIncidentIds.Length == 0 &&
             xaiHeading.Text == StatusPanelModel.Card(expired, expirySchedule.State).Heading && xaiHeading.ForeColor != Color.DimGray,
             "24-hour missing-incident expiry renders xAI normal instead of a gray CHECK card");
-        Check((statusDetails.GetToolTip(xaiHeading) ?? "").Contains(XaiStatusFeed.ExpiryNote, StringComparison.Ordinal),
+        Check(statusDetails.DetailFor(xaiHeading).Contains(XaiStatusFeed.ExpiryNote, StringComparison.Ordinal),
             "Native xAI detail retains the exact 24-hour expiry explanation without adding a visible row");
         SaveFormImage(context.StatusWindow, "xai-expired.png", reportDirectory);
         RefreshStatus();

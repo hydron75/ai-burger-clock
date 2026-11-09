@@ -2524,3 +2524,88 @@ smoke의 선택 기능(`AIBURGERCLOCK_SMOKE_IMAGES`)으로 큰 화면·1280×800
 - 실제 VoiceOver에서 별도 링크가 사라지고 카드 버튼 동작이 남는지(속성은 smoke로 검사).
 - 다크 캡처의 보조 글자 누락 원인 확인(캡처 한계로 추정).
 - 모바일 사이트 반영은 #128 본문의 항목이며 이 PR 범위가 아니다.
+
+## 73. 상태 카드·한도 상세의 공통 틀과 고정 폭 팁(PR #130의 Mac 전환)
+
+2026-11-09 KST. 범위: **Mac UI만 변경**(공통 원본·Windows 파일 변경 없음). 버전은 올리지 않았고 배포하지 않았다(다음 Mac 버전에서 함께 나간다).
+
+### 기준
+| 항목 | 값 |
+|---|---|
+| 기준 브랜치 | `codex/quota-detail-template` (Windows PR [#130](https://github.com/hydron75/ai-burger-clock/pull/130), HEAD `df2e8e1d9144278552f5dad002a27ab102f569f7`, Draft) |
+| 이 PR의 base | 위 브랜치(Draft). #130이 먼저 병합되면 base를 main으로 바꾼다 |
+| 공통 변경 | `QuotaPanelModel.ProviderDetail`(한도 상세): 제목 → 범위 → 리셋 예정 → 시간·사용량 비교 → (조기 초기화) → 조회 상태 → 조회 주기 + `참고:` → 마지막 줄, 빈 값도 구역 유지. `StatusPanelModel.Detail`(상태 카드 툴팁): 조작 → 현재 판정 → 대상(모든 Provider) → 조회 상태 → 사건(`진행 중 사건: 없음` 포함) → 출처(URL 한 줄에 하나, `[응답 수신]` 생략, `[수신 실패]` 유지) |
+| 공통 문구 | Mac은 공통 모델의 문자열을 그대로 쓴다. 바꾼 문구 때문에 깨진 Mac 기대값은 없었다(아래 검증) |
+
+### 바꾼 것(Mac)
+| 파일 | 변경 |
+|---|---|
+| `Mac/MacDetailTip.cs` (신규) | 상세를 **바깥 폭 320pt 고정**으로 보이는 팁. 줄바꿈은 Windows와 같은 규칙으로 직접 한다: 공백에서만 나누고(한국어 단어·`Apps/연결` 같은 경로도 통째로 다음 줄로), 줄보다 긴 단어(URL 등)만 글자 묶음 단위로 나눈다. 높이만 본문에 따른다. 커서가 0.6초 머물면 나타나고 클릭·키·스크롤·25초 뒤·팝오버 닫힘에 사라진다 |
+| `Mac/MacStatusPanel.cs` | 상태 카드와 한도 박스는 시스템 툴팁(`NSView.ToolTip`) 대신 이 팁을 쓴다. 카드·박스 하나가 상세 하나를 갖고(추적 영역이 안의 줄·막대까지 덮는다) 줄·막대에는 시스템 툴팁이 없다. VoiceOver에는 시스템 툴팁이 주던 도움말을 `AccessibilityHelp`로 카드·박스·막대에 같은 글로 준다 |
+| `Mac/MacDetailTipSmoke.cs` (신규) | 아래 새 검사 |
+| `Mac/MacApplication.cs`, `Mac/MacXaiQuotaSmoke.cs`, `Mac/MacQuotaRowImages.cs` | 새 smoke 연결, 막대의 팁 확인 이름 변경, 합성 캡처(8장) |
+| `Mac/README.md` | 새 구역 순서와 고정 폭 팁 설명 |
+
+시스템 툴팁은 그대로 두는 곳: 시간표 줄, 하단 안내, 휴일·자동 실행 선택지, 메뉴바 아이콘, 메뉴 항목.
+
+### 폭을 고정한 이유와 확인하지 못한 것
+- 시스템 툴팁은 폭을 정할 수 없고 가장 긴 줄을 따라 달라진다(Windows 기본 ToolTip에서 ChatGPT 1,624px ~ xAI 2,337px 차이가 난 것과 같은 구조). Mac의 시스템 툴팁이 실제로 Provider마다 다른 폭으로 나오는지는 **측정하지 못했다**: 마우스를 움직이지 않는 합성 이벤트로는 시스템 툴팁이 나타나지 않았고(작은 시험 앱으로 확인), 실제 커서를 옮기는 방식은 쓰지 않았다. 그래서 폭을 맞추는 쪽을 택했다.
+- 이 변경은 Mac 상세의 표시 방식을 바꾼다(시스템 툴팁 → 팁 창). 되돌리려면 `CardView.Detail` 대신 `SetTip`을 쓰면 된다.
+
+### 새 검사 (`MacDetailTipSmoke`, 합성 데이터)
+- 네 상태 카드 × 네 한도 박스: 카드·박스가 공통 모델의 상세 문자열을 그대로 갖는다. 줄·막대에는 시스템 툴팁이 없고 박스·막대의 VoiceOver 도움말이 같은 글이다.
+- 각 상세와 스트레스 입력(260자 URL, 긴 한국어 문장, 이모지·결합 문자): 바깥 폭 = 320pt, 가장 넓은 줄 ≤ 본문 폭(304pt), 글자 누락 0(공백 제외 글자 수가 같음), 텍스트 레이아웃이 그린 줄 수 = 직접 나눈 줄 수(어느 줄도 넘쳐 다시 감기지 않음), 한 줄에 들어가는 단어는 쪼개지지 않음.
+- 팝오버가 실제로 떠 있을 때: 네 카드·네 박스의 팁을 실제로 띄워 폭이 모두 같고(320pt) 화면 안에 들며 숨기면 사라진다.
+
+### 이 Mac에서 수행한 검증 (임시 사본, 저장소 경로 아님)
+| 항목 | 결과 |
+|---|---|
+| 검증한 소스 | 코드 커밋 `c72dfb5dca63d7e88262cf0bd4f88d5787ab8abf`(이후 커밋은 문서·이미지만) |
+| Shared.Tests | **291,898건 통과**(#130 본문의 공통 291,898건과 같음) |
+| `Mac/build.sh --allow-xcode-mismatch` | 경고 0·오류 0, 번들 0.9.0 / 27, `codesign --verify --deep --strict` 통과 |
+| `--smoke-test` | 최종 소스에서 종료 코드 0, **SKIP 0**, 새 검사 통과: 카드 4 + 박스 4가 320pt 고정 폭, 가장 큰 팁 높이 453pt, 8개 팁을 실제로 띄워 같은 폭·화면 안·제거 확인. **실행은 3회**였다(이 작업의 기준 1~2회를 넘음): 앞의 2회는 새 검사가 실패해 일찍 끝난 실행이다(1회째 줄바꿈이 `·`·`/`에서도 끊기던 것을 공백 우선 규칙으로 고침, 2회째 팁 위치 계산에서 CGRect의 위·아래를 거꾸로 쓴 것을 고침) |
+| SHA-256 실행 파일(임시 사본) | `96b9150f2646b9bcc8c910d600829620ed6617d79f7205f61d739e91267bc1ab` |
+| SHA-256 앱 DLL(임시 사본) | `88ffecfa3ffe6d84a71b4a53757877908280473e0611c5100407ba365e2a8162` |
+
+임시 사본 빌드의 값이라 저장소 경로 빌드와 다르다. LaunchServices 등록은 smoke 뒤 2였고 삭제 전 `lsregister -u`로 해제해 1로 돌아왔다. 임시 worktree는 삭제했다.
+
+### 화면 이미지 (합성)
+이 이미지는 **합성 데이터**다. 사건·URL·한도 값은 smoke 안에서 만든 예시이고(260자 합성 URL 포함), 화면의 시각은 실행 시각에서 만든 예시다(계정 조회 값이 아님). 라이트 외형, 바깥 폭은 모두 320pt(이미지 640px, @2x)이고 높이만 다르다.
+
+| Provider | 상태 카드 툴팁 | 한도 상세 |
+|---|---|---|
+| ChatGPT(Codex) | ![](docs/images/quota-detail-template-mac/mac-detail-status-OpenAI-light.png) | ![](docs/images/quota-detail-template-mac/mac-detail-quota-Codex-light.png) |
+| Claude | ![](docs/images/quota-detail-template-mac/mac-detail-status-Claude-light.png) | ![](docs/images/quota-detail-template-mac/mac-detail-quota-Claude-light.png) |
+| Gemini | ![](docs/images/quota-detail-template-mac/mac-detail-status-Gemini-light.png) | ![](docs/images/quota-detail-template-mac/mac-detail-quota-Gemini-light.png) |
+| xAI | ![](docs/images/quota-detail-template-mac/mac-detail-status-Xai-light.png) | ![](docs/images/quota-detail-template-mac/mac-detail-quota-Xai-light.png) |
+
+### 수행하지 않은 검증
+- 실제 마우스로 올렸을 때의 표시 지연·위치·사라지는 시점(클릭·스크롤·키·25초)과 시스템 툴팁과의 체감 차이. smoke는 팁을 코드로 띄워 폭·위치·제거만 확인한다.
+- 실제 VoiceOver의 도움말 낭독(속성 값은 smoke로 검사).
+- 다크 외형의 팁 모습, 다른 해상도·여러 화면에서의 위치.
+- 저장소 경로 빌드·배포(버전을 올리지 않았다).
+- 모바일 사이트 반영은 #130 본문의 항목이며 이 PR 범위가 아니다.
+
+### 화면보다 긴 상세 (PR #130 Codex 리뷰 `discussion_r4511584366` 반영)
+2026-11-09 KST. 범위: **Mac UI만 변경**(`Mac/MacDetailTip.cs`, `Mac/MacDetailTipSmoke.cs`). 버전은 올리지 않았다. 지적: 상세가 화면 사용 높이보다 길면(Gemini 다중 모델 창은 파서가 최대 64개까지 받는다, 긴 오류·출처 문구) 팁이 위치만 옮기고 높이는 그대로여서 일부가 화면 밖으로 나가고, 마우스 입력을 받지 않고 스크롤에 닫혀 잘린 내용을 볼 방법이 없었다.
+
+**Windows 확인(코드 읽기, 실행 안 함):** `QuotaDetailPopup.Place`가 팝업 높이를 작업 영역 높이(− 간격)로 제한하고, `AutoScroll`로 세로 스크롤바를 켠다. `WM_NCHITTEST`는 스크롤바가 보일 때만 입력을 받고(`HTTRANSPARENT`을 돌려주지 않음) 그렇지 않으면 아래 카드로 통과시킨다. `StatusDetailController`는 포인터가 카드나 팝업 위에 있으면 유지하고, 팝업을 벗어나면 마우스 호버 시간 뒤 닫으며, 휠 메시지(0x020A)는 닫힘 대상이 아니라 팝업 위 휠 스크롤이 된다. 즉 Windows는 넘친 내용을 볼 수 있게 설계돼 있다. 25초 수명은 스크롤 중에도 그대로 적용된다. 실제 Windows에서 비활성 팝업 위 휠이 동작하는지는 이 Mac에서 확인하지 못했다.
+
+**Mac 변경(Windows와 같은 방식):**
+- 팁 높이를 팁이 뜨는 화면의 사용 가능 영역(`VisibleFrame`) 높이에서 위아래 여백 4pt씩을 뺀 값으로 제한한다. 맞는 상세는 이전과 같다(폭 320pt, 높이는 내용대로, 마우스 입력 없음).
+- 넘치는 상세만 팁 안의 `NSScrollView`에 담는다. 오버레이 스크롤러라 본문 폭(304pt)은 그대로이고, 뜰 때 스크롤러를 잠깐 보여 준다. 이때만 팁 창이 마우스 입력(휠·스크롤러)을 받는다.
+- 넘치는 팁은 카드에서 팁으로 커서를 옮겨도 유지된다: 카드나 팁을 벗어나면 0.6초 뒤, 커서가 둘 다 밖일 때만 제거한다(Windows의 `leave` 타이머와 같음). 팁 안의 휠·클릭은 닫지 않고, 팁 밖의 클릭·휠·키와 25초 수명은 이전처럼 닫는다.
+
+**새 검사(합성):** 합성 Gemini 창 64개 + 300자 오류의 상세(2,159pt)를 600pt 한도로 배치해 높이 제한(프레임 600pt, 넘침 표시)·맨 위(오프셋 0)·맨 끝(오프셋 = 최대, 마지막 줄 보임)을 확인하고, 화면 안에 드는 상세는 스크롤하지 않음을 확인한다. 팝오버가 떠 있으면 같은 상세를 실제 팁으로 띄워 폭 320pt·화면 안·스크롤 가능·끝까지 스크롤을 확인한다. 이번 실행에서 팁은 사용 영역 960pt 안에서 952pt 높이였고 1,209pt까지 스크롤됐다.
+
+| 항목 | 결과 |
+|---|---|
+| 검증한 소스 | 코드 커밋 `b51ed82`(이 절의 문서는 이후 커밋) |
+| Shared.Tests | **291,898건 통과**(#130과 같음) |
+| `Mac/build.sh --allow-xcode-mismatch`(임시 사본) | 경고 0·오류 0 |
+| `--smoke-test` | **1회**, 종료 코드 0, SKIP 0, 위 새 검사 통과 |
+| LaunchServices | smoke 뒤 `lsregister -u`로 해제, 등록 수 1, 임시 worktree 삭제 |
+
+임시 사본 해시는 이번에 따로 남기지 않았다(배포 빌드가 아님).
+
+**수행하지 않은 검증:** 실제 마우스 휠로 팁 안을 스크롤하는 느낌, 스크롤러 끌기(비활성 팁 창이 첫 클릭을 받는지), 카드→팁 커서 이동 중 깜빡임, 여러 화면·다른 해상도·다크 외형의 긴 팁, VoiceOver로 긴 팁 읽기. smoke는 코드로 팁을 띄우고 스크롤 위치를 직접 지정해 확인한다.

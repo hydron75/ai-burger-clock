@@ -59,6 +59,8 @@ internal sealed class QuotaDetailPopup : Form
             measuredSize = AccountQuotaView.MeasureDetail(graphics, text, dpi, area.Width);
             measuredAreaWidth = area.Width;
             measuredAreaHeight = area.Height;
+            // A first long detail needs native scrollbar metrics before remeasuring its client width.
+            _ = Handle;
             // Reset before laying out another Provider so a previous long detail cannot narrow it.
             AutoScrollMinSize = Size.Empty;
             AutoScrollPosition = Point.Empty;

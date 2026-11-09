@@ -64,11 +64,8 @@ internal sealed class AccountQuotaView : Panel, IMessageFilter
         int padding = ScaleDetail(DetailPadding, dpi);
         int width = Math.Min(ScaleDetail(DetailWidth, dpi), Math.Max(2 * padding + 1, workingAreaWidth - 2 * padding));
         width = Math.Min(width, contentWidth ?? width);
-        using var format = DetailFormat();
-        // GDI+ also wraps words without spaces, such as long CLI paths or URLs.
-        var content = graphics.MeasureString(text, DetailFont,
-            new SizeF(width - 2 * padding, int.MaxValue), format);
-        return new Size(width, (int)Math.Ceiling(content.Height) + 2 * padding);
+        var lines = DetailLines(graphics, text, width - 2 * padding);
+        return new Size(width, (int)Math.Ceiling(lines.Count * DetailFont.GetHeight(graphics)) + 2 * padding);
     }
 
     internal static void DrawDetail(Graphics graphics, Rectangle bounds, string text, int dpi)
@@ -79,7 +76,56 @@ internal sealed class AccountQuotaView : Panel, IMessageFilter
         int padding = ScaleDetail(DetailPadding, dpi);
         var content = Rectangle.Inflate(bounds, -padding, -padding);
         using var format = DetailFormat();
-        graphics.DrawString(text, DetailFont, Brushes.Black, content, format);
+        format.FormatFlags |= StringFormatFlags.NoWrap;
+        var state = graphics.Save();
+        try
+        {
+            graphics.SetClip(content, System.Drawing.Drawing2D.CombineMode.Intersect);
+            float y = content.Y, height = DetailFont.GetHeight(graphics);
+            foreach (string line in DetailLines(graphics, text, content.Width))
+            {
+                graphics.DrawString(line, DetailFont, Brushes.Black, new PointF(content.X, y), format);
+                y += height;
+            }
+        }
+        finally { graphics.Restore(state); }
+    }
+
+    internal static IReadOnlyList<string> DetailLines(Graphics graphics, string text, float width)
+    {
+        using var format = DetailFormat();
+        format.FormatFlags |= StringFormatFlags.NoWrap;
+        float Measure(string value) => graphics.MeasureString(value, DetailFont, int.MaxValue, format).Width;
+        return WrapDetailText(text, width, Measure);
+    }
+
+    // Prefer whitespace boundaries, including Korean words. Only an overlong token (for example a URL)
+    // may break inside itself; StringInfo keeps combining characters and emoji sequences together.
+    internal static IReadOnlyList<string> WrapDetailText(string text, float width, Func<string, float> measure)
+    {
+        var result = new List<string>();
+        foreach (string logical in text.ReplaceLineEndings("\n").Split('\n'))
+        {
+            string line = "", space = "";
+            foreach (System.Text.RegularExpressions.Match token in System.Text.RegularExpressions.Regex.Matches(logical, @"\s+|\S+"))
+            {
+                string word = token.Value;
+                if (string.IsNullOrWhiteSpace(word)) { space += word; continue; }
+                if (measure(line + space + word) <= width) { line += space + word; space = ""; continue; }
+                if (line.Length > 0) { result.Add(line); line = ""; }
+                space = "";
+                if (measure(word) <= width) { line = word; continue; }
+                var elements = System.Globalization.StringInfo.GetTextElementEnumerator(word);
+                while (elements.MoveNext())
+                {
+                    string element = elements.GetTextElement();
+                    if (line.Length > 0 && measure(line + element) > width) { result.Add(line); line = ""; }
+                    line += element;
+                }
+            }
+            result.Add(line + space);
+        }
+        return result;
     }
 
     internal static StringFormat DetailFormat() => new(StringFormat.GenericTypographic)

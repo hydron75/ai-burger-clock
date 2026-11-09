@@ -364,9 +364,9 @@ Windows 내부 승인 형식은 알려진 경우만 해석합니다. 낯선 값�
 
 ## 11. 전체 소스 파일 지도
 
-이름을 눌러 소스를 열 수 있습니다. 역할을 알고 필요한 파일부터 읽으면 됩니다. 현재 표의 C#는 루트·Properties 122개(앱 기능 59 + 검사·진단 62 + 명찰 1), Mac 21개, 공통 검사 입구 1개로 총 144개이며 공통 제품 원본은 35개입니다.
+이름을 눌러 소스를 열 수 있습니다. 역할을 알고 필요한 파일부터 읽으면 됩니다. 현재 표의 C#는 루트·Properties 126개(앱 기능 60 + 검사·진단 65 + 명찰 1), Mac 21개, 공통 검사 입구 1개로 총 148개이며 공통 제품 원본은 35개입니다.
 
-### 실제 앱 기능: 59개
+### 실제 앱 기능: 60개
 
 | 파일 | 맡은 일 |
 |---|---|
@@ -385,6 +385,7 @@ Windows 내부 승인 형식은 알려진 경우만 해석합니다. 낯선 값�
 | [WindowsQuotaToastRegistration.cs](WindowsQuotaToastRegistration.cs) | 실제 배포 EXE의 명시적 시작 메뉴/AUMID/CLSID 등록, 소유권·경로 검증, 해제·dry-run. 자동 시작과 별개 |
 | [WindowsQuotaToastIntegration.cs](WindowsQuotaToastIntegration.cs) | 고정 TEST AUMID·CLSID만 쓰는 별도 통합 검사 명령. 정상 실행과 기본 smoke에서는 시험 알림/등록을 만들지 않음 |
 | [StatusWindow.cs](StatusWindow.cs) | 작은 상태 창, 클릭과 설정 변경 전달, 저장 오류 안내 |
+| [StatusDetailController.cs](StatusDetailController.cs) | 상태 카드의 고정 폭 상세 호버·25초 수명·이탈 유예·입력 통과·스크롤/숨김/종료 정리 |
 | [XaiStatusFeed.cs](XaiStatusFeed.cs) | xAI RSS·Cursor 호환 JSON의 제품 대응·중복/최악 상태·부분 실패·소실 사건 24시간 해제/캐시 복원 판정 |
 | [MeasurementDialog.cs](MeasurementDialog.cs) | 기록 종류와 선택 메모 입력 |
 | [StatisticsWindow.cs](StatisticsWindow.cs) | Windows 통계 창 |
@@ -405,7 +406,7 @@ Windows 내부 승인 형식은 알려진 경우만 해석합니다. 낯선 값�
 | [TrayPresentation.cs](TrayPresentation.cs) | 트레이 문자·색상·짧은 도움말 결정. 두 OS가 함께 쓰는 전환·Provider 알림 문구 |
 | [WindowsProviderNames.cs](WindowsProviderNames.cs) | Windows 화면·메뉴·기록·통계·Tooltip·알림에서 OpenAI를 ChatGPT로 표시. 저장 식별자와 공식 URL은 유지 |
 | [ProviderNames.cs](ProviderNames.cs) | 두 OS의 공통 제품 표시 이름. 식별자·DB 값과 구분 |
-| [StatusPanelModel.cs](StatusPanelModel.cs) | 시간표·Provider 상태 카드의 공통 본문·톤·상세 Tooltip. 빈 선택 항목 숨김 |
+| [StatusPanelModel.cs](StatusPanelModel.cs) | 시간표·Provider 상태 카드 본문·톤, 공통 대상/조회/사건/출처 상세 틀. URL 한 줄씩·수신 실패 표시 보존 |
 | [QuotaPanelModel.cs](QuotaPanelModel.cs) | 공통 사용량 제목·범위·사용률·간략 시간·조회 시각·톤·Provider별 하나의 상세. 선택적 최근 조기 초기화 기록은 상세에만 추가. QuotaLine.ComparisonText는 행별 접근성 비교 문구이며 숨김은 null. NameText / ValueText / ReadingText로 이름·값/리셋·전체 읽기를 분리하며 문자 요소 보호 중간 생략 제공. UI 색·폭·박스·전환은 호스트가 결정 |
 | [QuotaPacing.cs](QuotaPacing.cs) | 마지막 성공 조회 시각에 고정된 시간 비율·사용량 차이·행별 비교 문구와 기준 나이. 계산 불가 사유를 분리하며 조회 정책은 바꾸지 않음 |
 | [UsageMeasurementFactory.cs](UsageMeasurementFactory.cs) | 기록 메뉴 목록·상태 캡처·메모의 공백/문자 요소 경계 제한 |
@@ -428,9 +429,9 @@ Windows 내부 승인 형식은 알려진 경우만 해석합니다. 낯선 값�
 | [AccountQuotaView.cs](AccountQuotaView.cs) | 공통 모델을 바인딩하는 한도 보기. Provider별 박스·막대·상세·내부 스크롤·상태 전환, 10초/클릭/Esc 닫힘과 박스 이탈 전 재표시 차단 |
 | [QuotaBalanceBar.cs](QuotaBalanceBar.cs) | Windows 네이티브 사용률 막대. 연한 시간층·진한 사용층·최상단 시간 경계선, 이전/경과 값의 회색과 접근성 바인딩 |
 | [QuotaBarPalette.cs](QuotaBarPalette.cs) | Windows 막대의 실제 합성색 대비로 시간층 농도와 경계선 색을 선택. 고대비 시스템색·경계선 보완 |
-| [QuotaDetailPopup.cs](QuotaDetailPopup.cs) | Windows 비활성화 상세 팝업. 흰색·고정 폭·줄바꿈·포인터 근처/화면 경계 보정·긴 상세 세로 스크롤 |
+| [QuotaDetailPopup.cs](QuotaDetailPopup.cs) | 상태·한도가 공유하는 Windows 비활성 상세 팝업. 흰색·320 DIP·공백 우선 줄바꿈·화면 경계 보정·세로 스크롤 |
 
-### 검사와 진단: 62개
+### 검사와 진단: 65개
 
 미완성 임시 코드가 아닙니다. **특별한 검사 명령 때만 쓰는 정식 검사 코드**입니다.
 
@@ -456,7 +457,9 @@ Windows 내부 승인 형식은 알려진 경우만 해석합니다. 낯선 값�
 | [StatusTickerTests.cs](StatusTickerTests.cs) | 입력 이유·전환·알림 우선 순서·아이콘 변경·중복 Provider 판정 |
 | [WindowsWarningLogChecks.cs](WindowsWarningLogChecks.cs) | 임시 파일로 경고 크기·회전·Unicode·쓰기 실패 격리 검사 |
 | [PanelModelTests.cs](PanelModelTests.cs) | 공통 상태·한도 본문과 톤, 상세 Tooltip 골든 검사 |
-| [QuotaPresentationTests.cs](QuotaPresentationTests.cs) | 공통 사용률·간략 시간·Provider 상세와 행별 시간 비교·최근 조기 초기화 기록 연결 170건. 공통 실행 목록에 한 번 등록 |
+| [StatusDetailTemplateTests.cs](StatusDetailTemplateTests.cs) | 네 상태 Provider × 정상/사건/범위 미확인/실패의 상세 골든·순서·Detail 외 카드 필드 불변·출처/과거 해제 71건 |
+| [QuotaPresentationTests.cs](QuotaPresentationTests.cs) | 공통 사용률·간략 시간·Provider 상세와 행별 시간 비교·최근 조기 초기화 기록 연결 215건, 네 Provider 상세 16상태 합성 fixture |
+| [QuotaDetailTemplateTests.cs](QuotaDetailTemplateTests.cs) | 상세 구역·문구 골든 16상태, 조기 초기화 기록 원문 유지, Detail 외 전체 필드의 변경 전 해시 불변 72건 |
 | [QuotaPacingTests.cs](QuotaPacingTests.cs) | 합성 시각으로 시간 비율 고정·계산 불가·%p 문구·행별 비교·조회 기준 나이 207건 |
 | [QuotaRecoveryNotificationTests.cs](QuotaRecoveryNotificationTests.cs) | 새 성공만의 회복·부분 회복·첫 성공/반복/기간 변경 무알림과 문구 검사 |
 | [QuotaRecoverySettingsTests.cs](QuotaRecoverySettingsTests.cs) | 임시 SQLite에서 기본 OFF·저장·오류·취소와 schema 2 유지 |
@@ -496,6 +499,7 @@ Windows 내부 승인 형식은 알려진 경우만 해석합니다. 낯선 값�
 | [AccountQuotaMonitorTests.cs](AccountQuotaMonitorTests.cs) | 실패 격리·조회 합치기·종료·SQLite 캐시·재시작과 실패/검증 실패/취소/캐시 저장의 연속성 192건 |
 | [AccountQuotaUiChecks.cs](AccountQuotaUiChecks.cs) | 가짜 한도로 창 전환·사용률/막대·대표색·실패·공통 상세/접근성·Refresh·기존 상태 복귀 |
 | [QuotaToolTipUiChecks.cs](QuotaToolTipUiChecks.cs) | 실제 WinForms에서 상세 모양·배치·DPI·스크롤·10초 만료·재등장 방지·창 재열기 검사. 합성 fixture 수명 진단과 수동 닫힘 보호 |
+| [StatusToolTipUiChecks.cs](StatusToolTipUiChecks.cs) | 상태 상세 16건의 실제 고정 폭·클릭/기록·스크롤·수명/이탈/숨김/Dispose 검사와 공용 단어 단위 줄바꿈 8건 |
 | [LiveQuotaProbe.cs](LiveQuotaProbe.cs) | 공식 CLI 실제 계정 조회 결과 중 한도 정보만 출력 |
 | [PortablePlatformTests.cs](PortablePlatformTests.cs) | 데이터 경로·IANA 시간대 경계·표시 형식·Mac CLI 경로 후보 검사 |
 

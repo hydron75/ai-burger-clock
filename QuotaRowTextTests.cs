@@ -101,7 +101,8 @@ internal static class QuotaRowTextTests
             [new("synthetic-detail", "합성 모델 주간", 12.34, null)]), now, now, now.AddHours(1));
         string detailGolden = string.Join('\n',
         [
-            "Claude · 모든 시각 KST",
+            "Claude 한도 · 모든 시각 KST",
+            "범위: Claude Code CLI의 /usage 응답으로 받은 구독 사용 한도입니다.\n",
             "리셋·한도 복원 예정",
             "합성 모델 주간: 제공되지 않음",
             "실제 복원 여부는 새 조회로 확인합니다.\n",
@@ -109,15 +110,18 @@ internal static class QuotaRowTextTests
             "마지막 조회 기준, 방금 전",
             "합성 모델 주간: 시간 비교: 리셋 시각 미제공",
             "리셋 예정에서 역산한 단순 시간 기준입니다. 소진 예측이나 실제 창 시작·활성 확인은 아닙니다.\n",
+            "조회 상태",
             "마지막 성공: 10-20 21:00",
             "다음 조회: 10-20 22:00",
-            "최근 시도: 10-20 21:00:00",
+            "최근 시도: 10-20 21:00:00\n",
+            "조회 주기",
             "기본 1시간 · 사용 90% 초과~100% 미만은 1시간 · 사용 100%는 15분 · 리셋 전후 15분은 5분 · 실패 시 15분부터 재시도",
+            "참고: —",
             "공식 CLI 응답 수신 시각이며 서버 데이터 생성 시각을 보장하지 않습니다."
         ]);
         var detailSection = QuotaPanelModel.Section(detailState, now);
         Check(detailSection.Detail == detailGolden && detailSection.Rows.Single().Detail == detailGolden,
-            "whole-Provider tooltip golden is byte-for-byte unchanged");
+            "whole-Provider tooltip golden uses the shared template independently of row text");
         Check(detailSection.Rows.Single().ReadingText == "합성 모델 주간  12.3% 사용 · 리셋 미제공" &&
             detailSection.Rows.Single().ComparisonText is null, "hidden comparison adds no punctuation or invented text");
 

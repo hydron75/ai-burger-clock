@@ -17,6 +17,7 @@ internal sealed class StatusWindow : Form
     private readonly CheckBox autoStartCheckBox;
     private readonly CheckBox holidayCheckBox;
     private readonly ToolTip details = new() { AutoPopDelay = 25000 };
+    private readonly StatusDetailController statusDetails;
     private readonly Dictionary<ProviderKind, (Label Heading, Label Official, Label Reason)> rows = new();
     private readonly List<ContextMenuStrip> recordingMenus = new();
     private readonly List<Font> fonts = new();
@@ -38,7 +39,9 @@ internal sealed class StatusWindow : Form
     public event Action<ProviderKind, UsageEventType, bool>? RecordRequested;
     public event Action<ProviderKind>? StatusPageRequested;
 
-    public StatusWindow()
+    public StatusWindow() : this(() => Cursor.Position) { }
+
+    internal StatusWindow(Func<Point> detailPointer)
     {
         SuspendLayout();
         AutoScaleDimensions = new SizeF(96F, 96F);
@@ -54,6 +57,7 @@ internal sealed class StatusWindow : Form
         StartPosition = FormStartPosition.Manual;
         BackColor = Color.FromArgb(248, 249, 250);
         Font = OwnedFont(9F);
+        statusDetails = new(this, detailPointer);
 
         titleLabel = AddLabel(StatusPanelModel.Title, 16, 10, 342, 18, 9F, FontStyle.Bold);
         stateLabel = AddLabel("", 14, 31, 345, 36, 18F, FontStyle.Bold);
@@ -93,6 +97,7 @@ internal sealed class StatusWindow : Form
         quotaButton = new Button { Text = QuotaPanelModel.ShowQuotas, Location = new Point(244, 458 + footerOffset), Size = new Size(114, 28) };
         quotaButton.Click += (_, _) =>
         {
+            statusDetails.Hide();
             quotaMode = !quotaMode;
             quotaView.Visible = quotaMode;
             foreach (var panel in statusPanels) panel.Visible = !quotaMode;
@@ -140,7 +145,7 @@ internal sealed class StatusWindow : Form
         {
             if (e.Button == MouseButtons.Left) StatusPageRequested?.Invoke(provider);
         };
-        details.SetToolTip(control, control.AccessibleDescription);
+        statusDetails.Bind(control, provider);
     }
 
     // Controls do not dispose fonts assigned to them; this window releases its own.
@@ -230,7 +235,7 @@ internal sealed class StatusWindow : Form
             // Only layout differs: put the shared check caption on its own visible line.
             row.Official.Text = card.Official.Replace(" · 마지막 확인 ", "\n마지막 확인 ", StringComparison.Ordinal);
             row.Reason.Text = card.Reason;
-            foreach (var label in new[] { row.Heading, row.Official, row.Reason }) SetDetail(label, card.Detail);
+            statusDetails.Update(card.Provider, card.Detail);
         }
         statusCaption = StatusPanelModel.CheckedCaption(states, refreshing, nextRefreshUtc);
         refreshButton.Enabled = !refreshing;
@@ -246,6 +251,7 @@ internal sealed class StatusWindow : Form
     }
 
     internal AccountQuotaView QuotaView => quotaView;
+    internal StatusDetailController StatusDetails => statusDetails;
     internal Button QuotaButton => quotaButton;
     internal void UpdateQuotas(IReadOnlyList<QuotaState> quotas, DateTimeOffset now,
         IReadOnlyDictionary<QuotaProvider, QuotaEarlyResetAlert>? recentEarlyResets = null)
@@ -346,6 +352,7 @@ internal sealed class StatusWindow : Form
     {
         if (disposing)
         {
+            statusDetails.Dispose();
             details.Dispose();
             foreach (var menu in recordingMenus) menu.Dispose();
         }

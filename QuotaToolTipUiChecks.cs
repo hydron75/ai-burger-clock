@@ -8,6 +8,7 @@ internal static class QuotaToolTipUiChecks
     internal static async Task RunAsync(AccountQuotaView view, Label[] labels, string? reportDirectory,
         Action<bool, string> check)
     {
+        CheckAllProviders(view.FindForm()!, reportDirectory, check);
         using var graphics = view.CreateGraphics();
         string longText = view.DetailFor(labels.Single(label => label.Text == "ChatGPT"));
         foreach (int dpi in new[] { 96, 144, 192 })
@@ -57,11 +58,64 @@ internal static class QuotaToolTipUiChecks
         await CheckProviderAsync(view, QuotaProvider.Codex, "quota-tooltip-chatgpt.png", reportDirectory, check);
         await CheckProviderAsync(view, QuotaProvider.Claude, "quota-tooltip-claude.png", reportDirectory, check);
         await CheckOverflowAsync(view, reportDirectory, check);
+        await CheckNativeOverflowAsync(view.FindForm()!, reportDirectory, check);
         await CheckDismissalAsync(view.FindForm()!, check);
     }
 
     internal static Task CheckGeminiAsync(AccountQuotaView view, string? reportDirectory, Action<bool, string> check) =>
         CheckProviderAsync(view, QuotaProvider.Gemini, "quota-tooltip-gemini.png", reportDirectory, check);
+
+    private static void CheckAllProviders(Form owner, string? reportDirectory, Action<bool, string> check)
+    {
+        var now = new DateTimeOffset(2032, 3, 4, 0, 0, 0, TimeSpan.Zero);
+        var pointer = owner.PointToScreen(new Point(40, 40));
+        var area = Screen.FromPoint(pointer).WorkingArea;
+        using var popup = new QuotaDetailPopup();
+        var measurements = new List<object>();
+        foreach (var (scenario, state) in QuotaPresentationTests.DetailFixtures(now))
+        {
+            string text = QuotaPanelModel.Section(state, now).Detail;
+            foreach (int dpi in new[] { 96, 144, 192 })
+            {
+                using var sample = new Bitmap(1, 1);
+                sample.SetResolution(dpi, dpi);
+                using var graphics = Graphics.FromImage(sample);
+                check(AccountQuotaView.MeasureDetail(graphics, text, dpi, 1920).Width ==
+                    (int)Math.Round(AccountQuotaView.DetailWidth * dpi / 96d),
+                    $"{state.Provider}/{scenario} measures 320 DIP at {dpi} DPI");
+            }
+            popup.Display(owner, text, pointer, owner.DeviceDpi);
+            int width = Math.Min((int)Math.Round(AccountQuotaView.DetailWidth * owner.DeviceDpi / 96d),
+                area.Width - (int)Math.Round(16 * owner.DeviceDpi / 96d));
+            measurements.Add(new { Provider = state.Provider.ToString(), Scenario = scenario,
+                Dpi = owner.DeviceDpi, popup.Width, popup.Height, ClientWidth = popup.ClientSize.Width,
+                Scrollbar = popup.VerticalScroll.Visible });
+            check(popup.Width == width && area.Contains(popup.Bounds),
+                $"{state.Provider}/{scenario} popup outer width is fixed and on-screen: {popup.Width}px");
+            if (scenario == "normal" && reportDirectory is not null)
+            {
+                using var bitmap = new Bitmap(popup.Width, popup.Height);
+                popup.DrawToBitmap(bitmap, new Rectangle(Point.Empty, bitmap.Size));
+                bitmap.Save(Path.Combine(reportDirectory, $"quota-detail-{state.Provider}-normal.png"), ImageFormat.Png);
+            }
+            popup.Hide();
+        }
+        foreach (var provider in Enum.GetValues<QuotaProvider>())
+        {
+            string text = QuotaPanelModel.Section(new(provider), now).Detail;
+            popup.Display(owner, string.Join('\n', Enumerable.Repeat(text, 10)), pointer, owner.DeviceDpi);
+            int longWidth = popup.Width;
+            check(popup.VerticalScroll.Visible && area.Contains(popup.Bounds),
+                provider + " long detail scrolls within the work area");
+            popup.Display(owner, "합성 짧은 상세", pointer, owner.DeviceDpi);
+            check(popup.Width == longWidth && !popup.VerticalScroll.Visible,
+                provider + " switching from scrolling to short detail preserves the same outer width");
+            popup.Hide();
+        }
+        if (reportDirectory is not null)
+            File.WriteAllText(Path.Combine(reportDirectory, "quota-detail-layout.json"),
+                System.Text.Json.JsonSerializer.Serialize(measurements));
+    }
 
     private static async Task CheckOverflowAsync(AccountQuotaView view, string? reportDirectory, Action<bool, string> check)
     {
@@ -108,6 +162,54 @@ internal static class QuotaToolTipUiChecks
             await Task.Yield();
         }
         finally { view.HideDetail(); }
+    }
+
+    private static async Task CheckNativeOverflowAsync(Form owner, string? reportDirectory, Action<bool, string> check)
+    {
+        Point pointer = Point.Empty;
+        using var host = new DetailTestHost { Bounds = owner.Bounds, ShowInTaskbar = false };
+        using var view = new AccountQuotaView(() => pointer) { Dock = DockStyle.Fill };
+        host.Controls.Add(view);
+        var now = new DateTimeOffset(2032, 3, 4, 0, 0, 0, TimeSpan.Zero);
+        var windows = Enumerable.Range(1, 64).Select(i => new QuotaWindow("synthetic-gemini-" + i,
+            "합성 Gemini 모델 " + i, 25, now.AddDays(3.5), 10080)).ToArray();
+        var state = new QuotaState(QuotaProvider.Gemini, new(QuotaProvider.Gemini, windows),
+            CheckedAtUtc: now, LastSuccessfulCheckUtc: now, NextCheckUtc: now.AddHours(1), IsPrevious: true,
+            Error: string.Concat(Enumerable.Repeat("합성 조회 오류의 긴 설명입니다. 실제 계정 정보가 아닙니다. ", 40)));
+        bool wasVisible = owner.Visible;
+        host.Show(); // Independent: the real smoke status window may auto-hide on deactivation.
+        host.BringToFront();
+        try
+        {
+            view.UpdateQuotas([state], now);
+            var gemini = view.Controls.OfType<Panel>().Single(panel => panel.Name == "GeminiQuotaBox");
+            pointer = gemini.PointToScreen(new Point(4, 4));
+            view.ShowDetail(QuotaProvider.Gemini, pointer);
+            pointer = view.Details.Bounds.Location + new Size(12, 12);
+            view.CheckDetailPointer(pointer);
+            await StatusToolTipUiChecks.CheckNativeWheelAsync(view.Details, host, pointer, "quota/Gemini-64-long-error", check);
+            if (reportDirectory is not null)
+            {
+                using var bitmap = new Bitmap(view.Details.Width, view.Details.Height);
+                view.Details.DrawToBitmap(bitmap, new Rectangle(Point.Empty, bitmap.Size));
+                bitmap.Save(Path.Combine(reportDirectory, "quota-tooltip-native-wheel-bottom.png"), ImageFormat.Png);
+            }
+            view.HideDetail();
+            var normal = QuotaPresentationTests.DetailFixtures(now).Where(f => f.Scenario == "normal" &&
+                f.State.Provider is QuotaProvider.Codex or QuotaProvider.Gemini).Select(f => f.State).ToArray();
+            view.UpdateQuotas(normal, now);
+            var codex = view.Controls.OfType<Panel>().Single(panel => panel.Name == "CodexQuotaBox");
+            gemini = view.Controls.OfType<Panel>().Single(panel => panel.Name == "GeminiQuotaBox");
+            Control below = gemini;
+            view.ScrollControlIntoView(gemini);
+            pointer = codex.PointToScreen(new Point(4, 4));
+            view.ShowDetail(QuotaProvider.Codex, pointer);
+            pointer = below.PointToScreen(new Point(4, 4));
+            view.Details.Location = pointer;
+            await StatusToolTipUiChecks.CheckNativePassThroughAsync(view.Details, below,
+                () => view.Details.Visible && view.Details.DetailText == view.DetailFor(below), "quota", check);
+        }
+        finally { view.HideDetail(); host.Hide(); if (wasVisible) owner.Show(); }
     }
 
     private static async Task CheckProviderAsync(AccountQuotaView view, QuotaProvider provider, string file,

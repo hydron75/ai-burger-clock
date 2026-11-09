@@ -23,13 +23,15 @@ internal static class SelfTest
             Console.WriteLine($"PASS Windows quota toast activation/registration guards: {quotaToast:N0} assertions (no persistent registration)");
             int quotaLayout = QuotaLayoutChecks.Run();
             Console.WriteLine($"PASS Windows quota layout identity: {quotaLayout:N0} assertions (off-screen, no tray or notifications)");
+            int detailWrapping = StatusToolTipUiChecks.CheckWrapping();
+            Console.WriteLine($"PASS Windows shared detail word wrapping: {detailWrapping:N0} assertions (off-screen)");
             int notifications = WindowsNotificationChecks.Run();
             Console.WriteLine($"PASS Windows schedule/status/quota toast contracts: {notifications:N0} assertions (fake senders; zero native notifications)");
             // Earlier off-screen WinForms checks may install a UI context without
             // a message loop. Network fakes run independently of that context.
             int quotaExport = await Task.Run(WindowsQuotaExportChecks.RunAsync).ConfigureAwait(false);
             Console.WriteLine($"PASS Windows mobile quota export: {quotaExport:N0} assertions (fake HTTP/vault, temporary settings; zero site calls)");
-            Console.WriteLine($"PASS ALL: {autoStart + shared + tray + quotaClient + warningLog + quotaNotifications + quotaToast + quotaLayout + notifications + quotaExport:N0} assertions");
+            Console.WriteLine($"PASS ALL: {autoStart + shared + tray + quotaClient + warningLog + quotaNotifications + quotaToast + quotaLayout + detailWrapping + notifications + quotaExport:N0} assertions");
             return 0;
         }
         catch (Exception error)

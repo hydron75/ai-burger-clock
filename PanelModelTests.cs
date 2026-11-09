@@ -32,7 +32,7 @@ internal static class PanelModelTests
     }
 
     private static readonly string QuotaPolicyNote =
-        "기본 1시간 · 사용 90% 초과~100% 미만은 1시간 · 사용 100%는 15분 · 리셋 전후 15분은 5분 · 실패 시 15분부터 재시도\n공식 CLI 응답 수신 시각이며 서버 데이터 생성 시각을 보장하지 않습니다.";
+        "기본 1시간 · 사용 90% 초과~100% 미만은 1시간 · 사용 100%는 15분 · 리셋 전후 15분은 5분 · 실패 시 15분부터 재시도\n참고: —\n공식 CLI 응답 수신 시각이며 서버 데이터 생성 시각을 보장하지 않습니다.";
 
     private static DateTimeOffset At(string utc) => DateTimeOffset.Parse(utc, CultureInfo.InvariantCulture);
 
@@ -136,26 +136,26 @@ internal static class PanelModelTests
         check(degraded.HeadingTone == PanelTone.Caution, "HOLD tone");
         same(degraded.Official, "Official: 성능 저하 · 마지막 확인 06-16 14:00 KST", "degraded official line");
         same(degraded.Reason, "Codex 성능 저하", "reason line");
-        same(degraded.Detail, "클릭: 공식 상태 페이지 열기 · 우클릭: 사용 경험 기록\n현재 판정: Codex 성능 저하\n최근 조회 시도: 06-16 14:00:10 KST\n" +
-            "마지막 확인(응답 수신): 06-16 14:00:10 KST\n마지막 확인 당시 상태: 정상 (시각 미상)\n" +
-            "관련: Codex\n확인된 사건: Elevated errors\n확인된 사건 ID: inc-1\nhttps://status.openai.com",
+        same(degraded.Detail, "클릭: 공식 상태 페이지 열기 · 우클릭: 사용 경험 기록\n현재 판정: Codex 성능 저하\n대상: " + StatusPanelModel.ProviderScope(ProviderKind.OpenAI) + "\n\n조회 상태\n최근 조회 시도: 06-16 14:00:10 KST\n" +
+            "마지막 확인(응답 수신): 06-16 14:00:10 KST\n마지막 확인 당시 상태: 정상 (시각 미상)\n\n사건\n" +
+            "관련: Codex\n확인된 사건: Elevated errors\n확인된 사건 ID: inc-1\n\n출처\nhttps://status.openai.com",
             "full card detail");
 
         var unknown = StatusPanelModel.Card(ProviderStatus.Unknown(ProviderKind.Gemini), AgentState.BurgerTime);
         same(unknown.Heading, "Gemini   BURGER + CHECK", "unchecked heading during BURGER TIME");
         same(unknown.Official, "Official: UNKNOWN · 확인 불가 · 마지막 확인 없음", "unchecked official line");
-        same(unknown.Detail, "클릭: 공식 상태 페이지 열기 · 우클릭: 사용 경험 기록\n현재 판정: 아직 확인하지 않음\n최근 조회 시도: 없음\n" +
-            "마지막 확인(응답 수신): 없음", "unchecked card detail has no empty optional fields");
+        same(unknown.Detail, "클릭: 공식 상태 페이지 열기 · 우클릭: 사용 경험 기록\n현재 판정: 아직 확인하지 않음\n대상: " + StatusPanelModel.ProviderScope(ProviderKind.Gemini) + "\n\n조회 상태\n최근 조회 시도: 없음\n" +
+            "마지막 확인(응답 수신): 없음\n마지막 확인 당시 상태: 없음\n\n사건\n진행 중 사건: 없음\n\n출처\n—", "unchecked card detail retains sections without inventing evidence");
 
         // Only the supplied optional fields appear; blank values never leave a bare label.
         var partial = StatusPanelModel.Card(new ProviderStatus(ProviderKind.Claude, OfficialStatus.Operational,
             At("2026-06-16T05:00:10Z"), At("2026-06-16T05:00:10Z"), "관련 서비스 정상", "Claude API", "", "  ",
             "https://status.claude.com"), AgentState.FullThrottle);
-        same(partial.Detail, "클릭: 공식 상태 페이지 열기 · 우클릭: 사용 경험 기록\n현재 판정: 관련 서비스 정상\n최근 조회 시도: 06-16 14:00:10 KST\n" +
-            "마지막 확인(응답 수신): 06-16 14:00:10 KST\n관련: Claude API\nhttps://status.claude.com", "partial optional fields");
+        same(partial.Detail, "클릭: 공식 상태 페이지 열기 · 우클릭: 사용 경험 기록\n현재 판정: 관련 서비스 정상\n대상: " + StatusPanelModel.ProviderScope(ProviderKind.Claude) + "\n\n조회 상태\n최근 조회 시도: 06-16 14:00:10 KST\n" +
+            "마지막 확인(응답 수신): 06-16 14:00:10 KST\n마지막 확인 당시 상태: 없음\n\n사건\n관련: Claude API\n진행 중 사건: 없음\n\n출처\nhttps://status.claude.com", "partial optional fields");
         var lastKnownOnly = StatusPanelModel.Card(ProviderStatus.Unknown(ProviderKind.OpenAI) with
             { Status = OfficialStatus.Stale, LastKnownStatus = OfficialStatus.Degraded }, AgentState.FullThrottle);
-        check(lastKnownOnly.Detail.EndsWith("\n마지막 확인 당시 상태: 성능 저하 (시각 미상)", StringComparison.Ordinal) &&
+        check(lastKnownOnly.Detail.Contains("\n마지막 확인 당시 상태: 성능 저하 (시각 미상)\n\n사건", StringComparison.Ordinal) &&
             !lastKnownOnly.Detail.Contains("관련:", StringComparison.Ordinal), "last known status alone");
 
         // All diagnostic examples below are synthetic, not a copy of an account or live incident.
@@ -173,10 +173,9 @@ internal static class PanelModelTests
             "received but unscoped response is CHECK rather than an asserted outage");
         same(uncertain.Official, "Official: UNKNOWN · 확인 불가 · 마지막 확인 06-16 14:00 KST",
             "accepted unscoped response advances the displayed last check");
-        same(uncertain.Detail, "클릭: 공식 상태 페이지 열기 · 우클릭: 사용 경험 기록\n현재 판정: 범위 미확인 사건 있음\n최근 조회 시도: 06-16 14:00:10 KST\n" +
-            "마지막 확인(응답 수신): 06-16 14:00:10 KST\n최근 판정 실패 이유: 합성 사건의 영향 범위를 확인할 수 없음\n" +
-            "마지막 확인 당시 상태: 정상 · 06-16 13:55:00 KST\n관련: ChatGPT, Codex\n범위 미확인 사건: Synthetic unscoped incident\n" +
-            "범위 미확인 사건 ID: synthetic-unscoped\nhttps://status.openai.com",
+        same(uncertain.Detail, "클릭: 공식 상태 페이지 열기 · 우클릭: 사용 경험 기록\n현재 판정: 범위 미확인 사건 있음\n대상: " + StatusPanelModel.ProviderScope(ProviderKind.OpenAI) + "\n\n조회 상태\n최근 조회 시도: 06-16 14:00:10 KST\n" +
+            "마지막 확인(응답 수신): 06-16 14:00:10 KST\n마지막 확인 당시 상태: 정상 · 06-16 13:55:00 KST\n최근 판정 실패 이유: 합성 사건의 영향 범위를 확인할 수 없음\n\n사건\n" +
+            "관련: ChatGPT, Codex\n범위 미확인 사건: Synthetic unscoped incident\n범위 미확인 사건 ID: synthetic-unscoped\n\n출처\nhttps://status.openai.com",
             "unscoped diagnostics separate received response, historical assessed state and uncertain incident");
         check(!uncertain.Detail.Contains("최근 응답 수신 실패 이유:", StringComparison.Ordinal) &&
             !uncertain.Detail.Contains("\n확인된 사건:", StringComparison.Ordinal),
@@ -216,15 +215,14 @@ internal static class PanelModelTests
             { LastKnownStatusUtc = At("2026-06-16T04:55:00Z") }, AgentState.FullThrottle);
         same(receiveFailure.Official, "Official: STALE · 오래된 정보 · 마지막 확인 06-16 13:55 KST",
             "failed receipt preserves the older last check on the card");
-        same(receiveFailure.Detail, "클릭: 공식 상태 페이지 열기 · 우클릭: 사용 경험 기록\n현재 판정: 합성 응답 시간 초과\n최근 조회 시도: 06-16 14:20:10 KST\n" +
-            "마지막 확인(응답 수신): 06-16 13:55:00 KST\n최근 응답 수신 실패 이유: 합성 응답 시간 초과\n" +
-            "마지막 확인 당시 상태: 일부 장애\nhttps://status.openai.com",
+        same(receiveFailure.Detail, "클릭: 공식 상태 페이지 열기 · 우클릭: 사용 경험 기록\n현재 판정: 합성 응답 시간 초과\n대상: " + StatusPanelModel.ProviderScope(ProviderKind.OpenAI) + "\n\n조회 상태\n최근 조회 시도: 06-16 14:20:10 KST\n" +
+            "마지막 확인(응답 수신): 06-16 13:55:00 KST\n마지막 확인 당시 상태: 일부 장애\n최근 응답 수신 실패 이유: 합성 응답 시간 초과\n\n사건\n진행 중 사건: 없음\n\n출처\nhttps://status.openai.com",
             "receipt failure exposes old outage as historical rather than a current incident");
         same(receiveFailure.Reason, "합성 응답 시간 초과", "failure reason remains the original card reason");
 
         var noHistory = StatusPanelModel.Card(uncertainStatus with { LastKnownStatus = null, LastKnownStatusUtc = null },
             AgentState.FullThrottle);
-        check(!noHistory.Detail.Contains("마지막 확인 당시 상태:", StringComparison.Ordinal) &&
+        check(noHistory.Detail.Contains("마지막 확인 당시 상태: 없음", StringComparison.Ordinal) &&
             noHistory.Detail.Contains("범위 미확인 사건: Synthetic unscoped incident", StringComparison.Ordinal),
             "uncertain first response does not invent a historical assessed state");
         var whitespace = StatusPanelModel.Card(uncertainStatus with
@@ -279,11 +277,11 @@ internal static class PanelModelTests
             ]),
             CheckedAtUtc: At("2026-10-03T05:55:00Z"), LastSuccessfulCheckUtc: At("2026-10-03T05:55:00Z"),
             NextCheckUtc: At("2026-10-03T11:55:00Z"));
-        string codexNote = "ChatGPT (Work/Codex) · 모든 시각 KST\n" + QuotaPanelModel.CodexScopeDetail +
-            "\n리셋·한도 복원 예정\n5시간: 2026-10-03 16:30:00 KST\n주간: 2026-10-06 19:00:00 KST\n실제 복원 여부는 새 조회로 확인합니다.\n\n" +
+        string codexNote = "ChatGPT 한도 · 모든 시각 KST\n범위: " + QuotaPanelModel.CodexScopeDetail +
+            "\n\n리셋·한도 복원 예정\n5시간: 2026-10-03 16:30:00 KST\n주간: 2026-10-06 19:00:00 KST\n실제 복원 여부는 새 조회로 확인합니다.\n\n" +
             "시간·사용량 비교\n마지막 조회 기준, 5분 전\n5시간: 시간 비교: 창 길이 미확인\n주간: 시간 비교: 창 길이 미확인\n" +
             "리셋 예정에서 역산한 단순 시간 기준입니다. 소진 예측이나 실제 창 시작·활성 확인은 아닙니다.\n\n" +
-            "마지막 성공: 10-03 14:55\n다음 조회: 10-03 20:55\n최근 시도: 10-03 14:55:00\n" + QuotaPolicyNote;
+            "조회 상태\n마지막 성공: 10-03 14:55\n다음 조회: 10-03 20:55\n최근 시도: 10-03 14:55:00\n\n조회 주기\n" + QuotaPolicyNote;
         var section = QuotaPanelModel.Section(codex, now);
         check(section.Provider == QuotaProvider.Codex, "section provider");
         same(section.Heading.Text, "ChatGPT", "fresh Codex heading");
@@ -316,11 +314,11 @@ internal static class PanelModelTests
         check(claudeSection.Rows[0].Tone == PanelTone.Danger, "exhausted tone");
         same(claudeSection.Rows[1].Text, "주간 전체  12.3% 사용 (이전) · 갱신 대기", "elapsed reset is shown as previous");
         check(claudeSection.Rows[1].Tone == PanelTone.Muted, "elapsed reset tone");
-        string claudeNote = "Claude · 모든 시각 KST\n리셋·한도 복원 예정\n세션: 2026-10-03 15:10:00 KST\n" +
+        string claudeNote = "Claude 한도 · 모든 시각 KST\n범위: " + QuotaPanelModel.ClaudeScopeDetail + "\n\n리셋·한도 복원 예정\n세션: 2026-10-03 15:10:00 KST\n" +
             "주간 전체: 2026-10-03 14:59:00 KST · 예정 시각 경과, 새 조회 필요\n주간 Opus: 제공되지 않음\n실제 복원 여부는 새 조회로 확인합니다.\n\n" +
             "시간·사용량 비교\n마지막 조회 기준, 1시간 전\n세션: 시간 비교: 창 길이 미확인\n주간 전체: 시간 비교: 창 길이 미확인\n주간 Opus: 시간 비교: 리셋 시각 미제공\n" +
             "리셋 예정에서 역산한 단순 시간 기준입니다. 소진 예측이나 실제 창 시작·활성 확인은 아닙니다.\n\n" +
-            "마지막 성공: 10-03 14:00\n다음 조회: 10-03 15:05\n최근 시도: —\n캐시 저장 실패\n" + QuotaPolicyNote;
+            "조회 상태\n마지막 성공: 10-03 14:00\n다음 조회: 10-03 15:05\n최근 시도: —\n캐시 저장 실패\n\n조회 주기\n" + QuotaPolicyNote;
         same(claudeSection.Rows[1].Detail, claudeNote, "elapsed row shares qualified Provider detail");
         same(claudeSection.Rows[2].Text, "주간 Opus  50% 사용 · 리셋 미제공", "missing reset row");
         same(claudeSection.Rows[2].Detail, claudeNote, "missing reset shares Provider detail");
@@ -363,7 +361,7 @@ internal static class PanelModelTests
         same(geminiSection.Rows[0].Text, "5시간  2% 사용 · 약 2시간 후 리셋", "Gemini five-hour countdown");
         same(geminiSection.Rows[1].Text, "주간  0.3% 사용 · 약 6일 후 리셋", "Gemini weekly fraction is not the rounded TSV value");
         check(geminiSection.Rows.All(row => row.Tone == PanelTone.Good), "Gemini uses existing quota tones");
-        check(geminiSection.Rows[0].Detail.Contains("Gemini (Antigravity)") &&
+        check(geminiSection.Rows[0].Detail.StartsWith("Gemini 한도 · 모든 시각 KST\n범위: " + QuotaPanelModel.GeminiScopeDetail + "\n", StringComparison.Ordinal) &&
             geminiSection.Rows[0].Detail.Contains("서버 데이터 생성 시각을 보장하지 않습니다"), "Gemini details preserve freshness qualification");
         same(QuotaPanelModel.Section(new QuotaState(QuotaProvider.Gemini), now).Rows[0].Text,
             "한도 조회 대기 · agy CLI 로그인 필요", "Gemini placeholder identifies agy");
