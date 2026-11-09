@@ -71,31 +71,32 @@ internal static class StatusPanelModel
             Detail(status, attempted, success));
     }
 
-    // Optional fields appear only when the official source supplied them, so the tooltip never shows
-    // bare labels such as "사건:". The two check times always appear ("없음" before the first check).
+    internal static string ProviderScope(ProviderKind provider) => provider switch
+    {
+        ProviderKind.OpenAI => "ChatGPT/Work·대화·Agent·Deep Research·파일·검색·로그인·Apps/연결 서비스·Codex(Web/Desktop/API/VS Code/CLI)",
+        ProviderKind.Claude => "Claude.ai·Claude Code·Claude Cowork·Claude API(api.anthropic.com)",
+        ProviderKind.Gemini => "Google 공식 대시보드의 Gemini 제품 · Gemini Notebook·기타 제품 제외",
+        ProviderKind.Xai => "Grok·Cursor·Grok Bot · 공식 사건 피드 기준 (Imagine 제외)",
+        _ => throw new ArgumentOutOfRangeException(nameof(provider))
+    };
+
+    // Only presentation changes here. Missing incident metadata never changes the underlying assessment.
     private static string Detail(ProviderStatus status, string attempted, string success)
     {
         var lines = new List<string>
         {
             "클릭: 공식 상태 페이지 열기 · 우클릭: 사용 경험 기록",
             "현재 판정: " + status.Reason,
+            "대상: " + ProviderScope(status.Provider),
+            "",
+            "조회 상태",
             "최근 조회 시도: " + attempted,
             "마지막 확인(응답 수신): " + success
         };
-        if (status.Provider == ProviderKind.Xai)
-        {
-            lines.Add("대상: Grok·Cursor·Grok Bot · 공식 사건 피드 기준");
-            if (status.XaiIncidentExpiryNote.Length > 0)
-                lines.Add("과거 사건 해제: " + status.XaiIncidentExpiryNote);
-        }
         void Optional(string label, string? value)
         {
             if (!string.IsNullOrWhiteSpace(value)) lines.Add(label + value);
         }
-        if (status.CheckedAtUtc != DateTimeOffset.MinValue && status.CheckedAtUtc != status.LastSuccessfulCheckUtc)
-            Optional("최근 응답 수신 실패 이유: ", status.Reason);
-        if (!string.Equals(status.Reason, status.AssessmentIssue, StringComparison.Ordinal))
-            Optional("최근 판정 실패 이유: ", status.AssessmentIssue);
         if (status.LastKnownStatus is { } known)
         {
             string knownTime = status.LastKnownStatusUtc is { } knownAt
@@ -105,12 +106,28 @@ internal static class StatusPanelModel
             lines.Add("마지막 확인 당시 상태: " + RecommendationPolicy.OfficialLabel(known) +
                 knownTime);
         }
+        else lines.Add("마지막 확인 당시 상태: 없음");
+        if (status.CheckedAtUtc != DateTimeOffset.MinValue && status.CheckedAtUtc != status.LastSuccessfulCheckUtc)
+            Optional("최근 응답 수신 실패 이유: ", status.Reason);
+        if (!string.Equals(status.Reason, status.AssessmentIssue, StringComparison.Ordinal))
+            Optional("최근 판정 실패 이유: ", status.AssessmentIssue);
+        lines.Add("");
+        lines.Add("사건");
         Optional("관련: ", status.RelevantComponent);
+        if (new[] { status.IncidentTitle, status.IncidentId, status.UncertainIncidentTitle, status.UncertainIncidentId }.All(string.IsNullOrWhiteSpace))
+            lines.Add("진행 중 사건: 없음");
         Optional("확인된 사건: ", status.IncidentTitle);
         Optional("확인된 사건 ID: ", status.IncidentId);
         Optional("범위 미확인 사건: ", status.UncertainIncidentTitle);
         Optional("범위 미확인 사건 ID: ", status.UncertainIncidentId);
-        Optional("", status.Source);
+        if (status.Provider == ProviderKind.Xai && status.XaiIncidentExpiryNote.Length > 0)
+            lines.Add("과거 사건 해제: " + status.XaiIncidentExpiryNote);
+        lines.Add("");
+        lines.Add("출처");
+        if (string.IsNullOrWhiteSpace(status.Source)) lines.Add("—");
+        else
+            foreach (string source in status.Source.Split(" + ", StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+                lines.Add(source.Replace(" [응답 수신]", "", StringComparison.Ordinal));
         return string.Join("\n", lines);
     }
 

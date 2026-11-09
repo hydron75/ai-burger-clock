@@ -89,6 +89,7 @@ internal static class SmokeTest
                         Check(balloonRequests.Count == 1 && balloonRequests[0] is { Title: "FULL THROTTLE 시작", Icon: ToolTipIcon.Info, Timeout: 6000 },
                             "FULL notification reaches the fake balloon transport with unchanged duration and styling");
                         RenderAndCheckLayout(context.StatusWindow, "full-throttle.png", reportDirectory);
+                        await StatusToolTipUiChecks.RunAsync(context.StatusWindow, reportDirectory, Check);
                         context.RefreshStatus(true);
                         Check(notifications.Count == 1, "Refresh does not duplicate notification");
                         context.StatusWindow.Close();

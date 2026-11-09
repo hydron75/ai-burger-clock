@@ -45,6 +45,7 @@ internal static class SharedTestSuite
             Report("quota CLI setup/protocol/cancellation (POSIX fixtures)", await SharedQuotaProtocolTests.RunAsync());
             Report("paths/IANA/formatting/CLI candidates", PortablePlatformTests.Run());
             Report("panel text/tones (Windows golden)", PanelModelTests.Run());
+            Report("status Provider detail template (synthetic)", StatusDetailTemplateTests.Run());
             Report("quota usage/countdown/provider detail (portable)", QuotaPresentationTests.Run());
             Report("quota Provider detail template (synthetic)", QuotaDetailTemplateTests.Run());
             Report("quota split row text/middle ellipsis (synthetic)", QuotaRowTextTests.Run());
