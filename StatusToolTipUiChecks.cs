@@ -59,6 +59,26 @@ internal static class StatusToolTipUiChecks
         host.Show();
         try
         {
+            states[(int)ProviderKind.Gemini] = fixtures.First(f => f.Scenario == "failed" && f.State.Provider == ProviderKind.Gemini).State with
+            {
+                Reason = string.Concat(Enumerable.Repeat("합성 Gemini 상태 조회 오류의 긴 설명입니다. ", 80)),
+                UncertainIncidentId = string.Join(", ", Enumerable.Range(1, 64).Select(i => "synthetic-gemini-incident-" + i))
+            };
+            host.UpdateProviders(states, AgentSchedule.GetSnapshot(now), false, now.AddMinutes(5));
+            host.ScrollControlIntoView(panels[(int)ProviderKind.Gemini]);
+            pointer = panels[(int)ProviderKind.Gemini].PointToScreen(new Point(4, 4));
+            controller.Show(ProviderKind.Gemini, pointer); // The popup's very first display is already oversized.
+            pointer = controller.Popup.Bounds.Location + new Size(12, 12);
+            controller.CheckPointer(pointer);
+            await CheckNativeWheelAsync(controller.Popup, host, pointer, "status/first-Gemini-long-error", check);
+            if (directory is not null)
+            {
+                using var bitmap = new Bitmap(controller.Popup.Width, controller.Popup.Height);
+                controller.Popup.DrawToBitmap(bitmap, new Rectangle(Point.Empty, bitmap.Size));
+                bitmap.Save(Path.Combine(directory, "status-tooltip-first-native-wheel-bottom.png"), ImageFormat.Png);
+            }
+            controller.Hide();
+            states = fixtures.Where(f => f.Scenario == "normal").Select(f => f.State).ToArray();
             foreach (var provider in Enum.GetValues<ProviderKind>())
             {
                 var panel = panels[(int)provider];
