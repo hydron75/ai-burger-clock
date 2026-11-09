@@ -5,6 +5,20 @@ namespace AiBurgerClock;
 // Pure presentation checks formerly limited to Windows smoke, plus shared Provider detail coverage.
 internal static class QuotaPresentationTests
 {
+    internal static IEnumerable<(string Scenario, QuotaState State)> DetailFixtures(DateTimeOffset now)
+    {
+        foreach (var provider in Enum.GetValues<QuotaProvider>())
+        {
+            var state = new QuotaState(provider, new(provider,
+                [new("synthetic-weekly", "합성 주간", 25, now.AddDays(3.5), 10080)]),
+                CheckedAtUtc: now, LastSuccessfulCheckUtc: now, NextCheckUtc: now.AddHours(1));
+            yield return ("normal", state);
+            yield return ("previous", state with { IsPrevious = true });
+            yield return ("none", new(provider));
+            yield return ("error", state with { IsPrevious = true, Error = "합성 조회 오류", CacheError = "합성 캐시 오류" });
+        }
+    }
+
     internal static int Run()
     {
         int count = 0;
@@ -80,13 +94,13 @@ internal static class QuotaPresentationTests
             Check(stale.Rows.All(row => row.Tone == PanelTone.Muted && row.Text.Contains("사용 (이전)", StringComparison.Ordinal)) &&
                 stale.Metadata.Tone == PanelTone.Danger && stale.Detail.Contains("조회 실패\n캐시 실패", StringComparison.Ordinal), provider + " previous/error/cache semantics");
             var empty = QuotaPanelModel.Section(new(provider), now);
-            Check(empty.Rows.Single().UsedPercent is null && !empty.Detail.Contains("리셋·한도 복원 예정", StringComparison.Ordinal),
-                provider + " no reading has no invented bar/reset header");
+            Check(empty.Rows.Single().UsedPercent is null && empty.Detail.Contains("리셋·한도 복원 예정\n조회 값 없음", StringComparison.Ordinal),
+                provider + " no reading retains the reset section without inventing a bar or reset");
             Check(empty.Rows.Single().ComparisonText is null && empty.Heading.ComparisonText is null &&
                 empty.Metadata.ComparisonText is null && empty.Scope?.ComparisonText is null,
                 provider + " placeholder and non-quota lines have no row comparison");
             var noWindows = QuotaPanelModel.Section(state with { Reading = new(provider, []) }, now);
-            Check(noWindows.Rows.Count == 0 && !noWindows.Detail.Contains("리셋·한도 복원 예정", StringComparison.Ordinal), provider + " empty windows have no bare header");
+            Check(noWindows.Rows.Count == 0 && noWindows.Detail.Contains("리셋·한도 복원 예정\n조회 값 없음", StringComparison.Ordinal), provider + " empty windows retain a filled reset section");
             string? scope = provider == QuotaProvider.Codex ? QuotaPanelModel.CodexScopeDetail :
                 provider == QuotaProvider.Gemini ? QuotaPanelModel.GeminiScopeDetail : null;
             Check(scope is null || section.Detail.Split(scope, StringSplitOptions.None).Length == 2, provider + " scope appears once");

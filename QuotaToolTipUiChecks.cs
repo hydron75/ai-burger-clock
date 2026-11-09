@@ -8,6 +8,7 @@ internal static class QuotaToolTipUiChecks
     internal static async Task RunAsync(AccountQuotaView view, Label[] labels, string? reportDirectory,
         Action<bool, string> check)
     {
+        CheckAllProviders(view.FindForm()!, reportDirectory, check);
         using var graphics = view.CreateGraphics();
         string longText = view.DetailFor(labels.Single(label => label.Text == "ChatGPT"));
         foreach (int dpi in new[] { 96, 144, 192 })
@@ -62,6 +63,58 @@ internal static class QuotaToolTipUiChecks
 
     internal static Task CheckGeminiAsync(AccountQuotaView view, string? reportDirectory, Action<bool, string> check) =>
         CheckProviderAsync(view, QuotaProvider.Gemini, "quota-tooltip-gemini.png", reportDirectory, check);
+
+    private static void CheckAllProviders(Form owner, string? reportDirectory, Action<bool, string> check)
+    {
+        var now = new DateTimeOffset(2032, 3, 4, 0, 0, 0, TimeSpan.Zero);
+        var pointer = owner.PointToScreen(new Point(40, 40));
+        var area = Screen.FromPoint(pointer).WorkingArea;
+        using var popup = new QuotaDetailPopup();
+        var measurements = new List<object>();
+        foreach (var (scenario, state) in QuotaPresentationTests.DetailFixtures(now))
+        {
+            string text = QuotaPanelModel.Section(state, now).Detail;
+            foreach (int dpi in new[] { 96, 144, 192 })
+            {
+                using var sample = new Bitmap(1, 1);
+                sample.SetResolution(dpi, dpi);
+                using var graphics = Graphics.FromImage(sample);
+                check(AccountQuotaView.MeasureDetail(graphics, text, dpi, 1920).Width ==
+                    (int)Math.Round(AccountQuotaView.DetailWidth * dpi / 96d),
+                    $"{state.Provider}/{scenario} measures 320 DIP at {dpi} DPI");
+            }
+            popup.Display(owner, text, pointer, owner.DeviceDpi);
+            int width = Math.Min((int)Math.Round(AccountQuotaView.DetailWidth * owner.DeviceDpi / 96d),
+                area.Width - (int)Math.Round(16 * owner.DeviceDpi / 96d));
+            measurements.Add(new { Provider = state.Provider.ToString(), Scenario = scenario,
+                Dpi = owner.DeviceDpi, popup.Width, popup.Height, ClientWidth = popup.ClientSize.Width,
+                Scrollbar = popup.VerticalScroll.Visible });
+            check(popup.Width == width && area.Contains(popup.Bounds),
+                $"{state.Provider}/{scenario} popup outer width is fixed and on-screen: {popup.Width}px");
+            if (scenario == "normal" && reportDirectory is not null)
+            {
+                using var bitmap = new Bitmap(popup.Width, popup.Height);
+                popup.DrawToBitmap(bitmap, new Rectangle(Point.Empty, bitmap.Size));
+                bitmap.Save(Path.Combine(reportDirectory, $"quota-detail-{state.Provider}-normal.png"), ImageFormat.Png);
+            }
+            popup.Hide();
+        }
+        foreach (var provider in Enum.GetValues<QuotaProvider>())
+        {
+            string text = QuotaPanelModel.Section(new(provider), now).Detail;
+            popup.Display(owner, string.Join('\n', Enumerable.Repeat(text, 10)), pointer, owner.DeviceDpi);
+            int longWidth = popup.Width;
+            check(popup.VerticalScroll.Visible && area.Contains(popup.Bounds),
+                provider + " long detail scrolls within the work area");
+            popup.Display(owner, "합성 짧은 상세", pointer, owner.DeviceDpi);
+            check(popup.Width == longWidth && !popup.VerticalScroll.Visible,
+                provider + " switching from scrolling to short detail preserves the same outer width");
+            popup.Hide();
+        }
+        if (reportDirectory is not null)
+            File.WriteAllText(Path.Combine(reportDirectory, "quota-detail-layout.json"),
+                System.Text.Json.JsonSerializer.Serialize(measurements));
+    }
 
     private static async Task CheckOverflowAsync(AccountQuotaView view, string? reportDirectory, Action<bool, string> check)
     {

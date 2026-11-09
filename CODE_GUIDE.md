@@ -364,7 +364,7 @@ Windows 내부 승인 형식은 알려진 경우만 해석합니다. 낯선 값�
 
 ## 11. 전체 소스 파일 지도
 
-이름을 눌러 소스를 열 수 있습니다. 역할을 알고 필요한 파일부터 읽으면 됩니다. 현재 표의 C#는 루트·Properties 122개(앱 기능 59 + 검사·진단 62 + 명찰 1), Mac 21개, 공통 검사 입구 1개로 총 144개이며 공통 제품 원본은 35개입니다.
+이름을 눌러 소스를 열 수 있습니다. 역할을 알고 필요한 파일부터 읽으면 됩니다. 현재 표의 C#는 루트·Properties 123개(앱 기능 59 + 검사·진단 63 + 명찰 1), Mac 21개, 공통 검사 입구 1개로 총 145개이며 공통 제품 원본은 35개입니다.
 
 ### 실제 앱 기능: 59개
 
@@ -456,7 +456,8 @@ Windows 내부 승인 형식은 알려진 경우만 해석합니다. 낯선 값�
 | [StatusTickerTests.cs](StatusTickerTests.cs) | 입력 이유·전환·알림 우선 순서·아이콘 변경·중복 Provider 판정 |
 | [WindowsWarningLogChecks.cs](WindowsWarningLogChecks.cs) | 임시 파일로 경고 크기·회전·Unicode·쓰기 실패 격리 검사 |
 | [PanelModelTests.cs](PanelModelTests.cs) | 공통 상태·한도 본문과 톤, 상세 Tooltip 골든 검사 |
-| [QuotaPresentationTests.cs](QuotaPresentationTests.cs) | 공통 사용률·간략 시간·Provider 상세와 행별 시간 비교·최근 조기 초기화 기록 연결 170건. 공통 실행 목록에 한 번 등록 |
+| [QuotaPresentationTests.cs](QuotaPresentationTests.cs) | 공통 사용률·간략 시간·Provider 상세와 행별 시간 비교·최근 조기 초기화 기록 연결 215건, 네 Provider 상세 16상태 합성 fixture |
+| [QuotaDetailTemplateTests.cs](QuotaDetailTemplateTests.cs) | 상세 구역·문구 골든 16상태, 조기 초기화 기록 원문 유지, Detail 외 전체 필드의 변경 전 해시 불변 72건 |
 | [QuotaPacingTests.cs](QuotaPacingTests.cs) | 합성 시각으로 시간 비율 고정·계산 불가·%p 문구·행별 비교·조회 기준 나이 207건 |
 | [QuotaRecoveryNotificationTests.cs](QuotaRecoveryNotificationTests.cs) | 새 성공만의 회복·부분 회복·첫 성공/반복/기간 변경 무알림과 문구 검사 |
 | [QuotaRecoverySettingsTests.cs](QuotaRecoverySettingsTests.cs) | 임시 SQLite에서 기본 OFF·저장·오류·취소와 schema 2 유지 |

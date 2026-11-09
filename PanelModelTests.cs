@@ -32,7 +32,7 @@ internal static class PanelModelTests
     }
 
     private static readonly string QuotaPolicyNote =
-        "기본 1시간 · 사용 90% 초과~100% 미만은 1시간 · 사용 100%는 15분 · 리셋 전후 15분은 5분 · 실패 시 15분부터 재시도\n공식 CLI 응답 수신 시각이며 서버 데이터 생성 시각을 보장하지 않습니다.";
+        "기본 1시간 · 사용 90% 초과~100% 미만은 1시간 · 사용 100%는 15분 · 리셋 전후 15분은 5분 · 실패 시 15분부터 재시도\n참고: —\n공식 CLI 응답 수신 시각이며 서버 데이터 생성 시각을 보장하지 않습니다.";
 
     private static DateTimeOffset At(string utc) => DateTimeOffset.Parse(utc, CultureInfo.InvariantCulture);
 
@@ -279,11 +279,11 @@ internal static class PanelModelTests
             ]),
             CheckedAtUtc: At("2026-10-03T05:55:00Z"), LastSuccessfulCheckUtc: At("2026-10-03T05:55:00Z"),
             NextCheckUtc: At("2026-10-03T11:55:00Z"));
-        string codexNote = "ChatGPT (Work/Codex) · 모든 시각 KST\n" + QuotaPanelModel.CodexScopeDetail +
-            "\n리셋·한도 복원 예정\n5시간: 2026-10-03 16:30:00 KST\n주간: 2026-10-06 19:00:00 KST\n실제 복원 여부는 새 조회로 확인합니다.\n\n" +
+        string codexNote = "ChatGPT 한도 · 모든 시각 KST\n범위: " + QuotaPanelModel.CodexScopeDetail +
+            "\n\n리셋·한도 복원 예정\n5시간: 2026-10-03 16:30:00 KST\n주간: 2026-10-06 19:00:00 KST\n실제 복원 여부는 새 조회로 확인합니다.\n\n" +
             "시간·사용량 비교\n마지막 조회 기준, 5분 전\n5시간: 시간 비교: 창 길이 미확인\n주간: 시간 비교: 창 길이 미확인\n" +
             "리셋 예정에서 역산한 단순 시간 기준입니다. 소진 예측이나 실제 창 시작·활성 확인은 아닙니다.\n\n" +
-            "마지막 성공: 10-03 14:55\n다음 조회: 10-03 20:55\n최근 시도: 10-03 14:55:00\n" + QuotaPolicyNote;
+            "조회 상태\n마지막 성공: 10-03 14:55\n다음 조회: 10-03 20:55\n최근 시도: 10-03 14:55:00\n\n조회 주기\n" + QuotaPolicyNote;
         var section = QuotaPanelModel.Section(codex, now);
         check(section.Provider == QuotaProvider.Codex, "section provider");
         same(section.Heading.Text, "ChatGPT", "fresh Codex heading");
@@ -316,11 +316,11 @@ internal static class PanelModelTests
         check(claudeSection.Rows[0].Tone == PanelTone.Danger, "exhausted tone");
         same(claudeSection.Rows[1].Text, "주간 전체  12.3% 사용 (이전) · 갱신 대기", "elapsed reset is shown as previous");
         check(claudeSection.Rows[1].Tone == PanelTone.Muted, "elapsed reset tone");
-        string claudeNote = "Claude · 모든 시각 KST\n리셋·한도 복원 예정\n세션: 2026-10-03 15:10:00 KST\n" +
+        string claudeNote = "Claude 한도 · 모든 시각 KST\n범위: " + QuotaPanelModel.ClaudeScopeDetail + "\n\n리셋·한도 복원 예정\n세션: 2026-10-03 15:10:00 KST\n" +
             "주간 전체: 2026-10-03 14:59:00 KST · 예정 시각 경과, 새 조회 필요\n주간 Opus: 제공되지 않음\n실제 복원 여부는 새 조회로 확인합니다.\n\n" +
             "시간·사용량 비교\n마지막 조회 기준, 1시간 전\n세션: 시간 비교: 창 길이 미확인\n주간 전체: 시간 비교: 창 길이 미확인\n주간 Opus: 시간 비교: 리셋 시각 미제공\n" +
             "리셋 예정에서 역산한 단순 시간 기준입니다. 소진 예측이나 실제 창 시작·활성 확인은 아닙니다.\n\n" +
-            "마지막 성공: 10-03 14:00\n다음 조회: 10-03 15:05\n최근 시도: —\n캐시 저장 실패\n" + QuotaPolicyNote;
+            "조회 상태\n마지막 성공: 10-03 14:00\n다음 조회: 10-03 15:05\n최근 시도: —\n캐시 저장 실패\n\n조회 주기\n" + QuotaPolicyNote;
         same(claudeSection.Rows[1].Detail, claudeNote, "elapsed row shares qualified Provider detail");
         same(claudeSection.Rows[2].Text, "주간 Opus  50% 사용 · 리셋 미제공", "missing reset row");
         same(claudeSection.Rows[2].Detail, claudeNote, "missing reset shares Provider detail");
