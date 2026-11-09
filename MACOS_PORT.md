@@ -2443,7 +2443,7 @@ smoke의 선택 기능(`AIBURGERCLOCK_SMOKE_IMAGES`)으로 큰 화면·1280×800
 위 SHA-256은 **임시 사본 빌드**의 값이다. 같은 앱 소스여도 빌드 경로와 빌드 때의 git 커밋이 다르면 값이 달라진다. 저장소 경로 빌드의 값은 배포 뒤 이 절에 이어 쓴다.
 
 ### LaunchServices 등록 수 (임시 사본, 같은 번들 ID)
-smoke 실행 뒤 등록 수는 2였고, 삭제 전에 `lsregister -u "<사본>/Mac/bin/Release/net10.0-macos27.0/osx-arm64/AI Burger Clock.app"`로 해제해 1로 돌아와야 한다(정리 결과는 PR 코멘트에 적는다).
+smoke 실행 뒤 등록 수는 2였고, 삭제 전에 `lsregister -u "<사본>/Mac/bin/Release/net10.0-macos27.0/osx-arm64/AI Burger Clock.app"`로 해제해 1로 돌아왔다. 임시 worktree는 삭제했다.
 
 ### 수행하지 않은 검증
 - 창을 여는 검사 6건(위 SKIP). 전체 화면 Windows App을 내린 뒤 한 번 더 실행하면 확인된다.
