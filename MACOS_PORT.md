@@ -2452,3 +2452,55 @@ smoke의 선택 기능(`AIBURGERCLOCK_SMOKE_IMAGES`)으로 큰 화면·1280×800
 - ~~창을 여는 검사 6건(위 1회째 SKIP)~~: 2회째에서 SKIP 0으로 확인했다.
 - 저장소 경로 빌드·실행·팝오버의 실제 xAI 박스 확인은 병합 뒤 배포 단계에서 한다. 실제 VoiceOver 낭독과 장시간 동작은 이전 절의 미확인 항목 그대로다.
 - 옵션 없는 빌드(Xcode 27.2를 지원하는 워크로드 이후, [BACKLOG](BACKLOG.md)).
+
+## 72. xAI 상태 카드의 사용량 보기 링크 제거(PR #128의 Mac 전환)
+
+2026-11-09 KST. 범위: **Mac UI만 변경**(공통 원본·Windows 파일 변경 없음). 버전은 올리지 않았고 배포하지 않았다(다음 Mac 버전에서 함께 나간다).
+
+### 기준
+| 항목 | 값 |
+|---|---|
+| 기준 브랜치 | `codex/remove-xai-usage-link` (Windows PR [#128](https://github.com/hydron75/ai-burger-clock/pull/128), HEAD `ab0e07ee5d780c4bb1556dedaff528fb3a13293a`, 작업 전 main `1e04f42bb3333b520eebcc99459a3f7ff8857644`) |
+| 이 PR의 base | 위 브랜치(Draft). #128이 먼저 병합되면 base를 main으로 바꾼다 |
+| 이유 | #128이 공통 상수 `ProviderStatusPages.XaiUsage`·`XaiUsageLabel`을 지우고, 상세에서 `사용량 보기` 줄과 `공유 주간 한도 값은 조회하지 않습니다.` 줄도 뺐다. 이 브랜치에서는 Mac 원본이 삭제된 멤버를 참조해 빌드가 깨진다 |
+
+### 바꾼 것(Mac)
+| 파일 | 변경 |
+|---|---|
+| `Mac/MacStatusPanel.cs` | `UsageLink` 클래스, `HeadingGap`, 제목 줄 가로 스택, `CardView`의 링크 위치 판정(`SetLink`·`LinkRect`·`Route`), `ClickCard`·`PressUsageLink`, `VerifyUsageLink`, 스크롤 점검의 링크 대상을 지웠다. 생성자의 `openXaiUsage` 인자도 없어졌다. xAI도 다른 카드처럼 제목 폭이 `ContentWidth − 카드 여백×2` 하나다 |
+| `Mac/MacApplication.cs` | `OpenXaiUsage`·`xaiUsageRequests`, 링크 글자색 대비 검사, 링크 클릭 smoke를 지웠다. xAI 카드가 상태 페이지만 여는지, 상세에 `사용량 보기`·`grok.com/dashboard`·옛 한도 미조회 줄이 **없는지**를 검사한다 |
+| `Mac/MacQuotaLayoutKeySmoke.cs` | 패널 생성자 호출에서 링크 콜백 인자를 뺐다 |
+| `Mac/MacStatusPanel.cs` (smoke 전용) | 네 카드의 크기 요약 `CardGeometry()`, 라이트·다크 고정 그리기(`SetSmokeAppearance`가 앱 외형도 맞춤) |
+| `Mac/MacQuotaRowImages.cs` | 네 카드 합성 이미지를 라이트·다크로 만든다 |
+| `Mac/README.md` | 사용량 보기 링크가 0.9.0 배포본에만 있고 다음 버전에서 없어진다고 적었다 |
+
+새 검사: **네 카드의 제목 폭·카드 폭·카드 높이가 같고 카드 사이 간격이 같다**(xAI 사건 카드와 가장 긴 권고 문구 상태에서도). 이 값이 어긋나면 smoke가 실패한다.
+
+유지하는 것: 카드 전체 클릭이 공식 상태 페이지를 여는 동작(xAI는 `https://status.x.ai/`), Provider 기록 메뉴, 카드 접근성 이름·버튼 역할.
+
+### 이 Mac에서 수행한 검증 (임시 사본, 저장소 경로 아님)
+| 항목 | 결과 |
+|---|---|
+| Shared.Tests | **291,755건 통과**(#128 본문의 공통 291,755건과 같음) |
+| `Mac/build.sh --allow-xcode-mismatch` | 경고 0·오류 0, Shared.Tests 291,755건 통과, 번들 0.9.0 / 27, `codesign --verify --deep --strict` 통과 |
+| `--smoke-test` | 2회 모두 종료 코드 0, SKIP 0(1회째는 캡처 외형 수정 전, 2회째가 최종 소스) |
+| 네 카드 크기 | 모두 352×58pt, 제목 340×16pt. 가장 긴 사건 문구 상태에서도 같음 |
+| SHA-256 실행 파일(임시 사본) | `86b4da4762ed8bd2bad877a263d602a78109fafdaeb0a9b0baf7c255f5441166` |
+| SHA-256 앱 DLL(임시 사본) | `01c8ecbf5dcd67053f03ca85c22f1b44b06b58d4ecf599389a48e5aef8725fd4` |
+
+임시 사본 빌드의 값이라 저장소 경로 빌드와 다르다. LaunchServices 등록은 smoke 뒤 2였고 삭제 전 `lsregister -u`로 해제해 1로 돌아왔다.
+
+### 화면 이미지 (합성)
+이 이미지는 **합성 데이터**다. 한도 값은 smoke 안의 고정 예시이고, 화면의 시각은 실행 시각에서 만든 예시다(계정 조회 값이 아님). xAI 카드의 사건 문구도 만든 예시다.
+
+| 라이트 | 다크 |
+|---|---|
+| ![라이트 네 카드](docs/images/xai-link-removed-mac/mac-xai-cards-light.png) | ![다크 네 카드](docs/images/xai-link-removed-mac/mac-xai-cards-dark.png) |
+
+다크 이미지는 오프스크린 캡처에서 보조 글자색(제목 위 줄, 카드 셋째 줄)이 보이지 않는다. 앱 화면의 문제가 아니라 캡처 방식의 한계로 보이나, 실제 다크 화면의 해당 줄은 이 세션에서 눈으로 확인하지 않았다.
+
+### 수행하지 않은 검증
+- 실제 Mac 앱(저장소 경로 빌드)의 팝오버 확인과 배포. 버전을 올리지 않았다.
+- 실제 VoiceOver에서 별도 링크가 사라지고 카드 버튼 동작이 남는지(속성은 smoke로 검사).
+- 다크 캡처의 보조 글자 누락 원인 확인(캡처 한계로 추정).
+- 모바일 사이트 반영은 #128 본문의 항목이며 이 PR 범위가 아니다.
