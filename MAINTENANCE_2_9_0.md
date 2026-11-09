@@ -10,7 +10,7 @@
 - #122 공통·Windows와 종속 #123 Mac 전환의 Grok 주간 크레딧입니다. 공식 CLI ACP의 고정 initialize → cached_token headless authenticate → billing만 사용하고 모델 호출·재로그인은 하지 않습니다.
 - xAI 한도 박스/주간 크레딧 한 행, 0~100 사용률·정확한 10,080분 주간 검증, 45초 제한, 실패 시 이전 값을 유지합니다. 예약만 최소 10분이며 시작·Refresh·복귀·네트워크 즉시 조회는 기존대로입니다.
 - 기존 회복·주간 조기 초기화·시간 비례 표시를 적용합니다. 상태 카드의 사용량 링크는 유지합니다. 모바일 송신은 wire v2, 조회/판정 진단은 v2, Windows 발송은 v3 새 파일을 사용하고 구버전 파일은 보존합니다. [조회·표시·개인정보·진단 계약](GROK_QUOTAS.md).
-- Microsoft.Data.Sqlite **10.0.12**와 기본 SQLitePCLRaw **2.1.13**은 유지합니다. 10.0.14는 다음 버전에 세 프로젝트를 함께 갱신하며 SQLite 엔진 갱신은 별도 보류합니다([BACKLOG](BACKLOG.md)).
+- Microsoft.Data.Sqlite **10.0.12**와 실제 복원된 SQLitePCLRaw **2.1.12**는 유지합니다. 10.0.14는 다음 버전에 세 프로젝트를 함께 갱신하며 SQLite 엔진 갱신은 별도 보류합니다([BACKLOG](BACKLOG.md)).
 
 ## 사이트 선행 배포
 
@@ -29,14 +29,29 @@ FileVersion/AssemblyVersion **2.9.0.0**, framework-dependent 단일 EXE이며 .N
 | 항목 | 준비 결과 |
 |---|---|
 | Git 기능 기준 | `526e6c91c59219cf38f083333c62f0c993349342` (#122 main 병합) |
-| 후보의 소스 커밋·ProductVersion·크기·SHA-256 | 후보 빌드 뒤 기록 |
-| build·bin self-test | 검사 뒤 기록 |
-| Portable 후보 publish·self-test | 검사 뒤 기록 |
-| 고정 after 슬롯 native smoke | 검사 뒤 기록 |
-| receipt | 후보 검사 뒤 공식 생성기로 생성 |
+| 후보 소스 커밋 | `3102e1646c9bf9fc0bf52a80fddc335787a37aab` (버전·초기 문서 커밋) |
+| ProductVersion | `2.9.0+3102e1646c9bf9fc0bf52a80fddc335787a37aab` |
+| 후보 크기 | **29,968,315 bytes** |
+| 후보 SHA-256 | **`17CB43B043541C103586BB884A7D1BF1BA8E303D4CBB5D8B3457B8A6C6046084`** |
+| `build.ps1 -ReportGroup release-2-9-0`·bin self-test | 경고 0 / 오류 0, **292,876 PASS**, 실제 종료 코드 0 |
+| 별도 Portable 후보 publish·self-test | 경고 0 / 오류 0, **292,876 PASS**, 실제 종료 코드 0 |
+| 고정 after 슬롯 후보 native smoke | **1,012 PASS**, PNG 49장, 실제 종료 코드 0 |
+| 버전 변경 전 Grok 최종 검사본과 비교 | PNG **49/49**, layout JSON **38/38** SHA-256 바이트 동일 |
+| receipt | 공식 `New-WindowsDeploymentReceipt.ps1` 생성, 종료 코드 0. 이전 2.8.9 `candidate.json`을 그대로 읽어 양쪽 신원 형식·후보를 검증 |
 
 검사에는 가짜 CLI/HTTP/알림 발송기·임시 DB만 사용합니다. 실제 계정 조회·사이트 전송·OS 알림·운영 등록은 하지 않습니다.
 공통 코드·검사 기대값은 #122 병합 뒤 바꾸지 않습니다. 기존 symlink fixture 1건의 파일시스템 권한 제한은 별도로 기록합니다.
+
+SDK **10.0.403**입니다. 공통 **291,755건**과 Windows **1,121건**의 합계이며 기존 symlink fixture 1건 SKIP은 유지합니다.
+별도 공통 검사는 #122의 최종 통합 확인에서 291,755건을 확인했고 이번에는 bin/후보 self-test가 같은 공통 검사를 다시 실행했습니다.
+후보 검사 중 native 토스트 제출·등록 명령·실제 사이트 요청은 0회입니다. 고정 슬롯 smoke는 1회이므로 트레이 기록의 반복 실행 무증가는 NotEvaluated입니다.
+보고서는 `artifacts/release-2-9-0/`, `artifacts/release-2-9-0-candidate/`와 후보 폴더의 상위에 보관합니다.
+후속 커밋은 이 검사 결과 문서만 갱신하며 후보의 실제 소스 커밋은 위 `3102e16`입니다.
+
+생성한 receipt는 `artifacts/release-2.9.0-preparation-20261109/deployment-receipt.json`입니다.
+그 `Candidate`는 위 후보 경로·버전·소스·SHA-256·크기와 같고 `Previous`는 아래 기존 2.8.9 신원과 같습니다.
+운영 dist는 준비 전·후 모두 **2.8.9.0 / `D400468B1163A7C0738D42EE75FFD2AC90C22DFC42EB9044A833B3F99252B399`**로 동일합니다.
+smoke 후 기존 2.8.9 외부 재실행 완료는 사용자 확인입니다. 준비 과정에서 새 백업이나 `.run` 실행 증거를 만들거나 외부 배포 명령을 실행하지 않았습니다.
 
 ## 이전 신원과 외부 백업·복원
 

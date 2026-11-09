@@ -2,6 +2,8 @@
 
 **Windows 2.9.0 후보 준비(2026-11-09 KST):** #122/#123의 Grok 주간 크레딧을 포함합니다. xAI 한도 한 행·headless ACP·예약 조회 10분 하한·기존 시간 비교/알림과 모바일 wire v2를 사용합니다. 사이트는 v1/v2 동시 수신 버전을 먼저 비공개 배포하고 기존 2.8.9의 자연 송신 저장을 확인했습니다. 이 버전 PR은 Windows 버전 세 필드와 문서만 변경합니다. Microsoft.Data.Sqlite는 10.0.12를 유지합니다. 후보는 별도 artifacts 경로에 만들며 운영 dist 교체·실행·등록은 하지 않습니다. 병합 뒤 사용자가 MSI PowerShell의 한 줄 명령으로 외부 백업·교체·검사·실행을 진행합니다. [후보 해시·검사·receipt·외부 명령](MAINTENANCE_2_9_0.md), [공통 조회 계약](GROK_QUOTAS.md).
 
+**2.9.0 후보 검사:** build/Portable publish 경고·오류 0, bin/단일 EXE self-test 각 **292,876 PASS**, 후보 smoke **1,012 PASS**·실제 종료 코드 0. PNG **49/49**·layout **38/38**은 #122 최종 통합 검사본과 같습니다. 이전 2.8.9 `candidate.json`을 공식 생성기로 읽어 receipt를 만들었으며 외부 배포는 아직 하지 않았습니다.
+
 **Windows 2.8.9 교체·외부 실행 완료(2026-11-05 KST):** #115의 xAI 필수 구성 요소 갱신(Review Agents 제외·Third-party models 추가), Cursor RSS 대응, Bugbot 표기와 Imagine 작업 판정 제외를 포함합니다. 버전 PR #118 병합 뒤 사용자 추가 승인과 외부 백업을 확인해 **21:45 KST에 Codex가 EXE만 교체**했습니다. 기존 운영 등록·자동 시작 대상과 해제 dry-run 무변경은 사용자 외부 receipt로 확인했고, 외부 실행·트레이·상태 보기·한도 보기·xAI 카드 정상은 사용자 확인입니다. 공통/Windows C#·Mac·버전·운영 등록은 추가로 고치지 않았습니다. [검사·EXE 해시·백업·확인 주체·2.8.8 복원 기록](MAINTENANCE_2_8_9.md).
 
 **2.8.9 검사:** build/Portable publish 경고·오류 0, bin/단일 EXE self-test 각 **292,215 PASS**, 최종 smoke **990 PASS**·실제 종료 코드 0, 실제 공식 조회에서 xAI 정상입니다. PNG **45/45**·layout **38/38**은 기존 2.8.8과 같습니다. 첫 smoke의 컨트롤 잘림 실패 1회와 원인 미확인은 배포 기록에 보존합니다.
