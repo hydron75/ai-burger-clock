@@ -1,13 +1,15 @@
 # #133 통합 Windows 상세 팝업 추가 확인 (2026-11-09)
 
-**결론: Windows에서 처음부터 긴 팝업을 표시할 때 마지막 문장이 스크롤 범위 밖으로 잘리는 문제가 남아 있습니다. 병합 보류를 권고합니다.** 이번 지시는 추가 확인이므로 제품 코드를 수정하지 않았습니다. 실제 폭을 확인하는 실패 회귀 검사·합성 근거만 추가합니다. 버전·공통 판정·Mac·배포 EXE·운영 등록·사이트는 변경하지 않습니다.
+**결론: 사용자 승인 후 Windows의 첫 긴 팝업 측정 순서를 보정했고 최종 전체 smoke까지 통과했습니다.** 한도·상태 모두 첫 표시부터 긴 경우 실제 폭의 필요 높이와 저장 높이가 일치하며 휠로 마지막 문장까지 도달합니다. 320 DIP 폭·문구·공통 판정·Mac·버전·배포 EXE·운영 등록·사이트는 변경하지 않습니다. 아래 실패 재현은 수정 전 기록으로 보존합니다.
 
 ## 기준과 변경 범위
 
 - #133 병합: `72625030e895c57a37fd4e1fb27d8165aea672d1`.
 - `f6b01b6 → 7262503` diff는 **MACOS_PORT.md, Mac/MacDetailTip.cs, Mac/MacDetailTipSmoke.cs, Mac/README.md** 네 파일뿐입니다. 공통·Windows·패키지·버전 변경은 없습니다.
-- Windows 추가 검사는 `StatusToolTipUiChecks.cs`·`QuotaToolTipUiChecks.cs` 두 파일뿐입니다. 일반 빌드와 공통 검사는 유지됩니다.
-- 최초 휠 검사 코드: `5fb794736de192797864a6363895f2741b402d81`. 끝줄의 실제 렌더 폭 검사까지 보강한 코드: `9da51d4068fad379b8d5dbc778725b6897040742`. 이후 커밋은 기록·합성 이미지뿐입니다.
+- Windows 추가 검사는 `StatusToolTipUiChecks.cs`·`QuotaToolTipUiChecks.cs` 두 파일이며, 승인 후 제품 보정은 Windows `QuotaDetailPopup.cs`에만 추가했습니다. 공통 원본·Mac은 추가 수정하지 않습니다.
+- 최초 휠 검사 코드: `5fb794736de192797864a6363895f2741b402d81`. 끝줄의 실제 렌더 폭 검사까지 보강한 코드: `9da51d4068fad379b8d5dbc778725b6897040742`이며 `9688371`은 당시의 실패 기록·합성 이미지만 추가했습니다.
+- 사용자 승인 후 Windows 제품 보정: `010d4cd1557e77e11fbbad9b90ea7b2b9586ba03`. 첫 상태 팝업도 처음부터 긴 경우를 추가한 검증 코드: `4c1e57dbf45cad2067b2ed3f5fb7b75ba0db5ef7`.
+- 최종 검증 코드: `3198a2769f9db897cdcce8e0c6a8a8eebadaa662`. 이후 커밋은 문서·합성 캡처뿐입니다.
 
 ## 실제 메시지로 통과한 항목
 
@@ -29,7 +31,7 @@ Windows 192 DPI(200%)에서 테스트 프로세스 소유 팝업 HWND에 `PostMe
 
 프레임워크의 메시지 경로는 [WinForms 10 Control.cs](https://github.com/dotnet/winforms/blob/release/10.0/src/System.Windows.Forms/System/Windows/Forms/Control.cs)의 WmMouseWheel·WmMouseMove·WmMouseUp을 참고했습니다.
 
-## 끝줄 누락 재현 — 미수정
+## 수정 전 끝줄 누락 재현
 
 처음 검사는 **저장된** ContentSize/스크롤 범위 끝에 도달했는지만 보았습니다. 1,164건이 통과했지만 캡처에 마지막 안내 문장이 없어 실제 표시 폭으로 다시 검사했습니다. 따라서 이 최초 통과를 전체 문장 접근 보장으로 취급하지 않습니다.
 
@@ -48,7 +50,7 @@ Windows 192 DPI(200%)에서 테스트 프로세스 소유 팝업 HWND에 `PostMe
 
 원인은 `QuotaDetailPopup.Display`가 첫 `Show` 전에 본문을 측정하는 동안 아직 native 스크롤바 폭이 반영되지 않아 640px을 사용하고, 표시 후에는 606px로 줄었는데 높이를 다시 계산하지 않는 순서입니다. 기존 팝업 핸들이 이미 있는 경우와 달리 새 팝업의 첫 긴 상세에서 재현됩니다. 상태와 한도는 이 Windows 팝업 클래스를 공유합니다. 확인한 실제 64창 실패 fixture는 한도 경로이며 상태의 모든 첫 표시 조합까지 별도로 단정하지 않습니다.
 
-## 검사 결과·근거
+## 수정 전 검사 결과·근거
 
 - 최종 보강 코드 `build.ps1`: SDK 10.0.403, 경고 0·오류 0.
 - `--self-test` **293,027건 통과**, Shared.Tests **291,898건 통과**, 기존 권한 제한 symlink fixture 1건 제외.
@@ -66,8 +68,30 @@ Windows 192 DPI(200%)에서 테스트 프로세스 소유 팝업 HWND에 `PostMe
 |---|---|
 | ![합성 한도, 휠 하단 도달 후 끝줄 누락](docs/reviews/status-provider-detail-20261109/native-quota-overflow-bottom-200.png) | ![합성 상태, 실제 휠 메시지로 하단 도달](docs/reviews/status-provider-detail-20261109/native-status-overflow-bottom-200.png) |
 
-## 메인에서 정할 것
+## 승인된 보정과 후속 확인
 
-추천은 #130에서 **실제 스크롤바 포함 client 폭이 확정된 뒤 높이를 다시 측정하는 Windows 보정**을 추가하는 것입니다. 이 회귀 검사를 통과한 뒤 전체 smoke를 다시 확인해야 합니다. 공통 판정·문구·320 DIP 폭·Mac 동작을 바꾸는 제안은 아닙니다.
+`QuotaDetailPopup.Display`의 레이아웃 계산에서 네이티브 창 핸들을 먼저 확보합니다. 이후 기존 AutoScrollMinSize·PerformLayout·client 폭 재측정이 실제 스크롤바 폭을 반영합니다. 창을 일찍 표시하거나 활성화하지 않으며 기존 320 DIP 외곽 폭·작업 영역 제한·소유자·수명·클릭 통과 규칙은 유지합니다. 새 패키지·공통 원본·Mac 변경은 없습니다.
 
-이번에는 제품 보정을 하지 않으며 기존 Ready 플래그도 임의로 바꾸지 않습니다. PR 코멘트에 추가 검증 불합격과 병합 보류 권고를 명시합니다. 수정 범위·병합은 메인 결정 후 진행합니다.
+집중 native fixture의 수정 후 실제 측정은 다음과 같습니다.
+
+| 합성 fixture | 수정 전 저장 높이 | 수정 후 저장 높이 / 실제 필요 높이 | 부족 높이 |
+|---|---:|---:|---:|
+| 새 팝업의 단순 64행 + 긴 오류 | 3,672px | 3,735 / 3,735px | 0px |
+| Gemini 64창 + 긴 오류 | 6,449px | 6,513 / 6,513px | 0px |
+| 첫 상태 팝업: Gemini 긴 오류 + 사건 ID 64개 | 별도 수정 전 수치 없음 | 7,821 / 7,821px | 0px |
+
+한도 fixture는 실제 휠 메시지 41회(역방향·하단 제한 포함)로 하단 offset 4,481px까지 도달했고 최종 문장·역방향·하단 제한·투명 hit-test·아래 카드 호버/클릭을 통과했습니다. 첫 긴 Gemini 상태 팝업도 실제 휠 52회로 offset 5,789px까지 도달했습니다. 두 팝업의 외곽 폭은 640px(320 DIP), 높이는 2,032px이고 작업 영역 높이 2,064px 안에 있습니다.
+
+보정 코드의 최종 `build.ps1`는 경고 0·오류 0, self-test **293,027건**·Shared.Tests **291,898건**(기존 symlink 1건 제외)이 통과했습니다. 고정 after 슬롯의 최종 전체 smoke는 **1,174 PASS·60 PNG·종료 코드 0**입니다. 상태/한도 기본 화면 PNG는 수정 전과 파일 해시가 같습니다. 반복 트레이 기록 증가는 최종 smoke 1회이므로 미평가입니다.
+
+중간 실행에서는 운영 앱이 남아 있어 기존 보호 검사로 staging 전에 중단된 경우와, 전체 UI 검사 중 휠 이동/팝업 유지 조건이 실패한 경우가 있었습니다. 강제 종료·검사 우회는 하지 않았습니다. 새 quota fixture를 상태 창의 자동 숨김 수명과 분리하고, 고정 1ms 대기 대신 실제 MouseWheel 이벤트 수신을 기다리도록 **검사만** 보완한 뒤 최종 전체 검사를 통과했습니다. 10초/25초 같은 제품 수명은 변경하지 않았습니다.
+
+최종 로그는 `artifacts/detail-popup-client-fix-final/`, 이전 보정 실행은 `artifacts/detail-popup-client-fix/`에 보존합니다. 실제 OS 알림·운영 등록·사이트 송신은 0회이고 물리 커서는 움직이지 않았습니다. 기존 2.9.0 배포본의 외부 재실행 완료는 사용자 확인입니다. PR의 이전 병합 보류 사유는 이 보정과 최종 검증으로 해소했습니다. Ready는 유지하며 병합·버전 올림·배포는 사용자 결정입니다.
+
+### 보정 후 합성 캡처
+
+| 한도: Gemini 64창 + 긴 오류, 마지막 CLI 안내까지 | 상태: 첫 긴 Gemini 오류 + ID 64개, 마지막 출처까지 |
+|---|---|
+| ![보정 후 합성 한도, 마지막 안내까지 실제 휠 도달](docs/reviews/status-provider-detail-20261109/fixed-native-quota-overflow-bottom-200.png) | ![보정 후 첫 합성 상태 팝업, 마지막 출처까지 실제 휠 도달](docs/reviews/status-provider-detail-20261109/fixed-first-status-overflow-bottom-200.png) |
+
+현재 실측은 Windows 192 DPI이며 실제 사용자의 물리 휠 감각·다른 화면/DPI 조합은 별도 확인입니다. 기존 96/144/192 DPI의 측정·작업 영역 배치 검사도 최종 smoke에서 유지합니다.
