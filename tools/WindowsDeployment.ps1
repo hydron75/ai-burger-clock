@@ -167,7 +167,7 @@ function Assert-WDManifest([string]$DataRoot, $Manifest) {
 }
 
 function Invoke-WDSourceArchive([string]$Repository, [string]$Commit, [string]$Destination) {
-    & git -c "safe.directory=$Repository" archive --format=zip "--output=$Destination" $Commit 2>$null
+    & git -C $Repository -c "safe.directory=$Repository" archive --format=zip "--output=$Destination" $Commit 2>$null
     if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $Destination)) { Stop-WD 'SourceArchiveFailed' }
 }
 
@@ -267,6 +267,7 @@ function Get-WDRegistration([string]$Exe) {
 
 function Invoke-WDDryRun([string]$Exe) {
     $info = [Diagnostics.ProcessStartInfo]::new($Exe)
+    $info.WorkingDirectory = Split-Path -Parent $Exe
     $info.UseShellExecute = $false
     $info.CreateNoWindow = $true
     $info.RedirectStandardOutput = $true
