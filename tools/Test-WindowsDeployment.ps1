@@ -7,6 +7,7 @@ Set-StrictMode -Version Latest
 if (-not $IsWindows) { throw 'Windows filesystem semantics are required.' }
 $repository = Split-Path -Parent $PSScriptRoot
 . (Join-Path $PSScriptRoot 'WindowsDeployment.ps1')
+$sourceArchiveImplementation = (Get-Command Invoke-WDSourceArchive).ScriptBlock
 $fixedRoot = Join-Path ([Environment]::GetFolderPath('UserProfile')) '.ai-burger-clock-tests'
 $slotRoot = Join-Path $fixedRoot $Slot
 Assert-WDNoReparse $slotRoot
@@ -16,9 +17,17 @@ $null = Assert-WDChildPath $fixtureRoot $slotRoot
 $script:checks = 0
 $script:cases = 0
 $script:osCalls = 0
+$script:realArchives = 0
 function Assert-Test([bool]$Condition, [string]$Message) {
     if (-not $Condition) { throw "FAIL: $Message" }
     $script:checks++
+}
+
+function Invoke-FixtureGit([string]$Repository, [string[]]$Arguments) {
+    $output = & git -C $Repository -c "safe.directory=$Repository" -c "core.hooksPath=$Repository/.git/no-hooks" `
+        -c commit.gpgSign=false -c 'user.name=Synthetic Fixture' -c user.email=fixture@example.invalid @Arguments 2>&1
+    if ($LASTEXITCODE -ne 0) { throw 'Synthetic Git repository setup failed.' }
+    ($output -join "`n").Trim()
 }
 
 function Invoke-Fixture([string]$Mode = 'Success') {
@@ -38,8 +47,18 @@ function Invoke-Fixture([string]$Mode = 'Success') {
     [IO.File]::WriteAllText($candidate, 'synthetic-new')
     [IO.File]::WriteAllText($db, 'synthetic database, not SQLite')
     [IO.File]::WriteAllText((Join-Path $data 'logs/nested/synthetic.txt'), 'synthetic log')
-    $old = [pscustomobject]@{ FileVersion = '1.0.0.0'; ProductVersion = '1.0.0+' + ('a' * 40); SourceCommit = 'a' * 40; SHA256 = Get-WDHash $dist }
-    $new = [pscustomobject]@{ Path = $candidate; FileVersion = '1.0.1.0'; ProductVersion = '1.0.1+' + ('b' * 40); SourceCommit = 'b' * 40; SHA256 = Get-WDHash $candidate; Bytes = (Get-Item -LiteralPath $candidate).Length }
+    $null = Invoke-FixtureGit $repo @('init', '--quiet')
+    $source = Join-Path $repo 'synthetic-source.txt'
+    [IO.File]::WriteAllText($source, 'synthetic old source')
+    $null = Invoke-FixtureGit $repo @('add', '--', 'synthetic-source.txt')
+    $null = Invoke-FixtureGit $repo @('commit', '--quiet', '-m', 'synthetic old source')
+    $oldCommit = Invoke-FixtureGit $repo @('rev-parse', 'HEAD')
+    [IO.File]::WriteAllText($source, 'synthetic new source')
+    $null = Invoke-FixtureGit $repo @('add', '--', 'synthetic-source.txt')
+    $null = Invoke-FixtureGit $repo @('commit', '--quiet', '-m', 'synthetic new source')
+    $newCommit = Invoke-FixtureGit $repo @('rev-parse', 'HEAD')
+    $old = [pscustomobject]@{ FileVersion = '1.0.0.0'; ProductVersion = '1.0.0+' + $oldCommit; SourceCommit = $oldCommit; SHA256 = Get-WDHash $dist }
+    $new = [pscustomobject]@{ Path = $candidate; FileVersion = '1.0.1.0'; ProductVersion = '1.0.1+' + $newCommit; SourceCommit = $newCommit; SHA256 = Get-WDHash $candidate; Bytes = (Get-Item -LiteralPath $candidate).Length }
     $receiptPath = Join-Path $artifacts 'deployment-receipt.json'
     $receipt = [ordered]@{ Schema = 'aiburgerclock.windows-deployment'; SchemaVersion = 1; Repository = $repo; Candidate = $new; Previous = $old }
     $state = [pscustomobject]@{ RegistrationReads = 0; DryRuns = 0; Launches = 0; Archives = 0; Lock = $null; Calls = [Collections.Generic.List[string]]::new() }
@@ -76,7 +95,7 @@ function Invoke-Fixture([string]$Mode = 'Success') {
         elseif ($text -eq 'synthetic-new') {
             [pscustomobject]@{
                 FileVersion = if ($Mode -eq 'AfterReplaceVersion' -and $Path -eq $dist) { '9.9.9.0' } else { '1.0.1.0' }
-                ProductVersion = '1.0.1+' + ('b' * 40)
+                ProductVersion = '1.0.1+' + $newCommit
             }
         } else { [pscustomobject]@{ FileVersion = '0.0.0.0'; ProductVersion = 'corrupt' } }
     }
@@ -106,8 +125,11 @@ function Invoke-Fixture([string]$Mode = 'Success') {
         $null = Assert-WDChildPath $Destination $root
         $state.Archives++
         $state.Calls.Add('Archive')
-        if ($Mode -eq 'ArchiveFailure') { Stop-WD 'SourceArchiveFailed' }
-        Compress-Archive -LiteralPath $db -DestinationPath $Destination
+        # Record ordering/fault timing, but execute the unmodified production Git
+        # archive implementation. A missing commit exercises an actual Git error.
+        $archiveCommit = if ($Mode -eq 'ArchiveFailure') { '0' * 40 } else { $Commit }
+        $script:realArchives++
+        & $sourceArchiveImplementation $Repository $archiveCommit $Destination
         if ($Mode -eq 'LogsChanged' -and $state.Archives -eq 2) {
             [IO.File]::WriteAllText((Join-Path $data 'logs/nested/synthetic.txt'), 'changed while stopped')
         }
@@ -137,17 +159,20 @@ function Invoke-Fixture([string]$Mode = 'Success') {
     function Start-Process { $script:osCalls++; throw 'Native process execution forbidden in fixtures.' }
     function New-Object { $script:osCalls++; throw 'COM/registration access forbidden in fixtures.' }
 
+    $outside = Join-Path $root 'outside repository 한글'
+    [IO.Directory]::CreateDirectory($outside) | Out-Null
+    Push-Location -LiteralPath $outside
     try { $result = Invoke-WindowsDeployment -Repository $repo -ReceiptPath $receiptPath }
-    finally { if ($state.Lock) { $state.Lock.Dispose() } }
+    finally { Pop-Location; if ($state.Lock) { $state.Lock.Dispose() } }
     [pscustomobject]@{
         Mode = $Mode; Result = $result; State = $state; Dist = $dist; OldHash = $old.SHA256; NewHash = $new.SHA256
         CurrentHash = Get-WDHash $dist; DbHash = Get-WDHash $db; OriginalDbHash = $dbHash
-        Db = $db; ReceiptPath = $receiptPath; Root = $root
+        Db = $db; ReceiptPath = $receiptPath; Root = $root; Repository = $repo; InvocationDirectory = $outside
     }
 }
 
 $success = Invoke-Fixture
-Assert-Test $success.Result.Succeeded 'all four external stages succeed in order'
+Assert-Test $success.Result.Succeeded "all six stages succeed outside the repository (failure: $($success.Result.Failure))"
 Assert-Test ($success.CurrentHash -eq $success.NewHash) 'verified candidate replaces only fake dist'
 Assert-Test ($success.DbHash -eq $success.OriginalDbHash -and -not $success.Result.DatabaseRestored) 'DB unchanged, no DB rollback'
 Assert-Test (($success.Result.Stages.Result -join ',') -eq 'Passed,Passed,Passed,Passed,Passed,Passed') 'stage summary complete'
@@ -160,6 +185,16 @@ Assert-Test ((Get-WDHash (Join-Path $backup 'previous.exe')) -eq $success.OldHas
 Assert-Test ((Get-WDHash (Join-Path $backup 'deployed.exe')) -eq $success.NewHash) 'new EXE backup verified'
 Assert-Test ((Get-WDHash (Join-Path $backup 'data/burgerclock.db')) -eq $success.OriginalDbHash) 'DB backup verified'
 Assert-Test ((Test-Path -LiteralPath (Join-Path $backup 'previous-dist.zip')) -and (Test-Path -LiteralPath (Join-Path $backup 'source-before.zip')) -and (Test-Path -LiteralPath (Join-Path $backup 'source-candidate.zip'))) 'dist and both source ZIPs retained'
+Assert-Test (-not $success.InvocationDirectory.StartsWith($success.Repository + [IO.Path]::DirectorySeparatorChar)) 'deployment current directory is outside the fixture Git repository'
+foreach ($snapshot in @(@('source-before.zip','synthetic old source'), @('source-candidate.zip','synthetic new source'))) {
+    $archive = [IO.Compression.ZipFile]::OpenRead((Join-Path $backup $snapshot[0]))
+    try {
+        Assert-Test ($archive.Entries.Count -eq 1 -and $archive.Entries[0].FullName -eq 'synthetic-source.txt') 'real Git ZIP contains only the committed fixture source'
+        $reader = [IO.StreamReader]::new($archive.Entries[0].Open())
+        try { Assert-Test ($reader.ReadToEnd() -ceq $snapshot[1]) 'real Git ZIP matches the requested old/new commit, not the working tree' }
+        finally { $reader.Dispose() }
+    } finally { $archive.Dispose() }
+}
 
 foreach ($mode in @('Packaged','Wal','Shm','Running','PreviousHash','CandidateHash','CandidateVersion','SourceCommit','ReceiptSchema','WrongRepository','CandidateOutside','ReparseLogs','ReusedReceipt','DeploymentInProgress','BackupExeCorrupt','BackupDbCorrupt','ArchiveFailure','LogsChanged','RegistrationMissing','RegistrationBefore','LockedDist')) {
     $case = Invoke-Fixture $mode
@@ -233,7 +268,11 @@ Assert-Test (-not (Get-WDRegistryValue $emptyKey 'AI Burger Clock').Present) 'ab
     $boundary = "function Get-WDExeVersion { param([string]`$Path) [pscustomobject]@{ FileVersion='1.0.1.0'; ProductVersion='1.0.1+' + ('b' * 40) } }"
     Add-Content -LiteralPath (Join-Path $fakeScriptRoot 'WindowsDeployment.ps1') -Value $boundary
     $generatedPath = Join-Path $prepArtifacts 'deployment-receipt.json'
-    $null = & (Join-Path $fakeScriptRoot 'New-WindowsDeploymentReceipt.ps1') -CandidatePath $prepCandidate -PreviousIdentityPath $previousIdentity -ReceiptPath $generatedPath
+    $outside = Join-Path $success.Root 'receipt caller outside repository'
+    [IO.Directory]::CreateDirectory($outside) | Out-Null
+    Push-Location -LiteralPath $outside
+    try { $null = & (Join-Path $fakeScriptRoot 'New-WindowsDeploymentReceipt.ps1') -CandidatePath $prepCandidate -PreviousIdentityPath $previousIdentity -ReceiptPath $generatedPath }
+    finally { Pop-Location }
     $generated = Get-Content -LiteralPath $generatedPath -Raw | ConvertFrom-Json
     Assert-Test ($generated.Candidate.SHA256 -eq (Get-WDHash $prepCandidate) -and $generated.Candidate.SourceCommit -eq ('b' * 40)) 'preparation derives candidate hash/version/source from fake artifact'
     Assert-Test ($generated.Previous.SHA256 -eq ('a' * 64)) 'preparation pins previous release identity from receipt, never dist'
@@ -241,6 +280,46 @@ Assert-Test (-not (Get-WDRegistryValue $emptyKey 'AI Burger Clock').Present) 'ab
     try { $null = & (Join-Path $fakeScriptRoot 'New-WindowsDeploymentReceipt.ps1') -CandidatePath $prepCandidate -PreviousIdentityPath $previousIdentity -ReceiptPath $generatedPath }
     catch { $refused = $true }
     Assert-Test $refused 'preparation never overwrites an existing receipt'
+    foreach ($relativeField in @('CandidatePath','PreviousIdentityPath','ReceiptPath')) {
+        $arguments = @{ CandidatePath = $prepCandidate; PreviousIdentityPath = $previousIdentity; ReceiptPath = Join-Path $prepArtifacts ($relativeField + '.json') }
+        $arguments[$relativeField] = 'relative-path-is-not-approved'
+        $failure = $null
+        try { $null = & (Join-Path $fakeScriptRoot 'New-WindowsDeploymentReceipt.ps1') @arguments }
+        catch { $failure = $_.Exception.Message }
+        Assert-Test ($failure -ceq 'DEPLOY:AbsolutePathRequired') "preparation rejects relative $relativeField instead of resolving it against the caller"
+    }
+}
+
+# Keep the real ProcessStartInfo setup; replace only the process constructor in
+# a test-local copy, so no EXE or registration command can actually be started.
+& {
+    $script:cases++
+    $body = (Get-Command Invoke-WDDryRun).ScriptBlock.ToString()
+    $constructor = '[Diagnostics.Process]::new()'
+    Assert-Test (($body.Split($constructor).Count - 1) -eq 1) 'dry-run fixture substitutes exactly one process constructor'
+    $fakeProcess = [pscustomobject]@{ StartInfo = $null; ExitCode = 0; Starts = 0; StandardOutput = [IO.StringReader]::new('Dry run: no registration changed.'); StandardError = [IO.StringReader]::new('') }
+    $fakeProcess | Add-Member ScriptMethod Start { $this.Starts++; $true }
+    $fakeProcess | Add-Member ScriptMethod WaitForExit { param($Milliseconds) $true }
+    $fakeProcess | Add-Member ScriptMethod Dispose { $this.StandardOutput.Dispose(); $this.StandardError.Dispose() }
+    $dryRun = [scriptblock]::Create($body.Replace($constructor, '$fakeProcess'))
+    $exitCode = & $dryRun $success.Dist
+    Assert-Test ($exitCode -eq 0 -and $fakeProcess.Starts -eq 1) 'dry-run fixture completes through the fake process only'
+    Assert-Test ($fakeProcess.StartInfo.WorkingDirectory -ceq (Split-Path -Parent $success.Dist)) 'dry-run child uses its EXE directory, not the caller directory'
+    Assert-Test (($fakeProcess.StartInfo.ArgumentList -join ',') -ceq '--unregister-quota-notifications,--dry-run') 'dry-run arguments remain unchanged'
+    Assert-Test (-not $fakeProcess.StartInfo.UseShellExecute -and $fakeProcess.StartInfo.CreateNoWindow -and $fakeProcess.StartInfo.RedirectStandardOutput -and $fakeProcess.StartInfo.RedirectStandardError) 'dry-run retains hidden execution and redirected output'
+}
+& {
+    $script:cases++
+    $fakeProcess = [pscustomobject]@{ Id = 12345 }
+    $fakeProcess | Add-Member ScriptMethod Dispose { }
+    function Start-Process {
+        param($FilePath, $WorkingDirectory, $WindowStyle, [switch]$PassThru)
+        $script:launchArguments = @{ FilePath=$FilePath; WorkingDirectory=$WorkingDirectory; WindowStyle=$WindowStyle; PassThru=$PassThru.IsPresent }
+        $fakeProcess
+    }
+    Assert-Test ((Start-WDApp $success.Dist) -eq 12345) 'normal launch helper returns the fake handoff PID'
+    Assert-Test ($script:launchArguments.FilePath -ceq $success.Dist -and $script:launchArguments.WorkingDirectory -ceq (Split-Path -Parent $success.Dist)) 'normal launch already pins the EXE path and working directory'
+    Assert-Test ($script:launchArguments.WindowStyle -eq 'Hidden' -and $script:launchArguments.PassThru) 'normal launch flags remain unchanged'
 }
 
 foreach ($file in @('deploy-windows.ps1','tools/WindowsDeployment.ps1','tools/New-WindowsDeploymentReceipt.ps1','tools/Test-WindowsDeployment.ps1')) {
@@ -249,7 +328,7 @@ foreach ($file in @('deploy-windows.ps1','tools/WindowsDeployment.ps1','tools/Ne
     Assert-Test ($parseErrors.Count -eq 0) "$file parses"
 }
 Assert-Test ($script:osCalls -eq 0) 'native app launches, COM/registration calls, OS notifications: zero'
-$summary = [pscustomobject]@{ Slot = $Slot; Cases = $script:cases; Assertions = $script:checks; NativeAppLaunches = 0; RegistrationCalls = 0; OperatingDataAccess = 0; FixtureRoot = $fixtureRoot }
+$summary = [pscustomobject]@{ Slot = $Slot; Cases = $script:cases; Assertions = $script:checks; RealGitArchiveCalls = $script:realArchives; NativeAppLaunches = 0; RegistrationCalls = 0; OperatingDataAccess = 0; FixtureRoot = $fixtureRoot }
 $evidence = Join-Path $repository 'artifacts/windows-external-deployment'
 [IO.Directory]::CreateDirectory($evidence) | Out-Null
 $summary | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $evidence "summary-$Slot.json") -Encoding utf8

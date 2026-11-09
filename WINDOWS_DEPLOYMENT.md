@@ -63,7 +63,7 @@ WAL/SHM은 0바이트라도 존재하면 중단하며 지우지 않습니다. �
 
 ## 검사 경계
 
-[Test-WindowsDeployment.ps1](tools/Test-WindowsDeployment.ps1)은 고정 `~/.ai-burger-clock-tests/before|after/deployment-fixtures/<임의값>` 아래 가짜 저장소·텍스트 EXE·가짜 DB/로그로 실행합니다. 슬롯의 기존 앱/산출물을 덮어쓰지 않고, fixture를 자동 삭제하지 않습니다. 실제 파일 복사·해시·WAL/SHM·ZIP·원자적 교체·EXE 복원을 실행하되 프로세스·등록·dry-run·버전 읽기·소스 archive 경계는 가짜로 대체합니다. 운영 dist/DB 읽기·쓰기, 실제 앱 실행·운영 등록·OS 알림 호출은 0건입니다. 프로덕션 스크립트에는 `-SkipChecks`·테스트 우회 옵션이 없습니다.
+[Test-WindowsDeployment.ps1](tools/Test-WindowsDeployment.ps1)은 고정 `~/.ai-burger-clock-tests/before|after/deployment-fixtures/<임의값>` 아래 가짜 저장소·텍스트 EXE·가짜 DB/로그로 실행합니다. 슬롯의 기존 앱/산출물을 덮어쓰지 않고, fixture를 자동 삭제하지 않습니다. 실제 파일 복사·해시·WAL/SHM·ZIP·원자적 교체·EXE 복원을 실행하며 소스 archive는 각 fixture의 작은 실제 Git 저장소/두 커밋을 사용합니다. 프로세스·등록·dry-run·버전 읽기 경계만 가짜로 대체합니다. 운영 dist/DB 읽기·쓰기, 실제 앱 실행·운영 등록·OS 알림 호출은 0건입니다. 프로덕션 스크립트에는 `-SkipChecks`·테스트 우회 옵션이 없습니다.
 
 ```powershell
 pwsh -NoLogo -NoProfile -File ./tools/Test-WindowsDeployment.ps1 -Slot before
@@ -73,3 +73,42 @@ pwsh -NoLogo -NoProfile -File ./tools/Test-WindowsDeployment.ps1 -Slot after
 검사 결과는 `artifacts/windows-external-deployment/summary-before.json`·`summary-after.json`에 남깁니다. 실제 외부 배포·AppData/HKCU 뷰·운영 EXE dry-run·앱 실행은 이번 PR에서 수행하지 않으며 다음 승인된 배포의 사용자 외부 실행으로 확인합니다.
 
 2026-11-05 검증: before/after 각각 **33개 시나리오·186개 검사 PASS·종료 코드 0**. 실행 중 앱, WAL/SHM, 영수증 경로/신원/재사용, 후보/이전 해시·버전, 잠금, reparse, 백업 손상, 로그 변경, 소스 ZIP 실패, 등록 변경, dry-run 실패/DB 쓰기/WAL 생성, 실행 요청 실패, EXE 복원 및 복원 불가, 오류 원문 비노출을 확인했습니다. 빈 등록 키·같은 텍스트의 값 유형 변경·영수증 생성/덮어쓰기 거부도 포함합니다. PowerShell 파서 **4개 파일·오류 0**이며 운영 경로 접근·실제 앱 실행·운영 등록·OS 알림은 0건입니다. PowerShell 7.0 API 호환성은 정적 검토이며 해당 구버전 런타임 실행은 하지 않았습니다. C#·UI·버전 변경이 없어 앱 build/self-test/native smoke는 실행하지 않았습니다.
+
+## 2026-11-09: 저장소 밖 실행의 소스 archive 실패 수정
+
+2.9.0 배포를 사용자가 외부 MSI PowerShell 7.6.9에서 `C:\Windows\System32`를 현재 폴더로 두고 실행했을 때
+Receipt/Preflight는 통과했지만 **Backup / SourceArchiveFailed**로 중단됐습니다. Git 호출이 저장소를 `-C`로 지정하지 않아
+호출자의 현재 폴더에서 `.git`을 찾았던 것이 원인입니다. `safe.directory`는 소유권 검사 예외일 뿐 저장소를 선택하지 않습니다.
+두 소스 커밋이 모두 존재함을 확인했습니다. 기존 검사는 소스 ZIP을 가짜 압축으로 대체해 이 결함을 잡지 못했습니다.
+
+**교체 전 중단:** Replace/Inspect/Launch는 NotRun, Rollback=NotNeeded, DatabaseRestored=false,
+RegistrationPerformed=false, AppLaunchRequested=false였습니다. 운영 EXE는 기존 2.8.9·기록 해시 그대로였으며
+운영 DB·등록·자동 시작을 변경하지 않았습니다. `BackupHashesMatch=false` 등은 완료 전 기본값이므로 해당 불일치의 증거가 아닙니다.
+미완료 백업 `../backups/release-2.9.0.0-20261109-100221-9ce2af1e/`의 첫 `source-before.zip`은 0바이트이고 후보 소스 ZIP은 생성되지 않았습니다.
+이 폴더와 사용 표식 `artifacts/release-2.9.0-preparation-20261109/deployment-receipt.run/`은 지우거나 덮어쓰지 않습니다.
+
+### 현재 폴더 의존성 점검
+
+| 호출/경로 | 확인과 조치 |
+|---|---|
+| `Invoke-WDSourceArchive`의 외부 `git archive` | **수정:** `git -C $Repository -c safe.directory=... archive`로 저장소를 명시. 기존 안전 검사와 목적지·커밋 검증은 유지 |
+| `Invoke-WDDryRun`의 `ProcessStartInfo` | **수정:** `WorkingDirectory`를 EXE 부모 폴더로 지정. 기존 절대 FileName·인자·숨김/리다이렉션·30초 제한·자신의 자식만 정리하는 방식은 유지 |
+| `Start-WDApp`의 `Start-Process` | 이미 절대 EXE와 부모 `WorkingDirectory`를 지정함. 가짜 발송 경계로 호출 인자를 확인, 코드 변경 없음 |
+| 배포 입구/receipt 생성기의 dot-source와 저장소 기준 | `$PSScriptRoot`로 모듈·저장소를 선택함. 저장소 밖 호출 검사 통과, 코드 변경 없음 |
+| receipt 생성기의 후보·이전 신원·출력 경로 | 모두 절대 경로/승인된 하위 경로를 검사함. 저장소 밖 생성 통과 및 세 상대 경로 입력의 `AbsolutePathRequired` 거부 유지 |
+| 백업·임시 교체·ZIP·DB/로그 경로 | 검증된 절대 저장소/데이터 폴더로 구성함. 현재 폴더를 전역 변경하는 우회는 추가하지 않음 |
+
+### 회귀 검사와 다음 재시도
+
+- 수정 전 새 회귀 검사는 저장소 밖 현재 폴더에서 **SourceArchiveFailed / 종료 코드 1**로 실패했습니다.
+  별도의 가짜 프로세스 검사에서도 dry-run의 WorkingDirectory가 비어 있음을 확인했습니다. 실제 앱/등록 명령은 실행하지 않았습니다.
+- 수정 뒤 고정 before/after **각각 35개 시나리오·202개 검사 PASS·종료 코드 0**입니다(기존 33개 시나리오/186개 검사 유지 + 경로 회귀 검사).
+  슬롯마다 실제 `git archive`를 **31회** 호출했습니다. 순서 기록용 경계는 실제 운영 archive 함수를 호출하며 소스 ZIP 자체를 가짜로 만들지 않습니다.
+- 각 fixture에서 두 커밋을 만든 뒤 Git 저장소 밖의 공백·한글 폴더를 현재 폴더로 두고 전체 배포를 실행합니다.
+  두 ZIP의 단일 파일/내용이 이전·새 커밋과 각각 같은지 검증합니다. Git 실패 사례도 없는 커밋을 이용한 실제 Git 오류입니다.
+- 자식 프로세스의 작업 폴더/인자는 가짜 프로세스로 검사합니다. receipt 생성도 저장소 밖에서 실행하고 상대 경로 거부·기존 영수증 덮어쓰기 거부를 확인합니다.
+  운영 dist·운영 DB·등록 접근/변경, 실제 앱 실행·OS 알림은 **0건**입니다. 파서 4개 파일 오류 0이며 앱/버전 변경이 없어 앱 빌드·native smoke는 반복하지 않습니다.
+- 결과는 `artifacts/windows-external-deployment/summary-before.json`·`summary-after.json`,
+  수정 전 재현은 저장소 밖 `diagnostics/deployment-cwd-fix-20261109/`에 보관합니다. 테스트 fixture도 보존합니다.
+- 이 수정 PR 병합 뒤 **기존 2.9.0 후보를 재빌드/교체하지 않고** 공식 생성기로 새 이름의 receipt를 준비합니다.
+  이미 사용한 receipt/`.run`/미완료 백업을 재사용·삭제하지 않습니다. 운영 재시도는 새 receipt와 MSI PowerShell 전체 경로의 한 줄 명령으로 사용자가 외부에서 수행합니다.
