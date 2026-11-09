@@ -1,7 +1,6 @@
 # 소스코드, 쉬운 말로 읽기
 
-**개발 중 PR A · 버전 2.8.9 유지:** [xAI 주간 크레딧](GROK_QUOTAS.md)의 공통 ACP/검증과 Windows 연결,
-wire v2 및 구버전 진단 파일 분리를 추가합니다. Mac 전용 전환은 A 대상 종속 PR B이며 사이트는 준비·비교만 합니다.
+**Windows 2.9.0 후보 기준:** #122/#123의 [xAI 주간 크레딧](GROK_QUOTAS.md)이 main `526e6c9`에 병합됐습니다. 공통 ACP·검증, 양쪽 화면·시간 비교/알림, wire v2와 진단 파일 분리를 포함합니다. 사이트는 v1/v2 동시 수신 버전을 먼저 배포했습니다. 이 PR은 Windows 버전 세 필드·문서만 바꾸며 후보 검사와 사용자 외부 배포는 [2.9.0 기록](MAINTENANCE_2_9_0.md)에 구분합니다. 패키지·공통/Windows C#·Mac 파일은 변경하지 않습니다.
 
 **Windows 2.8.9 기준·#118 병합 완료(2026-11-05 KST):** xAI 필수 카탈로그·Cursor RSS 대응·Bugbot 표기·Imagine 제외를 포함합니다. 사용자 외부 백업과 추가 승인 뒤 21:45 KST에 Codex가 EXE만 교체했고, 운영 등록 확인·실행은 사용자가 외부에서 수행했습니다. 트레이·상태 보기·한도 보기·xAI 카드 정상은 사용자 확인입니다. 공통 `.cs`·Mac·버전·운영 등록의 추가 변경은 없습니다. [검사·EXE 해시·백업·확인 주체·2.8.8 복원](MAINTENANCE_2_8_9.md).
 
@@ -365,7 +364,7 @@ Windows 내부 승인 형식은 알려진 경우만 해석합니다. 낯선 값�
 
 ## 11. 전체 소스 파일 지도
 
-이름을 눌러 소스를 열 수 있습니다. 역할을 알고 필요한 파일부터 읽으면 됩니다. 현재 표의 C#는 루트·Properties 122개(앱 기능 59 + 검사·진단 62 + 명찰 1), Mac 20개, 공통 검사 입구 1개로 총 143개이며 공통 제품 원본은 35개입니다.
+이름을 눌러 소스를 열 수 있습니다. 역할을 알고 필요한 파일부터 읽으면 됩니다. 현재 표의 C#는 루트·Properties 122개(앱 기능 59 + 검사·진단 62 + 명찰 1), Mac 21개, 공통 검사 입구 1개로 총 144개이며 공통 제품 원본은 35개입니다.
 
 ### 실제 앱 기능: 59개
 
@@ -506,7 +505,7 @@ Windows 내부 승인 형식은 알려진 경우만 해석합니다. 낯선 값�
 
 [Properties/AssemblyInfo.cs](Properties/AssemblyInfo.cs)는 프로그램 식별 정보 일부를 담습니다. 버전은 여기 아닌 프로젝트 파일에서 관리하고, 나머지 정보는 SDK가 생성합니다.
 
-### Mac 호스트·검사: 20개 / 공통 검사 입구: 1개
+### Mac 호스트·검사: 21개 / 공통 검사 입구: 1개
 
 | 파일 | 맡은 일 |
 |---|---|
@@ -525,6 +524,7 @@ Windows 내부 승인 형식은 알려진 경우만 해석합니다. 낯선 값�
 | [Mac/MacQuotaNotifications.cs](Mac/MacQuotaNotifications.cs) | Mac의 회복·조기 초기화 공통 엔진/재검증 연결·독립 메뉴 설정·메인 스레드 대기열·종료 수명 |
 | [Mac/MacQuotaRecoverySmoke.cs](Mac/MacQuotaRecoverySmoke.cs) | Mac native smoke의 합성 회복·조기 초기화 알림, 독립 메뉴·설정·큐·수명 시나리오 |
 | [Mac/MacEarlyResetSmoke.cs](Mac/MacEarlyResetSmoke.cs) | #73의 Mac native smoke 조기 초기화 엔진·모니터·배너 통합·최근 상세/패널 합성 검사 |
+| [Mac/MacXaiQuotaSmoke.cs](Mac/MacXaiQuotaSmoke.cs) | #123의 xAI 주간 크레딧·예약 주기·막대/대비·진단 v2·팝오버 스크롤 합성 검사 |
 | [Mac/MacGeminiModelRowSmoke.cs](Mac/MacGeminiModelRowSmoke.cs) | Mac native smoke의 Gemini 모델 행·막대 수·팝오버/스크롤·행별 설명 시나리오 |
 | [Mac/MacQuotaRowSmoke.cs](Mac/MacQuotaRowSmoke.cs) | Mac native smoke의 한도 행 이름/값 분리(값 전체 폭 보존·이름 가운데 생략·한 번 읽기·팝오버 크기 유지) 시나리오 |
 | [Mac/MacQuotaRowImages.cs](Mac/MacQuotaRowImages.cs) | 환경 변수로 폴더를 줄 때만 합성 한도 행 PNG를 저장하는 Mac smoke 도우미 |
