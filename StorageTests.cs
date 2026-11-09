@@ -156,7 +156,55 @@ internal static class StorageTests
         Check(readable.Count == 1 && skipped == 2, "unreadable usage rows are skipped and counted");
         Check((await store.ReadUsageAsync(null)).Count == 1, "usage read continues past unreadable rows");
         Check((await store.ReadLatestStatusesAsync()).Count == 0, "unreadable cached status row is skipped");
-        return assertions + await ProviderDiagnosticsTestsAsync(directory, now) + await HolidayStorageTests.RunAsync(tempDirectory);
+        return assertions + BackupWalTests(directory) + await ProviderDiagnosticsTestsAsync(directory, now) + await HolidayStorageTests.RunAsync(tempDirectory);
+    }
+
+    private static int BackupWalTests(string directory)
+    {
+        int assertions = 0;
+        void Check(bool condition, string description)
+        {
+            assertions++;
+            if (!condition) throw new InvalidOperationException("SQLite backup/WAL test failed: " + description);
+        }
+        string path = Path.Combine(directory, "backup-wal.db"), backupPath = Path.Combine(directory, "backup-copy.db");
+        using (var writer = new SqliteConnection(new SqliteConnectionStringBuilder { DataSource = path, Pooling = false }.ToString()))
+        {
+            writer.Open();
+            using var write = writer.CreateCommand();
+            write.CommandText = "PRAGMA journal_mode=WAL;";
+            Check((string?)write.ExecuteScalar() == "wal", "WAL mode enabled");
+            write.CommandText = "CREATE TABLE Synthetic(Value TEXT NOT NULL);";
+            write.ExecuteNonQuery();
+            using (var reader = new SqliteConnection(new SqliteConnectionStringBuilder { DataSource = path, Pooling = false }.ToString()))
+            {
+                reader.Open();
+                using var transaction = reader.BeginTransaction(deferred: true);
+                using var read = reader.CreateCommand();
+                read.Transaction = transaction;
+                read.CommandText = "SELECT COUNT(*) FROM Synthetic;";
+                Check((long)read.ExecuteScalar()! == 0, "reader snapshot established before commit");
+                write.CommandText = "INSERT INTO Synthetic VALUES('합성 백업 😃');";
+                write.ExecuteNonQuery();
+                Check(File.Exists(path + "-wal") && new FileInfo(path + "-wal").Length > 0 && File.Exists(path + "-shm"), "committed data has live WAL and SHM files");
+                Check((long)read.ExecuteScalar()! == 0, "writer does not invalidate the existing reader snapshot");
+                using var backup = new SqliteConnection(new SqliteConnectionStringBuilder { DataSource = backupPath, Pooling = false }.ToString());
+                backup.Open();
+                writer.BackupDatabase(backup);
+                using var copied = backup.CreateCommand();
+                copied.CommandText = "SELECT Value FROM Synthetic;";
+                Check((string?)copied.ExecuteScalar() == "합성 백업 😃", "online backup includes committed WAL data");
+                copied.CommandText = "PRAGMA integrity_check;";
+                Check((string?)copied.ExecuteScalar() == "ok", "backup database integrity");
+                transaction.Rollback();
+            }
+            write.CommandText = "PRAGMA wal_checkpoint(TRUNCATE);";
+            using var checkpoint = write.ExecuteReader();
+            Check(checkpoint.Read() && checkpoint.GetInt64(0) == 0 && checkpoint.GetInt64(1) == 0, "checkpoint succeeds and truncates WAL after the reader closes");
+        }
+        Check(!File.Exists(path + "-wal") && !File.Exists(path + "-shm"), "nonpooled connections leave no live sidecars after close");
+        Check(Scalar(path, "SELECT COUNT(*) FROM Synthetic;") == 1 && Scalar(backupPath, "SELECT COUNT(*) FROM Synthetic;") == 1, "source and backup reopen with the committed row");
+        return assertions;
     }
 
     private static async Task<int> ProviderDiagnosticsTestsAsync(string directory, DateTimeOffset now)

@@ -9,7 +9,7 @@
   </PropertyGroup>
   <Import Project="../Shared/SharedSources.props" />
   <ItemGroup>
-    <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.12" />
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.14" />
     <Compile Include="../*Tests.cs"
              Exclude="../AutoStartTests.cs;../TrayPresentationTests.cs;../AccountQuotaClientTests.cs"
              Link="Tests/%(Filename)%(Extension)" />

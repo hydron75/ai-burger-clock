@@ -22,7 +22,7 @@
     <FileVersion>2.9.0.0</FileVersion>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.12" />
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.14" />
     <!-- Each OS host compiles the same canonical logic. Do not include the Mac
          entry point or the portable test runner in the Windows executable. -->
     <Compile Remove="Mac/**/*.cs;Shared.Tests/**/*.cs;artifacts/**/*.cs" />
