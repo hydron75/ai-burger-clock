@@ -6,7 +6,7 @@
 
 1. Codex는 승인된 후보를 별도 `artifacts/<배포>/candidate/AI Burger Clock.exe`에 빌드·검사합니다. `build.ps1 -Publish`로 운영 dist를 바꾸는 대신 해당 배포의 후보 경로를 사용합니다. 빌드·self-test·smoke 통과 근거는 해당 버전 기록에 남깁니다.
 2. Codex가 [New-WindowsDeploymentReceipt.ps1](tools/New-WindowsDeploymentReceipt.ps1)로 영수증을 만듭니다. 후보의 FileVersion·ProductVersion·소스 커밋·SHA-256·크기를 파일에서 읽고, 이전 배포의 `candidate.json` 또는 이 계약의 영수증에서 이전 EXE 신원을 가져옵니다. 생성기는 운영 dist·DB·레지스트리를 읽거나 앱을 실행하지 않습니다. 이전 기록을 잃었으면 임의 추정하지 않고 준비를 중단합니다.
-3. 사용자는 운영 앱을 트레이 → 종료로 정상 종료합니다. Codex가 제공한 **명령 한 줄**을 Codex 밖 64비트 PowerShell 7에서 실행합니다. 후보 경로·버전·해시를 직접 입력하지 않습니다. 관리자 권한은 필요 없습니다.
+3. 사용자는 운영 앱을 트레이 → 종료로 정상 종료합니다. Codex가 제공한 **명령 한 줄**을 Codex 밖 비패키지 64비트 MSI PowerShell 7에서 실행합니다. 후보 경로·버전·해시를 직접 입력하지 않습니다. 관리자 권한은 필요 없습니다.
 
 준비 시 Codex가 사용하는 합성 예시:
 
@@ -17,8 +17,10 @@ pwsh -NoLogo -NoProfile -File ./tools/New-WindowsDeploymentReceipt.ps1 -Candidat
 사용자에게 제공할 외부 명령의 합성 예시:
 
 ```powershell
-pwsh -NoLogo -NoProfile -File 'C:/Example/AiBurgerClock/deploy-windows.ps1' -ReceiptPath 'C:/Example/AiBurgerClock/artifacts/release-next/deployment-receipt.json'
+& 'C:\Program Files\PowerShell\7\pwsh.exe' -NoLogo -NoProfile -File 'C:/Example/AiBurgerClock/deploy-windows.ps1' -ReceiptPath 'C:/Example/AiBurgerClock/artifacts/release-next/deployment-receipt.json'
 ```
+
+**PowerShell 실행 경로(2026-11-09):** 사용자 PC에는 `C:\Program Files\PowerShell\7\pwsh.exe`의 MSI PowerShell 7.6.9가 설치·확인돼 있다. 배포 명령은 이 전체 경로를 사용하며 추가 설치를 안내하지 않는다. Microsoft Store/MSIX 판은 `PackagedProcessRefused`로 거부한다. `pwsh`라는 이름만 쓰면 PATH에 따라 Store 판을 고를 수 있으므로 사용자에게는 항상 전체 경로를 제공한다. Store 판은 그대로 둔다. 이 문서 갱신은 검사 동작이나 스크립트 코드를 바꾸지 않는다.
 
 이 명령을 **Codex가 실행하지 않습니다**. 운영 앱 실행은 새 조회·캐시 쓰기·설정에 따른 실제 알림·사이트 전송을 일으킬 수 있습니다. 등록·실제 해제·시험 알림 명령은 포함하지 않습니다. 알림 등록이 없거나 다른 경로를 가리키면 자동으로 고치지 않고 실패합니다.
 
