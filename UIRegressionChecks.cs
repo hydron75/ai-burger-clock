@@ -30,7 +30,7 @@ internal static class UIRegressionChecks
         foreach (var provider in Enum.GetValues<ProviderKind>())
         {
             var panel = panels[(int)provider];
-            foreach (var surface in new[] { (Control)panel }.Concat(panel.Controls.Cast<Control>().Where(control => control is not LinkLabel)))
+            foreach (var surface in new[] { (Control)panel }.Concat(panel.Controls.Cast<Control>()))
             {
                 int before = openedPages.Count;
                 mouseClick.Invoke(surface, [new MouseEventArgs(MouseButtons.Left, 1, 4, 4, 0)]);
@@ -42,18 +42,31 @@ internal static class UIRegressionChecks
                     "Right/middle click does not open browser; recording menu and hand cursor preserved");
             }
         }
-        var usageLink = panels[(int)ProviderKind.Xai].Controls.OfType<LinkLabel>().Single();
-        int beforeUsage = openedPages.Count;
-        typeof(LinkLabel).GetMethod("OnLinkClicked", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
-            .Invoke(usageLink, [new LinkLabelLinkClickedEventArgs(usageLink.Links[0])]);
-        Check(usageLink.Text == "사용량 보기" && openedPages.Count == beforeUsage + 1 && openedPages[^1] == ProviderStatusPages.XaiUsage,
-            "xAI usage link opens only the fixed official dashboard through the fake browser sink");
-        Check(panels.Where((_, index) => index != (int)ProviderKind.Xai).All(panel => !panel.Controls.OfType<LinkLabel>().Any()),
-            "usage dashboard link is present only on the xAI status card");
+        Check(panels.All(panel => !panel.Controls.OfType<LinkLabel>().Any()),
+            "All four status cards contain no usage/dashboard links");
+        var labelBounds = panels[0].Controls.OfType<Label>().Select(label => label.Bounds).ToArray();
+        Check(panels.All(panel => panel.Size == panels[0].Size && panel.Left == panels[0].Left &&
+                panel.Controls.OfType<Label>().Select(label => label.Bounds).SequenceEqual(labelBounds)) &&
+            panels.Zip(panels.Skip(1)).All(pair => pair.Second.Top - pair.First.Bottom == panels[1].Top - panels[0].Bottom),
+            "xAI card height, width, text bounds and spacing match the other three cards");
+        if (reportDirectory is not null)
+        {
+            var window = context.StatusWindow;
+            var clientOrigin = window.PointToScreen(Point.Empty);
+            File.WriteAllText(Path.Combine(reportDirectory, "status-card-layout.json"), System.Text.Json.JsonSerializer.Serialize(new
+            {
+                Dpi = window.DeviceDpi, FrameX = clientOrigin.X - window.Left, FrameY = clientOrigin.Y - window.Top,
+                Cards = panels.Select((panel, index) => new
+                {
+                    Provider = ((ProviderKind)index).ToString(), panel.Left, panel.Top, panel.Width, panel.Height,
+                    Labels = panel.Controls.OfType<Label>().Select(label => new { label.Left, label.Top, label.Width, label.Height })
+                })
+            }));
+        }
         var footer = context.StatusWindow.Controls.OfType<Button>().Single(button => button.Text == "Refresh");
         Check(panels.Length == 4 && panels.All(panel => panel.Bottom <= footer.Top) &&
             panels.SelectMany(panel => panel.Controls.Cast<Control>()).All(control => control.Right <= control.Parent!.ClientSize.Width),
-            "four status cards and the usage link do not overlap footer controls or overflow their boxes");
+            "four status cards do not overlap footer controls and their labels stay within their boxes");
         using (var small = new StatusWindow())
         {
             small.CreateControl();
@@ -75,8 +88,8 @@ internal static class UIRegressionChecks
             Check(scaled.Height <= 720 && scaled.AutoScrollMinSize.Height >= scaled.ClientSize.Height,
                 $"Scaled status content ({scale}x) remains reachable in a 720px working area");
             var card = scaled.Controls.OfType<Panel>().Where(panel => panel != scaled.QuotaView).Last();
-            Check(card.Controls.OfType<LinkLabel>().All(link => link.Right <= card.ClientSize.Width && link.Bottom <= card.ClientSize.Height),
-                $"Usage link stays inside its card at {scale}x synthetic scaling");
+            Check(card.Controls.OfType<Label>().All(label => label.Right <= card.ClientSize.Width && label.Bottom <= card.ClientSize.Height),
+                $"xAI labels stay inside their card at {scale}x synthetic scaling");
         }
         Check((await store.ReadUsageAsync(null)).Count == 0, "Opening official pages never creates usage records");
         await WaitUntilAsync(() => Task.FromResult(!monitor.IsRefreshing && monitor.NextRefreshUtc.HasValue));
