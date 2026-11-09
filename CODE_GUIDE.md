@@ -1,5 +1,7 @@
 # 소스코드, 쉬운 말로 읽기
 
+**Windows 2.9.1 후보 기준:** main `9c687a5`에 #128 xAI 사용량 링크 제거, #130 상태·한도 상세 틀/320 DIP 팝업과 긴 본문 스크롤 보정, #134 Microsoft.Data.Sqlite 10.0.14, #135 `ReceiptNotFound`, #136 Mac smoke 화면 선택이 병합됐습니다. 이번 PR은 Windows 버전 세 필드와 문서만 바꿉니다. 후보·검사·해시·사이트 선행 배포와 사용자 외부 명령은 [2.9.1 기록](MAINTENANCE_2_9_1.md)에 구분합니다. 공통/Windows C#·Mac·패키지·배포 스크립트는 다시 바꾸지 않습니다.
+
 **Windows 2.9.0 후보 기준:** #122/#123의 [xAI 주간 크레딧](GROK_QUOTAS.md)이 main `526e6c9`에 병합됐습니다. 공통 ACP·검증, 양쪽 화면·시간 비교/알림, wire v2와 진단 파일 분리를 포함합니다. 사이트는 v1/v2 동시 수신 버전을 먼저 배포했습니다. 이 PR은 Windows 버전 세 필드·문서만 바꾸며 후보 검사와 사용자 외부 배포는 [2.9.0 기록](MAINTENANCE_2_9_0.md)에 구분합니다. 패키지·공통/Windows C#·Mac 파일은 변경하지 않습니다.
 
 **Windows 2.8.9 기준·#118 병합 완료(2026-11-05 KST):** xAI 필수 카탈로그·Cursor RSS 대응·Bugbot 표기·Imagine 제외를 포함합니다. 사용자 외부 백업과 추가 승인 뒤 21:45 KST에 Codex가 EXE만 교체했고, 운영 등록 확인·실행은 사용자가 외부에서 수행했습니다. 트레이·상태 보기·한도 보기·xAI 카드 정상은 사용자 확인입니다. 공통 `.cs`·Mac·버전·운영 등록의 추가 변경은 없습니다. [검사·EXE 해시·백업·확인 주체·2.8.8 복원](MAINTENANCE_2_8_9.md).
@@ -364,7 +366,7 @@ Windows 내부 승인 형식은 알려진 경우만 해석합니다. 낯선 값�
 
 ## 11. 전체 소스 파일 지도
 
-이름을 눌러 소스를 열 수 있습니다. 역할을 알고 필요한 파일부터 읽으면 됩니다. 현재 표의 C#는 루트·Properties 126개(앱 기능 60 + 검사·진단 65 + 명찰 1), Mac 21개, 공통 검사 입구 1개로 총 148개이며 공통 제품 원본은 35개입니다.
+이름을 눌러 소스를 열 수 있습니다. 역할을 알고 필요한 파일부터 읽으면 됩니다. 2.9.1 후보의 현재 표는 루트·Properties C# 126개(앱 기능 60 + 검사·진단 65 + 명찰 1), Mac 23개, 공통 검사 입구 1개로 총 150개이며 공통 제품 원본은 35개입니다. #130의 Mac 상세 팝업 원본·검사 두 파일을 포함하며 이번 버전 PR이 C# 파일을 추가한 것은 아닙니다. 위 과거 파일 수 기록과 생성된 bin·obj·artifacts는 이 집계와 구분합니다.
 
 ### 실제 앱 기능: 60개
 
@@ -509,7 +511,7 @@ Windows 내부 승인 형식은 알려진 경우만 해석합니다. 낯선 값�
 
 [Properties/AssemblyInfo.cs](Properties/AssemblyInfo.cs)는 프로그램 식별 정보 일부를 담습니다. 버전은 여기 아닌 프로젝트 파일에서 관리하고, 나머지 정보는 SDK가 생성합니다.
 
-### Mac 호스트·검사: 21개 / 공통 검사 입구: 1개
+### Mac 호스트·검사: 23개 / 공통 검사 입구: 1개
 
 | 파일 | 맡은 일 |
 |---|---|
@@ -517,6 +519,8 @@ Windows 내부 승인 형식은 알려진 경우만 해석합니다. 낯선 값�
 | [Mac/MacApplication.cs](Mac/MacApplication.cs) | AppKit 메뉴바와 공통 조회·저장·알림·복귀·종료 연결 |
 | [Mac/MacStatusIcon.cs](Mac/MacStatusIcon.cs) | 20-point 상태색 원과 흰색 F/B의 1x·2x 이미지 생성. 같은 그리기 코드가 알림 그림에도 쓰임. native smoke에서 실제 색·투명도·글자 픽셀 확인 |
 | [Mac/MacStatusPanel.cs](Mac/MacStatusPanel.cs) | 공통 본문을 표시하는 AppKit 상태·한도 팝오버와 카드 기록 메뉴 |
+| [Mac/MacDetailTip.cs](Mac/MacDetailTip.cs) | 상태·한도 상세의 고정 폭 팝업, 화면 안 높이 제한·넘침 스크롤·공백 우선 줄바꿈 |
+| [Mac/MacDetailTipSmoke.cs](Mac/MacDetailTipSmoke.cs) | 네 Provider 상태·한도 상세 틀/폭과 긴 본문의 높이 제한·끝까지 스크롤 합성 검사 |
 | [Mac/MacControls.cs](Mac/MacControls.cs) | Mac 네이티브 컨트롤·글꼴·톤 색·카드 표현 도우미 |
 | [Mac/MacStatisticsWindow.cs](Mac/MacStatisticsWindow.cs) | 공통 계산 결과를 보여주는 Mac 통계 창 |
 | [Mac/MacServices.cs](Mac/MacServices.cs) | macOS 알림 권한·요청 전달과 로그인 항목 등록 |
@@ -532,7 +536,7 @@ Windows 내부 승인 형식은 알려진 경우만 해석합니다. 낯선 값�
 | [Mac/MacGeminiModelRowSmoke.cs](Mac/MacGeminiModelRowSmoke.cs) | Mac native smoke의 Gemini 모델 행·막대 수·팝오버/스크롤·행별 설명 시나리오 |
 | [Mac/MacQuotaRowSmoke.cs](Mac/MacQuotaRowSmoke.cs) | Mac native smoke의 한도 행 이름/값 분리(값 전체 폭 보존·이름 가운데 생략·한 번 읽기·팝오버 크기 유지) 시나리오 |
 | [Mac/MacQuotaRowImages.cs](Mac/MacQuotaRowImages.cs) | 환경 변수로 폴더를 줄 때만 합성 한도 행 PNG를 저장하는 Mac smoke 도우미 |
-| [Mac/MacScreenGuard.cs](Mac/MacScreenGuard.cs) | native smoke 전용 전체 화면 가드: 다른 앱이 디스플레이를 덮으면 창을 여는 검사를 건너뛰고 SKIP으로 표시(창 이름·크기만 읽음) |
+| [Mac/MacScreenGuard.cs](Mac/MacScreenGuard.cs) | native smoke 전용 화면 선택: 상태 항목의 화면을 우선하고 가려지면 여유 화면을 선택, 모두 가려지면 창 검사를 SKIP(창 이름·크기만 읽음) |
 | [Mac/MacPollingDiagnosticSmoke.cs](Mac/MacPollingDiagnosticSmoke.cs) | Mac Release의 예약 진단·256건 상한·리셋 흔들림/연속 이동 시나리오 |
 | [Shared.Tests/Program.cs](Shared.Tests/Program.cs) | OS UI 없이 SharedTestSuite.RunAllAsync를 한 번 실행하는 입구 |
 

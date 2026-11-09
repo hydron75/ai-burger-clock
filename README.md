@@ -1,4 +1,8 @@
-# AI Burger Clock 2.9.0
+# AI Burger Clock 2.9.1
+
+**Windows 2.9.1 후보 준비(2026-11-09 KST):** main `9c687a5`에 병합된 #128 xAI 사용량 링크 제거, #130 상태·한도 상세 틀/고정 폭과 긴 본문 스크롤 보정, #134 Microsoft.Data.Sqlite 10.0.14, #135 배포 receipt 누락의 `ReceiptNotFound`를 포함합니다. #136은 Mac smoke 화면 선택 보정이며 Windows 동작을 추가로 바꾸지 않습니다. 이번 PR은 Windows 버전 세 필드와 문서만 바꿉니다. 별도 단일 EXE 후보 build·self-test **각 293,036건**, 공통 **291,907건**, smoke **1,174 PASS**·종료 코드 0을 확인했습니다. 합성 PNG **60/60**·layout JSON **41/41**은 #130 최종과 같습니다. 기본 SQLitePCLRaw **2.1.13**·실제 SQLite 엔진 **3.53.3**입니다. [후보 신원·검사·receipt·외부 명령](MAINTENANCE_2_9_1.md).
+
+**2.9.1 배포 순서:** 버전 PR 병합 → 사용자의 ‘사이트 배포’ 지시 후 준비본 배포 → 사용자의 외부 앱 배포입니다. xAI 링크 제거·상태 상세 사이트 준비본은 최신 main C#과 **47/47 일치**, 합성 검사 **85/85**이며 아직 배포하지 않았습니다. 운영 dist·DB·알림 등록은 변경하지 않았고 smoke 후 기존 2.9.0 외부 재실행 완료는 사용자 확인입니다. 아래 2.9.0 이하의 당시 준비·검증 기록은 보존합니다.
 
 **Windows 2.9.0 후보 준비(2026-11-09 KST):** #122/#123의 Grok 주간 크레딧을 포함합니다. xAI 한도 한 행·headless ACP·예약 조회 10분 하한·기존 시간 비교/알림과 모바일 wire v2를 사용합니다. 사이트는 v1/v2 동시 수신 버전을 먼저 비공개 배포하고 기존 2.8.9의 자연 송신 저장을 확인했습니다. 이 버전 PR은 Windows 버전 세 필드와 문서만 변경합니다. Microsoft.Data.Sqlite는 10.0.12를 유지합니다. 후보는 별도 artifacts 경로에 만들며 운영 dist 교체·실행·등록은 하지 않습니다. 병합 뒤 사용자가 MSI PowerShell의 한 줄 명령으로 외부 백업·교체·검사·실행을 진행합니다. [후보 해시·검사·receipt·외부 명령](MAINTENANCE_2_9_0.md), [공통 조회 계약](GROK_QUOTAS.md).
 
@@ -357,6 +361,7 @@ Windows smoke와 수동 테스트 빌드는 PR별 산출물 폴더에서 직접 
 
 ## 더 자세히 보기
 
+- [2.9.1 후보·xAI 링크 제거·상세 통일·SQLite·receipt·사이트 배포 순서](MAINTENANCE_2_9_1.md)
 - [2.9.0 후보 준비·Grok 주간 크레딧·receipt·외부 배포](MAINTENANCE_2_9_0.md)
 - [MAINTENANCE_2_8_9.md](MAINTENANCE_2_8_9.md): 2.8.9 xAI 카탈로그 갱신 후보 검사·해시·사용자 외부 교체 절차.
 - [MAINTENANCE_2_8_8.md](MAINTENANCE_2_8_8.md): 2.8.8 Windows 모바일 사이트 한도 송신기, 검사·EXE 해시·외부 백업/실행·3단계 실제 연결 절차·2.8.7 EXE 복원 기록.
