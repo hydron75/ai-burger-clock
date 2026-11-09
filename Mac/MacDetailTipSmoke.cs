@@ -35,6 +35,15 @@ internal static class MacDetailTipSmoke
     internal static QuotaState[] Quotas(QuotaState codex, QuotaState claude, QuotaState gemini, QuotaState xai) =>
         [codex with { Error = "조회 실패 합성 예시 " + LongToken + new string('c', 200) }, claude, gemini, xai];
 
+    // A Gemini box with the most windows the parser accepts (64, synthetic model names) and an overlong error: a detail
+    // taller than any screen.
+    internal static QuotaState TallGemini(QuotaState gemini, DateTimeOffset now) => gemini with
+    {
+        Reading = new(QuotaProvider.Gemini, Enumerable.Range(0, 64)
+            .Select(i => new QuotaWindow($"synthetic-model-{i}", $"합성 모델 {i + 1}", (i * 7) % 100, now.AddHours(i + 1), 300)).ToList()),
+        Error = "조회 실패 합성 예시 " + LongToken + new string('d', 300)
+    };
+
     private static void CheckText(string owner, string text)
     {
         MacDetailTip.Metrics metrics = MacDetailTip.Measure(text);
@@ -93,9 +102,40 @@ internal static class MacDetailTipSmoke
             Check(widths.Distinct().Count() == 1 && widths[0] == MacDetailTip.Width, $"the shown tips have different widths: {string.Join(", ", widths)}.");
             shown = widths.Count;
         }
+
+        // A detail taller than the screen: capped to the usable height and scrollable, nothing lost.
+        QuotaState[] tallQuotas = [codex, claude, TallGemini(gemini, now), xai];
+        string tall = QuotaPanelModel.Sections(tallQuotas, now).First(section => section.Provider == QuotaProvider.Gemini).Detail;
+        CheckText("tall Gemini box", tall);
+        const double ProbeHeight = 600;
+        MacDetailTip.OverflowProbe probe = MacDetailTip.Probe(tall, ProbeHeight);
+        Check(probe.Natural > ProbeHeight && probe.Overflows && probe.FrameHeight == ProbeHeight,
+            $"tall detail ({probe.Natural}pt) was not capped to {ProbeHeight}pt (frame {probe.FrameHeight}pt, overflow {probe.Overflows}).");
+        Check(probe.TopOffset == 0 && Math.Abs(probe.EndOffset - probe.MaxOffset) < 0.5 && probe.EndOffset + probe.Viewport >= probe.Natural - 0.5,
+            $"tall detail: the end of the text is not reachable by scrolling (top {probe.TopOffset}, end {probe.EndOffset}, max {probe.MaxOffset}, viewport {probe.Viewport}, text {probe.Natural}).");
+        string fits = QuotaPanelModel.Sections(quotas, now).First(section => section.Provider == QuotaProvider.Claude).Detail;
+        Check(!MacDetailTip.Probe(fits, ProbeHeight).Overflows, "a detail that fits the screen must not scroll.");
+        string tallResult = $"tall Gemini detail (64 synthetic windows + long error, {probe.Natural:0}pt) capped at {ProbeHeight:0}pt and scrolls to its end; ";
+        if (panel.IsShown)
+        {
+            panel.Update(schedule, statuses, tallQuotas, false, now.AddMinutes(5), "");
+            CGRect? frame = panel.ShowDetailTip(null, QuotaProvider.Gemini);
+            Check(frame is { } f && MacDetailTip.IsShown, "tall detail: the tip did not appear.");
+            NSScreen screen = NSScreen.Screens.FirstOrDefault(item => item.Frame.IntersectsWith(frame!.Value)) ?? NSScreen.MainScreen!;
+            Check(screen.VisibleFrame.Contains(frame!.Value), $"tall detail: the tip {frame.Value} is not inside the screen {screen.VisibleFrame}.");
+            Check(frame.Value.Width == MacDetailTip.Width, $"tall detail: tip width {frame.Value.Width}pt, expected {MacDetailTip.Width}pt.");
+            Check(MacDetailTip.ShownScrolls && MacDetailTip.ShownScroll is { } scroll && scroll.Natural > scroll.Viewport,
+                "tall detail: the tip on screen does not scroll although the text is taller than it.");
+            double maxOffset = MacDetailTip.ShownScroll!.Value.Natural - MacDetailTip.ShownScroll!.Value.Viewport;
+            MacDetailTip.ScrollShownTo(maxOffset);
+            Check(Math.Abs(MacDetailTip.ShownScroll!.Value.Offset - maxOffset) < 0.5, "tall detail: the tip on screen did not scroll to its end.");
+            tallResult += $"on screen {frame.Value.Height:0}pt high in a {screen.VisibleFrame.Height:0}pt area, scrolled to {maxOffset:0}pt; ";
+            MacDetailTip.Hide();
+            Check(!MacDetailTip.IsShown, "tall detail: the tip stayed after Hide.");
+        }
         panel.Update(schedule, healthy, [codex, claude, gemini, xai], false, now.AddMinutes(5), "");
         panel.Verify(schedule, healthy, [codex, claude, gemini, xai]);
-        return $"detail tip ({status} status cards + {quota} quota boxes at {MacDetailTip.Width}pt fixed width, tallest {longest}pt; long URL, " +
+        return tallResult + $"detail tip ({status} status cards + {quota} quota boxes at {MacDetailTip.Width}pt fixed width, tallest {longest}pt; long URL, " +
                $"Korean words and emoji wrap without cutting off; " +
                (shown > 0 ? $"{shown} tips shown on screen at one width and removed again)" : "popover not shown: on-screen tips not checked)");
     }

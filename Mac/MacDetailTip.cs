@@ -10,7 +10,9 @@ namespace AiBurgerClock;
 // are broken here, the way the Windows detail popup does it: at spaces only, so a Korean word or a path such as
 // 'Apps/연결' moves to the next line whole (text layout alone also breaks at '·' and '/'); only a word longer than the
 // line, such as a URL, breaks inside itself, on text-element boundaries, so nothing is cut off and no emoji or combining
-// mark is torn apart. Other tooltips (buttons, schedule, options) stay system tooltips.
+// mark is torn apart. A detail taller than the screen's usable height (many Gemini windows, long errors) is capped to that
+// height and scrolls inside the tip, like the Windows popup: only then does the tip take mouse input (wheel, scroller) and stay
+// while the cursor is on it. Other tooltips (buttons, schedule, options) stay system tooltips.
 internal static class MacDetailTip
 {
     internal const double Width = 320;
@@ -134,17 +136,83 @@ internal static class MacDetailTip
         return null;
     }
 
-    // The tip as it is drawn: panel colors, a thin outline, the text laid out above.
+    // The text of a tip taller than the screen, drawn inside the scroll view of its TipView.
+    private sealed class TextBody : NSView
+    {
+        private readonly TextLayout layout;
+        internal TextBody(TextLayout layout, CGRect frame) : base(frame) => this.layout = layout;
+        public override bool IsFlipped => true;
+        public override void DrawRect(CGRect dirtyRect) =>
+            layout.Manager.DrawGlyphs(layout.Manager.GetGlyphRange(layout.Container), new CGPoint(Padding - ScrollInset, Padding));
+    }
+
+    private const double ScrollInset = 1;
+
+    // The tip as it is drawn: panel colors, a thin outline, the text laid out above. When the text is taller than
+    // maxHeight the view is maxHeight high and the text sits in a scroll view (overlay scroller: the text keeps its width).
     private sealed class TipView : NSView
     {
         private readonly TextLayout layout;
-        internal TipView(string text)
+        private readonly NSScrollView? scroll;
+        private NSTrackingArea? tracking;
+
+        internal TipView(string text, double maxHeight = double.MaxValue)
         {
             layout = new TextLayout(text);
-            Frame = new CGRect(CGPoint.Empty, layout.Measure().Size);
+            CGSize natural = layout.Measure().Size;
+            NaturalHeight = (double)natural.Height;
+            if (NaturalHeight <= maxHeight)
+            {
+                Frame = new CGRect(CGPoint.Empty, natural);
+                return;
+            }
+            Frame = new CGRect(0, 0, Width, Math.Max(1, maxHeight));
+            scroll = new NSScrollView(new CGRect(ScrollInset, ScrollInset, Width - 2 * ScrollInset, Math.Max(1, maxHeight - 2 * ScrollInset)))
+            {
+                HasVerticalScroller = true,
+                HasHorizontalScroller = false,
+                AutohidesScrollers = false,
+                ScrollerStyle = NSScrollerStyle.Overlay,
+                DrawsBackground = false,
+                BorderType = NSBorderType.NoBorder,
+                VerticalScrollElasticity = NSScrollElasticity.None,
+                DocumentView = new TextBody(layout, new CGRect(0, 0, Width - 2 * ScrollInset, NaturalHeight))
+            };
+            AddSubview(scroll);
         }
 
+        // The height the whole text needs (the view is shorter when it scrolls).
+        internal double NaturalHeight { get; }
+        internal bool Overflows => scroll is not null;
+        internal double ViewportHeight => scroll is null ? NaturalHeight : (double)scroll.ContentView.Bounds.Height;
+        internal double ScrollOffset => scroll is null ? 0 : (double)scroll.ContentView.Bounds.Y;
+        internal double MaxScrollOffset => Math.Max(0, NaturalHeight - ViewportHeight);
+
+        // Scroll the text to a vertical offset (clamped); what the wheel or the scroller does.
+        internal void ScrollTo(double offset)
+        {
+            if (scroll is null) return;
+            scroll.LayoutSubtreeIfNeeded();
+            scroll.ContentView.ScrollToPoint(new CGPoint(0, Math.Clamp(offset, 0, MaxScrollOffset)));
+            scroll.ReflectScrolledClipView(scroll.ContentView);
+        }
+
+        internal void FlashScrollers() => scroll?.FlashScrollers();
+
         public override bool IsFlipped => true;
+
+        public override void UpdateTrackingAreas()
+        {
+            base.UpdateTrackingAreas();
+            if (tracking is not null) { RemoveTrackingArea(tracking); tracking = null; }
+            if (scroll is null) return;
+            tracking = new NSTrackingArea(Bounds, NSTrackingAreaOptions.MouseEnteredAndExited | NSTrackingAreaOptions.ActiveAlways |
+                NSTrackingAreaOptions.InVisibleRect, this, null);
+            AddTrackingArea(tracking);
+        }
+
+        public override void MouseEntered(NSEvent theEvent) => CursorOnTip();
+        public override void MouseExited(NSEvent theEvent) => CursorLeftTip();
 
         public override void DrawRect(CGRect dirtyRect)
         {
@@ -154,8 +222,20 @@ internal static class MacDetailTip
             NSColor.Separator.SetStroke();
             path.LineWidth = 1;
             path.Stroke();
-            layout.Manager.DrawGlyphs(layout.Manager.GetGlyphRange(layout.Container), new CGPoint(Padding, Padding));
+            if (scroll is null) layout.Manager.DrawGlyphs(layout.Manager.GetGlyphRange(layout.Container), new CGPoint(Padding, Padding));
         }
+    }
+
+    // Smoke: lay a text out for a screen that allows maxHeight, scroll it to its end and back, and say what happened.
+    internal readonly record struct OverflowProbe(double Natural, double FrameHeight, bool Overflows, double MaxOffset, double TopOffset, double EndOffset, double Viewport);
+
+    internal static OverflowProbe Probe(string text, double maxHeight)
+    {
+        var view = new TipView(text, maxHeight);
+        view.ScrollTo(0);
+        double top = view.ScrollOffset;
+        view.ScrollTo(double.MaxValue);
+        return new(view.NaturalHeight, (double)view.Frame.Height, view.Overflows, view.MaxScrollOffset, top, view.ScrollOffset, view.ViewportHeight);
     }
 
     // Smoke / review pictures: the tip drawn off screen under an explicit appearance.
@@ -180,7 +260,8 @@ internal static class MacDetailTip
             IsOpaque = false;
             BackgroundColor = NSColor.Clear;
             HasShadow = true;
-            IgnoresMouseEvents = true;
+            // Like a native tooltip, a tip that fits does not take the mouse from the card below it; only a scrolling one does.
+            IgnoresMouseEvents = !view.Overflows;
             HidesOnDeactivate = false;
             ReleaseWhenClosed(false);
             ContentView = view;
@@ -188,22 +269,36 @@ internal static class MacDetailTip
 
         public override bool CanBecomeKeyWindow => false;
         public override bool CanBecomeMainWindow => false;
+        internal bool Scrolls => !IgnoresMouseEvents;
     }
 
     private static NSView? owner;
     private static Func<string>? ownerText;
     private static NSTimer? timer;
+    private static NSTimer? leaveTimer;
     private static TipPanel? panel;
+    private static TipView? tipView;
     private static NSObject? eventMonitor;
     private static NSWindow? parent;
     private static string shownText = "";
 
     internal static bool IsShown => panel is { IsVisible: true };
     internal static CGRect? ShownFrame => panel is { IsVisible: true } ? panel.Frame : null;
+    internal static bool ShownScrolls => panel is { IsVisible: true, Scrolls: true };
+    internal static (double Natural, double Viewport, double Offset)? ShownScroll =>
+        tipView is { Overflows: true } && panel is { IsVisible: true } ? (tipView.NaturalHeight, tipView.ViewportHeight, tipView.ScrollOffset) : null;
+    internal static void ScrollShownTo(double offset) => tipView?.ScrollTo(offset);
 
     // The cursor entered the view: show the tip once it has rested there.
     internal static void Arm(NSView view, Func<string> text)
     {
+        // Back on the card of a scrolling tip that is still up (the cursor went to the tip and returned): keep it.
+        if (panel is { IsVisible: true, Scrolls: true } && ReferenceEquals(owner, view))
+        {
+            leaveTimer?.Invalidate();
+            leaveTimer = null;
+            return;
+        }
         Hide();
         owner = view;
         ownerText = text;
@@ -212,7 +307,34 @@ internal static class MacDetailTip
 
     internal static void Cancel(NSView view)
     {
-        if (ReferenceEquals(owner, view)) Hide();
+        if (!ReferenceEquals(owner, view)) return;
+        if (panel is { IsVisible: true, Scrolls: true }) CursorLeftTip(); // the cursor may be on its way to the tip
+        else Hide();
+    }
+
+    private static void CursorOnTip()
+    {
+        leaveTimer?.Invalidate();
+        leaveTimer = null;
+    }
+
+    // The cursor left the card or the scrolling tip: after a short rest, remove the tip unless it is on the tip or the card.
+    private static void CursorLeftTip()
+    {
+        leaveTimer?.Invalidate();
+        leaveTimer = NSTimer.CreateScheduledTimer(ShowDelay, false, _ =>
+        {
+            leaveTimer = null;
+            if (panel is null) return;
+            CGPoint cursor = NSEvent.CurrentMouseLocation;
+            if (panel.Frame.Contains(cursor)) return;
+            if (owner?.Window is { } window)
+            {
+                CGPoint inView = owner.ConvertPointFromView(window.ConvertPointFromScreen(cursor), null);
+                if (owner.Bounds.Contains(inView)) return;
+            }
+            Hide();
+        });
     }
 
     // The shared text of the hovered view changed while its tip is up: redraw it with the new text.
@@ -229,14 +351,16 @@ internal static class MacDetailTip
         timer?.Invalidate();
         timer = null;
         if (panel is not null) Remove();
-        var content = new TipView(text);
+        NSScreen? screen = NSScreen.Screens.FirstOrDefault(item => item.Frame.Contains(cursor)) ?? window.Screen ?? NSScreen.MainScreen;
+        CGRect area = screen?.VisibleFrame ?? new CGRect(0, 0, 1280, 800);
+        // Taller than the usable height: capped to it, the rest is reached by scrolling inside the tip.
+        var content = new TipView(text, (double)area.Height - 2 * ScreenMargin);
+        tipView = content;
         panel = new TipPanel(content);
         shownText = text;
         owner = view;
         parent = window;
 
-        NSScreen? screen = NSScreen.Screens.FirstOrDefault(item => item.Frame.Contains(cursor)) ?? window.Screen ?? NSScreen.MainScreen;
-        CGRect area = screen?.VisibleFrame ?? new CGRect(0, 0, 1280, 800);
         CGSize size = content.Frame.Size;
         double x = Math.Min((double)cursor.X + 12, (double)area.Right - size.Width - ScreenMargin);
         x = Math.Max(x, (double)area.Left + ScreenMargin);
@@ -252,11 +376,18 @@ internal static class MacDetailTip
         panel.Level = (NSWindowLevel)((long)window.Level + 1);
         window.AddChildWindow(panel, NSWindowOrderingMode.Above);
         panel.OrderFront(null);
+        if (content.Overflows) content.FlashScrollers();
 
-        // Any click, key or scroll, or the window losing key, or the lifetime ending, takes the tip away.
+        // Any click, key or scroll, or the window losing key, or the lifetime ending, takes the tip away; a scrolling tip
+        // keeps its own wheel and scroller clicks.
         eventMonitor ??= NSEvent.AddLocalMonitorForEventsMatchingMask(
             NSEventMask.LeftMouseDown | NSEventMask.RightMouseDown | NSEventMask.OtherMouseDown | NSEventMask.KeyDown | NSEventMask.ScrollWheel,
-            e => { Hide(); return e; });
+            e =>
+            {
+                if (e.Type != NSEventType.KeyDown && panel is { Scrolls: true } && ReferenceEquals(e.Window, panel)) return e;
+                Hide();
+                return e;
+            });
         timer = NSTimer.CreateScheduledTimer(Lifetime, false, _ => Hide());
     }
 
@@ -267,6 +398,7 @@ internal static class MacDetailTip
         panel.OrderOut(null);
         panel.Close();
         panel = null;
+        tipView = null;
         parent = null;
     }
 
@@ -274,6 +406,8 @@ internal static class MacDetailTip
     {
         timer?.Invalidate();
         timer = null;
+        leaveTimer?.Invalidate();
+        leaveTimer = null;
         Remove();
         if (eventMonitor is not null) { NSEvent.RemoveMonitor(eventMonitor); eventMonitor = null; }
         owner = null;
