@@ -24,6 +24,7 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
     // Quota recovery notification (#59 shared engine); created with the panel, see DidFinishLaunching.
     private MacQuotaNotifications? quotaNotifications;
     private NSStatusItem? statusItem;
+    private NSScreen? smokeScreen; // smoke only: the display its window checks use (MacScreenGuard.Choose)
     private NSImage? statusImage;
     // The TrayAppearance of the latest tick: schedule/service notifications are drawn from it, and the menu-bar
     // icon is drawn from the same value, so the banner picture and the menu bar cannot disagree.
@@ -287,6 +288,8 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
     {
         if (stopping) return;
         statisticsWindow ??= new(store, smoke);
+        // Smoke: on the display the run chose (the system would center it on its own idea of the main display).
+        if (smoke && smokeScreen is not null) statisticsWindow.PlaceOn(smokeScreen);
         statisticsWindow.Show();
     }
 
@@ -648,15 +651,22 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
                 contextMenu.Items[^1].KeyEquivalent != "q")
                 throw new InvalidOperationException("Right-click menu must be Refresh / 한도 회복 알림 / 한도 조기 초기화 알림 / 로그인 항목 설정 열기… / 종료 ⌘Q.");
 
-            // Checks that open windows are skipped (and counted) while another app is full screen on a display:
-            // opening them shows the menu bar over that app (MacScreenGuard, MACOS_PORT 39).
-            MacScreenGuard.Covering? covering = MacScreenGuard.Find();
+            // Checks that open windows are skipped (and counted) only while another app is full screen on the display
+            // they would open on: that shows the menu bar over that app (MacScreenGuard, MACOS_PORT 39). Another
+            // display's full-screen app is left alone: the popover opens under the status item, the statistics window
+            // is placed on the same display.
+            MacScreenGuard.Choice screenChoice = MacScreenGuard.Choose(statusItem?.Button?.Window?.Screen);
+            MacScreenGuard.Covering? covering = screenChoice.Skipped;
+            smokeScreen = screenChoice.Screen;
+            Console.WriteLine("SCREEN: " + screenChoice.Description);
             var skippedScreenChecks = new List<string>();
             string activationResult;
             if (covering is null)
             {
                 ShowPanel();
                 if (!panel.IsShown) throw new InvalidOperationException("Status popover did not open.");
+                if (smokeScreen is not null && panel.Window?.Screen?.Frame.Equals(smokeScreen.Frame) != true)
+                    throw new InvalidOperationException("The popover did not open on the chosen display: " + screenChoice.Description);
                 // A smoke run never activates the app or takes key focus, so activation and key state are not
                 // exercised here; the user check on a real status-item click covers them.
                 if (panel.Window?.CanBecomeKeyWindow != true)
@@ -988,8 +998,8 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
             }
             else skippedScreenChecks.AddRange(["statistics window is visible", "statistics window closes", "statistics window reopens"]);
             if (covering is not null)
-                Console.WriteLine($"SKIP: {skippedScreenChecks.Count} screen checks not run because a window of {covering.Value.Owner} covers display {covering.Value.ScreenNumber} " +
-                    $"(opening ours would show the menu bar over it): {string.Join("; ", skippedScreenChecks)}. Run again with no full-screen app to check them.");
+                Console.WriteLine($"SKIP: {skippedScreenChecks.Count} screen checks not run because a window of {covering.Value.Owner} covers display {covering.Value.ScreenNumber}, " +
+                    $"the display of the status item where ours would open (it would show the menu bar over it): {string.Join("; ", skippedScreenChecks)}. Run again with no full-screen app to check them.");
             string verdict = skippedScreenChecks.Count == 0 ? "PASS" : $"PASS with {skippedScreenChecks.Count} screen checks SKIPPED (not verified)";
             Console.WriteLine($"{verdict}: bundle version, menu-tracking countdown timer, 20pt menu icon white/dark disc + color glyph light/dark 1x-2x pixels (glyph contrast min {iconContrast:0.0}:1), left/right/control-click routing, right-click menu, popover open/close/reopen, shared panel text/record menu/quota lines, {activationResult}, tone contrast >= 4.5:1 light+dark (min {weakest:0.0}:1), card text x = quota box text x ({layout.BoxTextX:0}pt; titles {layout.TitleX:0}pt), whole-card click/quota boxes read-only, shared quota title, usage bars (0% empty/100% full, provider colors >= 3:1 light+dark min {barWeakest:0.0}:1, muted when previous/elapsed, none without a value), time layer (tint-track/tint-used >= 1.5:1 min {tintWeakest:0.0}:1, marker >= 3:1 min {markerWeakest:0.0}:1 light+dark, dark tint-used >= 2.0:1 min {darkSeparationWeakest:0.0}:1, marker position/end points, hidden states, spoken row = shared reading text once), one shared Provider detail per quota box, four provider cards incl. xAI (same heading width, card size and spacing: {cardGeometry}; whole-card click only, detail without the usage link), four quota boxes incl. Gemini and xAI weekly credits, popover {layout.Size.Width:0}x{layout.Size.Height:0}pt (this screen usable {layout.UsableHeight:0}pt; 1280x800 {standard.Height:0}pt not cut off, quota area {standardQuota:0}pt scrolling, every control reachable; 1024x640 {small.Height:0}pt not cut off, quota area {smallQuota:0}pt, whole panel {smallScroll.Document:0}pt scrolling, every control reachable), 1,000-char note limit, temporary SQLite, four events/notes via shared factory, {displayResult}, {permissionResult}, {layoutKeyResult}, {notificationImageResult}, {recoveryResult}, {earlyResetResult}, {earlyResetControllerResult}, {decisionLogResult}, {lateCallbackResult}, {earlyResetUiResult}, {geminiModelResult}, {xaiQuotaResult}, {detailTipResult}, {quotaRowResult}, {diagnosticResult}, statistics (shared text, explanation fits, Mac empty-state hint), injected quota countdown; no account/network/settings changes.");
             ExitCode = 0;
