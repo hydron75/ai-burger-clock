@@ -102,6 +102,7 @@ function Assert-WDExe([string]$Path, $Identity) {
 function Read-WDReceipt([string]$Repository, [string]$Path) {
     $repo = Get-WDFullPath $Repository
     $receiptPath = Assert-WDChildPath $Path (Join-Path $repo 'artifacts')
+    if (-not (Test-Path -LiteralPath $receiptPath)) { Stop-WD 'ReceiptNotFound' }
     if ((Get-Item -LiteralPath $receiptPath).Length -gt 16KB) { Stop-WD 'ReceiptTooLarge' }
     $receipt = [IO.File]::ReadAllText((Get-WDActualPath $receiptPath)) | ConvertFrom-Json
     if ($receipt.Schema -ne 'aiburgerclock.windows-deployment' -or $receipt.SchemaVersion -ne 1 -or
