@@ -343,7 +343,7 @@ Visual Studio Community 2026의 .NET 데스크톱 개발 워크로드 또는 .NE
 
 - 일반 빌드: `bin\Release\net10.0-windows10.0.19041.0\win-x64` — 폴더 전체가 필요합니다. #86 이전 2.8.1 소스 빌드는 `net10.0-windows` 폴더입니다.
 - 배포본: `dist\win-x64\AI Burger Clock.exe` — .NET 런타임은 별도로 필요합니다.
-- 직접 추가한 패키지는 `Microsoft.Data.Sqlite 10.0.12` 하나입니다. 함께 필요한 SQLite 부품은 패키지 관리자가 가져옵니다.
+- 직접 추가한 패키지는 `Microsoft.Data.Sqlite 10.0.14` 하나입니다. SQLitePCLRaw는 직접 지정하지 않고 기본 전이 의존성 2.1.13을 사용합니다. [갱신 범위·DB/단일 EXE 검사](SQLITE_PACKAGE_UPDATE.md).
 - 경고도 빌드 실패로 취급하고, 검사 프로그램이 실제로 끝난 결과까지 확인합니다.
 - `-Publish`는 고유한 임시 폴더에서 단일 EXE를 만든 뒤 그 EXE의 자체 검사를 통과해야 `dist`에 반영합니다. publish·검사 실패 때는 기존 EXE를 유지하고, 교체 실패 뒤 복원까지 실패하면 복구용 이전 EXE의 보관 경로를 오류에 표시합니다. 이 절차는 별도의 사용자 DB/배포 백업을 대신하지 않습니다.
 
