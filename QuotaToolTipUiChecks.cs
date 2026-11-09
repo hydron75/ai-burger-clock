@@ -58,6 +58,7 @@ internal static class QuotaToolTipUiChecks
         await CheckProviderAsync(view, QuotaProvider.Codex, "quota-tooltip-chatgpt.png", reportDirectory, check);
         await CheckProviderAsync(view, QuotaProvider.Claude, "quota-tooltip-claude.png", reportDirectory, check);
         await CheckOverflowAsync(view, reportDirectory, check);
+        await CheckNativeOverflowAsync(view.FindForm()!, reportDirectory, check);
         await CheckDismissalAsync(view.FindForm()!, check);
     }
 
@@ -161,6 +162,53 @@ internal static class QuotaToolTipUiChecks
             await Task.Yield();
         }
         finally { view.HideDetail(); }
+    }
+
+    private static async Task CheckNativeOverflowAsync(Form owner, string? reportDirectory, Action<bool, string> check)
+    {
+        Point pointer = Point.Empty;
+        using var host = new DetailTestHost { Bounds = owner.Bounds, ShowInTaskbar = false };
+        using var view = new AccountQuotaView(() => pointer) { Dock = DockStyle.Fill };
+        host.Controls.Add(view);
+        var now = new DateTimeOffset(2032, 3, 4, 0, 0, 0, TimeSpan.Zero);
+        var windows = Enumerable.Range(1, 64).Select(i => new QuotaWindow("synthetic-gemini-" + i,
+            "합성 Gemini 모델 " + i, 25, now.AddDays(3.5), 10080)).ToArray();
+        var state = new QuotaState(QuotaProvider.Gemini, new(QuotaProvider.Gemini, windows),
+            CheckedAtUtc: now, LastSuccessfulCheckUtc: now, NextCheckUtc: now.AddHours(1), IsPrevious: true,
+            Error: string.Concat(Enumerable.Repeat("합성 조회 오류의 긴 설명입니다. 실제 계정 정보가 아닙니다. ", 40)));
+        bool wasVisible = owner.Visible;
+        host.Show(owner);
+        try
+        {
+            view.UpdateQuotas([state], now);
+            var gemini = view.Controls.OfType<Panel>().Single(panel => panel.Name == "GeminiQuotaBox");
+            pointer = gemini.PointToScreen(new Point(4, 4));
+            view.ShowDetail(QuotaProvider.Gemini, pointer);
+            pointer = view.Details.Bounds.Location + new Size(12, 12);
+            view.CheckDetailPointer(pointer);
+            await StatusToolTipUiChecks.CheckNativeWheelAsync(view.Details, host, pointer, "quota/Gemini-64-long-error", check);
+            if (reportDirectory is not null)
+            {
+                using var bitmap = new Bitmap(view.Details.Width, view.Details.Height);
+                view.Details.DrawToBitmap(bitmap, new Rectangle(Point.Empty, bitmap.Size));
+                bitmap.Save(Path.Combine(reportDirectory, "quota-tooltip-native-wheel-bottom.png"), ImageFormat.Png);
+            }
+            view.HideDetail();
+            var normal = QuotaPresentationTests.DetailFixtures(now).Where(f => f.Scenario == "normal" &&
+                f.State.Provider is QuotaProvider.Codex or QuotaProvider.Gemini).Select(f => f.State).ToArray();
+            view.UpdateQuotas(normal, now);
+            var codex = view.Controls.OfType<Panel>().Single(panel => panel.Name == "CodexQuotaBox");
+            gemini = view.Controls.OfType<Panel>().Single(panel => panel.Name == "GeminiQuotaBox");
+            Control below = gemini;
+            view.ScrollControlIntoView(gemini);
+            pointer = codex.PointToScreen(new Point(4, 4));
+            view.ShowDetail(QuotaProvider.Codex, pointer);
+            pointer = below.PointToScreen(new Point(4, 4));
+            view.Details.Location = pointer;
+            await StatusToolTipUiChecks.CheckNativePassThroughAsync(view.Details, below,
+                () => view.Details.Visible && view.Details.DetailText == view.DetailFor(below), "quota", check);
+        }
+        finally { view.HideDetail(); host.Hide(); if (wasVisible) owner.Show(); }
     }
 
     private static async Task CheckProviderAsync(AccountQuotaView view, QuotaProvider provider, string file,

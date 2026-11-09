@@ -1,6 +1,7 @@
 using System.Drawing.Imaging;
 using System.Globalization;
 using System.Reflection;
+using System.Runtime.InteropServices;
 
 namespace AiBurgerClock;
 
@@ -106,13 +107,18 @@ internal static class StatusToolTipUiChecks
             var target = panels[0];
             host.ScrollControlIntoView(target);
             pointer = target.PointToScreen(new Point(4, 4));
-            string longText = string.Join('\n', Enumerable.Repeat(StatusPanelModel.Card(states[0], AgentState.FullThrottle).Detail, 10));
+            string longText = StatusPanelModel.Card(states[0] with
+            {
+                Reason = string.Concat(Enumerable.Repeat("합성 상태 조회 오류의 긴 설명입니다. ", 80)),
+                AssessmentIssue = "합성 범위 확인 오류",
+                UncertainIncidentId = string.Join(", ", Enumerable.Range(1, 64).Select(i => "synthetic-uncertain-" + i))
+            }, AgentState.FullThrottle).Detail;
             controller.Update(ProviderKind.OpenAI, longText);
             controller.Show(ProviderKind.OpenAI, pointer);
             check(controller.Popup.VerticalScroll.Visible && host.Visible, "Long status detail scrolls without hiding its owner");
             pointer = controller.Popup.Bounds.Location + new Size(12, 12);
             controller.CheckPointer(pointer);
-            controller.Popup.AutoScrollPosition = new Point(0, controller.Popup.ContentSize.Height);
+            await CheckNativeWheelAsync(controller.Popup, host, pointer, "status", check);
             check(controller.Popup.Visible && controller.Popup.AutoScrollPosition.Y < 0 &&
                 controller.Popup.AccessibleDescription == longText, "Status detail reaches its last lines and retains complete accessible text");
             if (directory is not null)
@@ -150,6 +156,25 @@ internal static class StatusToolTipUiChecks
             var altEscape = Message.Create(host.Handle, 0x0104, new IntPtr((int)Keys.Escape), IntPtr.Zero);
             check(!((IMessageFilter)controller).PreFilterMessage(ref altEscape) && controller.Popup.Visible,
                 "Alt+Escape remains an operating-system shortcut, not a popup-close command");
+            states = fixtures.Where(f => f.Scenario == "normal").Select(f => f.State).ToArray();
+            controller.Hide();
+            host.UpdateProviders(states, AgentSchedule.GetSnapshot(now), false, now.AddMinutes(5));
+            Control below = panels[1];
+            host.ScrollControlIntoView(panels[1]);
+            pointer = target.PointToScreen(new Point(4, 4));
+            controller.Show(ProviderKind.OpenAI, pointer);
+            pointer = below.PointToScreen(new Point(4, 4));
+            controller.Popup.Location = pointer; // Force overlap to test transparent hit-testing over another card.
+            int openedBefore = opened.Count;
+            await CheckNativePassThroughAsync(controller.Popup, below,
+                () => controller.Popup.Visible && controller.Popup.DetailText == StatusPanelModel.Card(states[1], AgentState.FullThrottle).Detail,
+                "status", check);
+            check(opened.Count == openedBefore + 1 && opened[^1] == ProviderKind.Claude,
+                "Native click below a non-scrollable status popup reaches the original Claude page route once");
+            pointer = new Point(host.Left - 100, host.Top - 100);
+            controller.CheckPointer(pointer);
+            pointer = target.PointToScreen(new Point(4, 4));
+            controller.Show(ProviderKind.OpenAI, pointer);
             host.QuotaButton.PerformClick();
             check(host.QuotaView.Visible && !controller.Popup.Visible, "Switching to quota mode hides the active status detail immediately");
             host.QuotaButton.PerformClick();
@@ -168,6 +193,86 @@ internal static class StatusToolTipUiChecks
         }
         finally { if (!host.IsDisposed) host.Hide(); if (wasVisible) owner.Show(); }
     }
+
+    internal static async Task CheckNativeWheelAsync(QuotaDetailPopup popup, Form owner, Point point, string kind, Action<bool, string> check)
+    {
+        var area = Screen.FromPoint(popup.AnchorPoint).WorkingArea;
+        check(popup.ContentSize.Height > area.Height && popup.VerticalScroll.Visible && area.Contains(popup.Bounds),
+            kind + " overflowing detail is height-limited to the work area with a scrollbar");
+        check(popup.CanInteractAt(point) && SendMessage(popup.Handle, 0x0084, IntPtr.Zero, Coordinates(point)).ToInt64() != -1,
+            kind + " scrollable popup accepts native hit-testing without activation");
+        int before = -popup.AutoScrollPosition.Y, messages = 0;
+        async Task Wheel(int delta)
+        {
+            if (!PostMessage(popup.Handle, 0x020A, new IntPtr((long)delta << 16), Coordinates(point)))
+                throw new InvalidOperationException("Could not post a wheel message to the synthetic popup.");
+            messages++;
+            await Task.Delay(1); // Drain the real WinForms queue and its input filters.
+        }
+        await Wheel(-120);
+        check(popup.Visible && -popup.AutoScrollPosition.Y > before,
+            kind + " actual WM_MOUSEWHEEL scrolls the non-activating popup");
+        int end = popup.VerticalScroll.Maximum - popup.VerticalScroll.LargeChange + 1;
+        while (popup.Visible && -popup.AutoScrollPosition.Y < end && messages < 512) await Wheel(-120);
+        check(popup.Visible && -popup.AutoScrollPosition.Y >= end &&
+            -popup.AutoScrollPosition.Y + popup.ClientSize.Height >= popup.ContentSize.Height,
+            kind + " wheel messages alone reach the final detail line");
+        int bottom = -popup.AutoScrollPosition.Y;
+        await Wheel(-120);
+        check(-popup.AutoScrollPosition.Y == bottom, kind + " wheel is clamped at the bottom");
+        await Wheel(120);
+        check(-popup.AutoScrollPosition.Y < bottom, kind + " reverse wheel moves back up");
+        await Wheel(-120);
+        check(owner.Visible && popup.Visible && Form.ActiveForm != popup,
+            kind + " wheel keeps the owner and popup open without activating the popup");
+        Console.WriteLine("INFO: native detail wheel " + System.Text.Json.JsonSerializer.Serialize(new
+        {
+            Kind = kind, Synthetic = true, MessageCount = messages, ContentHeight = popup.ContentSize.Height,
+            PopupHeight = popup.Height, WorkAreaHeight = area.Height, BottomOffset = bottom,
+            Input = "queued WM_MOUSEWHEEL", PhysicalPointerMoved = false
+        }));
+    }
+
+    internal static async Task CheckNativePassThroughAsync(QuotaDetailPopup popup, Control below, Func<bool> hoverReady,
+        string kind, Action<bool, string> check)
+    {
+        var point = below.PointToScreen(new Point(4, 4));
+        check(popup.Visible && !popup.VerticalScroll.Visible && popup.Bounds.Contains(point) && !popup.CanInteractAt(point) &&
+            SendMessage(popup.Handle, 0x0084, IntPtr.Zero, Coordinates(point)).ToInt64() == -1,
+            kind + " non-scrollable popup returns native HTTRANSPARENT over the card below");
+        check(WindowFromPoint(point) == below.Handle,
+            kind + " native WindowFromPoint skips the popup and finds the underlying card");
+        int moves = 0, clicks = 0;
+        MouseEventHandler moved = (_, _) => moves++;
+        MouseEventHandler clicked = (_, _) => clicks++;
+        below.MouseMove += moved;
+        below.MouseClick += clicked;
+        try
+        {
+            void Post(uint message, int buttons = 0)
+            {
+                if (!PostMessage(below.Handle, message, new IntPtr(buttons), Coordinates(new Point(4, 4))))
+                    throw new InvalidOperationException("Could not post input to the synthetic underlying card.");
+            }
+            Post(0x0200); // WM_MOUSEMOVE, client coordinates; production hover handlers run.
+            await WaitAsync(hoverReady);
+            check(moves > 0, kind + " native mouse move reaches the underlying card and changes its hover detail");
+            Post(0x0201, 1); // WM_LBUTTONDOWN / MK_LBUTTON
+            Post(0x0202); // WM_LBUTTONUP
+            await WaitAsync(() => clicks > 0);
+            check(clicks == 1, kind + " native click reaches the underlying card exactly once");
+        }
+        finally { below.MouseMove -= moved; below.MouseClick -= clicked; }
+    }
+
+    private static IntPtr Coordinates(Point point) => new(unchecked((int)((uint)(ushort)point.X | ((uint)(ushort)point.Y << 16))));
+    [DllImport("user32.dll", EntryPoint = "SendMessageW")]
+    private static extern IntPtr SendMessage(IntPtr window, uint message, IntPtr wParam, IntPtr lParam);
+    [DllImport("user32.dll")]
+    private static extern IntPtr WindowFromPoint(Point point);
+    [DllImport("user32.dll", EntryPoint = "PostMessageW", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool PostMessage(IntPtr window, uint message, IntPtr wParam, IntPtr lParam);
 
     private static async Task WaitAsync(Func<bool> done)
     {
