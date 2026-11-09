@@ -66,7 +66,7 @@ internal static class UIRegressionChecks
         var footer = context.StatusWindow.Controls.OfType<Button>().Single(button => button.Text == "Refresh");
         Check(panels.Length == 4 && panels.All(panel => panel.Bottom <= footer.Top) &&
             panels.SelectMany(panel => panel.Controls.Cast<Control>()).All(control => control.Right <= control.Parent!.ClientSize.Width),
-            "four status cards and the usage link do not overlap footer controls or overflow their boxes");
+            "four status cards do not overlap footer controls and their labels stay within their boxes");
         using (var small = new StatusWindow())
         {
             small.CreateControl();
@@ -88,8 +88,8 @@ internal static class UIRegressionChecks
             Check(scaled.Height <= 720 && scaled.AutoScrollMinSize.Height >= scaled.ClientSize.Height,
                 $"Scaled status content ({scale}x) remains reachable in a 720px working area");
             var card = scaled.Controls.OfType<Panel>().Where(panel => panel != scaled.QuotaView).Last();
-            Check(card.Controls.OfType<LinkLabel>().All(link => link.Right <= card.ClientSize.Width && link.Bottom <= card.ClientSize.Height),
-                $"Usage link stays inside its card at {scale}x synthetic scaling");
+            Check(card.Controls.OfType<Label>().All(label => label.Right <= card.ClientSize.Width && label.Bottom <= card.ClientSize.Height),
+                $"xAI labels stay inside their card at {scale}x synthetic scaling");
         }
         Check((await store.ReadUsageAsync(null)).Count == 0, "Opening official pages never creates usage records");
         await WaitUntilAsync(() => Task.FromResult(!monitor.IsRefreshing && monitor.NextRefreshUtc.HasValue));
