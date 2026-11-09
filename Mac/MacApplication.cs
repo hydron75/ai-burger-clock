@@ -25,6 +25,8 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
     private MacQuotaNotifications? quotaNotifications;
     private NSStatusItem? statusItem;
     private NSScreen? smokeScreen; // smoke only: the display its window checks use (MacScreenGuard.Choose)
+    private NSWindow? smokeAnchorWindow; // smoke only: stands in for the status item when its display is covered by a full-screen app
+    private NSView? smokeAnchor;
     private NSImage? statusImage;
     // The TrayAppearance of the latest tick: schedule/service notifications are drawn from it, and the menu-bar
     // icon is drawn from the same value, so the banner picture and the menu bar cannot disagree.
@@ -281,7 +283,28 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
         if (!smoke) RefreshAutoStart();
         RefreshDisplay(TickReason.Timer);
         UpdatePanel(Schedule(DateTimeOffset.UtcNow), ProviderStates());
-        panel.Show(button);
+        panel.Show(smokeAnchor ?? button);
+    }
+
+    // Smoke only: a small invisible, non-activating window at the top right of a free display, so the popover can open
+    // there when the status item's own display has another app full screen. Nothing of another app is touched.
+    private NSView MakeSmokeAnchor(NSScreen screen)
+    {
+        CGRect area = screen.VisibleFrame;
+        smokeAnchorWindow = new NSPanel(new CGRect(area.X + area.Width - 80, area.Y + area.Height - 24, 22, 22),
+            NSWindowStyle.Borderless | NSWindowStyle.NonactivatingPanel, NSBackingStore.Buffered, false)
+        {
+            IsOpaque = false,
+            BackgroundColor = NSColor.Clear,
+            HasShadow = false,
+            IgnoresMouseEvents = true,
+            HidesOnDeactivate = false
+        };
+        smokeAnchorWindow.ReleaseWhenClosed(false);
+        var view = new NSView(new CGRect(0, 0, 22, 22));
+        smokeAnchorWindow.ContentView = view;
+        smokeAnchorWindow.OrderFront(null);
+        return view;
     }
 
     private void ShowStatistics()
@@ -658,6 +681,7 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
             MacScreenGuard.Choice screenChoice = MacScreenGuard.Choose(statusItem?.Button?.Window?.Screen);
             MacScreenGuard.Covering? covering = screenChoice.Skipped;
             smokeScreen = screenChoice.Screen;
+            if (screenChoice.NeedsAnchor && smokeScreen is not null) smokeAnchor = MakeSmokeAnchor(smokeScreen);
             Console.WriteLine("SCREEN: " + screenChoice.Description);
             var skippedScreenChecks = new List<string>();
             string activationResult;
@@ -1002,10 +1026,12 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
                     $"the display of the status item where ours would open (it would show the menu bar over it): {string.Join("; ", skippedScreenChecks)}. Run again with no full-screen app to check them.");
             string verdict = skippedScreenChecks.Count == 0 ? "PASS" : $"PASS with {skippedScreenChecks.Count} screen checks SKIPPED (not verified)";
             Console.WriteLine($"{verdict}: bundle version, menu-tracking countdown timer, 20pt menu icon white/dark disc + color glyph light/dark 1x-2x pixels (glyph contrast min {iconContrast:0.0}:1), left/right/control-click routing, right-click menu, popover open/close/reopen, shared panel text/record menu/quota lines, {activationResult}, tone contrast >= 4.5:1 light+dark (min {weakest:0.0}:1), card text x = quota box text x ({layout.BoxTextX:0}pt; titles {layout.TitleX:0}pt), whole-card click/quota boxes read-only, shared quota title, usage bars (0% empty/100% full, provider colors >= 3:1 light+dark min {barWeakest:0.0}:1, muted when previous/elapsed, none without a value), time layer (tint-track/tint-used >= 1.5:1 min {tintWeakest:0.0}:1, marker >= 3:1 min {markerWeakest:0.0}:1 light+dark, dark tint-used >= 2.0:1 min {darkSeparationWeakest:0.0}:1, marker position/end points, hidden states, spoken row = shared reading text once), one shared Provider detail per quota box, four provider cards incl. xAI (same heading width, card size and spacing: {cardGeometry}; whole-card click only, detail without the usage link), four quota boxes incl. Gemini and xAI weekly credits, popover {layout.Size.Width:0}x{layout.Size.Height:0}pt (this screen usable {layout.UsableHeight:0}pt; 1280x800 {standard.Height:0}pt not cut off, quota area {standardQuota:0}pt scrolling, every control reachable; 1024x640 {small.Height:0}pt not cut off, quota area {smallQuota:0}pt, whole panel {smallScroll.Document:0}pt scrolling, every control reachable), 1,000-char note limit, temporary SQLite, four events/notes via shared factory, {displayResult}, {permissionResult}, {layoutKeyResult}, {notificationImageResult}, {recoveryResult}, {earlyResetResult}, {earlyResetControllerResult}, {decisionLogResult}, {lateCallbackResult}, {earlyResetUiResult}, {geminiModelResult}, {xaiQuotaResult}, {detailTipResult}, {quotaRowResult}, {diagnosticResult}, statistics (shared text, explanation fits, Mac empty-state hint), injected quota countdown; no account/network/settings changes.");
+            smokeAnchorWindow?.Close();
             ExitCode = 0;
         }
         catch (Exception error)
         {
+            smokeAnchorWindow?.Close();
             ExitCode = 1;
             Console.Error.WriteLine("FAIL: " + error.Message);
         }
