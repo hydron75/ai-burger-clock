@@ -177,7 +177,8 @@ internal static class QuotaToolTipUiChecks
             CheckedAtUtc: now, LastSuccessfulCheckUtc: now, NextCheckUtc: now.AddHours(1), IsPrevious: true,
             Error: string.Concat(Enumerable.Repeat("합성 조회 오류의 긴 설명입니다. 실제 계정 정보가 아닙니다. ", 40)));
         bool wasVisible = owner.Visible;
-        host.Show(owner);
+        host.Show(); // Independent: the real smoke status window may auto-hide on deactivation.
+        host.BringToFront();
         try
         {
             view.UpdateQuotas([state], now);

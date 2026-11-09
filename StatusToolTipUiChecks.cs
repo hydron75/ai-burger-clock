@@ -235,10 +235,18 @@ internal static class StatusToolTipUiChecks
         int before = -popup.AutoScrollPosition.Y, messages = 0;
         async Task Wheel(int delta)
         {
-            if (!PostMessage(popup.Handle, 0x020A, new IntPtr((long)delta << 16), Coordinates(point)))
-                throw new InvalidOperationException("Could not post a wheel message to the synthetic popup.");
-            messages++;
-            await Task.Delay(1); // Drain the real WinForms queue and its input filters.
+            bool delivered = false;
+            MouseEventHandler received = (_, e) => { if (e.Delta == delta) delivered = true; };
+            popup.MouseWheel += received;
+            try
+            {
+                if (!PostMessage(popup.Handle, 0x020A, new IntPtr((long)delta << 16), Coordinates(point)))
+                    throw new InvalidOperationException("Could not post a wheel message to the synthetic popup.");
+                messages++;
+                await WaitAsync(() => delivered || !popup.Visible, "Native wheel delivery did not complete.");
+                if (!delivered) throw new InvalidOperationException(kind + " queued wheel did not reach the actual MouseWheel handler.");
+            }
+            finally { popup.MouseWheel -= received; }
         }
         await Wheel(-120);
         check(popup.Visible && -popup.AutoScrollPosition.Y > before,
@@ -305,12 +313,12 @@ internal static class StatusToolTipUiChecks
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool PostMessage(IntPtr window, uint message, IntPtr wParam, IntPtr lParam);
 
-    private static async Task WaitAsync(Func<bool> done)
+    private static async Task WaitAsync(Func<bool> done, string timeout = "Synthetic status hover did not open its popup.")
     {
         var started = System.Diagnostics.Stopwatch.StartNew();
         while (!done())
         {
-            if (started.Elapsed > TimeSpan.FromSeconds(4)) throw new InvalidOperationException("Synthetic status hover did not open its popup.");
+            if (started.Elapsed > TimeSpan.FromSeconds(4)) throw new InvalidOperationException(timeout);
             await Task.Delay(20);
         }
     }
