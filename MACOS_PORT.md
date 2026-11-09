@@ -2448,6 +2448,26 @@ smoke의 선택 기능(`AIBURGERCLOCK_SMOKE_IMAGES`)으로 큰 화면·1280×800
 ### LaunchServices 등록 수 (임시 사본, 같은 번들 ID)
 1회째·2회째 모두 smoke 실행 뒤 등록 수는 2였고, 삭제 전에 `lsregister -u "<사본>/Mac/bin/Release/net10.0-macos27.0/osx-arm64/AI Burger Clock.app"`로 해제해 1로 돌아왔다. 임시 worktree는 삭제했다.
 
+### 저장소 경로 빌드와 교체 (Claude Code 수행, 2026-11-09 10시대)
+메인 채팅의 "배포 진행" 지시(PR #124 병합 뒤, main `d41ed1fc33f142efa2400254edc528d0da0f5206`)에 따라 AGENTS.md "Mac 배포" 절 순서로 진행했다. 저장소 경로에서 `bash Mac/build.sh --quit-running --allow-xcode-mismatch`로 빌드하고 `open`으로 실행했다.
+
+| 항목 | 결과 |
+|---|---|
+| 시작 전 | 실행 중이던 0.8.10 앱(PID 72431) 1개. `--quit-running`이 종료를 요청했고 정상 종료됐다 |
+| 빌드 기록 | `artifacts/mac-build/xcode-mismatch.log`(Git 제외): 10:00:23 옵션 사용(`Xcode 27.2 (27B52), macos workload 27.0.10742/10.0.100 requires Xcode 27.1, .NET SDK 10.0.403, git d41ed1f`), 10:01:02 `exit 0`. 받을 수 있는 최신 워크로드 매니페스트는 27.0.10742 그대로(같은 날 확인) |
+| 빌드 | 경고 0 / 오류 0, Shared.Tests **291,755건 PASS**(`build.sh`가 실행) |
+| 번들 | `CFBundleShortVersionString` **0.9.0**, `CFBundleVersion` **27**, `codesign --verify --deep --strict` 통과, `System.Private.CoreLib` 10.0.1426대(0.8.10과 같음) |
+| 프로세스 | **1개**(PID 46321, 10:01:09 시작, 경로는 저장소 경로 번들). 빌드 종료(10:01:02) 뒤에 시작했다. 실행 20초 뒤에도 1개이고 남은 `grok` 프로세스는 0개 |
+| SHA-256 실행 파일 | `d95ed527a694c3ca9ad602d17df6a9235048698af5133e324f2375ebf09dc61d` |
+| SHA-256 앱 DLL | `e4493e39f791df06bb745703dd458c13ddc168c9ef14b813258165896abd0506` (`Contents/MonoBundle/AI Burger Clock.dll`) |
+| LaunchServices 등록 수 | `lsregister -dump`에서 번들 ID `com.hydron75.aiburgerclock`의 등록 수 = **1**(저장소 경로 번들) |
+| 진단 파일(이름·갱신 시각만 확인) | 실행 직후 `logs/`에 v2 파일(`quota-polling-diagnostics-v2.json`, `quota-early-reset-decisions-v2.jsonl`)이 새로 생겼고, 옛 v1 파일은 09:30 그대로(수정되지 않음). 내용은 열지 않았다 |
+
+임시 사본 빌드의 값(위 표)과 다른 것은 정상이다. 같은 앱 소스여도 빌드 경로와 빌드 때의 git 커밋(`d41ed1f`)이 다르기 때문이다. 이 작업은 실행 직후의 읽기 전용 확인만 했다(앱·설정 변경 없음, 실제 값은 열지 않음).
+
+### 사용자 확인
+팝오버의 xAI 박스(`주간 크레딧` 행)의 실제 화면 문구는 사용자가 확인해 알리는 대로 이어 쓴다(미확인).
+
 ### 수행하지 않은 검증
 - ~~창을 여는 검사 6건(위 1회째 SKIP)~~: 2회째에서 SKIP 0으로 확인했다.
 - 저장소 경로 빌드·실행·팝오버의 실제 xAI 박스 확인은 병합 뒤 배포 단계에서 한다. 실제 VoiceOver 낭독과 장시간 동작은 이전 절의 미확인 항목 그대로다.
