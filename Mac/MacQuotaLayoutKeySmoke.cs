@@ -47,6 +47,7 @@ internal static class MacQuotaLayoutKeySmoke
         }
         QuotaState Claude(params string[] ids) => Boxes(QuotaProvider.Claude, 20, ids);
         QuotaState Gemini(params string[] ids) => Boxes(QuotaProvider.Gemini, 5, ids);
+        QuotaState Xai(params string[] ids) => Boxes(QuotaProvider.Xai, 30, ids);
 
         // Two rows whose IDs, joined with a comma, equal one row's ID.
         Step("two rows", Boxes(QuotaProvider.Codex, 10, "a:primary", "b:primary"), Claude("session"), Gemini("g5h"));
@@ -72,10 +73,16 @@ internal static class MacQuotaLayoutKeySmoke
         Step("single row", Boxes(QuotaProvider.Codex, 10, "한도🍔,w|e,e:k,a,b"), Claude("세션"), Gemini("g5h"));
 
         // Only values change: the boxes are kept, not rebuilt (no scroll or hover reset).
-        QuotaState[] before = [Boxes(QuotaProvider.Codex, 10, "five", "week"), Claude("session"), Gemini("g5h")];
+        // The fourth box (xAI weekly credits): it appears, changes its row ID, waits, and disappears like the others.
+        Step("xAI box appears", Boxes(QuotaProvider.Codex, 10, "five", "week"), Claude("session"), Gemini("g5h"), Xai("week"));
+        Step("xAI row id changes", Boxes(QuotaProvider.Codex, 10, "five", "week"), Claude("session"), Gemini("g5h"), Xai("week,x"));
+        Step("xAI waiting box", Boxes(QuotaProvider.Codex, 10, "five", "week"), Claude("session"), Gemini("g5h"), Placeholder(QuotaProvider.Xai));
+        Step("xAI box disappears", Boxes(QuotaProvider.Codex, 10, "five", "week"), Claude("session"), Gemini("g5h"));
+
+        QuotaState[] before = [Boxes(QuotaProvider.Codex, 10, "five", "week"), Claude("session"), Gemini("g5h"), Xai("week")];
         Step("before value change", before);
         NSView[] boxes = Enum.GetValues<QuotaProvider>().Select(panel.QuotaBoxView).ToArray();
-        Step("only values changed", Boxes(QuotaProvider.Codex, 55, "five", "week"), Claude("session") with { LastSuccessfulCheckUtc = Now.AddMinutes(1) }, Gemini("g5h"));
+        Step("only values changed", Boxes(QuotaProvider.Codex, 55, "five", "week"), Claude("session") with { LastSuccessfulCheckUtc = Now.AddMinutes(1) }, Gemini("g5h"), Xai("week") with { LastSuccessfulCheckUtc = Now.AddMinutes(1) });
         Check(Enum.GetValues<QuotaProvider>().Select(panel.QuotaBoxView).Zip(boxes).All(pair => ReferenceEquals(pair.First, pair.Second)),
             "a value-only update rebuilt the quota boxes.");
         steps++;
