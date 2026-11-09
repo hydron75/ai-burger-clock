@@ -24,6 +24,7 @@ internal sealed record WindowsNotificationRequest(WindowsQuotaNotificationKind K
             QuotaProvider.Codex => WindowsNotificationProvider.OpenAI,
             QuotaProvider.Claude => WindowsNotificationProvider.Claude,
             QuotaProvider.Gemini => WindowsNotificationProvider.Gemini,
+            QuotaProvider.Xai => WindowsNotificationProvider.Xai,
             _ => throw new ArgumentOutOfRangeException(nameof(alert))
         }, alert.Title, alert.Body);
 

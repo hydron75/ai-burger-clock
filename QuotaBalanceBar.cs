@@ -30,10 +30,13 @@ internal sealed class QuotaBalanceBar : Control
         return cachedPalette;
     }
 
-    internal static Color ProviderColor(QuotaProvider provider) => provider switch
+    internal static Color ProviderColor(QuotaProvider provider, Color? background = null) => provider switch
     {
         QuotaProvider.Codex => Color.FromArgb(16, 163, 127),
         QuotaProvider.Claude => Color.FromArgb(217, 119, 87),
+        QuotaProvider.Xai => QuotaBarPalette.Contrast(background ?? Color.White, Color.Black) >=
+            QuotaBarPalette.Contrast(background ?? Color.White, Color.White)
+                ? Color.FromArgb(32, 32, 32) : Color.FromArgb(235, 235, 235),
         _ => Color.FromArgb(66, 133, 244)
     };
 
@@ -52,7 +55,7 @@ internal sealed class QuotaBalanceBar : Control
         UsedPercent = double.IsFinite(used) ? Math.Clamp(used, 0, 100) : 0;
         ElapsedPercent = tone != PanelTone.Muted && elapsedPercent is { } elapsed && double.IsFinite(elapsed) &&
             elapsed >= 0 && elapsed <= 100 ? elapsed : null;
-        FillColor = tone == PanelTone.Muted ? Color.Gray : ProviderColor(provider);
+        FillColor = tone == PanelTone.Muted ? Color.Gray : ProviderColor(provider, BackColor);
         AccessibleName = name;
         AccessibleDescription = detail;
         Invalidate();

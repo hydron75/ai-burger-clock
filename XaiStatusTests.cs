@@ -65,7 +65,9 @@ internal static class XaiStatusTests
         var thirdPartyIncident = Parse(history: JsonSerializer.Serialize(new { incidents = new[] { Incident(components: ["third-party-models"]) } }));
         Check(thirdPartyIncident.Status == OfficialStatus.PartialOutage && thirdPartyIncident.RelevantComponent == "Cursor · Third-party models",
             "Third-party models JSON incident contributes to Cursor work status");
-        Check(Enum.GetValues<QuotaProvider>().Length == 3 && ProviderNames.Provider(ProviderKind.Xai) == "xAI", "xAI status adds no quota provider");
+        Check(Enum.GetValues<QuotaProvider>().SequenceEqual([QuotaProvider.Codex, QuotaProvider.Claude, QuotaProvider.Gemini, QuotaProvider.Xai])
+            && ProviderNames.Provider(ProviderKind.Xai) == "xAI" && ProviderNames.Quota(QuotaProvider.Xai) == "xAI",
+            "xAI weekly quota is appended without changing the existing official status provider");
         Check(ProviderStatusPages.For(ProviderKind.Xai).AbsoluteUri == "https://status.x.ai/" &&
             ProviderStatusPages.XaiUsage.AbsoluteUri == "https://grok.com/dashboard", "fixed official status and usage destinations");
 

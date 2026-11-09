@@ -25,6 +25,7 @@ internal static class WindowsQuotaNotificationChecks
             Dispatch(Check);
             Blocking(Check);
             KindsAndPrivateData(root, Check);
+            XaiAndLegacyFiles(root, Check);
             BoundsAndAppend(root, Check);
             InvalidFilesAndFailureIsolation(root, Check);
         }
@@ -114,7 +115,7 @@ internal static class WindowsQuotaNotificationChecks
     private static void KindsAndPrivateData(string root, Action<bool, string> check)
     {
         var defaults = new WindowsQuotaNotificationDeliveryLog();
-        check(defaults.LogPath == Path.Combine(AppPaths.DataDirectory, "logs", "notification-delivery-v2.jsonl"),
+        check(defaults.LogPath == Path.Combine(AppPaths.DataDirectory, "logs", "notification-delivery-v3.jsonl"),
             "delivery audit has a separate Windows logs path");
         string directory = Path.Combine(root, "privacy");
         var log = new WindowsQuotaNotificationDeliveryLog(directory);
@@ -203,6 +204,28 @@ internal static class WindowsQuotaNotificationChecks
         new WindowsQuotaNotificationDelivery(_ => toasts++, _ => balloons++, blocked.Write).Send(
             Alert(QuotaProvider.Gemini, recovery: true, earlyReset: false));
         check(toasts == 1 && balloons == 0 && File.ReadAllText(blocker) == "retained", "filesystem failures do not change notification behavior");
+    }
+
+    private static void XaiAndLegacyFiles(string root, Action<bool, string> check)
+    {
+        string directory = Path.Combine(root, "xai-v3");
+        Directory.CreateDirectory(directory);
+        string legacy = Path.Combine(directory, "notification-delivery-v2.jsonl");
+        File.WriteAllText(legacy, "Synthetic retained v2 bytes");
+        var log = new WindowsQuotaNotificationDeliveryLog(directory);
+        int sent = 0, native = 0;
+        var delivery = new WindowsQuotaNotificationDelivery(_ => sent++, _ => native++, log.Write);
+        foreach (var pair in new[] { (true, false), (false, true), (true, true) })
+        {
+            var request = Alert(QuotaProvider.Xai, pair.Item1, pair.Item2);
+            check(request.Provider == WindowsNotificationProvider.Xai && request.Group == "quota" && request.Header == "한도", "xAI uses existing quota group/header");
+            delivery.Send(request);
+        }
+        check(sent == 3 && native == 0, "xAI recovery/early/combined submit to fake toast only");
+        check(log.LogPath.EndsWith("notification-delivery-v3.jsonl", StringComparison.Ordinal) &&
+            File.ReadAllLines(log.LogPath).Length == 3 && File.ReadAllText(log.LogPath).Contains("\"Provider\":\"xAI\"", StringComparison.Ordinal),
+            "v3 accepts all xAI quota delivery kinds");
+        check(File.ReadAllText(legacy) == "Synthetic retained v2 bytes", "older delivery log is never read or overwritten");
     }
 
     private static WindowsQuotaNotificationDeliveryEntry Entry(DateTimeOffset time) => new(time,

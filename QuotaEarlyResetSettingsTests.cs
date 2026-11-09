@@ -137,8 +137,8 @@ internal static class QuotaEarlyResetSettingsTests
         Check(ScalarLong(path, "SELECT COUNT(*) FROM UsageEvents;") == 0 &&
             ScalarLong(path, "SELECT COUNT(*) FROM ProviderStatusHistory;") == 0,
             "preference operations never create usage or status event history");
-        Check(ScalarLong(path, "SELECT COUNT(*) FROM AppMetadata;") == 7,
-            "metadata contains only schema, three caches, holiday and two preferences, not early reset history");
+        Check(ScalarLong(path, "SELECT COUNT(*) FROM AppMetadata;") == 4 + Enum.GetValues<QuotaProvider>().Length,
+            "metadata contains only schema, one cache per Provider, holiday and two preferences, not early reset history");
 
         // A directory is an unusable database path on both hosts without changing
         // permissions, locking the user's database or depending on a particular OS.

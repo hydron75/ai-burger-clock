@@ -53,7 +53,15 @@ internal static class MacPollingDiagnosticSmoke
         try
         {
             var store = new UsageStore(Path.Combine(directory, "burgerclock.db"));
-            string logPath = Path.Combine(directory, "logs", "quota-polling-diagnostics.json");
+            // The xAI conversion (PR A) writes new v2 files and never reads or overwrites the old ones: put old (v1) files
+            // there first; their bytes must be untouched at the end.
+            string logs = Path.Combine(directory, "logs");
+            Directory.CreateDirectory(logs);
+            const string LegacyPolling = "quota-polling-diagnostics.json", LegacyDecisions = "quota-early-reset-decisions-v1.jsonl";
+            byte[] legacyBytes = System.Text.Encoding.UTF8.GetBytes("synthetic legacy v1 history, must stay as it is\n");
+            File.WriteAllBytes(Path.Combine(logs, LegacyPolling), legacyBytes);
+            File.WriteAllBytes(Path.Combine(logs, LegacyDecisions), legacyBytes);
+            string logPath = Path.Combine(logs, "quota-polling-diagnostics-v2.json");
             var client = new Client { Clock = new DateTimeOffset(2026, 3, 3, 3, 0, 0, TimeSpan.Zero) };
             using var monitor = new AccountQuotaMonitor(client, store, () => client.Clock);
             async Task<Entry> Poll(QuotaProvider provider, Func<QuotaProvider, DateTimeOffset, QuotaReading?> script)
@@ -83,6 +91,19 @@ internal static class MacPollingDiagnosticSmoke
                 Check(high.Reason == reason && high.Selected is null && high.Next == T().AddHours(1) && high.Succeeded,
                     $"{usage}% must be {reason} with a +1h next check (found {high.Reason}, +{(high.Next - T()).TotalMinutes:0}m).");
             }
+
+            // xAI (weekly credits): its own Provider name in the v2 log; regular 1 hour, and the scheduled reset-period
+            // interval is at least 10 minutes (Codex/Claude/Gemini keep 5).
+            Entry xaiRegular = await Poll(QuotaProvider.Xai, (p, now) => R(p,
+                new QuotaWindow(AccountQuotaParsers.GrokWeeklyWindowId, "주간 크레딧", 20, now.AddDays(5), AccountQuotaParsers.GrokWeeklyWindowMinutes)));
+            Check(xaiRegular is { Provider: "Xai", Reason: "Regular", Selected: null, Succeeded: true, Failures: 0, Anchors: 1 } && xaiRegular.Next == T().AddHours(1),
+                $"xAI regular entry has the wrong shape ({xaiRegular.Provider}, {xaiRegular.Reason}, +{(xaiRegular.Next - T()).TotalMinutes:0}m).");
+            DateTimeOffset xaiReset = T().AddMinutes(10);
+            Entry xaiPeriod = await Poll(QuotaProvider.Xai, (p, now) => R(p,
+                new QuotaWindow(AccountQuotaParsers.GrokWeeklyWindowId, "주간 크레딧", 40, xaiReset, AccountQuotaParsers.GrokWeeklyWindowMinutes)));
+            Check(xaiPeriod is { Provider: "Xai", Reason: "ResetPeriod", Succeeded: true } && xaiPeriod.Selected == xaiReset && xaiPeriod.Next == T().AddMinutes(10),
+                $"xAI reset period must check every 10 minutes (found {xaiPeriod.Reason}, +{(xaiPeriod.Next - T()).TotalMinutes:0}m).");
+            client.Clock = client.Clock.AddHours(1); // the xAI +15m band is over before the Codex checks below
 
             // ResetPeriod: a used window resetting in 10 minutes -> 5 minute checks, that reset selected.
             DateTimeOffset reset = T().AddMinutes(10);
@@ -146,7 +167,7 @@ internal static class MacPollingDiagnosticSmoke
                     : R(p, new QuotaWindow("w", "합성", poll % 100, now.AddMinutes(20 + poll % 50), 300)));
             }
             var (version, entries, bytes, keys) = Read(logPath);
-            Check(version == 1 && entries.Count == 256, $"expected 256 entries, found {entries.Count}.");
+            Check(version == 2 && entries.Count == 256, $"expected 256 entries in a version 2 file, found version {version} with {entries.Count}.");
             Check(bytes <= 128 * 1024, $"file is {bytes} bytes (limit 131072).");
             Check(entries[^1].Attempted == T() && entries.Zip(entries.Skip(1)).All(pair => pair.First.Attempted <= pair.Second.Attempted),
                 "newest entries must be kept in order.");
@@ -155,25 +176,33 @@ internal static class MacPollingDiagnosticSmoke
             Check(keys.SetEquals(expected), "the stored fields are not exactly the nine scheduling fields: " + string.Join(",", keys));
             // The logs folder holds this scheduling log and, since the early-reset decision log (#82), that log
             // too; anything else (a leftover temporary file) is a failure.
-            string[] logFiles = Directory.GetFiles(Path.Combine(directory, "logs")).Select(Path.GetFileName).OfType<string>().ToArray();
-            Check(logFiles.Contains("quota-polling-diagnostics.json") &&
-                  logFiles.All(name => name is "quota-polling-diagnostics.json" or "quota-early-reset-decisions-v1.jsonl"),
-                "temporary files were left behind.");
+            string[] logFiles = Directory.GetFiles(logs).Select(Path.GetFileName).OfType<string>().ToArray();
+            Check(logFiles.Contains("quota-polling-diagnostics-v2.json") &&
+                  logFiles.All(name => name is "quota-polling-diagnostics-v2.json" or "quota-early-reset-decisions-v2.jsonl" or LegacyPolling or LegacyDecisions),
+                "temporary files were left behind: " + string.Join(", ", logFiles));
+            Check(File.ReadAllBytes(Path.Combine(logs, LegacyPolling)).SequenceEqual(legacyBytes) &&
+                  File.ReadAllBytes(Path.Combine(logs, LegacyDecisions)).SequenceEqual(legacyBytes),
+                "the old v1 diagnostic files must be kept byte for byte.");
             // Provider detail (what the Mac tooltips show; panel.Verify checks they equal this text): 1 hour default.
             QuotaState Sample(QuotaProvider provider, string id) => new(provider,
                 new(provider, [new QuotaWindow(id, "주간", 10, client.Clock.AddDays(3), 10080)]),
                 LastSuccessfulCheckUtc: client.Clock, NextCheckUtc: client.Clock.AddHours(1));
             var details = QuotaPanelModel.Sections([Sample(QuotaProvider.Codex, "codex-weekly"), Sample(QuotaProvider.Claude, "weekly_all"),
-                Sample(QuotaProvider.Gemini, "gemini-weekly")], client.Clock);
-            Check(details.Count == 3, "expected one Provider detail per quota box.");
+                Sample(QuotaProvider.Gemini, "gemini-weekly"), Sample(QuotaProvider.Xai, AccountQuotaParsers.GrokWeeklyWindowId)], client.Clock);
+            Check(details.Count == 4, "expected one Provider detail per quota box.");
             foreach (var section in details)
             {
                 Check(section.Detail.Contains("기본 1시간") && section.Detail.Contains("사용 90% 초과~100% 미만은 1시간") && !section.Detail.Contains("기본 6시간"),
                     $"{section.Provider} detail does not state the 1 hour default policy.");
                 Check(section.Detail.Contains("사용 0% 창의 리셋은 빠른 조회 기준에서 제외") == (section.Provider == QuotaProvider.Gemini),
                     $"{section.Provider} detail has the wrong Gemini 0% exception line.");
+                // xAI: scheduled reset-period checks every 10 minutes and the minimum-interval notice; the others stay at 5.
+                bool xai = section.Provider == QuotaProvider.Xai;
+                Check(section.Detail.Contains("리셋 전후 15분은 10분") == xai && section.Detail.Contains("리셋 전후 15분은 5분") == !xai &&
+                      section.Detail.Contains("xAI 예약 조회는 최소 10분입니다") == xai,
+                    $"{section.Provider} detail states the wrong reset-period interval.");
             }
-            return $"polling diagnostics (Regular/ResetPeriod/ResetEntry/Exhausted/FailureRetry with next + selected reset, 1h default (Regular vs LowRemaining >90%), 1h policy text in all three Provider details, 1m jitter -> {jitterAnchors} anchors, " +
+            return $"polling diagnostics (Regular/ResetPeriod/ResetEntry/Exhausted/FailureRetry with next + selected reset, 1h default (Regular vs LowRemaining >90%), 1h policy text in all four Provider details, xAI own entries (1h regular, 10m reset period, 10m interval text), v2 files + untouched v1 files, 1m jitter -> {jitterAnchors} anchors, " +
                    $"40s chain kept {chain}, 256 entries {bytes / 1024.0:0.0}KiB, 9 scheduling fields only)";
         }
         finally

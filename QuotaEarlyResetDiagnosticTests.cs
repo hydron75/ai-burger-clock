@@ -31,7 +31,7 @@ internal static class QuotaEarlyResetDiagnosticTests
                 ?? throw new InvalidOperationException("A synthetic diagnostic row was null.")).ToArray();
 
         var log = new QuotaEarlyResetDiagnosticLog(Path.Combine(root, "ordinary"));
-        Check(log.LogPath == Path.Combine(root, "ordinary", "quota-early-reset-decisions-v1.jsonl"),
+        Check(log.LogPath == Path.Combine(root, "ordinary", "quota-early-reset-decisions-v2.jsonl"),
             "the independent versioned JSONL filename does not touch polling diagnostics");
         Check(!Directory.Exists(Path.GetDirectoryName(log.LogPath)), "construction has no filesystem side effects");
         Check(!log.TryUpdate(Id(0), "Alert", "Alert"), "update cannot invent a missing attempt");

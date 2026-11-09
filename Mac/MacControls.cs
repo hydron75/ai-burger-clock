@@ -76,12 +76,23 @@ internal static class MacControls
     // darker than the other providers' fills, which left only 3.0:1 between track and fill in dark mode
     // and a time tint that read almost like the used fill; #5091F7 gives it the same luminance step
     // (3.4:1) so its tint is as distinct from the used layer as ChatGPT's and Claude's.
+    //
+    // xAI follows the Windows palette: a near-black fill on the light panel (#202020) and a near-white one on
+    // the dark panel (#EBEBEB, BarXai in Assets.xcassets). Its previous value is the Windows gray #808080
+    // (BarXaiPrevious) in both appearances. The shared muted tone is only 2.6:1 (light) / 2.0:1 (dark) from that
+    // fill, which would make a previous value look like a current one; #808080 keeps at least 3:1 from it and
+    // from the panel (smoke-checked). Other providers keep the muted tone.
     internal static NSColor QuotaBarColor(QuotaProvider provider) => provider switch
     {
         QuotaProvider.Codex => ProviderGreen,
         QuotaProvider.Claude => ProviderOrange,
+        QuotaProvider.Xai => Named("BarXai"),
         _ => Named("BarGemini")
     };
+
+    // Fill of a previous or elapsed value (never the provider color).
+    internal static NSColor QuotaBarPreviousColor(QuotaProvider provider) =>
+        provider == QuotaProvider.Xai ? Named("BarXaiPrevious") : Color(PanelTone.Muted);
 
     private static readonly NSColor ProviderGreen = NSColor.FromSrgb(16 / 255f, 163 / 255f, 127 / 255f, 1);
     private static readonly NSColor ProviderOrange = NSColor.FromSrgb(217 / 255f, 119 / 255f, 87 / 255f, 1);

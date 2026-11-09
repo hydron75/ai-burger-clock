@@ -28,12 +28,12 @@ internal static class QuotaPollingDiagnosticTests
 
         string ringDirectory = Path.Combine(root, "ring");
         var log = new QuotaPollingDiagnosticLog(ringDirectory);
-        Check(log.LogPath == Path.Combine(ringDirectory, "quota-polling-diagnostics.json"),
+        Check(log.LogPath == Path.Combine(ringDirectory, "quota-polling-diagnostics-v2.json"),
             "the caller controls the directory; the filename is stable on both hosts");
         Check(!Directory.Exists(ringDirectory), "construction performs no disk writes");
         Check(log.TryWrite(Entry(0)), "the first reservation creates the directory and history");
         QuotaPollingDiagnosticFile first = Read(log.LogPath);
-        Check(first.Version == 1 && first.Entries.Count == 1 && first.Entries[0] == Entry(0),
+        Check(first.Version == 2 && first.Entries.Count == 1 && first.Entries[0] == Entry(0),
             "all diagnostic fields round-trip using generated metadata");
         for (int i = 1; i <= 260; i++)
             Check(log.TryWrite(Entry(i)), "a bounded history accepts a new synthetic reservation");
@@ -53,7 +53,7 @@ internal static class QuotaPollingDiagnosticTests
             "restart appends without clearing existing reservations");
 
         string[] reasons = ["Regular", "LowRemaining", "Exhausted", "ResetPeriod", "ResetEntry", "FailureRetry", "Overdue"];
-        string[] providers = ["Codex", "Claude", "Gemini"];
+        string[] providers = ["Codex", "Claude", "Gemini", "Xai"];
         var reasonsLog = new QuotaPollingDiagnosticLog(Path.Combine(root, "reasons"));
         foreach (string provider in providers)
         foreach (string reason in reasons)
@@ -126,12 +126,12 @@ internal static class QuotaPollingDiagnosticTests
         string corruptDirectory = Path.Combine(root, "corrupt");
         Directory.CreateDirectory(corruptDirectory);
         var corrupt = new QuotaPollingDiagnosticLog(corruptDirectory);
-        string validEntry = Encoding.UTF8.GetString(Bytes(new QuotaPollingDiagnosticFile(1, [Entry(0)])));
+        string validEntry = Encoding.UTF8.GetString(Bytes(new QuotaPollingDiagnosticFile(2, [Entry(0)])));
         string[] invalidFiles =
         [
-            "not-json", "null", "{}", "{\"Version\":2,\"Entries\":[]}",
-            "{\"Version\":1,\"Entries\":[],\"Unknown\":true}",
-            "{\"Version\":1,\"Entries\":null}", "{\"Version\":1,\"Entries\":[null]}",
+            "not-json", "null", "{}", "{\"Version\":99,\"Entries\":[]}",
+            "{\"Version\":2,\"Entries\":[],\"Unknown\":true}",
+            "{\"Version\":2,\"Entries\":null}", "{\"Version\":2,\"Entries\":[null]}",
             validEntry.Replace("\"Succeeded\":true,", "", StringComparison.Ordinal),
             validEntry.Replace("\"ResetAnchorCount\":0", "\"ResetAnchorCount\":0,\"AccountId\":\"synthetic\"", StringComparison.Ordinal),
             validEntry.Replace("\"Regular\"", "\"unknown\"", StringComparison.Ordinal)
@@ -149,7 +149,7 @@ internal static class QuotaPollingDiagnosticTests
         File.WriteAllBytes(corrupt.LogPath, oversized);
         Check(!corrupt.TryWrite(Entry(1)) && File.ReadAllBytes(corrupt.LogPath).SequenceEqual(oversized),
             "oversized existing files are neither read unboundedly nor overwritten");
-        byte[] tooMany = Bytes(new QuotaPollingDiagnosticFile(1, Enumerable.Range(0, 257).Select(i => Entry(i)).ToArray()));
+        byte[] tooMany = Bytes(new QuotaPollingDiagnosticFile(2, Enumerable.Range(0, 257).Select(i => Entry(i)).ToArray()));
         File.WriteAllBytes(corrupt.LogPath, tooMany);
         Check(!corrupt.TryWrite(Entry(258)) && File.ReadAllBytes(corrupt.LogPath).SequenceEqual(tooMany),
             "an unrecognized entry count is not silently adopted");
@@ -176,7 +176,7 @@ internal static class QuotaPollingDiagnosticTests
             "lock failure preserves the existing complete history");
         Check(locked.TryWrite(Entry(1)), "a later reservation can recover after the lock is released");
 
-        string foreignTemporary = Path.Combine(ringDirectory, "quota-polling-diagnostics.json.foreign.tmp");
+        string foreignTemporary = Path.Combine(ringDirectory, "quota-polling-diagnostics-v2.json.foreign.tmp");
         File.WriteAllText(foreignTemporary, "synthetic unrelated temporary file");
         Check(log.TryWrite(Entry(262)), "a normal append succeeds beside an unrelated temporary file");
         Check(File.ReadAllText(foreignTemporary) == "synthetic unrelated temporary file",

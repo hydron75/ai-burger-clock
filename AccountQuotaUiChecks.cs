@@ -8,6 +8,7 @@ internal sealed class TestAccountQuotaClient(Func<DateTimeOffset> clock, SmokeQu
     private int codexCalls;
     private int claudeCalls;
     private int geminiCalls;
+    private int xaiCalls;
     private TaskCompletionSource? geminiResponseGate;
     internal bool FailClaude { get; set; }
     internal bool FailGemini { get; set; }
@@ -16,6 +17,7 @@ internal sealed class TestAccountQuotaClient(Func<DateTimeOffset> clock, SmokeQu
     {
         QuotaProvider.Codex => Volatile.Read(ref codexCalls),
         QuotaProvider.Claude => Volatile.Read(ref claudeCalls),
+        QuotaProvider.Xai => Volatile.Read(ref xaiCalls),
         _ => Volatile.Read(ref geminiCalls)
     };
     public async Task<QuotaReading> ReadAsync(QuotaProvider provider, CancellationToken cancellationToken)
@@ -25,6 +27,7 @@ internal sealed class TestAccountQuotaClient(Func<DateTimeOffset> clock, SmokeQu
         {
             case QuotaProvider.Codex: Interlocked.Increment(ref codexCalls); break;
             case QuotaProvider.Claude: Interlocked.Increment(ref claudeCalls); break;
+            case QuotaProvider.Xai: Interlocked.Increment(ref xaiCalls); break;
             case QuotaProvider.Gemini:
                 Interlocked.Increment(ref geminiCalls);
                 break;
@@ -39,6 +42,7 @@ internal sealed class TestAccountQuotaClient(Func<DateTimeOffset> clock, SmokeQu
         {
             QuotaProvider.Codex => [new("session", "5시간", 18, now.AddHours(2), 300), new("weekly", "주간", 92, now.AddDays(2), 10080)],
             QuotaProvider.Claude => [new("session", "5시간", 0, now.AddMinutes(12), 300), new("weekly", "주간", 45, now.AddDays(3), 10080), new("fable", "주간 · Fable", 1, now.AddDays(3), 10080)],
+            QuotaProvider.Xai => [new(AccountQuotaParsers.GrokWeeklyWindowId, "주간 크레딧", 37.5, now.AddDays(4), 10080)],
             _ => AccountQuotaParsers.ParseGemini($$"""
                 {"groups":[{"name":"Gemini Models","buckets":[
                   {"id":"gemini-5h","window":"5h","remaining_fraction":0.9799,"reset_time":"{{now.AddHours(3):O}}"},
@@ -92,8 +96,8 @@ internal static class QuotaViewportUiChecks
                 var cardSizes = boxes.Select(box => box.Size).ToArray();
                 int gap = caption.Top - view.Bottom;
                 Check(view.Top == originalBounds[view].Top, prefix + ": quota viewport preserves its header baseline");
-                Check(view.Visible && boxes.Length == 3 && boxes.Sum(box => box.Controls.OfType<QuotaBalanceBar>().Count()) == 8,
-                    prefix + ": three synthetic Providers include Gemini model weekly");
+                Check(view.Visible && boxes.Length == 4 && boxes.Sum(box => box.Controls.OfType<QuotaBalanceBar>().Count()) == 9,
+                    prefix + ": four synthetic Providers include Gemini model weekly and xAI weekly credits");
                 Check(gap >= 0 && gap <= Scale(6), prefix + ": quota bottom/caption gap is at most 6 DIP (actual=" + gap + "px)");
                 Check(window.Size == originalSize, prefix + ": quota toggle preserves window dimensions");
                 Check(view.VerticalScroll.Visible && !view.HorizontalScroll.Visible, prefix + ": quota contents retain vertical-only scrolling");
@@ -247,7 +251,7 @@ internal static class AccountQuotaUiChecks
             monitor.Snapshot().Select(state => state.NextCheckUtc).SequenceEqual(dueBeforeOpen),
             "Opening and toggling quota view never requests a query or changes its existing schedule");
         Check(context.StatusWindow.QuotaView.Visible, "Quota toggle shows ChatGPT Work/Codex and Claude without enlarging the popup");
-        context.StatusWindow.UpdateQuotas(monitor.Snapshot().Where(s => s.Provider != QuotaProvider.Gemini).ToArray(), clock());
+        context.StatusWindow.UpdateQuotas(monitor.Snapshot().Where(s => s.Provider is QuotaProvider.Codex or QuotaProvider.Claude).ToArray(), clock());
         var labels = QuotaLabels();
         var boxes = context.StatusWindow.QuotaView.Controls.OfType<Panel>().ToArray();
         Check(boxes.Length == 2 && boxes[0].Name == "CodexQuotaBox" && boxes[1].Name == "ClaudeQuotaBox",
@@ -320,8 +324,14 @@ internal static class AccountQuotaUiChecks
         context.RefreshStatus(false);
         boxes = context.StatusWindow.QuotaView.Controls.OfType<Panel>().ToArray();
         labels = QuotaLabels();
-        Check(boxes.Select(box => box.Name).SequenceEqual(new[] { "CodexQuotaBox", "ClaudeQuotaBox", "GeminiQuotaBox" }),
-            "Gemini has a third Provider box after ChatGPT and Claude");
+        Check(boxes.Select(box => box.Name).SequenceEqual(new[] { "CodexQuotaBox", "ClaudeQuotaBox", "GeminiQuotaBox", "XaiQuotaBox" }),
+            "Gemini and xAI follow ChatGPT and Claude without another status card");
+        var xaiBox = Box(QuotaProvider.Xai);
+        Check(xaiBox.Controls.OfType<QuotaBalanceBar>() is var xaiBars && xaiBars.Count() == 1 &&
+            xaiBars.Single().ElapsedPercent is > 42 and < 43 &&
+            ProviderLabels(QuotaProvider.Xai).Any(label => label.Text.StartsWith("주간 크레딧  37.5% 사용", StringComparison.Ordinal)) &&
+            context.StatusWindow.QuotaView.DetailFor(xaiBox).Contains("최소 10분", StringComparison.Ordinal),
+            "xAI has one weekly-credit row, time boundary and ten-minute scheduled-policy detail");
         var geminiBox = Box(QuotaProvider.Gemini);
         Check(geminiBox.BackColor == Color.White && geminiBox.BorderStyle == boxes[0].BorderStyle &&
             geminiBox.Width == boxes[0].Width && geminiBox.Cursor == Cursors.Default &&
@@ -353,9 +363,9 @@ internal static class AccountQuotaUiChecks
         Check(context.StatusWindow.ClientSize == size && context.StatusWindow.QuotaView.VerticalScroll.Visible &&
             !context.StatusWindow.QuotaView.HorizontalScroll.Visible && boxes.All(box =>
                 box.Controls.OfType<Label>().All(label => label.Bottom <= box.Height)),
-            "Three Provider boxes scroll only inside the existing quota viewport without enlarging the popup");
+            "Four Provider boxes scroll only inside the existing quota viewport without enlarging the popup");
         Check(labels.All(l => l.Height >= TextRenderer.MeasureText(l.Text, l.Font).Height),
-            "All three Provider boxes accommodate DPI-scaled text height");
+            "All four Provider boxes accommodate DPI-scaled text height");
         foreach (var section in QuotaPanelModel.Sections(monitor.Snapshot(), clock()))
         {
             var providerLabels = ProviderLabels(section.Provider);
@@ -464,7 +474,7 @@ internal static class AccountQuotaUiChecks
             () => new { claudeBefore = before, claudeNow = client.Calls(QuotaProvider.Claude), claudeAdvanced = client.Calls(QuotaProvider.Claude) > before, allIdle = monitor.Snapshot().All(s => !s.IsRefreshing) });
         Check(monitor.Snapshot().All(s => !s.IsPrevious) &&
             Enum.GetValues<QuotaProvider>().All(provider => client.Calls(provider) > callsBeforeRefresh[provider]),
-            "Existing Refresh button recovers all three independent quota displays");
+            "Existing Refresh button recovers all four independent quota displays");
         before = client.Calls(QuotaProvider.Claude);
         context.OnPowerModeChanged(null, new PowerModeChangedEventArgs(PowerModes.Resume));
         await Wait(() => client.Calls(QuotaProvider.Claude) > before && monitor.Snapshot().All(s => !s.IsRefreshing), "Resume",
@@ -560,7 +570,7 @@ internal static class AccountQuotaUiChecks
         Check(context.StatusWindow.QuotaView.VerticalScroll.Visible && !context.StatusWindow.QuotaView.HorizontalScroll.Visible &&
             context.StatusWindow.ClientSize == size,
             "Extra model-scoped quota rows scroll vertically without enlarging the popup");
-        context.StatusWindow.UpdateQuotas(monitor.Snapshot().Where(s => s.Provider != QuotaProvider.Gemini).ToArray(), clock());
+        context.StatusWindow.UpdateQuotas(monitor.Snapshot().Where(s => s.Provider is QuotaProvider.Codex or QuotaProvider.Claude).ToArray(), clock());
         var reducedView = context.StatusWindow.QuotaView;
         Check(reducedView.VerticalScroll.Visible == (reducedView.Controls.OfType<Panel>().Max(box => box.Bottom) -
                 reducedView.AutoScrollPosition.Y > reducedView.ClientSize.Height) && !reducedView.HorizontalScroll.Visible,

@@ -14,7 +14,8 @@ internal sealed class MacStatusPanel : IDisposable
     private const int ContentWidth = PanelWidth - Inset * 2;
     private const int CardPadding = 8;
     // Quota area grows with its boxes up to this height; only extra model-scoped rows scroll.
-    // 340pt holds the three standard boxes (ChatGPT, Claude, Gemini: about 326pt with usage bars).
+    // 340pt holds the three standard boxes (ChatGPT, Claude, Gemini: about 326pt with usage bars). The fourth box
+    // (xAI weekly credits) does not fit: the limit stays and the quota area scrolls instead of growing the popover.
     private const int MaximumQuotaHeight = 340;
     // On a short screen the quota area gives up height first, down to about one box. Below that the whole panel
     // scrolls (four provider cards plus a box do not fit a 1024x640 screen), with the quota area at its full height.
@@ -330,7 +331,7 @@ internal sealed class MacStatusPanel : IDisposable
                     // never with a time comparison (the shared model already gives null for them).
                     bool muted = row.Tone == PanelTone.Muted;
                     bar.Set(used, muted ? null : row.ElapsedPercent,
-                        muted ? MacControls.Color(PanelTone.Muted) : MacControls.QuotaBarColor(section.Provider));
+                        muted ? MacControls.QuotaBarPreviousColor(section.Provider) : MacControls.QuotaBarColor(section.Provider));
                     SetTip(bar, detail);
                 }
             }
@@ -953,7 +954,7 @@ internal sealed class MacStatusPanel : IDisposable
                     if (hasBar) throw new InvalidOperationException($"{section.Provider} row without a value has a usage bar.");
                     continue;
                 }
-                NSColor expectedColor = row.Tone == PanelTone.Muted ? MacControls.Color(PanelTone.Muted)
+                NSColor expectedColor = row.Tone == PanelTone.Muted ? MacControls.QuotaBarPreviousColor(section.Provider)
                     : MacControls.QuotaBarColor(section.Provider);
                 if (!hasBar || Math.Abs(bar!.Fraction - Math.Clamp(used, 0, 100) / 100) > 1e-9 ||
                     !bar.FillColor.Equals(expectedColor) || bar.GestureRecognizers.Length != 0 || bar.Menu is not null ||
@@ -1148,6 +1149,45 @@ internal sealed class MacStatusPanel : IDisposable
         nfloat maximum = (nfloat)Math.Max(0, page.Frame.Height - clip.Bounds.Height);
         clip.ScrollToPoint(new CGPoint(0, toBottom ? maximum : 0));
         pageScroll.ReflectScrolledClipView(clip);
+    }
+
+    // Smoke: scroll the quota area itself (inside the popover) to its top or bottom (review pictures).
+    internal void ScrollQuotaArea(bool toBottom)
+    {
+        content.LayoutSubtreeIfNeeded();
+        NSClipView clip = quotaScroll.ContentView;
+        nfloat maximum = (nfloat)Math.Max(0, quotaScroll.DocumentView!.Frame.Height - clip.Bounds.Height);
+        clip.ScrollToPoint(new CGPoint(0, toBottom ? maximum : 0));
+        quotaScroll.ReflectScrolledClipView(clip);
+    }
+
+    // Smoke: the quota area is capped, so a box below the cap must be reachable by scrolling it. True when the
+    // whole box can be brought inside the visible area; the area is scrolled back to the top afterwards.
+    internal bool QuotaBoxScrollsIntoView(QuotaProvider provider)
+    {
+        content.LayoutSubtreeIfNeeded();
+        NSClipView clip = quotaScroll.ContentView;
+        NSView document = quotaScroll.DocumentView!;
+        NSView box = quotas[provider].Box;
+        CGRect inDocument = box.ConvertRectToView(box.Bounds, document);
+        nfloat maximum = (nfloat)Math.Max(0, document.Frame.Height - clip.Bounds.Height);
+        clip.ScrollToPoint(new CGPoint(0, Math.Clamp(inDocument.Y, 0, maximum)));
+        quotaScroll.ReflectScrolledClipView(clip);
+        CGRect seen = box.ConvertRectToView(box.Bounds, clip);
+        bool visible = seen.Y >= clip.Bounds.Y - 0.5 && seen.Bottom <= clip.Bounds.Bottom + 0.5;
+        ScrollQuotaArea(toBottom: false);
+        return visible;
+    }
+
+    // Smoke: draw the popover content under a fixed appearance (review pictures of light and dark); null follows the system.
+    internal void SetSmokeAppearance(bool? dark) => content.Appearance = dark is null ? null
+        : NSAppearance.GetAppearance(dark.Value ? NSAppearance.NameDarkAqua : NSAppearance.NameAqua);
+
+    // Smoke: what a quota bar tells VoiceOver: its name (label), the tooltip and the accessibility help.
+    internal (string Label, string? ToolTip, string? Help) QuotaBarAccessibility(QuotaProvider provider, string windowId)
+    {
+        UsageBarView bar = quotas[provider].Bars[windowId];
+        return (bar.AccessibilityLabel ?? "", bar.ToolTip, bar.AccessibilityHelp);
     }
 
     // Smoke: the visible quota area height (shrinks and scrolls on a short screen).

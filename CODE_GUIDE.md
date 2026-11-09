@@ -1,5 +1,8 @@
 # 소스코드, 쉬운 말로 읽기
 
+**개발 중 PR A · 버전 2.8.9 유지:** [xAI 주간 크레딧](GROK_QUOTAS.md)의 공통 ACP/검증과 Windows 연결,
+wire v2 및 구버전 진단 파일 분리를 추가합니다. Mac 전용 전환은 A 대상 종속 PR B이며 사이트는 준비·비교만 합니다.
+
 **Windows 2.8.9 기준·#118 병합 완료(2026-11-05 KST):** xAI 필수 카탈로그·Cursor RSS 대응·Bugbot 표기·Imagine 제외를 포함합니다. 사용자 외부 백업과 추가 승인 뒤 21:45 KST에 Codex가 EXE만 교체했고, 운영 등록 확인·실행은 사용자가 외부에서 수행했습니다. 트레이·상태 보기·한도 보기·xAI 카드 정상은 사용자 확인입니다. 공통 `.cs`·Mac·버전·운영 등록의 추가 변경은 없습니다. [검사·EXE 해시·백업·확인 주체·2.8.8 복원](MAINTENANCE_2_8_9.md).
 
 **Windows 2.8.7 기준·#109 병합 완료(2026-10-29 KST):** 시간표/공식 상태/공휴일과 한도에 Windows 전용 발송 요청·토스트·v2 진단을 적용합니다. Group/Header는 `status`/`시간표·상태`, `quota`/`한도`이며 상태 계열만 고정 정보/경고 이미지를 씁니다. Provider 문제·정상화 Tag는 서로 다르고 상태 계열은 11개 고정 슬롯, 한도는 개별 보관입니다. 기존 판정·문구·순서·6.5초·공휴일 4.5초·배너 종료/30초 상한과 무동작 COM은 유지합니다. 이번 버전 PR은 Windows 버전 세 필드·문서만 바꾸며 C#·공통·Mac·운영 등록은 유지합니다. [현재 알림 계약](WINDOWS_QUOTA_NOTIFICATIONS.md), [2.8.7 검사·해시·백업·외부 명령·사용자 확인 항목](MAINTENANCE_2_8_7.md). 준비/Portable publish 경고·오류 0, self-test 각 **291,988건**·smoke 각 **969 PASS·종료 코드 0**, PNG **44/44**·layout **38/38**은 #109와 같습니다. 외부 백업 뒤 같은 EXE만 교체했고, 기존 등록·자동 시작 대상/해제 dry-run 무변경을 외부 receipt로 대조했습니다. 외부 실행·트레이·상태 보기·한도 보기 정상은 사용자 확인이며 실제 OS 알림 표시·보관·클릭은 미확인입니다.
@@ -362,9 +365,9 @@ Windows 내부 승인 형식은 알려진 경우만 해석합니다. 낯선 값�
 
 ## 11. 전체 소스 파일 지도
 
-이름을 눌러 소스를 열 수 있습니다. 역할을 알고 필요한 파일부터 읽으면 됩니다.
+이름을 눌러 소스를 열 수 있습니다. 역할을 알고 필요한 파일부터 읽으면 됩니다. 현재 표의 C#는 루트·Properties 122개(앱 기능 59 + 검사·진단 62 + 명찰 1), Mac 20개, 공통 검사 입구 1개로 총 143개이며 공통 제품 원본은 35개입니다.
 
-### 실제 앱 기능: 52개
+### 실제 앱 기능: 59개
 
 | 파일 | 맡은 일 |
 |---|---|
@@ -420,6 +423,7 @@ Windows 내부 승인 형식은 알려진 경우만 해석합니다. 낯선 값�
 | [AccountQuotaModels.cs](AccountQuotaModels.cs) | 한도 Provider·기간·사용률·리셋 시각과 조회 약속 |
 | [AccountQuotaParsers.cs](AccountQuotaParsers.cs) | 서로 다른 공식 CLI JSON을 검증한 공통 한도로 변환 |
 | [AccountQuotaClient.cs](AccountQuotaClient.cs) | 표준 경로의 native CLI 실행, 제한시간·출력 크기·취소·응답 검증. 2.3.0의 Gemini는 agy 1.3.1 이상·2.0 미만 사전 확인 후 `/usage`, 기존 hooks·MCP 설정 격리 제한 있음 |
+| [GrokQuotaProtocol.cs](GrokQuotaProtocol.cs) | 공통 ACP v1 initialize/캐시 headless 인증/billing만 허용하는 입출력. 모델/재로그인 요청·원문 기록 없음 |
 | [AccountQuotaPolicy.cs](AccountQuotaPolicy.cs) | 기본 1시간·사용 90% 초과~100% 미만 1시간을 이유로 구분. 사용 100%의 15분·리셋 전후 5분·실패 최대 1시간, Gemini 미사용 리셋 제외·1분 이내 구간 양끝 압축 |
 | [AccountQuotaMonitor.cs](AccountQuotaMonitor.cs) | Provider별 독립 조회·재시작 캐시·예약 진단, PreviousSuccess/성공 순번/CID 전달과 판정 행 연결. 주입 시계 예외에도 Provider 게이트 반환 |
 | [AccountQuotaView.cs](AccountQuotaView.cs) | 공통 모델을 바인딩하는 한도 보기. Provider별 박스·막대·상세·내부 스크롤·상태 전환, 10초/클릭/Esc 닫힘과 박스 이탈 전 재표시 차단 |
@@ -427,7 +431,7 @@ Windows 내부 승인 형식은 알려진 경우만 해석합니다. 낯선 값�
 | [QuotaBarPalette.cs](QuotaBarPalette.cs) | Windows 막대의 실제 합성색 대비로 시간층 농도와 경계선 색을 선택. 고대비 시스템색·경계선 보완 |
 | [QuotaDetailPopup.cs](QuotaDetailPopup.cs) | Windows 비활성화 상세 팝업. 흰색·고정 폭·줄바꿈·포인터 근처/화면 경계 보정·긴 상세 세로 스크롤 |
 
-### 검사와 진단: 58개
+### 검사와 진단: 62개
 
 미완성 임시 코드가 아닙니다. **특별한 검사 명령 때만 쓰는 정식 검사 코드**입니다.
 
@@ -488,6 +492,8 @@ Windows 내부 승인 형식은 알려진 경우만 해석합니다. 낯선 값�
 | [QuotaPollingDiagnosticTests.cs](QuotaPollingDiagnosticTests.cs) | 임시 파일의 256건/128KiB·동시 기록·재시작·스키마·권한/잠금/손상 격리 367건 |
 | [QuotaSchedulingTests.cs](QuotaSchedulingTests.cs) | 예약 이유와 실제 예정 일치·1분 압축/구간 보존·실패/취소·임시 DB 통합 107건 |
 | [GeminiQuotaClientTests.cs](GeminiQuotaClientTests.cs) | 합성 입출력으로 agy 고정 명령·버전·0턴/0토큰·인증 대기·출력 제한 검사. 설치된 CLI는 실행하지 않음 |
+| [GrokQuotaTests.cs](GrokQuotaTests.cs) | 합성 주간/실패·ACP 순서/headless·취소·예약 하한·캐시/진단 보존·알림·시간층 검사 |
+| [GrokQuotaUiChecks.cs](GrokQuotaUiChecks.cs) | Windows smoke의 합성 현재/이전/없음 무채색 비교, 라이트/다크·100%/200% PNG와 대비 검사 |
 | [AccountQuotaMonitorTests.cs](AccountQuotaMonitorTests.cs) | 실패 격리·조회 합치기·종료·SQLite 캐시·재시작과 실패/검증 실패/취소/캐시 저장의 연속성 192건 |
 | [AccountQuotaUiChecks.cs](AccountQuotaUiChecks.cs) | 가짜 한도로 창 전환·사용률/막대·대표색·실패·공통 상세/접근성·Refresh·기존 상태 복귀 |
 | [QuotaToolTipUiChecks.cs](QuotaToolTipUiChecks.cs) | 실제 WinForms에서 상세 모양·배치·DPI·스크롤·10초 만료·재등장 방지·창 재열기 검사. 합성 fixture 수명 진단과 수동 닫힘 보호 |

@@ -13,6 +13,7 @@ internal static class AccountQuotaPolicy
     public static readonly TimeSpan ResetInterval = TimeSpan.FromMinutes(5);
     public static readonly TimeSpan ResetMargin = TimeSpan.FromMinutes(15);
     public static readonly TimeSpan FailureRetryInterval = TimeSpan.FromMinutes(15);
+    internal static readonly TimeSpan XaiMinimumScheduledInterval = TimeSpan.FromMinutes(10);
     internal static readonly TimeSpan ResetCoalescingMargin = TimeSpan.FromMinutes(1);
     internal const int ResetAnchorPolicyVersion = 1;
 
@@ -20,7 +21,7 @@ internal static class AccountQuotaPolicy
         IEnumerable<DateTimeOffset>? previousResetAnchors = null, QuotaProvider? provider = null)
     {
         return IsResetPeriod(nowUtc, ResetAnchors(windows, previousResetAnchors, provider))
-            ? ResetInterval : RegularSchedule(windows).Interval;
+            ? ScheduledResetInterval(provider) : RegularSchedule(windows).Interval;
     }
 
     public static DateTimeOffset GetNextCheckUtc(DateTimeOffset nowUtc, DateTimeOffset lastCheckedAtUtc,
@@ -38,7 +39,7 @@ internal static class AccountQuotaPolicy
         DateTimeOffset[] anchors = ResetAnchors(windows, previousResetAnchors, provider).ToArray();
         (TimeSpan regular, QuotaCheckReason regularReason) = RegularSchedule(windows);
         bool inResetPeriod = IsResetPeriod(nowUtc, anchors);
-        TimeSpan interval = inResetPeriod ? ResetInterval : regular;
+        TimeSpan interval = inResetPeriod ? ScheduledResetInterval(provider) : regular;
         QuotaCheckReason reason = inResetPeriod ? QuotaCheckReason.ResetPeriod : regularReason;
         DateTimeOffset? selected = inResetPeriod
             ? anchors.First(reset => IsResetPeriod(nowUtc, [reset])) : null;
@@ -61,7 +62,11 @@ internal static class AccountQuotaPolicy
             DateTimeOffset entry = reset - ResetMargin;
             if (entry > nowUtc && entry <= next)
             {
-                next = entry;
+                DateTimeOffset earliest = lastCheckedAtUtc + (provider == QuotaProvider.Xai
+                    ? XaiMinimumScheduledInterval : TimeSpan.Zero);
+                DateTimeOffset candidate = provider == QuotaProvider.Xai && entry < earliest ? earliest : entry;
+                if (candidate > next || !IsResetPeriod(candidate, [reset])) continue;
+                next = candidate;
                 reason = QuotaCheckReason.ResetEntry;
                 selected = reset;
             }
@@ -94,6 +99,10 @@ internal static class AccountQuotaPolicy
 
     private static bool IsResetPeriod(DateTimeOffset instant, IEnumerable<DateTimeOffset> anchors) =>
         anchors.Any(reset => instant >= reset - ResetMargin && instant <= reset + ResetMargin);
+
+    // Only scheduled plans use this floor. Start/Refresh/resume/network wakes retain their existing immediate path.
+    private static TimeSpan ScheduledResetInterval(QuotaProvider? provider) =>
+        provider == QuotaProvider.Xai ? XaiMinimumScheduledInterval : ResetInterval;
 
     // Gemini can advance an unused window's reset on every response. Such a
     // timestamp is not an active reset: retaining it can perpetuate fast polling.

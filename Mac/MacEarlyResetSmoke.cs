@@ -187,7 +187,7 @@ internal static class MacEarlyResetSmoke
         try
         {
             var store = new UsageStore(Path.Combine(directory, "burgerclock.db"));
-            string logPath = Path.Combine(directory, "logs", "quota-early-reset-decisions-v1.jsonl");
+            string logPath = Path.Combine(directory, "logs", "quota-early-reset-decisions-v2.jsonl");
             DateTimeOffset clock = T0;
             var script = new Queue<Func<DateTimeOffset, QuotaReading?>>();
             var client = new ScriptedClient(() => script.Dequeue()(clock));
@@ -277,7 +277,7 @@ internal static class MacEarlyResetSmoke
                 var client = new ScriptedClient(() => script.Dequeue()(clock));
                 var monitor = new AccountQuotaMonitor(client, new UsageStore(Path.Combine(directory, "burgerclock.db")), () => clock);
                 disposables.Add(monitor);
-                return (monitor, Path.Combine(directory, "logs", "quota-early-reset-decisions-v1.jsonl"), script, () => clock,
+                return (monitor, Path.Combine(directory, "logs", "quota-early-reset-decisions-v2.jsonl"), script, () => clock,
                     () => clock += TimeSpan.FromMinutes(30));
             }
             QuotaReading Weekly(double used, DateTimeOffset reset) => new(QuotaProvider.Claude, [W("w", used, reset)]);

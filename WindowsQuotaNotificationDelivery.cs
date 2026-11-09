@@ -146,7 +146,7 @@ internal sealed class WindowsQuotaNotificationDeliveryLog
     internal WindowsQuotaNotificationDeliveryLog(string? directory = null)
     {
         this.directory = directory ?? Path.Combine(AppPaths.DataDirectory, "logs");
-        LogPath = Path.Combine(this.directory, "notification-delivery-v2.jsonl");
+        LogPath = Path.Combine(this.directory, "notification-delivery-v3.jsonl");
     }
 
     internal string LogPath { get; }
@@ -287,7 +287,7 @@ internal sealed class WindowsQuotaNotificationDeliveryLog
             WindowsQuotaNotificationKind.ScheduleFull or WindowsQuotaNotificationKind.ScheduleBurger or
                 WindowsQuotaNotificationKind.HolidayOn or WindowsQuotaNotificationKind.HolidayOff => entry.Provider == WindowsNotificationProvider.None,
             WindowsQuotaNotificationKind.Recovery or WindowsQuotaNotificationKind.EarlyReset or WindowsQuotaNotificationKind.Combined =>
-                entry.Provider is WindowsNotificationProvider.OpenAI or WindowsNotificationProvider.Claude or WindowsNotificationProvider.Gemini,
+                entry.Provider is WindowsNotificationProvider.OpenAI or WindowsNotificationProvider.Claude or WindowsNotificationProvider.Gemini or WindowsNotificationProvider.Xai,
             _ => entry.Provider != WindowsNotificationProvider.None
         }) &&
         Enum.IsDefined(entry.Result) && Enum.IsDefined(entry.Reason) && (entry.Result switch

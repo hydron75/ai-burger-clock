@@ -30,7 +30,7 @@ internal sealed class QuotaEarlyResetDiagnosticLog
     internal QuotaEarlyResetDiagnosticLog(string directory)
     {
         this.directory = directory;
-        LogPath = Path.Combine(directory, "quota-early-reset-decisions-v1.jsonl");
+        LogPath = Path.Combine(directory, "quota-early-reset-decisions-v2.jsonl");
     }
 
     internal string LogPath { get; }
@@ -194,7 +194,7 @@ internal sealed class QuotaEarlyResetDiagnosticLog
 
     private static bool IsValid(QuotaEarlyResetDiagnosticEntry? entry) => entry is not null
         && IsAttemptId(entry.AttemptId)
-        && entry.Provider is "Codex" or "Claude" or "Gemini"
+        && entry.Provider is "Codex" or "Claude" or "Gemini" or "Xai"
         && IsUtc(entry.AttemptedAtUtc) && IsUtc(entry.RecordedAtUtc)
         && (entry.Sequence is null || entry.Sequence > 0)
         && entry.ContinuityId > 0

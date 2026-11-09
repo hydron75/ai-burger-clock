@@ -7,16 +7,18 @@ using System.Text.Json;
 namespace AiBurgerClock;
 
 /// <summary>Uses the installed official clients' read-only commands, never their credential files.</summary>
-internal sealed class AccountQuotaClient(
+internal sealed partial class AccountQuotaClient(
     string? codexExecutable = null,
     string? claudeExecutable = null,
     string? workingDirectory = null,
     TimeSpan? timeout = null,
-    string? geminiExecutable = null) : IAccountQuotaClient
+    string? geminiExecutable = null,
+    string? grokExecutable = null) : IAccountQuotaClient
 {
     internal const int MaximumOutputCharacters = 2 * 1024 * 1024;
     internal const int MaximumLineCharacters = 512 * 1024;
-    private readonly TimeSpan commandTimeout = timeout ?? TimeSpan.FromSeconds(30);
+    internal static readonly TimeSpan GrokTimeout = TimeSpan.FromSeconds(45);
+    private readonly TimeSpan? commandTimeout = timeout;
 
     public async Task<QuotaReading> ReadAsync(QuotaProvider provider, CancellationToken cancellationToken)
     {
@@ -26,6 +28,7 @@ internal sealed class AccountQuotaClient(
             QuotaProvider.Codex => codexExecutable ?? FindExecutable(provider),
             QuotaProvider.Claude => claudeExecutable ?? FindExecutable(provider),
             QuotaProvider.Gemini => geminiExecutable ?? FindExecutable(provider),
+            QuotaProvider.Xai => grokExecutable ?? FindExecutable(provider),
             _ => throw new ArgumentOutOfRangeException(nameof(provider))
         };
         // Absolute paths and ArgumentList avoid shell interpretation and CWD lookup.
@@ -36,7 +39,7 @@ internal sealed class AccountQuotaClient(
         string directory = workingDirectory ?? Path.Combine(AppPaths.DataDirectory, "quota-cli");
         Directory.CreateDirectory(directory);
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        deadline.CancelAfter(commandTimeout);
+        deadline.CancelAfter(commandTimeout ?? (provider == QuotaProvider.Xai ? GrokTimeout : TimeSpan.FromSeconds(30)));
         // An older/incompatible CLI may treat an unknown slash command as model input.
         // Enable only stable 1.x releases from 1.3.1; never auto-upgrade the CLI.
         if (provider == QuotaProvider.Gemini)
@@ -60,6 +63,10 @@ internal sealed class AccountQuotaClient(
                 process.StandardInput.Close();
                 stdout = ReadGeminiProtocolAsync(process.StandardOutput, deadline.Token);
             }
+            else if (provider == QuotaProvider.Xai)
+            {
+                stdout = ReadGrokProtocolAsync(process.StandardOutput, process.StandardInput, deadline.Token);
+            }
             else
             {
                 stdout = ReadCodexProtocolAsync(process.StandardOutput, process.StandardInput, deadline.Token);
@@ -70,6 +77,7 @@ internal sealed class AccountQuotaClient(
             if (first == stderr) await stderr.ConfigureAwait(false);
             QuotaReading reading = await stdout.ConfigureAwait(false);
             if (stderr.IsFaulted) await stderr.ConfigureAwait(false);
+            if (provider == QuotaProvider.Xai) process.StandardInput.Close();
             if (provider != QuotaProvider.Codex)
             {
                 await process.WaitForExitAsync(deadline.Token).ConfigureAwait(false);
@@ -158,6 +166,15 @@ internal sealed class AccountQuotaClient(
             // 1.3.1 has no official per-invocation user hooks/MCP exclusion switch.
             // The user accepted that limitation (2026-10-08). No bypass, remote
             // control, resume, login, or slash-command-disabling flag is used.
+        }
+        else if (provider == QuotaProvider.Xai)
+        {
+            // https://docs.x.ai/build/cli/headless-scripting documents this opt-out.
+            foreach (string argument in new[] { "--no-auto-update", "agent", "--no-leader", "stdio" })
+                start.ArgumentList.Add(argument);
+            start.Environment.Remove("GROK_LOG_FILE");
+            start.Environment.Remove("GROK_DEBUG_LOG");
+            start.Environment["RUST_LOG"] = "off";
         }
         else throw new ArgumentOutOfRangeException(nameof(provider));
         if (OperatingSystem.IsMacOS())
@@ -496,6 +513,8 @@ internal sealed class AccountQuotaClient(
         }
         if (provider == QuotaProvider.Gemini)
             candidates.Add(Path.Combine(local, "agy", "bin", name));
+        if (provider == QuotaProvider.Xai)
+            candidates.Add(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".grok", "bin", name));
         foreach (string candidate in candidates)
             if (File.Exists(candidate)) return Path.GetFullPath(candidate);
         throw new FileNotFoundException(CliName(provider) +
@@ -507,6 +526,7 @@ internal sealed class AccountQuotaClient(
         QuotaProvider.Codex => "Codex",
         QuotaProvider.Claude => "Claude",
         QuotaProvider.Gemini => "agy",
+        QuotaProvider.Xai => "grok",
         _ => throw new ArgumentOutOfRangeException(nameof(provider))
     };
 }

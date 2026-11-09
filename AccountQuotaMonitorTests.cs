@@ -547,7 +547,7 @@ internal static class AccountQuotaMonitorTests
                 && state.LastSuccessfulCheckUtc == Now.AddMinutes(-10)) && observations.IsEmpty,
                 "Loading a cache preserves the new monitor's positive generation but never establishes live continuity");
             release.TrySetResult();
-            await WaitAsync(() => observations.Count == 3 && monitor.Snapshot().All(state => !state.IsRefreshing));
+            await WaitAsync(() => observations.Count == Enum.GetValues<QuotaProvider>().Length && monitor.Snapshot().All(state => !state.IsRefreshing));
             check(observations.All(item => item is { ContinuityId: 1, Sequence: 1 })
                 && monitor.Snapshot().All(state => state.ContinuityId == 1),
                 "First live successes after cache loading seed sequence one without a false continuity break");
@@ -561,7 +561,7 @@ internal static class AccountQuotaMonitorTests
         var restartObservations = new System.Collections.Concurrent.ConcurrentQueue<QuotaObservation>();
         restarted.Succeeded += restartObservations.Enqueue;
         restarted.Start();
-        await WaitAsync(() => restartObservations.Count == 3 && restarted.Snapshot().All(state => !state.IsRefreshing));
+        await WaitAsync(() => restartObservations.Count == Enum.GetValues<QuotaProvider>().Length && restarted.Snapshot().All(state => !state.IsRefreshing));
         check(restartObservations.All(item => item is { Sequence: 1, ContinuityId: 1 }),
             "Restart creates a fresh live baseline rather than restoring sequence or continuity from the cache");
         await restarted.StopAsync();
@@ -806,8 +806,8 @@ internal static class AccountQuotaMonitorTests
         check(codex is { Version: 1 } && codex.SuccessfulAtUtc == Now && codex.Reading.Windows[0].UsedPercent == 25,
             "Reopened DB returns exact normalized quota and successful time");
         check(claude?.Reading.Windows[0].UsedPercent == 75, "Provider caches persist independently");
-        check(Scalar(path, "SELECT COUNT(*) FROM AppMetadata WHERE Key LIKE 'AccountQuota.v1.%';") == 3,
-            "Repeated polling overwrites three bounded metadata cache entries");
+        check(Scalar(path, "SELECT COUNT(*) FROM AppMetadata WHERE Key LIKE 'AccountQuota.v1.%';") == Enum.GetValues<QuotaProvider>().Length,
+            "Repeated polling overwrites one bounded metadata cache entry per Provider");
         QuotaCache? geminiCache = await reopened.ReadQuotaAsync(QuotaProvider.Gemini);
         check(geminiCache?.Reading.Provider == QuotaProvider.Gemini && geminiCache.Reading.Windows[0].UsedPercent == 75,
             "Gemini cache persists independently under its new key");
@@ -843,7 +843,7 @@ internal static class AccountQuotaMonitorTests
                 "Source-generated quota save and restart preserve every normalized field");
         }
         check(Scalar(legacyPath, "PRAGMA user_version;") == 2 &&
-              Scalar(legacyPath, "SELECT COUNT(*) FROM AppMetadata WHERE Key LIKE 'AccountQuota.v1.%';") == 3,
+              Scalar(legacyPath, "SELECT COUNT(*) FROM AppMetadata WHERE Key LIKE 'AccountQuota.v1.%';") == Enum.GetValues<QuotaProvider>().Length,
             "Source generation changes neither SQLite schema nor quota metadata keys");
 
         var offline = new FakeClient((_, _) => Task.FromException<QuotaReading>(new IOException("Offline")));

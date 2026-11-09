@@ -25,7 +25,7 @@ internal static class QuotaPanelModel
     public const string AccessibleName = "개인 계정 사용량";
     public const string ShowQuotas = "한도 보기";
     public const string ShowStatus = "상태 보기";
-    public const string ToggleDetail = "ChatGPT (Work/Codex) · Claude · Gemini (Antigravity) 계정 한도. 일반 채팅의 모든 모델 한도를 뜻하지 않습니다. 공식 서비스 상태는 그대로 유지합니다.";
+    public const string ToggleDetail = "ChatGPT (Work/Codex) · Claude · Gemini (Antigravity) · xAI (Grok 주간 크레딧) 계정 한도. 일반 채팅의 모든 모델 한도를 뜻하지 않습니다. 공식 서비스 상태는 그대로 유지합니다.";
     public const string Caption = "진함: 사용 · 연함/선: 조회 당시 시간\n마우스 올리기: 상세 · Refresh: 다시 조회";
     public const string CodexScope = "Work/Codex";
     public const string CodexScopeDetail = "ChatGPT 계정의 Work/Codex 한도입니다. 일반 채팅의 모든 모델 한도를 뜻하지 않습니다.";
@@ -142,7 +142,11 @@ internal static class QuotaPanelModel
         lines.Add("최근 시도: " + Stamp(state.CheckedAtUtc, "MM-dd HH:mm:ss"));
         if (!string.IsNullOrWhiteSpace(state.Error)) lines.Add(state.Error);
         if (!string.IsNullOrWhiteSpace(state.CacheError)) lines.Add(state.CacheError);
-        lines.Add("기본 1시간 · 사용 90% 초과~100% 미만은 1시간 · 사용 100%는 15분 · 리셋 전후 15분은 5분 · 실패 시 15분부터 재시도");
+        lines.Add(state.Provider == QuotaProvider.Xai
+            ? "기본 1시간 · 사용 90% 초과~100% 미만은 1시간 · 사용 100%는 15분 · 리셋 전후 15분은 10분 · 실패 시 15분부터 재시도"
+            : "기본 1시간 · 사용 90% 초과~100% 미만은 1시간 · 사용 100%는 15분 · 리셋 전후 15분은 5분 · 실패 시 15분부터 재시도");
+        if (state.Provider == QuotaProvider.Xai)
+            lines.Add("xAI 예약 조회는 최소 10분입니다. 시작·Refresh·복귀·네트워크 조회에는 적용하지 않습니다.");
         if (gemini) lines.Add("Gemini 사용 0% 창의 리셋은 빠른 조회 기준에서 제외합니다.");
         lines.Add("공식 CLI 응답 수신 시각이며 서버 데이터 생성 시각을 보장하지 않습니다.");
         return string.Join('\n', lines);

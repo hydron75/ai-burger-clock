@@ -44,6 +44,43 @@ internal static class MacQuotaRowImages
         panel.FitFor(restoreUsableHeight);
     }
 
+    // Synthetic review pictures of the xAI weekly credit box in light and dark: a current value (also with the quota area at
+    // its top, where the fourth box is below the fold), a previous value and no value. The ratio and the times are made up.
+    internal static void RenderXaiQuota(MacStatusPanel panel, ScheduleSnapshot schedule, IReadOnlyList<ProviderStatus> providers,
+        QuotaState codex, QuotaState claude, QuotaState gemini, DateTimeOffset now, nfloat restoreUsableHeight)
+    {
+        string? folder = Environment.GetEnvironmentVariable(EnvironmentVariable);
+        if (string.IsNullOrEmpty(folder)) return;
+        Directory.CreateDirectory(folder);
+        (string name, QuotaState xai)[] scenes =
+        [
+            ("current", MacXaiQuotaSmoke.Reading(now, 37)),
+            ("previous", MacXaiQuotaSmoke.Reading(now, 37, previous: true)),
+            ("none", new QuotaState(QuotaProvider.Xai, null, Error: "조회 실패 예시"))
+        ];
+        foreach (bool dark in new[] { false, true })
+        {
+            string appearance = dark ? "dark" : "light";
+            panel.SetSmokeAppearance(dark);
+            foreach (var (name, xai) in scenes)
+            {
+                QuotaState[] states = [codex, claude, gemini, xai];
+                panel.Update(schedule, providers, states, false, now.AddMinutes(5), "");
+                panel.Verify(schedule, providers, states);
+                panel.FitFor(restoreUsableHeight);
+                foreach (bool bottom in name == "current" ? new[] { false, true } : new[] { true })
+                {
+                    panel.ScrollQuotaArea(bottom);
+                    if (panel.SnapshotPng() is { } png)
+                        File.WriteAllBytes(Path.Combine(folder, $"mac-xai-quota-{appearance}-{name}{(name == "current" && !bottom ? "-top" : "")}.png"), png.ToArray());
+                }
+                panel.ScrollQuotaArea(toBottom: false);
+            }
+        }
+        panel.SetSmokeAppearance(null);
+        panel.FitFor(restoreUsableHeight);
+    }
+
     internal static void Render(MacStatusPanel panel, ScheduleSnapshot schedule, IReadOnlyList<ProviderStatus> providers,
         QuotaState codex, QuotaState claude, DateTimeOffset now, string prefix)
     {

@@ -108,6 +108,7 @@ internal static class QuotaEarlyResetNotificationTests
             {
                 QuotaProvider.Codex => "ChatGPT (Work/Codex)",
                 QuotaProvider.Gemini => "Gemini (Antigravity)",
+                QuotaProvider.Xai => "xAI",
                 _ => "Claude"
             };
             Check(QuotaEarlyResetText.Title(provider) == scope + " 한도 조기 초기화 가능성", name + " explicit quota service scope");

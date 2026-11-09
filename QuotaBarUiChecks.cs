@@ -10,7 +10,7 @@ internal static class QuotaBarUiChecks
         foreach (Color background in new[] { Color.White, Color.FromArgb(30, 30, 30) })
         foreach (QuotaProvider provider in Enum.GetValues<QuotaProvider>())
         {
-            var palette = QuotaBarPalette.Create(QuotaBalanceBar.ProviderColor(provider), background);
+            var palette = QuotaBarPalette.Create(QuotaBalanceBar.ProviderColor(provider, background), background);
             check(palette.HasDistinctTint && palette.TintOpacity is > 0 and < 1 &&
                 QuotaBarPalette.Contrast(palette.Track, palette.ElapsedFill) >= QuotaBarPalette.TintContrastTarget &&
                 QuotaBarPalette.Contrast(palette.ElapsedFill, palette.UsedFill) >= QuotaBarPalette.TintContrastTarget,
