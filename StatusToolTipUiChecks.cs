@@ -199,6 +199,17 @@ internal static class StatusToolTipUiChecks
         var area = Screen.FromPoint(popup.AnchorPoint).WorkingArea;
         check(popup.ContentSize.Height > area.Height && popup.VerticalScroll.Visible && area.Contains(popup.Bounds),
             kind + " overflowing detail is height-limited to the work area with a scrollbar");
+        using (var graphics = popup.CreateGraphics())
+        {
+            var required = AccountQuotaView.MeasureDetail(graphics, popup.DetailText, owner.DeviceDpi, area.Width, popup.ClientSize.Width);
+            Console.WriteLine("INFO: native detail content fit " + System.Text.Json.JsonSerializer.Serialize(new
+            {
+                Kind = kind, Synthetic = true, StoredWidth = popup.ContentSize.Width, ClientWidth = popup.ClientSize.Width,
+                StoredHeight = popup.ContentSize.Height, RequiredHeight = required.Height
+            }));
+            check(popup.ContentSize.Height >= required.Height,
+                kind + " scroll range includes the final line at the actual scrollbar-reduced client width");
+        }
         check(popup.CanInteractAt(point) && SendMessage(popup.Handle, 0x0084, IntPtr.Zero, Coordinates(point)).ToInt64() != -1,
             kind + " scrollable popup accepts native hit-testing without activation");
         int before = -popup.AutoScrollPosition.Y, messages = 0;
