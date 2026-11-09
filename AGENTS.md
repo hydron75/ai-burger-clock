@@ -7,7 +7,7 @@ AI Burger Clock 저장소에서 코드를 고치는 사람과 에이전트를 �
 - 본체는 Windows 11 x64용 WinForms 앱입니다. `net10.0-windows`, `PlatformTarget` x64, `RuntimeIdentifier` win-x64.
 - macOS 27 / Apple Silicon용 AppKit 메뉴바 앱은 `Mac/`의 별도 프로젝트입니다. `net10.0-macos27.0`, `osx-arm64`이며 공통 원본은 `Shared/SharedSources.props`로 링크합니다. 빌드와 검사는 [Mac/README](Mac/README.md)를 따릅니다.
 - SDK는 `global.json` 기준 10.0.100 이상, 같은 10.0의 최신 기능 밴드를 허용합니다. 미리보기 SDK는 쓰지 않습니다.
-- 직접 NuGet 의존성은 `Microsoft.Data.Sqlite 10.0.12` 하나입니다. 새 의존성은 추가하지 않는 것을 기본으로 합니다.
+- 직접 NuGet 의존성은 `Microsoft.Data.Sqlite 10.0.14` 하나입니다. 새 의존성은 추가하지 않는 것을 기본으로 합니다.
 - 배포본은 framework-dependent 단일 EXE입니다. .NET 10 Desktop Runtime x64가 별도로 필요하며 trimming과 NativeAOT는 쓰지 않습니다.
 - Windows EXE의 `--self-test`·`--smoke-test`는 Linux·macOS에서 실행할 수 없습니다. Mac 앱의 `--smoke-test`는 macOS에서 실행합니다([Mac/README](Mac/README.md)). 컴파일 확인은 `dotnet build -c Release -warnaserror -p:EnableWindowsTargeting=true`로 할 수 있습니다(Linux에서 확인).
 

@@ -13,7 +13,7 @@
 
 ## 다음 버전: SQLite 패키지·엔진
 
-- **다음 버전에 Microsoft.Data.Sqlite 10.0.14 반영(세 프로젝트 동일 버전, Windows·Mac 재빌드·smoke, 기존 DB 읽기·쓰기·백업 회귀 확인).** 이번 2.9.0에서는 10.0.12와 실제 복원된 SQLitePCLRaw 2.1.12를 유지한다. 다음 10.0.14 갱신은 기본 의존성 2.1.13 범위로 맞춘다. 별도 배포하지 않는다.
+- **Draft: 다음 Windows 2.9.1·Mac 0.9.1에 Microsoft.Data.Sqlite 10.0.14 반영.** Windows·Mac·Shared.Tests의 패키지를 같은 버전으로 맞추고 기본 SQLitePCLRaw 2.1.13을 사용한다(직접 지정 없음). 기존 DB 복사본의 읽기·쓰기·백업·WAL, 양쪽 재빌드·smoke 확인 후 다음 버전과 함께 배포한다. 이 PR은 앱 버전을 올리거나 배포하지 않는다. [갱신·회귀 확인](SQLITE_PACKAGE_UPDATE.md). 과거 2.9.0에서는 10.0.12와 SQLitePCLRaw 2.1.12를 사용했다.
 - **SQLite 엔진 갱신 보류: 2.x에 3.54.1 이상이 들어오면 재검토, 3.x 전환은 별도 결정.** 2.1.14/3.x로 이번에 올리지 않는다.
 
 
