@@ -2839,7 +2839,32 @@ smoke의 선택 기능(`AIBURGERCLOCK_SMOKE_IMAGES`)으로 큰 화면·1280×800
 ### 배포 계획 (병합 뒤 메인 채팅의 "배포 진행"을 받으면, [76절](#76-워크로드-27210000과-대상-프레임워크-net100-macos272) 절차)
 옛 앱 종료 → 저장소 경로에서 `bash Mac/build.sh --quit-running`(옵션 없음)으로 새 경로에 빌드·실행 → 옛 경로 `lsregister -u` → 로그인 항목이 새 경로를 가리키는지 `sfltool dumpbtm` 확인(갱신되지 않았으면 자동 실행 껐다 켜기, 사용자 허용 범위) → 확인 뒤에만 옛 번들 폴더(`net10.0-macos27.0`) 삭제 → 번들·서명·SHA-256·프로세스·등록 수·런타임 확인. 결과는 배포 뒤 이 절에 이어 적는다.
 
+### 저장소 경로 빌드와 교체 (Claude Code 수행, 2026-11-11 07시대)
+메인 채팅의 "배포 진행" 지시(PR #142 병합 뒤, main `043951abdd2aa2a83db4bc6b8aff9fad29e0302b`)에 따라 [76절](#76-워크로드-27210000과-대상-프레임워크-net100-macos272)의 7단계 절차대로 진행했다. 저장소 경로에서 `bash Mac/build.sh --quit-running`(옵션 없음)으로 빌드했다.
+
+| 항목 | 결과 |
+|---|---|
+| 시작 전 | 실행 중이던 0.9.1 앱 1개(PID 1769, 옛 경로 `net10.0-macos27.0` 번들, 11월 10일 재부팅 뒤 로그인 항목으로 시작). 로그인 항목(BTM)은 `enabled`이고 URL이 옛 경로, LaunchServices 등록 수 1 |
+| 옛 앱 종료 | `build.sh --quit-running`은 새 경로만 보므로, `build.sh`의 종료 요청과 같은 방식(`NSRunningApplication terminate`, 해당 PID만)으로 먼저 종료했다. 정상 종료돼 옛 경로 프로세스 0 |
+| 빌드 | 07:40:38~07:41:10, **옵션 없음**(`artifacts/mac-build/xcode-mismatch.log`에 새 줄 없음, 마지막 줄은 11-09). 경고 0 / 오류 0, Shared.Tests **291,907건 PASS**(`build.sh`가 실행) |
+| 번들 | `CFBundleShortVersionString` **0.9.2**, `CFBundleVersion` **29**, `codesign --verify --deep --strict` 통과 |
+| 번들 런타임 | 복원 결과의 `Microsoft.NETCore.App.Runtime.osx-arm64` **10.0.15**, `System.Private.CoreLib`에 10.0.15 문자열 있고 10.0.14는 없음 |
+| 프로세스 | **1개**(PID 96888, 07:41:15 시작, 경로는 `net10.0-macos27.2` 번들). 약 1분 뒤에도 1개, `grok` 프로세스 0 |
+| SHA-256 실행 파일 | `a5f6a23b58f6971a05e977e68831010901db7255c385d3080332f49bd6e29f5f` |
+| SHA-256 앱 DLL | `b8c85562f549938da149176fcab36368147b10bc02b9d5e00f1da72449433ae4` (`Contents/MonoBundle/AI Burger Clock.dll`) |
+| LaunchServices 등록 수 | 새 앱 실행 직후 **2**(옛·새 경로) → 옛 경로를 `lsregister -u`로 해제한 뒤 **1**(새 경로 번들) |
+| **로그인 항목(BTM)** | 새 앱을 실행하자 `sfltool dumpbtm`의 항목(식별자 `2.com.hydron75.aiburgerclock`)이 **자동으로 새 경로로 갱신**됐다(`enabled, allowed`, Generation 3 → 4, 항목은 1개 그대로). 자동 실행을 껐다 켜는 조치는 필요하지 않았고 하지 않았다 |
+| 옛 번들 폴더 | 위 BTM 확인 뒤 `Mac/bin/Release/net10.0-macos27.0/`(Git 제외 산출물, 264MB)를 삭제했다. 삭제 시점에 그 경로에서 실행 중인 프로세스 0 |
+| 진단 파일(이름·갱신 시각만 확인) | 실행 직후 v2 파일(`quota-polling-diagnostics-v2.json`, `quota-early-reset-decisions-v2.jsonl`)이 07:41:21에 갱신됐고, 옛 v1 파일은 11-09 09:30 그대로(읽지도 쓰지도 않음) |
+
+위 SHA-256은 앞의 임시 사본 값(실행 파일 `d41b640b…`, 앱 DLL `50c0826b…`)과 다르다. 같은 앱 소스여도 빌드 경로와 빌드 때의 git 커밋(`043951a`)이 다르기 때문이다.
+
+남은 `Mac/obj/Release/net10.0-macos27.0/…/codesign/` 아래의 LaunchServices 경로 두 개는 옛 빌드 중간 산출물이다. 번들 ID 등록 수에는 잡히지 않아(위 1) 건드리지 않았다.
+
+### 사용자 확인
+팝오버·상세 팁의 실제 화면과 재부팅·재로그인 뒤 새 경로 앱이 뜨는지는 사용자가 확인한다(이 기록 시점에는 확인 대기).
+
 ### 수행하지 않은 검증
-- 저장소 경로 빌드·교체·실행과 로그인 항목 갱신(배포 때).
-- 재로그인·재부팅 뒤 새 경로 앱이 뜨는지(사용자가 다음 재부팅 때 확인 예정).
+- ~~저장소 경로 빌드·교체·실행과 로그인 항목 갱신~~: 배포 단계에서 했다(위 "저장소 경로 빌드와 교체"). 팝오버의 실제 화면은 사용자 확인 대기.
+- 재로그인·재부팅 뒤 새 경로 앱이 뜨는지(BTM 항목은 새 경로를 가리키지만 실제 로그인 실행은 확인하지 않았다. 사용자가 다음 재부팅 때 확인 예정).
 - 실제 마우스 휠·스크롤러 드래그, VoiceOver, 여러 디스플레이의 긴 팁, 앵커 창 경로와 모든 디스플레이가 덮였을 때의 SKIP 출력(73·74·75절 미확인 항목 그대로).
