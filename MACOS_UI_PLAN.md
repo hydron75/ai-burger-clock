@@ -21,7 +21,7 @@
 ## 2) 구조 분석과 공통 라이브러리 분리안
 
 ### 2-1. macOS 기술 스택
-- `net10.0-macos27.0`, `osx-arm64`, .NET macOS 바인딩의 **네이티브 AppKit**(NSStatusItem·NSWindow·NSMenu·NSAlert). 알림 UserNotifications, 로그인 항목 SMAppService. Avalonia·MAUI·WebView 없음.
+- `net10.0-macos27.2`, `osx-arm64`, .NET macOS 바인딩의 **네이티브 AppKit**(NSStatusItem·NSWindow·NSMenu·NSAlert). 알림 UserNotifications, 로그인 항목 SMAppService. Avalonia·MAUI·WebView 없음.
 - NuGet은 `Microsoft.Data.Sqlite 10.0.12` 하나. 자체 서명(ad-hoc), 샌드박스 없음.
 
 ### 2-2. 코드 분류

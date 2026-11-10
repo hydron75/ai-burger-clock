@@ -34,7 +34,7 @@ task_xcode_major_gate() {
 
 echo "AI Burger Clock macOS 빌드 준비를 확인합니다."
 task_script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-task_app="$task_script_dir/bin/Release/net10.0-macos27.0/osx-arm64/AI Burger Clock.app"
+task_app="$task_script_dir/bin/Release/net10.0-macos27.2/osx-arm64/AI Burger Clock.app"
 
 if [[ "$(uname -s)" != "Darwin" || "$(uname -m)" != "arm64" ]]; then
   echo "Apple Silicon macOS에서 실행하세요. Windows/Linux 빌드는 네이티브 검증이 아닙니다." >&2
@@ -50,7 +50,7 @@ fi
 # Only processes started from this exact bundle count; a copy in /Applications is not touched.
 task_executables=(
   "$task_app/Contents/MacOS/AI Burger Clock"
-  "$(cd -- "$task_script_dir" && pwd -P)/bin/Release/net10.0-macos27.0/osx-arm64/AI Burger Clock.app/Contents/MacOS/AI Burger Clock"
+  "$(cd -- "$task_script_dir" && pwd -P)/bin/Release/net10.0-macos27.2/osx-arm64/AI Burger Clock.app/Contents/MacOS/AI Burger Clock"
 )
 task_running_pids() {
   local pid command

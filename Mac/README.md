@@ -12,7 +12,7 @@ Apple Silicon / macOS 27을 위한 C# AppKit 메뉴바 앱입니다. 함께 쓰�
 - **xAI 카드:** 제목 오른쪽의 사용량 보기 링크가 없어지고 카드 전체가 공식 상태 페이지를 엽니다([72절](../MACOS_PORT.md#72-xai-상태-카드의-사용량-보기-링크-제거pr-128의-mac-전환)).
 - **SQLite:** `Microsoft.Data.Sqlite` 10.0.14(엔진 3.53.3). 번들의 `libe_sqlite3.dylib`(arm64)로 읽기·쓰기·백업을 합성 DB로 확인했습니다.
 - **smoke만:** `--smoke-test`가 전체 화면 앱이 없는 디스플레이에서 창 검사를 합니다. 앱 동작은 바뀌지 않습니다([74절](../MACOS_PORT.md#74-smoke가-전체-화면-앱이-없는-디스플레이에-창을-열기)).
-- **빌드 조건:** Xcode 27.2와 워크로드 27.0.10742(요구 Xcode 27.1)가 어긋나 `--allow-xcode-mismatch`로 빌드합니다([BACKLOG](../BACKLOG.md)).
+- **빌드 조건:** Xcode 27.2와 워크로드 27.0.10742(요구 Xcode 27.1)가 어긋나 `--allow-xcode-mismatch`로 빌드했습니다. 워크로드 27.2.10000 이후에는 옵션 없이 빌드합니다([BACKLOG](../BACKLOG.md), [76절](../MACOS_PORT.md#76-워크로드-27210000과-대상-프레임워크-net100-macos272)).
 - 기록: [75절](../MACOS_PORT.md#75-091-정리).
 
 ## 0.9.0: Grok 주간 크레딧
@@ -251,9 +251,9 @@ git pull --ff-only
 아래 명령은 **각 줄을 따로 복사해서 차례로 실행**합니다. `--smoke-test echo ...`처럼 한 줄로 붙이면 `echo`가 앱의 추가 인자로 전달되어 검사를 시작하지 않고 지원 옵션 안내만 출력합니다.
 
 ```sh
-"/Users/hydron/ai-burger-clock/Mac/bin/Release/net10.0-macos27.0/osx-arm64/AI Burger Clock.app/Contents/MacOS/AI Burger Clock" --smoke-test
+"/Users/hydron/ai-burger-clock/Mac/bin/Release/net10.0-macos27.2/osx-arm64/AI Burger Clock.app/Contents/MacOS/AI Burger Clock" --smoke-test
 echo "검사 종료 코드: $?"
-open "/Users/hydron/ai-burger-clock/Mac/bin/Release/net10.0-macos27.0/osx-arm64/AI Burger Clock.app"
+open "/Users/hydron/ai-burger-clock/Mac/bin/Release/net10.0-macos27.2/osx-arm64/AI Burger Clock.app"
 ```
 
 ## 들어 있는 기능
@@ -297,18 +297,18 @@ xcodebuild -version
 command -v dotnet
 ```
 
-기준 도구는 .NET SDK **10.0.403**, Xcode **27.1**, macos workload set **10.0.403**(macOS 워크로드 27.0.10742)입니다. [Microsoft 공식 Xcode 27.1 지원 릴리스](https://github.com/dotnet/macios/releases/tag/dotnet-10.0.1xx-xcode27.1-10018)에 맞춘 조합입니다. 프로젝트는 `net10.0-macos27.0` / `osx-arm64`를 대상으로 합니다.
+기준 도구는 .NET SDK **10.0.404**, Xcode **27.2**, macos workload set **10.0.404**(macOS 워크로드 27.2.10000)입니다. [Microsoft 공식 Xcode 27.2 지원 릴리스](https://github.com/dotnet/macios/releases/tag/dotnet-10.0.1xx-xcode27.2.10000)에 맞춘 조합입니다. 프로젝트는 `net10.0-macos27.2` / `osx-arm64`를 대상으로 합니다. 대상 프레임워크의 버전은 설치된 워크로드의 macOS SDK 팩과 맞아야 합니다(워크로드 27.2.10000부터 `27.0`은 `NETSDK1140`으로 거부되고 `26.0`·`27.2`만 유효합니다). 워크로드를 올린 뒤 이 오류가 나오면 `Mac/AiBurgerClock.Mac.csproj`의 대상 프레임워크와 `build.sh`의 bundle 경로를 함께 확인합니다. 최소 지원 OS(`SupportedOSPlatformVersion`·`LSMinimumSystemVersion`)는 27.0 그대로입니다.
 
-`dotnet`을 찾지 못한다면 [.NET SDK 10.0.403 macOS Arm64 설치 파일](https://builds.dotnet.microsoft.com/dotnet/Sdk/10.0.403/dotnet-sdk-10.0.403-osx-arm64.pkg)을 수동 설치하세요. Runtime만 설치하거나 x64 버전을 선택하지 않습니다. 설치 후 새 터미널에서 버전을 확인합니다.
+`dotnet`을 찾지 못한다면 [.NET SDK 10.0.404 macOS Arm64 설치 파일](https://builds.dotnet.microsoft.com/dotnet/Sdk/10.0.404/dotnet-sdk-10.0.404-osx-arm64.pkg)을 수동 설치하세요. Runtime만 설치하거나 x64 버전을 선택하지 않습니다. 설치 후 새 터미널에서 버전을 확인합니다.
 
 ```sh
 dotnet --version
 ```
 
-`10.0.403`이 확인되면 macOS 앱 빌드에 필요한 workload만 설치합니다. 이 명령은 개발 도구를 설치하며 계정 로그인이나 앱 자동 실행 설정을 바꾸지 않습니다. 시스템에 설치한 SDK는 관리자 권한이 필요할 수 있어 `sudo`를 사용합니다.
+`10.0.404`가 확인되면 macOS 앱 빌드에 필요한 workload만 설치합니다. 이 명령은 개발 도구를 설치하며 계정 로그인이나 앱 자동 실행 설정을 바꾸지 않습니다. 시스템에 설치한 SDK는 관리자 권한이 필요할 수 있어 `sudo`를 사용합니다.
 
 ```sh
-sudo dotnet workload install macos --version 10.0.403
+sudo dotnet workload install macos --version 10.0.404
 dotnet workload list
 ```
 
@@ -338,7 +338,7 @@ bash Mac/build.sh
 
 ### Xcode와 워크로드가 요구하는 버전이 다를 때 (`--allow-xcode-mismatch`)
 
-.NET macOS 워크로드는 자신이 요구하는 Xcode의 major.minor와 설치된 Xcode가 다르면 `E0191`(예: `requires Xcode 27.0. The current version of Xcode is 27.1`)로 빌드를 멈춥니다. Xcode가 먼저 올라가고 워크로드가 늦게 따라오는 기간에 생기며, 새 워크로드가 나오기 전에는 워크로드 갱신으로 해결되지 않습니다. Xcode 27.1은 워크로드 27.0.10742(0.8.2)에서 지원되어 이 오류 없이 빌드됩니다.
+.NET macOS 워크로드는 자신이 요구하는 Xcode의 major.minor와 설치된 Xcode가 다르면 `E0191`(예: `requires Xcode 27.0. The current version of Xcode is 27.1`)로 빌드를 멈춥니다. Xcode가 먼저 올라가고 워크로드가 늦게 따라오는 기간에 생기며, 새 워크로드가 나오기 전에는 워크로드 갱신으로 해결되지 않습니다. **평소에는 이 옵션이 필요 없습니다.** Xcode 27.2는 워크로드 27.2.10000에서 지원되어 옵션 없이 빌드됩니다(0.8.2에서 27.1, 이후 27.2로 두 번 같은 방식으로 해소). 옵션은 다음 Xcode가 워크로드보다 먼저 올라온 기간에만 씁니다.
 
 `bash Mac/build.sh --allow-xcode-mismatch`는 **이 버전 검사 하나만** 건너뜁니다(`-p:ValidateXcodeVersion=false`). 다른 검사와 경고를 오류로 취급하는 설정, 서명 검증은 그대로입니다. `--quit-running`과 함께 쓸 수 있습니다.
 
@@ -415,7 +415,7 @@ NUGET_HTTP_CACHE_PATH="$PWD/artifacts/mac-build/nuget-http-cache" bash Mac/build
 빌드하면 기본적으로 다음 bundle이 생성됩니다.
 
 ```text
-Mac/bin/Release/net10.0-macos27.0/osx-arm64/AI Burger Clock.app
+Mac/bin/Release/net10.0-macos27.2/osx-arm64/AI Burger Clock.app
 ```
 
 Finder나 `open`으로 `.app`를 실행합니다. 사용 중인 앱을 덮어쓰지 말고 종료한 뒤 교체하세요. .NET 실행 환경은 bundle에 포함하며 WebView·MAUI·Avalonia·Electron은 사용하지 않습니다. 직접 NuGet 의존성은 `Microsoft.Data.Sqlite 10.0.12` 하나입니다. Apple SDK의 필수 trimmer pipeline은 `TrimMode=copy`로 코드 제거 없이 동작합니다.
@@ -447,7 +447,7 @@ Mac에서 사용하는 Codex와 Claude는 **그 Mac에 별도로 설치·로그�
 현재 소스의 `bash Mac/build.sh`가 성공한 뒤 아래 검사로 진행합니다. 저장소 루트에서 실행하세요. 실행 중인 일반 앱이 있으면 메뉴바에서 종료합니다.
 
 ```sh
-"Mac/bin/Release/net10.0-macos27.0/osx-arm64/AI Burger Clock.app/Contents/MacOS/AI Burger Clock" --smoke-test
+"Mac/bin/Release/net10.0-macos27.2/osx-arm64/AI Burger Clock.app/Contents/MacOS/AI Burger Clock" --smoke-test
 echo "검사 종료 코드: $?"
 ```
 
@@ -464,7 +464,7 @@ echo "검사 종료 코드: $?"
 현재 소스로 빌드한 bundle을 실행합니다. 저장소 루트에서 실행하세요.
 
 ```sh
-open "Mac/bin/Release/net10.0-macos27.0/osx-arm64/AI Burger Clock.app"
+open "Mac/bin/Release/net10.0-macos27.2/osx-arm64/AI Burger Clock.app"
 ```
 
 일반 실행은 Mac 전용 사용자 DB를 생성/열고 공식 상태 페이지와 설치된 CLI의 한도를 조회합니다. 알림 권한 창이 나오면 사용자가 허용 여부를 선택합니다. 로그인 자동 실행은 현재 옵션을 유지합니다. 앱 위치를 나중에 변경하면 시스템 설정 → 일반 → 로그인 항목에서 등록 경로/승인 상태를 다시 확인하세요.

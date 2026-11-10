@@ -17,7 +17,7 @@ function_source() { sed -n "/^$1() {/,/^}/p" "$script"; }
 # --- BUILD-04: the required Xcode is what the project evaluates, not the highest pack on disk -----------
 # A DOTNET_ROOT with two macOS SDK packs on disk; the highest one asks for 27.5. The stand-in dotnet answers
 # the way the project's evaluation would (the workload selected the older pack: 27.1).
-root="$work/dotnet-root/packs/Microsoft.macOS.Sdk.net10.0_27.0"
+root="$work/dotnet-root/packs/Microsoft.macOS.Sdk.net10.0_27.2"
 for pack in "27.0.10000:27.1" "27.0.99999:27.5"; do
   mkdir -p "$root/${pack%%:*}/targets"
   printf '<Project><PropertyGroup><RecommendedXcodeVersion>%s</RecommendedXcodeVersion></PropertyGroup></Project>\n' \
@@ -58,7 +58,7 @@ if [[ "$between" == true ]]; then pass "the running-app check runs again between
 else fail "no running-app check between Shared.Tests (line ${shared_line:-?}) and the compile (line ${build_line:-?}); an app started meanwhile would be overwritten"; fi
 
 # The check itself: an app started from the bundle path makes it stop (exit 2) instead of building over it.
-app_dir="$work/bundle/bin/Release/net10.0-macos27.0/osx-arm64/AI Burger Clock.app/Contents/MacOS"
+app_dir="$work/bundle/bin/Release/net10.0-macos27.2/osx-arm64/AI Burger Clock.app/Contents/MacOS"
 mkdir -p "$app_dir"
 cp /bin/sleep "$app_dir/AI Burger Clock"
 # A copied system binary is killed on launch unless it is signed again (ad hoc, temporary folder only).
@@ -71,7 +71,7 @@ if [[ -z "$(function_source task_ensure_app_not_running)" ]]; then
   fail "task_ensure_app_not_running is not a function in the script"
 else
   output="$( ( task_script_dir="$work/bundle" task_quit_running=false
-      task_app="$task_script_dir/bin/Release/net10.0-macos27.0/osx-arm64/AI Burger Clock.app"
+      task_app="$task_script_dir/bin/Release/net10.0-macos27.2/osx-arm64/AI Burger Clock.app"
       task_executables=("$task_app/Contents/MacOS/AI Burger Clock" "$task_app/Contents/MacOS/AI Burger Clock")
       eval "$guard_source"
       task_ensure_app_not_running ) </dev/null 2>&1 )"
@@ -82,7 +82,7 @@ fi
 kill "$fake_pid" 2>/dev/null; wait "$fake_pid" 2>/dev/null; fake_pid=""
 status=0
 ( task_script_dir="$work/bundle" task_quit_running=false
-  task_app="$task_script_dir/bin/Release/net10.0-macos27.0/osx-arm64/AI Burger Clock.app"
+  task_app="$task_script_dir/bin/Release/net10.0-macos27.2/osx-arm64/AI Burger Clock.app"
   task_executables=("$task_app/Contents/MacOS/AI Burger Clock" "$task_app/Contents/MacOS/AI Burger Clock")
   eval "$guard_source"
   task_ensure_app_not_running ) </dev/null >/dev/null 2>&1 || status=$?
