@@ -2712,3 +2712,91 @@ smoke의 선택 기능(`AIBURGERCLOCK_SMOKE_IMAGES`)으로 큰 화면·1280×800
 - 실제 마우스 휠·스크롤러 드래그로 긴 팁을 읽는 동작, VoiceOver 낭독, 여러 디스플레이에서의 긴 팁([73절](#73-상태-카드한도-상세의-공통-틀과-고정-폭-팁pr-130의-mac-전환) 미확인 항목 그대로).
 - 상태 항목이 덮인 디스플레이에 있을 때의 앵커 창 경로와 모든 디스플레이가 덮였을 때의 SKIP 출력(74절 미확인 항목 그대로).
 - 옵션 없는 빌드(Xcode 27.2를 지원하는 워크로드 이후, [BACKLOG](BACKLOG.md)).
+
+
+## 76. 워크로드 27.2.10000과 대상 프레임워크 net10.0-macos27.2
+
+2026-11-11. "AI CLI 자동 업데이트" 알림 두 개(.NET SDK 10.0.404, Xcode 27.2를 지원하는 macOS 워크로드 27.2.10000)에 따라 개발 도구를 올렸다. **앱 동작·버전은 바뀌지 않는다**(0.9.1 / build 28 그대로). 이 절의 변경은 Mac 대상 프레임워크와 번들 경로, 그리고 관련 문서뿐이다. 실행 중인 앱은 건드리지 않았고 재배포도 하지 않았다.
+
+### 도구 업데이트
+| 항목 | 이전 | 이후 |
+|---|---|---|
+| .NET SDK | 10.0.403(설치된 SDK는 10.0.401~403) | **10.0.404** |
+| .NET 런타임 | 10.0.14 | **10.0.15** |
+| macOS 워크로드 | 27.0.10742/10.0.100 | **27.2.10000**/10.0.100 (workload set 10.0.404) |
+| Xcode | 27.2 (27B52) | 27.2 (27B52), 변경 없음 |
+
+- 업데이트 전 SDK·런타임·워크로드 목록과 `dotnet workload update --print-rollback` 출력을 로컬에 남겼다(저장소 밖). 되돌리려면 `dotnet workload update --from-rollback-file`이 필요하고, 옛 팩은 지워졌으므로 네트워크로 다시 받아야 한다.
+- SDK 설치 파일(`dotnet-sdk-10.0.404-osx-arm64.pkg`)은 공식 `releases.json`의 SHA-512와 일치하고 Microsoft Corporation Developer ID 서명·공증이 확인됐다. 설치(`sudo installer`)와 `sudo dotnet workload update`는 Claude Code가 사용자 터미널 탭에서 시작했고 사용자가 `sudo` 비밀번호를 입력해 진행했다. 옛 SDK 10.0.401~403은 지우지 않았다.
+- 워크로드 업데이트가 옛 27.0 SDK 팩과 사용하지 않던 다른 매니페스트(ios·maui·mono toolchain 등)를 함께 지웠다. 새 SDK를 처음 실행하며 ASP.NET HTTPS 개발 인증서가 생성됐다(신뢰 등록은 안 함, 이 앱과 무관).
+
+### 공식 릴리스 노트의 27.2.10000 조건
+[dotnet/macios 27.2.10000](https://github.com/dotnet/macios/releases/tag/dotnet-10.0.1xx-xcode27.2.10000) 기준이다.
+- Xcode 27.2가 필요하고, Xcode 27.2는 macOS 26.6 이상을 요구한다(이 Mac은 충족).
+- workload set 10.0.404에 포함된다. 설치 전에 SDK 10.0.404 사용을 권장한다.
+- macOS·Mac Catalyst 최소 OS 버전 상향은 되돌려졌다(`Revert macOS and Mac Catalyst minimum OS version bumps`).
+
+### 발견: 대상 프레임워크 `net10.0-macos27.0`은 더 이상 유효하지 않다
+워크로드 27.2.10000에서 main(`net10.0-macos27.0`)을 빌드하면 `NETSDK1140: 27.0은(는) macOS에 대한 유효한 TargetPlatformVersion이 아닙니다. 유효한 버전은 다음과 같습니다. 26.0, 27.2`로 멈춘다(옵션 없이 실행했을 때. 이 오류는 Xcode 버전 검사와 별개로 대상 프레임워크 추론 단계에서 난다). Shared.Tests는 이 실패 전에 통과했다. 그래서 이 PR에서 대상 프레임워크를 `net10.0-macos27.2`로 올린다.
+
+### 변경
+| 파일 | 변경 |
+|---|---|
+| `Mac/AiBurgerClock.Mac.csproj` | `TargetFramework`를 `net10.0-macos27.2`로. `SupportedOSPlatformVersion` 27.0은 유지 |
+| `Mac/Info.plist` | 변경 없음(`LSMinimumSystemVersion` 27.0 유지) |
+| `Mac/build.sh` | bundle 경로(`bin/Release/net10.0-macos27.2/…`) 두 곳. `--allow-xcode-mismatch` 옵션은 그대로 남김 |
+| `Mac/tools/check-build-script.sh` | 합성 검사의 bundle·SDK 팩 이름을 새 경로로. 검사 전체 PASS |
+| `Mac/README.md`·`AGENTS.md`·`CODE_GUIDE.md`·`MACOS_UI_PLAN.md` | 현행 설명의 대상 프레임워크·bundle 경로, 기준 도구(SDK·workload·Xcode), 설치 안내. `--allow-xcode-mismatch`는 "평소에는 필요 없음"으로 |
+| `BACKLOG.md` | "옵션 없이 재빌드" 항목 완료 처리 |
+
+과거 기록(이 문서의 이전 절, Mac/README의 이전 버전 항목, AGENTS의 날짜가 붙은 규칙)은 그대로 둔다. 옛 경로 `net10.0-macos27.0`이 적힌 이전 절은 그 시점의 실제 경로다. 공통 원본·Windows 파일·앱 버전은 바꾸지 않았다.
+
+### Windows 쪽 영향 확인
+- 루트 `AiBurgerClock.csproj`는 `Compile Remove="Mac/**/*.cs…"` 한 줄로 Mac 폴더 파일을 제외할 뿐 Mac 프로젝트를 참조하지 않는다.
+- `AiBurgerClock.sln`에 Mac 프로젝트가 없다. `.github/workflows`는 없다.
+- 이 PR은 Windows 파일을 건드리지 않는다. 임시 사본에서 `dotnet build AiBurgerClock.csproj -c Release -warnaserror -p:EnableWindowsTargeting=true`는 경고 0·오류 0이었다.
+
+### 이 Mac에서 수행한 검증 (임시 사본, 저장소 경로 아님, 배포 전)
+| 항목 | 결과 |
+|---|---|
+| **빌드 방식** | `bash Mac/build.sh` **옵션 없음**(임시 사본, 커밋 `924a08f`). `xcode-mismatch.log`는 생기지 않았다 |
+| 빌드 | 경고 0 / 오류 0, `codesign --verify --deep --strict` 통과, bundle **0.9.1 / 28**, `DTXcode` 2720·`DTSDKName` macosx27.2, `LSMinimumSystemVersion` 27.0, `libe_sqlite3.dylib`(arm64) 포함 |
+| 번들 런타임 | 복원 결과의 `Microsoft.NETCore.App.Runtime.osx-arm64` **10.0.15**(`System.Private.CoreLib`에 10.0.15 문자열, 10.0.14는 없음) |
+| Shared.Tests | **291,907건 PASS**(`build.sh`가 실행, 공통 원본 변경 없음) |
+| 합성 검사 | `bash Mac/tools/check-build-script.sh` ALL PASS |
+| smoke 1회(임시 사본) | 종료 코드 0, **SKIP 0·FAIL 0**. `SCREEN: display 1 of 2 (2560x1080pt, menu-bar display): the status item's display, no full-screen app on it; popover and statistics window open there; display 2 is covered by Windows App …` |
+| 실행 횟수 | 앱을 띄운 smoke는 이 소스에서 **1회**. 그 전에 TFM만 바꾼 임시 사본(커밋 전 확인용)에서 1회 더 실행했고 같은 결과(종료 코드 0, SKIP 0)였다. 합계 2회 |
+| LaunchServices | smoke 뒤 등록 수 2 → `lsregister -u "<사본>/Mac/bin/Release/net10.0-macos27.2/osx-arm64/AI Burger Clock.app"` 후 **1**, 임시 worktree 삭제 |
+| SHA-256 실행 파일(임시 사본) | `beebd00e43f44277900990d98365d7476d6fbe11107c6f0ecaf54472d32c0cad` |
+| SHA-256 앱 DLL(임시 사본) | `06100dce3fc4657407a379025d6bf5914b5cf912677b06edc8fd46953e01a8e9` (`Contents/MonoBundle/AI Burger Clock.dll`) |
+
+위 SHA-256은 **임시 사본 빌드**의 값이다. 저장소 경로 빌드의 값은 배포 뒤 따로 기록한다.
+
+### .NET 10.0.15의 보안 수정 (릴리스 노트·공식 권고문 확인)
+[10.0.15 릴리스 노트](https://github.com/dotnet/core/blob/main/release-notes/10.0/10.0.15/10.0.15.md)는 보안 수정을 포함하고 CVE 17건을 나열한다(대부분 상세 "TBD"). [dotnet/announcements](https://github.com/dotnet/announcements/issues)의 권고문으로 확인한 것은 다음이다.
+- **.NET 쪽(4건 확인):** CVE-2026-109475(managed `HttpListener` 스택 고갈, DoS, Linux·macOS), CVE-2026-118747(`System.Formats.Cbor` 해시 충돌 DoS), CVE-2026-105544(VSTest 산출물 처리, 권한 상승), CVE-2026-114155(`dotnet-watch` 임시 파일, 권한 상승, Linux·macOS). 앞의 둘은 런타임·패키지, 뒤의 둘은 개발 도구(SDK에 포함)다.
+- **ASP.NET Core(권고문 제목으로 확인):** 권한 상승·DoS·정보 노출·보안 기능 우회. 서버 구성 요소다.
+- 저장소의 `.cs`·`.csproj`·`.props`에는 `HttpListener`, `System.Formats.Cbor`, ASP.NET Core 사용이 없다. 앱이 직접 영향받는 경로는 확인하지 못했다. 다만 앱은 런타임을 번들(self-contained)하므로 재배포해야 번들이 10.0.15가 된다.
+- 권고문을 찾지 못한 CVE는 이 확인에서 제외했다.
+
+### 번들 경로 변경 대비 (읽기 전용 확인, 아무것도 바꾸지 않음)
+- **재부팅 뒤 앱을 띄운 것:** 이 Mac은 2026-11-10 16:12에 재부팅됐고, 앱(PID 1769)은 16:13:59에 시작했다. 부모는 `launchd`(PID 1)다. `loginwindow`의 통합 로그에 `performAutolaunch, launching: …/Mac/bin/Release/net10.0-macos27.0/osx-arm64/AI Burger Clock.app`과 `OpenItemAtURL`이 같은 시각으로 남아 있어, **로그인 항목(`SMAppService.MainApp`)이 실행했다**.
+- **옛 경로를 가리키는지:** 그렇다. `sfltool dumpbtm`의 항목(식별자 `2.com.hydron75.aiburgerclock`, `enabled, allowed`)의 URL이 옛 경로(`…/net10.0-macos27.0/…`)다.
+- **다른 실행 경로:** 앱의 LaunchAgent는 없다(`~/Library/LaunchAgents`에는 CLI 자동 업데이트 작업과 Google 업데이터뿐). "윈도우 다시 열기" 재실행 목록에도 이 앱은 없다(`TALAppsToRelaunchAtLogin` 키 없음).
+- **영향:** 옛 번들 폴더를 지우거나 대상 프레임워크 폴더가 바뀌면, 로그인 항목 등록이 갱신되기 전까지 다음 로그인에서 옛 경로의 앱을 찾지 못한다. 옛 번들이 남아 있으면 옛 코드가 실행된다.
+- **build.sh의 실행 중 앱 보호는 새 경로(`…macos27.2/…`)만 본다.** 옛 경로에서 실행 중인 앱은 `--quit-running`이 찾지 못하므로 배포 때 옛 앱을 따로 종료해야 한다.
+
+### 0.9.2 배포 절차 초안 (아직 실행하지 않음)
+1. 메인 채팅의 "배포 진행" 뒤 main을 최신으로 받는다.
+2. **옛 앱 종료:** 메뉴바 아이콘 오른쪽 클릭 → 종료(저장 대기 기록이 있으면 마친 뒤 종료). 프로세스가 사라졌는지 확인한다(`pgrep -f 'macos27.0.*AI Burger Clock'` 결과 없음).
+3. 저장소 경로에서 `bash Mac/build.sh --quit-running`(옵션 없음)으로 새 경로(`…/net10.0-macos27.2/…`)에 빌드하고 `open`으로 실행한다.
+4. **옛 경로 등록 해제:** `lsregister -u "<저장소>/Mac/bin/Release/net10.0-macos27.0/osx-arm64/AI Burger Clock.app"`. 새 앱을 실행하면 등록 수가 2가 되므로 해제 뒤 1을 확인한다.
+5. **로그인 항목 갱신(확인 필요):** 새 앱 실행 뒤 `sfltool dumpbtm`의 항목 URL이 새 경로로 바뀌었는지, 앱 메뉴의 자동 실행 상태 문구가 "로그인 시 자동 실행"인지 본다. 같은 번들 ID라 BTM이 새 경로로 갱신될지는 **이 환경에서 확인된 적이 없다**. 갱신되지 않았다면 앱 메뉴에서 자동 실행을 껐다 켜서 새 번들로 다시 등록하는 방법이 있으며, 이는 사용자가 보는 설정 변경이라 사용자 확인 뒤에 한다.
+6. **옛 번들 폴더 처리:** `Mac/bin/Release/net10.0-macos27.0/`은 Git에서 제외된 빌드 산출물이다. 5단계에서 로그인 항목이 새 경로를 가리키는 것을 확인한 뒤에만 삭제한다(그 전에 지우면 다음 로그인에 앱이 안 뜨고, 남겨 두면 옛 코드가 뜰 수 있다). 삭제는 사용자 확인 뒤에 한다.
+7. 번들 버전·build, `codesign --verify --deep --strict`, 실행 파일·앱 DLL SHA-256, 프로세스 1개, 등록 수 1, 번들 런타임 10.0.15를 확인해 MACOS_PORT에 기록한다. 팝오버 실제 화면은 사용자 확인으로 따로 적는다.
+
+### 수행하지 않은 검증
+- 저장소 경로 빌드·교체·실행과 위 배포 절차 전부(0.9.2 때 진행).
+- 새 번들 경로에서 로그인 항목(BTM)이 갱신되는지, 재부팅·재로그인 뒤 새 경로 앱이 뜨는지.
+- 실제 마우스 휠·스크롤러 드래그, VoiceOver, 여러 디스플레이의 긴 팁, 앵커 창 경로와 모든 디스플레이가 덮였을 때의 SKIP 출력(73·74·75절 미확인 항목 그대로).
+- `--allow-xcode-mismatch`가 실제로 필요한 상황(새 Xcode가 워크로드보다 먼저 올라온 기간)에서의 이 옵션 동작은 이번에 다시 실행하지 않았다.
