@@ -557,7 +557,7 @@ Windows 내부 승인 형식은 알려진 경우만 해석합니다. 낯선 값�
 | [app.manifest](app.manifest) | Windows 권한·호환 설정. 관리자 권한으로 자동 상승하지 않음 |
 | [Shared/SharedSources.props](Shared/SharedSources.props) | 공통 C# 원본 33개를 Mac과 검사 프로젝트에 연결하는 목록. 검사 실행 목록은 SharedTestSuite에 별도 관리 |
 | [Shared.Tests/AiBurgerClock.Shared.Tests.csproj](Shared.Tests/AiBurgerClock.Shared.Tests.csproj) | net10.0 공통 검사, 임시 DB와 가짜 HTTP·CLI 사용 |
-| [Mac/AiBurgerClock.Mac.csproj](Mac/AiBurgerClock.Mac.csproj) | native AppKit, net10.0-macos27.0, osx-arm64, preview 버전과 bundle 버전(`ApplicationDisplayVersion`/`ApplicationVersion`) 지정 |
+| [Mac/AiBurgerClock.Mac.csproj](Mac/AiBurgerClock.Mac.csproj) | native AppKit, net10.0-macos27.2, osx-arm64, preview 버전과 bundle 버전(`ApplicationDisplayVersion`/`ApplicationVersion`) 지정 |
 | [Mac/tools/make-app-icon.swift](Mac/tools/make-app-icon.swift) | Mac 앱 아이콘(상태와 무관한 중립 시계) 10개 크기를 코드로 생성해 `Mac/Assets.xcassets/AppIcon.appiconset`에 저장. 아이콘을 바꿀 때만 실행 |
 | [Mac/tools/check-build-script.sh](Mac/tools/check-build-script.sh) | `Mac/build.sh`의 필요 Xcode 판정·실행 중 앱 재확인을 빌드·앱 없이 확인하는 합성 검사 |
 | [Mac/Info.plist](Mac/Info.plist) | Mac 앱 식별자·메뉴바 앱 설정·최소 OS. 버전은 적지 않음(증분 빌드에 반영되지 않음) |
@@ -577,7 +577,7 @@ Windows 내부 승인 형식은 알려진 경우만 해석합니다. 낯선 값�
 
 개발도 역할을 나눕니다. Mac 구현·네이티브 빌드/실행 검증은 사용자 Mac의 Claude 로컬 환경에서, Windows 검토·빌드/회귀 검증은 사용자가 요청할 때 이 환경에서 진행합니다. 상대 OS 전용 파일은 각 담당에게 맡기며 **공통 원본은 양쪽 모두 PR로 수정**할 수 있습니다. PR에는 바뀐 공통 파일·동작·상대 OS 확인 항목을 적고 Mac 검사와 Windows 회귀 결과를 구분합니다. OS UI 변경은 다른 UI에 자동 복제되지 않으며 DB·로그인도 동기화되지 않습니다. GitHub로 코드와 검증 기록을 연결하는 흐름이지 자동 감시나 다른 Claude 세션으로의 직접 명령 전달을 설정한 것은 아닙니다. [자세한 분담 및 검증 규칙](AGENTS.md#작업-분담-windows와-mac).
 
-Windows는 원래 `net10.0-windows` 프로젝트를 유지하고 Mac·공통 검사·진단 폴더의 C# 파일은 제외합니다. Mac은 `net10.0-macos27.0` AppKit 호스트입니다. 새 공통 DLL·MAUI·WebView·Electron·Node 사이드카는 추가하지 않았습니다.
+Windows는 원래 `net10.0-windows` 프로젝트를 유지하고 Mac·공통 검사·진단 폴더의 C# 파일은 제외합니다. Mac은 `net10.0-macos27.2` AppKit 호스트입니다. 새 공통 DLL·MAUI·WebView·Electron·Node 사이드카는 추가하지 않았습니다.
 
 Mac의 시간대 ID는 `America/New_York`, `America/Los_Angeles`, `Asia/Seoul`입니다. Windows의 기존 ID는 유지합니다. 두 경우 모두 OS가 제공하는 `TimeZoneInfo` 규칙으로 각 미국 업무 경계를 UTC로 계산합니다. KST 시간표를 별도로 복사하지 않습니다.
 

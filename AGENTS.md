@@ -5,7 +5,7 @@ AI Burger Clock 저장소에서 코드를 고치는 사람과 에이전트를 �
 ## 대상 환경
 
 - 본체는 Windows 11 x64용 WinForms 앱입니다. `net10.0-windows`, `PlatformTarget` x64, `RuntimeIdentifier` win-x64.
-- macOS 27 / Apple Silicon용 AppKit 메뉴바 앱은 `Mac/`의 별도 프로젝트입니다. `net10.0-macos27.0`, `osx-arm64`이며 공통 원본은 `Shared/SharedSources.props`로 링크합니다. 빌드와 검사는 [Mac/README](Mac/README.md)를 따릅니다.
+- macOS 27 / Apple Silicon용 AppKit 메뉴바 앱은 `Mac/`의 별도 프로젝트입니다. `net10.0-macos27.2`, `osx-arm64`이며 공통 원본은 `Shared/SharedSources.props`로 링크합니다. 빌드와 검사는 [Mac/README](Mac/README.md)를 따릅니다.
 - SDK는 `global.json` 기준 10.0.100 이상, 같은 10.0의 최신 기능 밴드를 허용합니다. 미리보기 SDK는 쓰지 않습니다.
 - 직접 NuGet 의존성은 `Microsoft.Data.Sqlite 10.0.14` 하나입니다. 새 의존성은 추가하지 않는 것을 기본으로 합니다.
 - 배포본은 framework-dependent 단일 EXE입니다. .NET 10 Desktop Runtime x64가 별도로 필요하며 trimming과 NativeAOT는 쓰지 않습니다.
@@ -27,7 +27,7 @@ AI Burger Clock 저장소에서 코드를 고치는 사람과 에이전트를 �
 - `bin/`, `obj/`, `dist/`, `artifacts/`, `*.db`는 `.gitignore` 대상입니다. 커밋하지 않습니다.
 - **Mac 빌드:** 저장소 경로에서 `dotnet build Mac/AiBurgerClock.Mac.csproj`를 직접 실행하지 않습니다. 같은 bundle(`Mac/bin/Release/…`)로 실행 중인 앱의 디스크 번들이 덮어써집니다. Mac 컴파일·빌드·`--smoke-test` 확인은 임시 사본(`git worktree`·`rsync`)에서 `Mac/build.sh`로 하고, 실제로 쓸 앱만 사용자 허락 뒤 저장소 경로에서 `Mac/build.sh`(실행 중이면 `--quit-running`)로 빌드합니다. 자세한 내용은 [Mac/README](Mac/README.md)의 "실행 중인 앱이 있을 때"를 봅니다.
 - **Mac smoke 실행 횟수(2026-10-22):** `--smoke-test`는 상태 항목·팝오버·통계 창을 열어 사용자의 화면에 나타납니다. 전체 화면 앱 위에서 반복하면 메뉴바 표시가 남아 로그아웃으로만 풀린 적이 있습니다([MACOS_PORT 39절](MACOS_PORT.md#39-메뉴바-강제-표시-증상-원인-미확정-재부팅-후-해소)). 한 작업에서 마지막 확인 1~2회만 실행하고, 반복 디버깅은 Shared.Tests·컴파일처럼 앱을 띄우지 않는 검사로 합니다.
-- **임시 사본 LaunchServices 등록(2026-10-26 측정):** `Mac/build.sh` 빌드만으로는 같은 번들 ID(`com.hydron75.aiburgerclock`) 등록이 늘지 않고, 임시 사본의 앱을 실행(`--smoke-test`)하면 그 사본 경로가 등록됩니다(측정: 빌드만 1→1, smoke 뒤 1→2). 등록이 쌓이면 알림 왼쪽 아이콘이 옛 것으로 남을 수 있으므로, 임시 사본은 지우기 전에 `/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -u "<사본>/Mac/bin/Release/net10.0-macos27.0/osx-arm64/AI Burger Clock.app"`로 해제합니다. 등록 수는 `lsregister -dump | grep -c 'identifier:.*com.hydron75.aiburgerclock'`로 세며 정상은 1입니다.
+- **임시 사본 LaunchServices 등록(2026-10-26 측정):** `Mac/build.sh` 빌드만으로는 같은 번들 ID(`com.hydron75.aiburgerclock`) 등록이 늘지 않고, 임시 사본의 앱을 실행(`--smoke-test`)하면 그 사본 경로가 등록됩니다(측정: 빌드만 1→1, smoke 뒤 1→2). 등록이 쌓이면 알림 왼쪽 아이콘이 옛 것으로 남을 수 있으므로, 임시 사본은 지우기 전에 `/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -u "<사본>/Mac/bin/Release/net10.0-macos27.2/osx-arm64/AI Burger Clock.app"`로 해제합니다. 등록 수는 `lsregister -dump | grep -c 'identifier:.*com.hydron75.aiburgerclock'`로 세며 정상은 1입니다.
 
 ## 검사
 
