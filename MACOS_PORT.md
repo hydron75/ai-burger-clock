@@ -2800,3 +2800,46 @@ smoke의 선택 기능(`AIBURGERCLOCK_SMOKE_IMAGES`)으로 큰 화면·1280×800
 - 새 번들 경로에서 로그인 항목(BTM)이 갱신되는지, 재부팅·재로그인 뒤 새 경로 앱이 뜨는지.
 - 실제 마우스 휠·스크롤러 드래그, VoiceOver, 여러 디스플레이의 긴 팁, 앵커 창 경로와 모든 디스플레이가 덮였을 때의 SKIP 출력(73·74·75절 미확인 항목 그대로).
 - `--allow-xcode-mismatch`가 실제로 필요한 상황(새 Xcode가 워크로드보다 먼저 올라온 기간)에서의 이 옵션 동작은 이번에 다시 실행하지 않았다.
+
+
+## 77. 0.9.2 정리
+
+2026-11-11. Mac 0.9.1 / build 28 → **0.9.2 / build 29**. 앱 코드·화면·메뉴·알림·설정은 바뀌지 않는 유지보수 빌드로, 번들에 들어가는 .NET 런타임이 10.0.14에서 **10.0.15**로 올라가고 대상 프레임워크(번들 경로)가 `net10.0-macos27.2`로 바뀐 것을 배포한다. 버전 PR은 버전 필드와 문서(Mac/README, 이 절)만 바꾼다.
+
+### 포함된 변경
+| PR | 내용 | 기록 |
+|---|---|---|
+| #141 | 워크로드 27.2.10000·SDK 10.0.404, 대상 프레임워크 `net10.0-macos27.2`, 옵션 없는 빌드 | [76절](#76-워크로드-27210000과-대상-프레임워크-net100-macos272) |
+| #139·#140 | Windows 2.9.1 버전·배포 기록·문서(Mac 번들에 영향 없음) | — |
+
+### 버전 필드
+`Version` 0.9.2, `AssemblyVersion` 0.9.2.0, `FileVersion` 0.9.2.0, `ApplicationVersion` 29(`CFBundleVersion`). `Info.plist`에는 적지 않는다.
+
+### 기준
+| 항목 | 값 |
+|---|---|
+| main(작업 시작) | `659ad53ac4abf3dea49c4544c0b2fb788b494ccc`(PR #141 병합) |
+| 버전 변경 커밋(앱 소스) | `52878df53df225c89363c30e03acf5516b1a564f` |
+| 도구 | SDK 10.0.404, macOS 워크로드 27.2.10000(요구 Xcode 27.2), **Xcode 27.2 (27B52)** |
+
+### 이 Mac에서 수행한 검증 (임시 사본, 저장소 경로 아님, 배포 전)
+| 항목 | 결과 |
+|---|---|
+| **빌드 방식** | `bash Mac/build.sh` **옵션 없음**(임시 사본, 위 버전 변경 커밋). `xcode-mismatch.log` 생기지 않음 |
+| 빌드 | 경고 0 / 오류 0, `codesign --verify --deep --strict` 통과, bundle **0.9.2 / 29**, `DTXcode` 2720, `LSMinimumSystemVersion` 27.0 |
+| Shared.Tests | **291,907건 PASS**(`build.sh`가 실행, 공통 원본 변경 없음) |
+| 번들 런타임 | 복원 결과의 `Microsoft.NETCore.App.Runtime.osx-arm64` **10.0.15**, 번들 `System.Private.CoreLib`에 10.0.15 문자열 있고 10.0.14는 없음 |
+| smoke 1회(임시 사본) | 종료 코드 0, **SKIP 0·FAIL 0**. `SCREEN: display 1 of 2 (2560x1080pt, menu-bar display): the status item's display, no full-screen app on it; popover and statistics window open there; display 2 is covered by Windows App and is left alone` |
+| LaunchServices | smoke 뒤 등록 수 2 → `lsregister -u "<사본>/Mac/bin/Release/net10.0-macos27.2/osx-arm64/AI Burger Clock.app"` 후 **1**, 임시 worktree 삭제 |
+| SHA-256 실행 파일(임시 사본) | `d41b640b8dbc389c74253fc66fa92d2199bf188d0c221974228ea92456c3a246` |
+| SHA-256 앱 DLL(임시 사본) | `50c0826b8cbc5994cd0f92b25ee41f58fb50c776697116ca72e0fa3867132e1a` (`Contents/MonoBundle/AI Burger Clock.dll`) |
+
+위 SHA-256은 **임시 사본 빌드**의 값이다. 저장소 경로 빌드의 값은 배포 뒤 따로 기록한다.
+
+### 배포 계획 (병합 뒤 메인 채팅의 "배포 진행"을 받으면, [76절](#76-워크로드-27210000과-대상-프레임워크-net100-macos272) 절차)
+옛 앱 종료 → 저장소 경로에서 `bash Mac/build.sh --quit-running`(옵션 없음)으로 새 경로에 빌드·실행 → 옛 경로 `lsregister -u` → 로그인 항목이 새 경로를 가리키는지 `sfltool dumpbtm` 확인(갱신되지 않았으면 자동 실행 껐다 켜기, 사용자 허용 범위) → 확인 뒤에만 옛 번들 폴더(`net10.0-macos27.0`) 삭제 → 번들·서명·SHA-256·프로세스·등록 수·런타임 확인. 결과는 배포 뒤 이 절에 이어 적는다.
+
+### 수행하지 않은 검증
+- 저장소 경로 빌드·교체·실행과 로그인 항목 갱신(배포 때).
+- 재로그인·재부팅 뒤 새 경로 앱이 뜨는지(사용자가 다음 재부팅 때 확인 예정).
+- 실제 마우스 휠·스크롤러 드래그, VoiceOver, 여러 디스플레이의 긴 팁, 앵커 창 경로와 모든 디스플레이가 덮였을 때의 SKIP 출력(73·74·75절 미확인 항목 그대로).
