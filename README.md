@@ -2,6 +2,8 @@
 
 **Windows 2.9.3 후보 준비(2026-11-14 KST):** main `fe84da2`의 #150/#151 xAI 네이티브 JSON 전환을 포함합니다. RSS와 data.x.ai summary·incidents를 집계하고 Agent SDK·필수 19개 slug·범위 미확인/부분 실패 규칙을 사용합니다. 이 버전 PR은 Windows 버전 세 필드와 문서만 변경합니다. 사이트는 버전 16으로 먼저 비공개 배포했고 기준 커밋·xAI 정상·새 상세 출처를 확인했습니다. [후보·검사·해시·receipt·외부 명령](MAINTENANCE_2_9_3.md). 화면 검사 진단 개선은 별도 PR이며 이번 후보에 포함하지 않습니다. 아래 과거 준비·배포 기록은 유지합니다.
 
+**2.9.3 후보 검증:** SDK 10.0.404, build 경고·오류 0, bin/단일 EXE self-test 각각 293,223건, smoke 첫 1회 1,174 PASS·PNG 60개·exit 0입니다. #150 최종 성공 실행과 PNG 60/60·layout JSON 41/41이 같습니다. 이전 2.9.2 candidate.json으로 새 receipt를 생성했으며 실제 백업·교체·등록 확인·실행은 사용자의 외부 배포 전까지 하지 않습니다.
+
 **Windows 2.9.2 후보 준비(2026-11-14 KST):** main `ba23cb2`에 병합된 #145의 xAI 필수 JSON 목록 보정(Bugbot 제외·Review Agents 복귀)을 포함합니다. RSS 두 대응과 필수 항목 누락 CHECK는 유지합니다. 이 버전 PR은 Windows 버전 세 필드와 문서만 바꾸며 후보는 별도 artifacts 경로에 준비합니다. 사이트는 먼저 버전 14로 비공개 배포했고 기준 커밋 `ba23cb2`·실제 xAI 정상 판정을 확인했습니다. 후보 검사·SDK·신원·receipt·사용자 외부 명령은 [2.9.2 기록](MAINTENANCE_2_9_2.md)에 구분합니다. 아래 과거 기록은 유지합니다.
 
 **2.9.2 후보 검증:** SDK **10.0.404**, build 경고·오류 0, bin/단일 EXE self-test 각각 **293,038건**, smoke 첫 1회 **1,174 PASS / PNG 60개 / exit 0**입니다. 실제 휠 검사도 통과해 재실행하지 않았습니다. #145 최종과 PNG **60/60**·layout **41/41**이 같고, 이전 2.9.1 receipt로 새 receipt를 생성했습니다. 운영 앱 교체·등록·새 버전 실행은 사용자 외부 배포 전까지 하지 않습니다.
