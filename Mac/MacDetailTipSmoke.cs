@@ -27,7 +27,7 @@ internal static class MacDetailTipSmoke
             Source: "https://www.google.com/appsstatus/dashboard/incidents.json + " + LongToken + new string('b', 180))
             { UncertainIncidentTitle = "합성 사건: 범위를 알 수 없는 사건", UncertainIncidentId = "synthetic-gemini-1", LastKnownStatus = OfficialStatus.Operational, LastKnownStatusUtc = now.AddHours(-2) },
         new(ProviderKind.Xai, OfficialStatus.PartialOutage, now, now, "Cursor: Dashboard 일부 장애 (합성 예시)",
-            Source: XaiStatusFeed.RssUrl + " [수신 실패] + " + XaiStatusFeed.ComponentsUrl + " [응답 수신]")
+            Source: XaiStatusFeed.RssUrl + " [수신 실패] + " + XaiStatusFeed.SummaryUrl + " [응답 수신]")
             { XaiIncidentExpiryNote = XaiStatusFeed.ExpiryNote }
     ];
 
