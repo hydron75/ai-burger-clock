@@ -23,6 +23,7 @@ internal sealed class XaiStatusFeed(Action<string>? diagnostic = null)
     private bool incompleteTracking;
     private string expiryNote = "";
     private bool recoveryUnconfirmed;
+    private string[]? lastIgnoredComponents;
 
     internal void Restore(ProviderStatus cached)
     {
@@ -96,14 +97,16 @@ internal sealed class XaiStatusFeed(Action<string>? diagnostic = null)
     {
         var reading = new Reading();
         Read(rss, "Grok RSS", value => ReadRss(value, reading));
-        Read(summary, "xAI summary", value => ReadJson(value, reading, catalog: true));
+        bool summaryRead = Read(summary, "xAI summary", value => ReadJson(value, reading, catalog: true));
         Read(incidents, "xAI incidents", value => ReadJson(value, reading, catalog: false));
         if (RequiredComponents.Any(slug => !reading.ComponentIds.Contains(slug)))
             reading.Issues.Add("xAI 필수 구성 요소 누락");
-        if (reading.IgnoredComponents.Count > 0)
+        string[] ignored = reading.IgnoredComponents.Order(StringComparer.Ordinal).ToArray();
+        if (summaryRead && (lastIgnoredComponents is null || !ignored.SequenceEqual(lastIgnoredComponents)))
         {
-            try { diagnostic?.Invoke("xAI 판정 제외 구성 요소: " + string.Join(",", reading.IgnoredComponents.Order(StringComparer.Ordinal)
-                .Take(32).Select(slug => Clean(slug, 80))) + (reading.IgnoredComponents.Count > 32 ? " [truncated]" : "")); }
+            lastIgnoredComponents = ignored;
+            try { diagnostic?.Invoke("xAI 판정 제외 구성 요소: " + (ignored.Length == 0 ? "없음" :
+                string.Join(",", ignored.Take(32).Select(slug => Clean(slug, 80))) + (ignored.Length > 32 ? " [truncated]" : ""))); }
             catch (Exception) { /* Optional diagnostics cannot change a public-status assessment. */ }
         }
 
@@ -175,12 +178,12 @@ internal sealed class XaiStatusFeed(Action<string>? diagnostic = null)
             UncertainIncidentTitle = Clean(string.Join(" | ", reading.Uncertain.Values.Distinct()), 500)
         };
 
-        void Read(string? value, string label, Action<string> parse)
+        bool Read(string? value, string label, Action<string> parse)
         {
-            if (value is null) { reading.Issues.Add(label + " 응답 수신 실패"); return; }
-            try { parse(value); }
+            if (value is null) { reading.Issues.Add(label + " 응답 수신 실패"); return false; }
+            try { parse(value); return true; }
             catch (Exception error) when (error is JsonException or XmlException or InvalidDataException)
-            { reading.Issues.Add(label + " 응답 형식 이상"); }
+            { reading.Issues.Add(label + " 응답 형식 이상"); return false; }
         }
     }
 

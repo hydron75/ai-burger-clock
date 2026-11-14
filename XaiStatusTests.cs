@@ -243,6 +243,7 @@ internal static class XaiStatusTests
         Check(TrayPresentation.ProviderNotification(ProviderKind.Xai, Recommendation.Stop, open.Reason, ProviderNames.Provider).Body.Contains("Grok Bot", StringComparison.Ordinal), "problem notification includes affected product");
         Check(TrayPresentation.ProviderNotification(ProviderKind.Xai, Recommendation.Go, closed.Reason, ProviderNames.Provider).Body.Contains("Grok·Cursor·Grok Bot", StringComparison.Ordinal), "recovery notification names the product scope without claiming runtime availability");
         CheckNativeJsonSchema(Check);
+        CheckIgnoredComponentDiagnostics(Check);
 
         for (int missing = 0; missing < 3; missing++)
         {
@@ -327,6 +328,56 @@ internal static class XaiStatusTests
         finally { Directory.Delete(directory, recursive: true); }
         await CheckMissingIncidentStorageAsync(Check);
         return count;
+    }
+
+    private static void CheckIgnoredComponentDiagnostics(Action<bool, string> check)
+    {
+        string SummaryWith(params string[] ids) => JsonSerializer.Serialize(new
+        {
+            status = new { indicator = "none", description = "Synthetic status" },
+            components = ComponentItems().Concat(ids.Select(id => (object)new { id, name = "Synthetic ignored", status = "outage" }))
+        });
+        var diagnostics = new List<string>();
+        var feed = new XaiStatusFeed(diagnostics.Add);
+        void Read(string? summary) => feed.Parse(EmptyRss, summary, IncidentsJson, Now);
+        Read(SummaryWith("synthetic-b", "synthetic-a"));
+        Read(SummaryWith("synthetic-a", "synthetic-b", "synthetic-a"));
+        check(diagnostics.Count == 1 && diagnostics[0] == "xAI 판정 제외 구성 요소: synthetic-a,synthetic-b",
+            "same ignored summary set is logged once, regardless of order or duplicates");
+        Read(SummaryWith("synthetic-a", "synthetic-c"));
+        check(diagnostics.Count == 2 && diagnostics[1].EndsWith("synthetic-a,synthetic-c", StringComparison.Ordinal),
+            "changed ignored summary set is logged again");
+        Read(null);
+        Read("{");
+        Read(SummaryWith("synthetic-a", "synthetic-c"));
+        check(diagnostics.Count == 2, "failed summary reads do not reset the last confirmed ignored set");
+        Read(SummaryJson);
+        Read(SummaryJson);
+        check(diagnostics.Count == 3 && diagnostics[2] == "xAI 판정 제외 구성 요소: 없음",
+            "an emptied ignored summary set is logged once");
+        Read(SummaryWith("synthetic-a", "synthetic-c"));
+        check(diagnostics.Count == 4, "an ignored summary set returning after disappearance is logged again");
+        new XaiStatusFeed(diagnostics.Add).Parse(EmptyRss, SummaryWith("synthetic-a", "synthetic-c"), IncidentsJson, Now);
+        check(diagnostics.Count == 5, "a fresh status client logs its first ignored set again");
+
+        string[] many = Enumerable.Range(0, 33).Select(index => "synthetic-" + index.ToString("D2")).ToArray();
+        Read(SummaryWith(many));
+        many[^1] = "synthetic-99";
+        Read(SummaryWith(many));
+        check(diagnostics.Count == 7 && diagnostics[^1] == diagnostics[^2],
+            "ignored set comparison uses the full set, even beyond the bounded log output");
+        var emptyDiagnostics = new List<string>();
+        var emptyFeed = new XaiStatusFeed(emptyDiagnostics.Add);
+        emptyFeed.Parse(EmptyRss, SummaryJson, IncidentsJson, Now);
+        emptyFeed.Parse(EmptyRss, SummaryJson, IncidentsJson, Now);
+        check(emptyDiagnostics.Count == 1 && emptyDiagnostics[0] == "xAI 판정 제외 구성 요소: 없음",
+            "the first confirmed empty set is logged once per client");
+        int attempts = 0;
+        var failingFeed = new XaiStatusFeed(_ => { attempts++; throw new IOException("Synthetic diagnostic failure"); });
+        var first = failingFeed.Parse(EmptyRss, SummaryWith("synthetic-a"), IncidentsJson, Now);
+        var repeated = failingFeed.Parse(EmptyRss, SummaryWith("synthetic-a"), IncidentsJson, Now);
+        check(attempts == 1 && first.Status == OfficialStatus.Operational && repeated.Status == OfficialStatus.Operational,
+            "a throwing diagnostic callback is still called only once for an unchanged set and cannot change status");
     }
 
     private static void CheckNativeJsonSchema(Action<bool, string> check)
