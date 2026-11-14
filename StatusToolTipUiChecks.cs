@@ -56,27 +56,11 @@ internal static class StatusToolTipUiChecks
         var mouseDown = typeof(Control).GetMethod("OnMouseDown", flags)!;
         var mouseClick = typeof(Control).GetMethod("OnMouseClick", flags)!;
         bool wasVisible = owner.Visible;
+        await CheckStandaloneNativeAsync(owner, directory, check);
         host.Show();
         try
         {
-            states[(int)ProviderKind.Gemini] = fixtures.First(f => f.Scenario == "failed" && f.State.Provider == ProviderKind.Gemini).State with
-            {
-                Reason = string.Concat(Enumerable.Repeat("합성 Gemini 상태 조회 오류의 긴 설명입니다. ", 80)),
-                UncertainIncidentId = string.Join(", ", Enumerable.Range(1, 64).Select(i => "synthetic-gemini-incident-" + i))
-            };
-            host.UpdateProviders(states, AgentSchedule.GetSnapshot(now), false, now.AddMinutes(5));
-            host.ScrollControlIntoView(panels[(int)ProviderKind.Gemini]);
-            pointer = panels[(int)ProviderKind.Gemini].PointToScreen(new Point(4, 4));
-            controller.Show(ProviderKind.Gemini, pointer); // The popup's very first display is already oversized.
-            pointer = controller.Popup.Bounds.Location + new Size(12, 12);
-            controller.CheckPointer(pointer);
-            await CheckNativeWheelAsync(controller.Popup, host, pointer, "status/first-Gemini-long-error", check);
-            if (directory is not null)
-            {
-                using var bitmap = new Bitmap(controller.Popup.Width, controller.Popup.Height);
-                controller.Popup.DrawToBitmap(bitmap, new Rectangle(Point.Empty, bitmap.Size));
-                bitmap.Save(Path.Combine(directory, "status-tooltip-first-native-wheel-bottom.png"), ImageFormat.Png);
-            }
+            await SmokeUiProbe.SettleAsync(host);
             controller.Hide();
             states = fixtures.Where(f => f.Scenario == "normal").Select(f => f.State).ToArray();
             foreach (var provider in Enum.GetValues<ProviderKind>())
@@ -138,15 +122,11 @@ internal static class StatusToolTipUiChecks
             check(controller.Popup.VerticalScroll.Visible && host.Visible, "Long status detail scrolls without hiding its owner");
             pointer = controller.Popup.Bounds.Location + new Size(12, 12);
             controller.CheckPointer(pointer);
-            await CheckNativeWheelAsync(controller.Popup, host, pointer, "status", check);
+            // The native input contract runs in the non-auto-hiding fixture above.
+            // This real StatusWindow path keeps the controller/lifetime/accessibility checks.
+            controller.Popup.AutoScrollPosition = new Point(0, controller.Popup.VerticalScroll.Maximum);
             check(controller.Popup.Visible && controller.Popup.AutoScrollPosition.Y < 0 &&
                 controller.Popup.AccessibleDescription == longText, "Status detail reaches its last lines and retains complete accessible text");
-            if (directory is not null)
-            {
-                using var bitmap = new Bitmap(controller.Popup.Width, controller.Popup.Height);
-                controller.Popup.DrawToBitmap(bitmap, new Rectangle(Point.Empty, bitmap.Size));
-                bitmap.Save(Path.Combine(directory, "status-tooltip-overflow-bottom.png"), ImageFormat.Png);
-            }
             pointer = new Point(host.Left - 100, host.Top - 100);
             controller.CheckPointer(pointer);
             check(controller.Popup.Visible, "A scrollable status detail permits the pointer-to-popup gap until leave grace expires");
@@ -179,18 +159,6 @@ internal static class StatusToolTipUiChecks
             states = fixtures.Where(f => f.Scenario == "normal").Select(f => f.State).ToArray();
             controller.Hide();
             host.UpdateProviders(states, AgentSchedule.GetSnapshot(now), false, now.AddMinutes(5));
-            Control below = panels[1];
-            host.ScrollControlIntoView(panels[1]);
-            pointer = target.PointToScreen(new Point(4, 4));
-            controller.Show(ProviderKind.OpenAI, pointer);
-            pointer = below.PointToScreen(new Point(4, 4));
-            controller.Popup.Location = pointer; // Force overlap to test transparent hit-testing over another card.
-            int openedBefore = opened.Count;
-            await CheckNativePassThroughAsync(controller.Popup, below,
-                () => controller.Popup.Visible && controller.Popup.DetailText == StatusPanelModel.Card(states[1], AgentState.FullThrottle).Detail,
-                "status", check);
-            check(opened.Count == openedBefore + 1 && opened[^1] == ProviderKind.Claude,
-                "Native click below a non-scrollable status popup reaches the original Claude page route once");
             pointer = new Point(host.Left - 100, host.Top - 100);
             controller.CheckPointer(pointer);
             pointer = target.PointToScreen(new Point(4, 4));
@@ -211,7 +179,81 @@ internal static class StatusToolTipUiChecks
             host.Dispose();
             check(disposedPopup.IsDisposed && !controller.HasInputFilter, "Disposing a visible status detail releases its owned popup and input filter");
         }
+        catch (Exception error)
+        { SmokeUiProbe.Failure("status-card-fixture", host, null, controller.Popup, pointer, error); throw; }
         finally { if (!host.IsDisposed) host.Hide(); if (wasVisible) owner.Show(); }
+    }
+
+    private static async Task CheckStandaloneNativeAsync(StatusWindow reference, string? directory, Action<bool, string> check)
+    {
+        Point pointer = Point.Empty;
+        using var host = new SmokeUiProbe.FixtureForm { AutoScroll = true };
+        using var controller = new StatusDetailController(host, () => pointer);
+        var providers = new[] { ProviderKind.OpenAI, ProviderKind.Claude, ProviderKind.Gemini };
+        var panels = providers.Select(_ => new Panel()).ToArray();
+        var now = new DateTimeOffset(2032, 3, 4, 0, 0, 0, TimeSpan.Zero);
+        var normal = StatusDetailTemplateTests.Fixtures(now).Where(f => f.Scenario == "normal").Select(f => f.State).ToArray();
+        Control? activeTarget = null;
+        for (int i = 0; i < panels.Length; i++) { host.Controls.Add(panels[i]); controller.Bind(panels[i], providers[i]); }
+        try
+        {
+            await SmokeUiProbe.ShowFixtureAsync(host, reference);
+            int scale(int value) => (int)Math.Round(value * host.DeviceDpi / 96d);
+            for (int i = 0; i < panels.Length; i++) panels[i].Bounds = new Rectangle(scale(8), scale(8 + i * 88), scale(330), scale(80));
+            await SmokeUiProbe.SettleAsync(host);
+            foreach (var state in normal) controller.Update(state.Provider, StatusPanelModel.Card(state, AgentState.FullThrottle).Detail);
+            foreach (var provider in new[] { ProviderKind.Gemini, ProviderKind.OpenAI })
+            {
+                var panel = panels[Array.IndexOf(providers, provider)];
+                activeTarget = panel;
+                host.ScrollControlIntoView(panel);
+                string text = StatusPanelModel.Card(normal[(int)provider] with
+                {
+                    Reason = string.Concat(Enumerable.Repeat("합성 상태 조회 오류의 긴 설명입니다. ", 80)),
+                    AssessmentIssue = "합성 범위 확인 오류",
+                    UncertainIncidentId = string.Join(", ", Enumerable.Range(1, 64).Select(i => "synthetic-incident-" + i))
+                }, AgentState.FullThrottle).Detail;
+                controller.Update(provider, text);
+                pointer = panel.PointToScreen(new Point(4, 4));
+                controller.Show(provider, pointer);
+                pointer = controller.Popup.Bounds.Location + new Size(12, 12);
+                controller.CheckPointer(pointer);
+                await SmokeUiProbe.SettleAsync(controller.Popup);
+                await CheckNativeWheelAsync(controller.Popup, host, pointer, "status/" + provider + "-long-error", check);
+                if (directory is not null)
+                {
+                    using var bitmap = new Bitmap(controller.Popup.Width, controller.Popup.Height);
+                    controller.Popup.DrawToBitmap(bitmap, new Rectangle(Point.Empty, bitmap.Size));
+                    bitmap.Save(Path.Combine(directory, provider == ProviderKind.Gemini ? "status-tooltip-first-native-wheel-bottom.png" : "status-tooltip-overflow-bottom.png"), ImageFormat.Png);
+                }
+                controller.Hide();
+                controller.Update(provider, StatusPanelModel.Card(normal[(int)provider], AgentState.FullThrottle).Detail);
+            }
+            host.ScrollControlIntoView(panels[1]);
+            activeTarget = panels[1];
+            pointer = panels[0].PointToScreen(new Point(4, 4));
+            controller.Show(ProviderKind.OpenAI, pointer);
+            pointer = panels[1].PointToScreen(new Point(4, 4));
+            controller.Popup.Location = pointer;
+            host.Text = "Synthetic title must never enter a native failure snapshot";
+            check(SmokeUiProbe.ScopedTarget(host, new Point(host.Left - 1, host.Top - 1)) is null,
+                "Parent-scoped native probe rejects a point outside its fixture");
+            check(SmokeUiProbe.ScopedTarget(host, panels[0].PointToScreen(new Point(4, 4))) != panels[1],
+                "Parent-scoped native probe distinguishes the neighboring card");
+            string snapshot = SmokeUiProbe.Capture("synthetic-pre-cleanup", host, panels[1], controller.Popup, pointer, "SyntheticFailure");
+            using (var captured = System.Text.Json.JsonDocument.Parse(snapshot))
+                check(captured.RootElement.GetProperty("capturedBeforeFixtureCleanup").GetBoolean() &&
+                    captured.RootElement.GetProperty("host").GetProperty("Visible").GetBoolean() &&
+                    captured.RootElement.GetProperty("popup").GetProperty("Visible").GetBoolean(),
+                    "Native failure capture retains the visible fixture and popup before cleanup");
+            check(!snapshot.Contains(host.Text, StringComparison.Ordinal),
+                "Native failure snapshot records window metadata without reading its title");
+            await CheckNativePassThroughAsync(controller.Popup, panels[1],
+                () => controller.Popup.Visible && controller.Popup.DetailText == StatusPanelModel.Card(normal[1], AgentState.FullThrottle).Detail,
+                "status", check);
+        }
+        catch (Exception error)
+        { SmokeUiProbe.Failure("status-native-fixture", host, activeTarget, controller.Popup, pointer, error); throw; }
     }
 
     internal static async Task CheckNativeWheelAsync(QuotaDetailPopup popup, Form owner, Point point, string kind, Action<bool, string> check)
@@ -233,6 +275,7 @@ internal static class StatusToolTipUiChecks
         check(popup.CanInteractAt(point) && SendMessage(popup.Handle, 0x0084, IntPtr.Zero, Coordinates(point)).ToInt64() != -1,
             kind + " scrollable popup accepts native hit-testing without activation");
         int before = -popup.AutoScrollPosition.Y, messages = 0;
+        using var queue = new SmokeUiProbe.QueueBarrier(popup);
         async Task Wheel(int delta)
         {
             bool delivered = false;
@@ -240,10 +283,9 @@ internal static class StatusToolTipUiChecks
             popup.MouseWheel += received;
             try
             {
-                if (!PostMessage(popup.Handle, 0x020A, new IntPtr((long)delta << 16), Coordinates(point)))
-                    throw new InvalidOperationException("Could not post a wheel message to the synthetic popup.");
+                queue.Post(0x020A, new IntPtr((long)delta << 16), Coordinates(point));
                 messages++;
-                await WaitAsync(() => delivered || !popup.Visible, "Native wheel delivery did not complete.");
+                await queue.DrainAsync();
                 if (!delivered) throw new InvalidOperationException(kind + " queued wheel did not reach the actual MouseWheel handler.");
             }
             finally { popup.MouseWheel -= received; }
@@ -279,39 +321,44 @@ internal static class StatusToolTipUiChecks
         check(popup.Visible && !popup.VerticalScroll.Visible && popup.Bounds.Contains(point) && !popup.CanInteractAt(point) &&
             SendMessage(popup.Handle, 0x0084, IntPtr.Zero, Coordinates(point)).ToInt64() == -1,
             kind + " non-scrollable popup returns native HTTRANSPARENT over the card below");
-        check(WindowFromPoint(point) == below.Handle,
-            kind + " native WindowFromPoint skips the popup and finds the underlying card");
-        int moves = 0, clicks = 0;
+        var root = below.FindForm() ?? throw new InvalidOperationException("Synthetic target has no fixture form.");
+        var scoped = SmokeUiProbe.ScopedTarget(root, point);
+        check(scoped == below || (scoped is not null && below.Contains(scoped)),
+            kind + " parent-scoped hit-test finds the underlying card; popup WM_NCHITTEST is checked separately");
+        int moves = 0, downs = 0, ups = 0;
+        using var queue = new SmokeUiProbe.QueueBarrier(below);
+        var shown = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        EventHandler visible = (_, _) => { if (hoverReady()) shown.TrySetResult(); };
         MouseEventHandler moved = (_, _) => moves++;
-        MouseEventHandler clicked = (_, _) => clicks++;
+        MouseEventHandler down = (_, _) => downs++;
+        MouseEventHandler up = (_, _) => ups++;
         below.MouseMove += moved;
-        below.MouseClick += clicked;
+        below.MouseDown += down;
+        below.MouseUp += up;
+        popup.VisibleChanged += visible;
         try
         {
             void Post(uint message, int buttons = 0)
             {
-                if (!PostMessage(below.Handle, message, new IntPtr(buttons), Coordinates(new Point(4, 4))))
-                    throw new InvalidOperationException("Could not post input to the synthetic underlying card.");
+                queue.Post(message, new IntPtr(buttons), Coordinates(new Point(4, 4)));
             }
             Post(0x0200); // WM_MOUSEMOVE, client coordinates; production hover handlers run.
-            await WaitAsync(hoverReady);
+            await queue.DrainAsync();
+            if (!hoverReady()) await shown.Task.WaitAsync(TimeSpan.FromSeconds(4));
             check(moves > 0, kind + " native mouse move reaches the underlying card and changes its hover detail");
             Post(0x0201, 1); // WM_LBUTTONDOWN / MK_LBUTTON
             Post(0x0202); // WM_LBUTTONUP
-            await WaitAsync(() => clicks > 0);
-            check(clicks == 1, kind + " native click reaches the underlying card exactly once");
+            await queue.DrainAsync();
+            // Control.WmMouseUp consults global WindowFromPoint before raising MouseClick.
+            // Keep native delivery scoped; the real card's managed click/page route is tested separately above.
+            check(downs == 1 && ups == 1, kind + " queued native button down/up reach the scoped card exactly once");
         }
-        finally { below.MouseMove -= moved; below.MouseClick -= clicked; }
+        finally { below.MouseMove -= moved; below.MouseDown -= down; below.MouseUp -= up; popup.VisibleChanged -= visible; }
     }
 
     private static IntPtr Coordinates(Point point) => new(unchecked((int)((uint)(ushort)point.X | ((uint)(ushort)point.Y << 16))));
     [DllImport("user32.dll", EntryPoint = "SendMessageW")]
     private static extern IntPtr SendMessage(IntPtr window, uint message, IntPtr wParam, IntPtr lParam);
-    [DllImport("user32.dll")]
-    private static extern IntPtr WindowFromPoint(Point point);
-    [DllImport("user32.dll", EntryPoint = "PostMessageW", SetLastError = true)]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool PostMessage(IntPtr window, uint message, IntPtr wParam, IntPtr lParam);
 
     private static async Task WaitAsync(Func<bool> done, string timeout = "Synthetic status hover did not open its popup.")
     {
