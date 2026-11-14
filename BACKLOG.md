@@ -5,7 +5,7 @@
 - 2.8.9 첫 Control clipped, #145 첫 휠 검사, #150 첫 WindowFromPoint 실패는 같은 원인으로 확정하지 않는다. #150은 동일 바이너리의 승인된 1회 재검사에서 통과했고 두 실행을 보존했다.
 - 운영 앱·버전은 바꾸지 않고 독립 비활성화 합성 host·생성 후 DPI/물리 배치·메시지 큐 완료, 부모 범위 hit-test + 직접 WM_NCHITTEST, fixture 정리 전 HWND/PID/소유·기하·스크롤·DPI/모니터 진단을 검사 코드에서 보완한다. 입력/단언 재시도나 임의 대기 증가는 없다.
 - WinForms의 MouseClick 생성도 전역 WindowFromPoint에 의존한다. 일반 smoke에서는 부모 범위의 native down/up 전달과 기존 실제 상태 카드의 관리형 클릭/페이지/기록 경로를 구분하며, 전역 데스크톱 클릭 관통은 별도 통제 환경 검증으로 남긴다. 다른 앱 제목·본문은 읽거나 기록하지 않는다.
-- Windows 2.9.3 버전·배포 준비와 별도 PR로 진행한다. 해당 후보에 이 검사 변경은 포함하지 않는다. [검사 계약·이전 실패·확인 범위](WINDOWS_SMOKE_DIAGNOSTICS.md).
+- Windows 2.9.3 버전·배포 준비와 별도 Draft로 구현·검증했다. 해당 후보에 이 검사 변경은 포함하지 않는다. 최종 build 경고/오류 0, self-test 293,225건·smoke 1,179건 통과. PNG 저장 경로 오류 두 실행도 보존했다. [검사 계약·이전 실패·확인 범위](WINDOWS_SMOKE_DIAGNOSTICS.md).
 
 ## Windows 2.9.3 후보 준비: xAI 네이티브 JSON 전환
 

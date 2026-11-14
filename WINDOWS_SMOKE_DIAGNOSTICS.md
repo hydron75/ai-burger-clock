@@ -46,4 +46,41 @@ Windows 2.9.3 후보/receipt는 다른 브랜치에서 준비했고 이 변경�
 
 ## 검증 기록
 
-최종 build·self-test·고정 슬롯 smoke와 독립 리뷰 결과는 실행 뒤 기록합니다. OS 알림·운영 등록은 가짜 경로만 사용하며 배포는 하지 않습니다.
+검증한 코드 커밋은 `42e1cd5520e2c752dfdd35553304167acc0df9f9`입니다. 이후 커밋은 이 실행 기록만 보완합니다.
+기준 main에 이미 들어온 Windows 2.9.3과 Mac 버전 기록을 상속하며 이 PR 자체는 버전 필드·Mac 파일을 바꾸지 않습니다.
+
+| 확인 | 결과 |
+|---|---|
+| SDK / build.ps1 | 10.0.404, 경고 0·오류 0 |
+| --self-test | 293,225 PASS = 공통 292,094 + Windows 1,131. 기존 symlink fixture 1건 SKIP 유지 |
+| 최종 고정 after 슬롯 smoke | 1회 1,179 PASS, exit 0, PNG 60개. 입력/단언 재시도 없음 |
+| 실제 메시지 | Gemini/OpenAI 상태 상세와 Gemini 한도 상세의 휠로 맨 끝/역방향/범위 제한, 상태·한도 각각 부모 범위 target + 직접 WM_NCHITTEST + down/up 각 1회 통과 |
+| 진단 | 외부 창 메타데이터 allowlist 2건, 부모 범위 negative 2건, 정리 전 표시 상태·제목 canary 검사 통과 |
+| 2.9.3 후보 대비 | 일반 화면 PNG 58/58·레이아웃 JSON 41/41 SHA-256 동일. 나머지 PNG 2개는 독립 fixture로 옮긴 긴 상태 본문 합성 캡처 |
+| 독립 정적 리뷰 | 기대 host/target/popup의 HWND/PID/소유 정보 누락 P2 보완 후 확정 P1/P2 없음. 리뷰어는 native 실행 결과를 독립 재실행하지 않음 |
+| 운영 경계 | 실제 OS 알림 제출/운영 알림 등록/사이트 전송 0회. Codex의 운영 EXE·DB·설정 변경과 운영 앱 직접 실행 없음 |
+
+smoke 건수는 기존 1,174에서 1,179로 바뀝니다. 부모 범위 negative 2건, 정리 전 상태/제목 제외 2건, 스크롤 내용 범위 2건을 더했습니다.
+외부 가림에 좌우되는 native MouseClick→Claude 페이지 1건은 위의 native down/up 계약과 기존 실제 상태 카드의 관리형 페이지 경로로 분리했습니다. 전역 클릭 보장을 통과한 것으로 세지 않습니다.
+
+### 이번 작업 중 보존한 실행
+
+모든 경로는 이 PR의 별도 worktree 아래 artifacts입니다. 실패 로그를 지우거나 성공으로 합산하지 않았습니다.
+
+| 코드 커밋 / 실행 폴더 | 결과 |
+|---|---|
+| 524ef93 / windows-smoke-diagnostics-final-20261114/windows-tests/after/20261114-145705-426-8c6cef | 28 PASS·PNG 1·exit 1. native 휠 통과 후 PNG 파일명 저장에서 GDI+ 오류. 정리 전 UI-FAILURE JSON 기록 확인 |
+| 524ef93 / ui-diag/windows-tests/after/20261114-145833-325-51b70f | 119 PASS·PNG 11·exit 1. 뒤쪽의 더 긴 viewport 캡처 파일명에서도 같은 저장 오류 |
+| 524ef93 / d/windows-tests/after/20261114-150026-471-547f53 | 결과 경로 단축 뒤 1,179 PASS·PNG 60·exit 0 |
+| 42e1cd5 / d/build/20261114-150451-551 | 최신 main으로 재배치 후 build·self-test 통과 |
+| 42e1cd5 / d/windows-tests/after/20261114-150557-228-679668 | 최종 HEAD 코드의 1회 smoke: 1,179 PASS·PNG 60·exit 0 |
+
+첫 두 실패는 이 worktree의 긴 결과 경로에 따른 저장 오류입니다. 2×2 합성 PNG를 파일명 방식으로 저장해 245자 성공·278자 GDI+ 실패를 재현했고, 같은 278자 경로도 FileStream 방식이면 저장됐습니다.
+첫 길이 계산에서 images 하위 폴더를 빠뜨렸으므로 두 번째 실행도 긴 이름에서 실패했습니다. 이후 기존 PNG 60개 전체 경로를 계산해 최장 255자인 ReportGroup `d`를 사용했습니다.
+검사 코드·메시지·단언·대기 시간은 바꾸지 않았고, 이미지 저장 방식 변경도 이번 범위에 추가하지 않았습니다. 긴 경로에서도 파일명 방식 저장을 보장하지 않습니다.
+재배치 전후 Windows/공통 C# 원문은 동일하며 main의 버전·문서·Mac 변경만 상속했습니다.
+
+재배치 뒤 기본 샌드박스 build의 NU1900은 NuGet 취약성 데이터 접속 실패였습니다. 감사 설정을 끄지 않고 정상 네트워크 컨텍스트에서 `dotnet restore --force --no-cache -warnaserror` 후 다시 빌드해 통과했습니다.
+각 최종 바이너리의 smoke는 1회이므로 반복 트레이 기록 무증가 판정은 미평가입니다.
+물리 마우스·전역 Z-order·외부 앱/토스트 가림·다양한 실제 DPI/모니터 조합과 과거 세 실패의 공통 원인은 여전히 미확인입니다.
+검사 뒤 현재 2.9.3 배포본의 외부 재실행과 트레이·상태 보기·한도 보기 정상은 사용자 확인입니다.
