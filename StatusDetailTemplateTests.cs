@@ -44,7 +44,7 @@ internal static class StatusDetailTemplateTests
             }
             var xai = Fixtures(now).First(f => f.State.Provider == ProviderKind.Xai).State;
             string partial = StatusPanelModel.Card(xai with { Source = XaiStatusFeed.RssUrl + " [수신 실패] + " + XaiStatusFeed.SummaryUrl + " [응답 수신]" }, AgentState.FullThrottle).Detail;
-            Check(partial.EndsWith("출처\n" + XaiStatusFeed.RssUrl + " [수신 실패]\n" + StringComparison.Ordinal), "partial-source failure evidence is retained");
+            Check(partial.EndsWith("출처\n" + XaiStatusFeed.RssUrl + " [수신 실패]\n" + XaiStatusFeed.SummaryUrl, StringComparison.Ordinal), "partial-source failure evidence is retained");
             string expired = StatusPanelModel.Card(xai with { XaiIncidentExpiryNote = XaiStatusFeed.ExpiryNote }, AgentState.FullThrottle).Detail;
             Check(expired.Contains("진행 중 사건: 없음\n과거 사건 해제: " + XaiStatusFeed.ExpiryNote + "\n\n출처", StringComparison.Ordinal), "expiry note remains historical and inside incident section");
             var ids = xai with { IncidentId = "synthetic-confirmed", UncertainIncidentId = "synthetic-uncertain" };
