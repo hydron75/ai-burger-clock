@@ -19,9 +19,9 @@
 - main `ba23cb21acc227988a78f9123a24fda430efb6ec`의 #145를 포함한다. Windows 버전 세 필드와 문서만 변경하며 후보·검사·receipt는 artifacts에 둔다. 사이트는 버전 14로 먼저 비공개 배포했고 기준 커밋 `ba23cb2`·xAI 정상 판정을 확인했다. 실제 앱 백업·교체·등록 확인·실행은 버전 PR 병합 뒤 사용자가 외부 MSI PowerShell에서 진행한다. [검사·SDK·신원·외부 명령](MAINTENANCE_2_9_2.md).
 - SDK 10.0.404, build·단일 EXE self-test 각 293,038건, smoke 첫 1회 1,174건 통과. 실제 휠 실패는 재현되지 않았고 재실행하지 않았다. 앞선 간헐 실패의 원인은 확인하지 않았으며 이번에 새 원인 조사 항목을 추가하지 않는다.
 
-## 후속: xAI 호환 JSON sunset 2027-01-31
+## 완료: xAI 호환 JSON sunset 2027-01-31 대응
 
-- **#150/#151 main 병합 완료 · 사이트 버전 16 반영 · Windows 2.9.3 후보 준비:** 호환 JSON(summary·components·incidents) sunset 2027-01-31에 대비해 RSS + data.x.ai/status/summary.json·incidents.json으로 전환했다. RSS만으로 정상 fallback하지 않으며 새 JSON의 대상 19개 slug 누락·수신/형식 실패는 CHECK다. Agent SDK는 Cursor로 포함하고, summary 신규 slug는 첫 확인·목록 변경 때만 진단에 남긴다. 처음 보는 사건 범위/RSS 경로 CHECK는 유지한다. Windows 운영 EXE 교체·실행은 외부 배포 전까지 하지 않는다. [스키마 관찰 근거·범위·전환 계약](XAI_STATUS.md).
+- **#150/#151 main 병합 · Windows 2.9.3·Mac 0.9.4·사이트 버전 16 배포 완료:** 호환 JSON(summary·components·incidents) sunset 2027-01-31에 대비해 세 출처(RSS·data.x.ai/status/summary.json·data.x.ai/status/incidents.json)로 전환했다. RSS만으로 정상 fallback하지 않으며 새 JSON의 대상 19개 slug 누락·수신/형식 실패는 CHECK다. Agent SDK는 Cursor로 포함하고, summary 신규 slug는 첫 확인·목록 변경 때만 진단에 남긴다. 처음 보는 사건 범위/RSS 경로 CHECK는 유지한다. 남은 미확인은 실제 비정상 data.x.ai 응답 관찰이다. [스키마 관찰 근거·범위·전환 계약](XAI_STATUS.md).
 
 ## Windows 2.9.1 후보 준비: 병합된 링크·상세·SQLite·배포 검사 반영
 
