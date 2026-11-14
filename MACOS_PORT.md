@@ -2955,3 +2955,69 @@ smoke의 선택 기능(`AIBURGERCLOCK_SMOKE_IMAGES`)으로 큰 화면·1280×800
 - 진단 콜백이 실제로 `DisplayLog`에 한 줄을 남기는 것은 이 시점에 호출 0건이라 눈으로 확인하지 못했다(합성 검사는 공통 원본, Mac 쪽은 로그 한 줄 연결뿐).
 - 새 진단 콜백은 처음 보는 slug가 있는 동안 조회마다 한 줄을 남긴다(Windows와 같은 동작, Mac 쪽 중복 억제는 두지 않았다).
 - 77절의 미확인 항목(마우스 휠·스크롤러 드래그, VoiceOver, 여러 디스플레이의 긴 팁, 모든 디스플레이가 덮였을 때의 SKIP 출력)은 그대로다.
+
+## 80. 0.9.4 정리
+
+2026-11-14. Mac 0.9.3 / build 30 → **0.9.4 / build 31**. 앱 화면·메뉴·알림·설정·번들 경로는 바뀌지 않고, 공통 원본의 xAI 공식 상태 출처 전환(PR #150)을 번들에 싣는다. 2027-01-31 sunset이 공지된 xAI 호환 JSON 세 주소를 공식 상태 페이지의 공개 JSON 두 주소(`data.x.ai/status/summary.json`·`incidents.json`)로 바꾸고 RSS는 그대로 쓴다. 문서화된 지원 API가 아니라 공개 페이지에서 관찰한 주소이므로 장기 제공은 확인되지 않았다([XAI_STATUS](XAI_STATUS.md), [79절](#79-xai-네이티브-json-전환pr-150의-mac-후속)). 버전 PR(#152)은 버전 필드와 Mac/README만 바꿨다.
+
+### 포함된 변경
+| PR | 내용 | 기록 |
+|---|---|---|
+| #150 | 공통 원본: xAI 출처 전환(`XaiStatusFeed.cs`·`ProviderStatusClient.cs`), 필수 slug 19개(Agent SDK 포함), 진단 콜백과 제외 목록 변경 시에만 기록하는 중복 방지(`1053f15`) | [XAI_STATUS](XAI_STATUS.md), PR #150 코멘트(Mac 확인) |
+| #151 | Mac 후속: `MacDetailTipSmoke`의 제거된 `ComponentsUrl` 참조 수정, 진단 콜백을 `DisplayLog`에 연결 | [79절](#79-xai-네이티브-json-전환pr-150의-mac-후속) |
+
+### 버전 필드
+`Version` 0.9.4, `AssemblyVersion` 0.9.4.0, `FileVersion` 0.9.4.0, `ApplicationVersion` 31(`CFBundleVersion`). `Info.plist`에는 적지 않는다. `AssemblyVersion`이 공식 상태 조회 User-Agent에 쓰여 UA는 `AIBurgerClock/0.9.4`가 된다.
+
+### 기준
+| 항목 | 값 |
+|---|---|
+| main(작업 시작) | `fe84da2c5662b50bde189010e6c8eafc62e8c374`(PR #150 병합) |
+| 버전 변경 커밋(앱 소스) | `6d3159e937989d98567f0acac753775c99f3fb3e` |
+| PR #152 병합(배포 기준 main) | `340a35986ae19e07293ac7ec8b940dcb31b69f53` |
+| 도구 | SDK 10.0.404, macOS 워크로드 27.2.10000, Xcode 27.2 (0.9.3과 같음) |
+
+### 배포 전 검증 (임시 사본, 저장소 경로 아님)
+| 항목 | 결과 |
+|---|---|
+| 빌드 | `bash Mac/build.sh` **옵션 없음**, 경고 0 / 오류 0, bundle **0.9.4 / 31** |
+| Shared.Tests | **292,094건 PASS**(SKIP 0) |
+| 번들 런타임 | `System.Private.CoreLib`에 10.0.15 문자열 있고 10.0.14는 없음 |
+| smoke 1회 | 종료 코드 0, **SKIP 0**, FAIL 0 |
+| LaunchServices | smoke 뒤 등록 수 2 → `lsregister -u`(임시 사본) 후 **1**, 임시 worktree 삭제 |
+
+### 저장소 경로 빌드와 교체 (Claude Code 수행, 2026-11-14 14시대)
+메인 채팅의 "배포 진행" 지시(PR #152 병합 뒤, main `340a359`)에 따라 AGENTS.md "Mac 배포" 절 순서로 진행했다. 경로 변경이 없어 로그인 항목·옛 번들 폴더 정리는 필요 없었다.
+
+| 항목 | 결과 |
+|---|---|
+| 시작 전 | 실행 중이던 0.9.3 / 30 앱 1개(PID 25852, 같은 번들 경로). 실행 파일 SHA-256 `de6bdf1f…`(78절 기록과 일치) |
+| 빌드 | 14:10:01~14:10:35, `bash Mac/build.sh --quit-running`(옵션 없음). 실행 중인 앱에 종료를 요청해 정상 종료된 뒤 빌드가 이어졌다. 경고 0 / 오류 0 |
+| 번들 | `CFBundleShortVersionString` **0.9.4**, `CFBundleVersion` **31**, `CFBundleIdentifier` `com.hydron75.aiburgerclock`, `LSMinimumSystemVersion` 27.0, `codesign --verify --deep --strict` 통과(ad-hoc 서명) |
+| 번들 런타임 | `System.Private.CoreLib`에 10.0.15 문자열 5개, 10.0.14는 0개 |
+| 실행 | `open`으로 실행. 프로세스 **1개**(PID 33844), 약 1분 뒤에도 1개, 앱의 자식 프로세스 없음 |
+| SHA-256 실행 파일 | `af761b2bbcd16040beada4f2762525d2556f2eef28cb9278d3178f4880b9c4f2` |
+| SHA-256 앱 DLL | `b8bc12c7191243850e583cfaa7b6f4c53e6d569bbe58f2be8eb77b5edf13c816` (`Contents/MonoBundle/AI Burger Clock.dll`) |
+| LaunchServices 등록 수 | **1** (등록이 늘지 않았다) |
+| 로그인 항목(BTM) | `sfltool dumpbtm`의 항목(식별자 `2.com.hydron75.aiburgerclock`)이 `enabled, allowed`, URL은 같은 번들 경로, Generation 4 그대로. 자동 실행 설정은 건드리지 않았다 |
+
+### 배포 뒤 실제 공개 상태 조회 (새 번들)
+저장소 밖 임시 콘솔 프로젝트가 **배포된 번들의 `AI Burger Clock.dll`을 직접 불러** `ProviderStatusClient.FetchAsync(Xai)`를 호출했다(리플렉션, 번들·앱 상태 변경 없음).
+
+| 항목 | 결과 |
+|---|---|
+| 어셈블리 / UA | 0.9.4.0 / `AIBurgerClock/0.9.4` |
+| 판정 | **Operational**, 사유 "정상 · 진행 중 장애 없음(공식 사건 피드 기준)", `AssessmentIssue` 없음, 진행 사건 ID 없음 |
+| 출처 | RSS(`status.x.ai/feed.xml`)·summary·incidents(`data.x.ai/status/…`) **세 개 모두 `[응답 수신]`** |
+| 진단 콜백 | 1회: `xAI 판정 제외 구성 요소: 없음` |
+
+실행 중인 앱의 통합 로그(`com.hydron75.aiburgerclock:display`)에도 14:10:43에 같은 진단 한 줄이 남았다. 새 번들의 앱이 실제로 새 출처를 조회했고 진단 콜백이 `DisplayLog`까지 연결된다는 것은 이 로그 한 줄로 확인했다(앱이 읽은 판정 값 자체는 읽지 않았다). 프로브와 로그에는 계정 값이 없다.
+
+### 사용자 확인
+2026-11-14 사용자가 0.9.4 앱 팝오버에서 **xAI 카드가 정상**이고 **상세 출처에 `data.x.ai` summary·incidents가 표시되는 것을 확인**했다(사용자 확인이며 이 Mac에서 화면을 읽은 값은 아니다).
+
+### 수행하지 않은 검증
+- 앱 DB나 로그에서 앱 자신의 xAI 판정 값은 읽지 않았다. 번들에 실린 코드의 실제 조회 결과는 위 프로브로, 팝오버의 실제 화면은 사용자 확인으로 갈음한다.
+- 비정상 상태의 실제 `data.x.ai` 응답(`info`·`disruption`·`outage`, 진행 사건의 `resolved_at: null`)과 제외 목록이 실제로 바뀌는 상황은 관찰하지 못했다. 공통 합성 검사로만 확인했다.
+- 재로그인·재부팅 뒤 앱이 뜨는지는 사용자가 다음 재부팅 때 확인한다(경로·BTM 변화 없음).
+- 77절의 미확인 항목(마우스 휠·스크롤러 드래그, VoiceOver, 여러 디스플레이의 긴 팁, 모든 디스플레이가 덮였을 때의 SKIP 출력)은 그대로다.
