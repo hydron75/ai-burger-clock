@@ -4,6 +4,11 @@
 이번 버전 PR은 Windows `Version`·`AssemblyVersion`·`FileVersion`과 문서만 변경합니다.
 공통/Windows C#·Mac 파일·패키지·배포 스크립트는 바꾸지 않습니다.
 
+준비 중 main에 #146이 병합된 `7e1487652a2e07d062437aa88506c48a7df7c6ca`도 브랜치에 반영했습니다.
+차이는 `Mac/AiBurgerClock.Mac.csproj`와 `Mac/README.md`의 Mac 0.9.3 버전/문서뿐입니다.
+사이트 규칙과 후보의 공통/Windows 입력은 같으므로 아래 후보·해시·receipt를 유지하고 추가 smoke는 실행하지 않았습니다.
+PR의 main 대비 변경은 Windows 버전 필드와 문서 5개 파일뿐입니다.
+
 ## 2.9.1 이후 포함 변경
 
 - **#145:** xAI 호환 JSON 필수 11개 중 `bugbot` 대신 `2x2chyqwmkzl`(Review Agents, Cursor)을 요구합니다. RSS의 `bugbot`·`review-agents` 대응과 필수 항목 누락 CHECK를 유지하며 Agent SDK는 추가하지 않습니다. 출처·조회·한도·알림 조건은 같습니다. [목록·변경 이력](XAI_STATUS.md).
@@ -107,7 +112,7 @@ Codex 컨텍스트의 `C:\Windows\System32`에서 두 커밋 모두 exit 0/Reada
 ## 미확인·사용자 확인
 
 버전 PR 병합·사용자 외부 Git 접근·운영 백업/교체·실제 등록/자동 시작 불변·2.9.2 실행/상주·실제 화면은 아직 미확인입니다.
-기존 2.9.1의 smoke 후 외부 재실행은 사용자에게 요청했으며 실행 결과는 별도 확인합니다.
+기존 2.9.1의 smoke 후 외부 재실행 완료는 **사용자 확인**입니다. 새 후보 교체나 Codex의 운영 실행과 구분합니다.
 배포 뒤 트레이·상태 보기·한도 보기·xAI 카드와 Provider 상세를 확인합니다. 아이폰의 재조회/기존 로컬 기록에서 정상 복귀는 사용자 확인 항목입니다.
 실제 복원·장기 운영·OS 알림 노출·Mac 재빌드는 수행하지 않았습니다.
 실제 계정 값·토큰·사이트 주소·캡처는 기록하지 않습니다.
