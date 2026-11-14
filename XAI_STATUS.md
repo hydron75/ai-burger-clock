@@ -77,7 +77,20 @@ Windows의 신규 summary slug 진단은 기존 `logs/status-ticker.log`에 남�
 - `https://data.x.ai/robots.txt`는 HTTP 404입니다. 명시적 허용/금지 지침을 확인한 것은 아닙니다.
 - Windows에서 status.x.ai HTML은 앱 User-Agent로 HTTP 403이었으나 위 정확한 JS URL 네 개는 같은 User-Agent로 HTTP 200이었습니다. 로그인·차단 우회는 하지 않았습니다. 앱은 HTML/JS가 아니라 고정 RSS/JSON만 읽습니다.
 - 합성 RED로 기존 파서가 새 정상 catalog를 CHECK로 판정함을 먼저 확인했습니다. 기존 호환 형식의 네 출처/결합 summary 사건 검사는 세 출처와 전용 incidents 입력으로 옮겼습니다. 폐기된 postmortem/completed 성공 조건은 새 JSON enum 거부 검사로 대체합니다.
-- 최종 Windows·공통·smoke·실제 `--check-providers` 결과와 모바일 C# 비교 건수는 검증 완료 뒤 이 절과 PR에 기록합니다. 사이트는 로컬 준비·비교까지만 하며 배포하지 않습니다.
+- 검증한 제품/검사 HEAD는 `f6a6670cebdf0c010ade518b8dd6da3a1d14b41d`입니다. SDK **10.0.404**, `build.ps1` 경고 **0**·오류 **0**, self-test **293,214 PASS**, 별도 Shared.Tests **292,085 PASS**(기존 symlink fixture 1건 SKIP), xAI 합성 검사 **594 PASS**입니다. 공통 검사 입력은 Shared.Tests를 실행한 `a2a9130`과 동일하며 마지막 추가는 Windows smoke 진단의 data.x.ai → Xai 분류뿐입니다.
+- 고정 after 슬롯 smoke는 **첫 1회 1,174 PASS / PNG 60개 / 종료 코드 0**이며 실제 휠 검사도 통과했습니다. 재실행하지 않았고 반복 트레이 누적 억제는 1회여서 미평가입니다. OS 알림 제출·등록 명령은 0회입니다.
+- **2026-11-14 13:02:45 KST**, 실제 `--check-providers`는 종료 코드 **0**, xAI **Operational / 확인 불가 사유 없음**이었습니다. 이 종료 코드는 다른 서비스까지 모두 정상이라는 뜻이 아니라 공식 응답 수신 결과이며 계정 한도는 조회하지 않았습니다.
+- 독립 정적 리뷰에서 RSS-only legacy slug가 summary에 새로 들어와도 상태에 반영되는 경계를 찾아 보완했습니다. summary 19개 allowlist·legacy 3개 진단 전용 회귀 검사와 C#/TypeScript 보완 후 재검토에서 남은 확정 P1/P2는 없었습니다. 정적 검토와 실행 검증은 구분합니다.
+- RED·첫 전체 검사 실패·최종 결과는 `../diagnostics/xai-native-json-20261114/`(저장소 밖 임시 작업 폴더)와 `artifacts/xai-native-json-20261114/`에 구분해 보존합니다. 초기 NuGet 감사 조회 NU1900은 감사 설정을 유지한 정상 restore로, 임시 DB 열기 오류는 기존 고정 테스트 임시 경로로 실행해 재확인했습니다. 이전 출처 기대 문구 이관 누락도 보완했고 합의한 범위 표·스키마 검사는 유지했습니다.
+
+### 모바일 준비·Mac 후속 확인
+
+- 같은 로컬 사이트 준비본을 고정 RSS + 새 JSON 두 개로 옮겼습니다. 위 HEAD의 실제 공통 C#에서 생성한 합성 상태 **314사례·333단계**가 일치하고, 사이트 **86/86**, TypeScript typecheck·Worker build·ESM 검증이 통과했습니다. 기존 시간표 19,972·권고 12·신선도/실패 47건 회귀도 통과했습니다.
+- 사이트는 로컬 준비/비교뿐이며 소스 동기화·게시·배포·실제 한도 데이터/토큰 접근은 하지 않았습니다. 현재 운영 사이트와 기준 커밋 표시는 유지하고 승인된 배포 때 최종 main으로 맞춥니다. 수신 계약·한도 박스·DB는 바꾸지 않습니다.
+- Mac은 삭제된 `XaiStatusFeed.ComponentsUrl`을 참조하는 `MacDetailTipSmoke.cs`를 새 SummaryUrl/세 출처로 바꿔야 합니다. Mac 파일을 이 PR에서 고치지 않았으므로 이 전환 전에는 Mac 전체 빌드를 통과했다고 보지 않습니다.
+- `MacApplication`의 ProviderStatusClient 생성 시 새 선택적 진단 콜백을 Mac 로그로 연결해야 합니다. summary 신규 slug가 카드/CHECK에 섞이지 않고 로그에만 남는지, 진단 실패가 판정에 영향을 주지 않는지도 확인합니다.
+- Mac 최종 HEAD의 공통 **292,085건**·xAI **594건**, 임시 사본의 `Mac/build.sh`·native smoke, 새 출처 User-Agent 수신, Agent SDK·no_data·필수 누락·범위 표·부분 실패·재시작/24시간 경계·정상화 오알림 방지를 확인해야 합니다. 최종 HEAD를 양쪽에서 확인한 뒤 main에 병합합니다.
+- Windows 배포 EXE SHA-256은 기존 `E6AD2CC165BEF4A748E950152731C042A07B5FC8800E82D6C0D83D89ECF445CC`로 불변을 확인했습니다. 검사 후 기존 2.9.2 외부 재실행 완료는 사용자 확인입니다. 이번 PR에서 버전·배포·운영 등록은 바꾸지 않습니다.
 
 ## #98~#145 당시 대상·검증 기록 (이하 보존)
 
