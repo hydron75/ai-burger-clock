@@ -20,8 +20,11 @@ Windows 2.8.4의 버전·검사·EXE 교체와 외부 확인/실행 대기는 [�
 | <https://status.x.ai/api/compat/components.json> | Cursor/Grok Bot 전체 구성 요소 보완 |
 | <https://status.x.ai/api/compat/incidents.json> | Cursor/Grok Bot 사건 이력·해결 확인 |
 
-기존 Cursor 공식 JSON 주소는 이 호환 경로로 연결됩니다. 현재 제공 사실은 확인했지만,
-장기 제공·스키마 안정성을 약속한 공식 공지나 지원 기간은 확인하지 못했습니다.
+기존 Cursor 공식 JSON 주소는 이 호환 경로로 연결됩니다. 2026-10-27 조사 당시에는 장기 제공·스키마 안정성을 약속한 공식 공지나 지원 기간을 확인하지 못했습니다.
+2026-11-14 공개 GET에서는 summary/components/incidents 세 호환 JSON 모두
+`Sunset: Sun, 31 Jan 2027 00:00:00 GMT`를 반환했습니다. RSS에는 이 헤더가 없습니다.
+헤더로 공지된 sunset은 **2027-01-31**이며 대체 경로와 전환 방향은 [BACKLOG](BACKLOG.md)의 12월 중순 결정 항목으로 분리합니다.
+이번 목록 보정에서 출처를 바꾸거나 sunset 처리·새 API를 구현하지 않습니다.
 `page.updated_at` 또는 응답 수신 시각을 사건의 원래 갱신 시각으로 해석하지 않습니다.
 
 | 제품 | RSS 서비스 경로 |
@@ -31,14 +34,20 @@ Windows 2.8.4의 버전·검사·EXE 교체와 외부 확인/실행 대기는 [�
 | Grok Bot | `grok-bot` |
 | 작업 판정 제외 | `imagine` (알려진 이미지 생성 경로이며 장애·심각도·미해결 사건 추적에 포함하지 않음) |
 
-2026-11-05 목록 변경 대응: JSON의 `Review Agents`(`2x2chyqwmkzl`)는 필수 목록에서 빼고
+2026-11-05 목록 변경 대응(당시 기록): JSON의 `Review Agents`(`2x2chyqwmkzl`)는 필수 목록에서 빼고
 `Third-party models`(`third-party-models`)를 Cursor 범위로 추가합니다. 두 제품을 같은 제품의 이름 변경으로 간주하지 않습니다.
 RSS의 `review-agents`는 다시 등장할 때 인식하도록 유지하고, 표시 이름은 `Bugbot`으로 맞춥니다.
 `imagine`은 고정 공식 호스트·정상 사건 경로와 ID가 확인된 경우 작업 판정에서 제외합니다.
 형식이 깨진 `imagine` 항목도 작업 판정에서 제외하므로 `RSS 사건 필수 필드/상태 형식 이상` CHECK를 만들지 않습니다(신뢰하지 않는 링크는 그대로 CHECK).
 같은 사건 ID가 다른 대상 제품에도 있으면 그 제품의 장애·해결·24시간 소실 판정은 그대로 적용합니다.
 
-호환 JSON의 필수 구성 요소는 다음 11개입니다. Grok 웹·앱·API·Build는 포함되지 않습니다.
+2026-11-14 목록 변경 대응: JSON에서 사라진 `bugbot`을 필수 목록에서 빼고,
+다시 나타난 **`2x2chyqwmkzl`(Review Agents)**를 Cursor 범위로 추가합니다.
+`third-party-models`를 포함한 나머지 10개와 **필수 항목이 빠지면 CHECK**인 기준은 유지합니다.
+RSS의 `bugbot`·`review-agents` 대응은 모두 유지하며, 표시 이름은 `Review Agents`입니다.
+공개 페이지에 추가된 Agent SDK는 이번 필수 목록·RSS 매핑에 추가하지 않고 범위 미확인 처리도 바꾸지 않습니다.
+
+호환 JSON의 현행 필수 구성 요소는 다음 11개입니다. Grok 웹·앱·API·Build는 포함되지 않습니다.
 
 | ID | 표시 범위 |
 |---|---|
@@ -47,7 +56,7 @@ RSS의 `review-agents`는 다시 등장할 때 인식하도록 유지하고, 표
 | `mwv1g9sc7kdh` | Cursor Cloud Agents |
 | `vsny1qv7v86c` | Cursor CLI (Grok Build와 구분) |
 | `k0trcq273dr6` | Cursor Automations |
-| `bugbot` | Cursor Bugbot (Grok Bot과 구분) |
+| `2x2chyqwmkzl` | Cursor Review Agents |
 | `third-party-models` | Cursor Third-party models |
 | `sm5wkcnqkvr9` | Grok Bot |
 | `jh0714rgjgt4` | cursor.com |
@@ -239,3 +248,11 @@ Windows 2.8.4 버전 PR은 버전 세 필드·문서만 변경합니다. 후보 
 - Windows는 LinkLabel·전용 이벤트/핸들러와 제목 폭 예외를 없애고, 네 카드의 크기·레이블 위치/폭·간격을 같게 유지합니다. 카드/제목/본문 클릭의 공식 상태 페이지 연결과 기록 메뉴는 그대로입니다.
 - 이번 PR은 Mac 파일을 수정하지 않습니다. Mac은 `MacApplication`의 `OpenXaiUsage`와 연결·검사, `MacStatusPanel`의 `UsageLink`·전용 클릭 영역/접근성·검사를 제거하고 제목 폭을 복원해야 합니다. 공통 멤버가 삭제되므로 이 전환 후 공통 검사·Mac/build.sh·native smoke 확인 전에는 병합하지 않습니다.
 - 모바일 사이트의 xAI 한도 박스도 사용량 링크만 제거합니다. v1/v2 수신·행·막대·시간층·데이터/공식 상태 카드 링크는 유지합니다. 별도 체크아웃에서 준비·검사하며 PR 병합 뒤 메인 지시로만 배포합니다.
+
+## 2026-11-14: Review Agents 필수 목록 복귀 (Draft)
+
+- `components.json`과 summary의 구성 요소 11개에서 Bugbot이 빠지고 Review Agents가 다시 포함됨을 공개 GET으로 확인했습니다. RSS 서비스 경로 21종에 새 경로는 없고 Review Agents 15건·Bugbot 0건이었습니다. 이 관측 수치를 피드의 영구 상한이나 전체 제품 범위 보장으로 해석하지 않습니다.
+- 제품 코드는 필수 JSON ID 한 곳과 확인 날짜 주석만 바꿉니다. RSS 대응·Agent SDK·출처·5분 주기·15초 제한·부분 실패·사건 소실/24시간 해제·알림·한도 정책은 유지합니다. Windows/Mac 버전·패키지·배포 EXE·운영 등록은 바꾸지 않습니다.
+- 합성 현재 목록의 정상 판정이 수정 전 파서에서 실패함을 먼저 확인했습니다. 현재 목록 정상, 11-05 목록(Bugbot 있음·Review Agents 없음)의 CHECK, Review Agents JSON/RSS 진행 사건의 `Cursor · Review Agents` 장애, 전체 필수 ID 누락 CHECK와 기존 Bugbot RSS 대응을 검사합니다. 10-27 목록의 Third-party models 누락 검사도 보존합니다.
+- Windows build·self-test·smoke와 실제 `--check-providers` 결과, Mac 확인할 공통 건수는 최종 검증 뒤 이 절과 PR 본문에 기록합니다.
+- 모바일 사이트 반영 필요: 같은 필수 ID와 RSS 대응을 로컬 준비본에 적용하고 실제 C# 기준 결과와 비교합니다. RSS `bugbot`/`review-agents` 유지와 Agent SDK 미추가도 같습니다. 소스 동기화·사이트 배포는 PR 병합 뒤 메인 지시 전까지 하지 않습니다.
