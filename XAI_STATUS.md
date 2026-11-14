@@ -1,4 +1,101 @@
-# xAI 공식 상태 통합 (#98 병합 완료 · Windows 2.8.4 반영)
+# xAI 공식 상태 통합
+
+## 네이티브 공개 JSON 전환 (2026-11-14 Draft · 미배포)
+
+2027-01-31 sunset이 공지된 호환 JSON 세 개를 아래 두 공개 JSON으로 교체합니다.
+공식 상태 페이지의 공개 JS가 실제로 읽는 주소를 관찰한 것이며, **문서화된 지원 API나 장기 제공 약속은 확인하지 못했습니다**.
+RSS는 그대로 사건 판정 축으로 사용하고, 새 JSON 수신/형식 실패 시 RSS만으로 정상 판정하지 않습니다.
+기존과 같이 확인된 장애가 있으면 그 장애를 우선 표시하면서 부분 실패/범위 미확인을 별도로 남깁니다.
+버전·배포 EXE·한도·조회/알림 주기·24시간 소실 추적과 정상화 알림 억제는 바꾸지 않습니다. **12월 중순 전 배포가 목표**이며 병합·배포는 별도 사용자 지시로 진행합니다.
+
+| 고정 출처 | 읽는 값 |
+|---|---|
+| <https://status.x.ai/feed.xml> | 기존 제품 경로·사건 ID·진행/해결·심각도 |
+| <https://data.x.ai/status/summary.json> | 대상 구성 요소의 현재 상태·필수 slug 존재 여부 |
+| <https://data.x.ai/status/incidents.json> | 대상 사건·현재 단계·심각도·해결 여부 |
+
+앱은 호환 JSON이나 uptime.json을 읽지 않고, 피드에 포함된 URL·JS 파일을 따라 읽지 않습니다.
+5분 주기·15초 요청 제한·4MiB 응답 제한·쿠키/인증 없는 공개 GET은 유지합니다.
+한 번의 일반 상태 확인은 총 8개 주소이며 OpenAI 사건 이력이 필요할 때만 9개가 됩니다.
+
+### 대상·필수 slug와 범위 처리
+
+summary의 식별자 필드 이름은 **`components[].id`**이며 값이 제품 slug입니다.
+incidents의 사건 제품 필드는 **`components[].slug`**입니다. 호환 JSON의 숫자형/불투명 ID나 `components[].id`로 사건 범위를 판단하지 않습니다.
+다음 19개가 필수이며 하나라도 빠지면 CHECK입니다.
+
+| 범위 | 필수 summary slug |
+|---|---|
+| Grok·API | `grok-com`, `ios-app`, `android-app`, `grok-in-x`, `voice`, `api-global`, `api-us` |
+| Cursor | `cursor-desktop`, `cursor-ios`, `cursor-cli`, `cloud-agents`, `automations`, `agent-sdk`, `review-agents`, `third-party-models`, `cursor-com`, `origin`, `enterprise-dashboard` |
+| Grok Bot | `grok-bot` |
+
+RSS/사건의 기존 `grok-build`·`office-workspace-plugins`·`bugbot` 대응도 계속 인식합니다. 이번 summary에는 없으므로 이 세 slug를 필수로 요구하지 않습니다.
+summary의 판정 allowlist도 위 19개이며, RSS에 알려진 세 legacy slug가 summary에 새로 등장해도 진단만 남깁니다. summary 범위 확장은 별도 결정입니다.
+`agent-sdk`는 JSON/RSS 모두 **Cursor · Agent SDK**로 인식합니다.
+명시적 대상 밖은 `imagine`, `api-eu-west-1`, `api-console`, `api-docs`, `single-sign-on`, `admin-apis`, `x-ai`입니다.
+대상 밖으로 확인된 사건은 작업 장애·미해결 ID 추적·해결 처리에 포함하지 않습니다. RSS의 신뢰하지 않는 링크는 이 제외 규칙으로 우회하지 않습니다.
+
+| 입력 | 처리 |
+|---|---|
+| summary의 처음 보는 slug | 판정에서 제외하고 slug만 진단. 상태 카드·CHECK·대상 목록에는 추가하지 않음 |
+| JSON 진행 사건이 처음 보는 slug만 지목 | 범위 확인 불가 CHECK |
+| JSON 진행 사건이 명시적 제외 slug만 지목 | 판정 제외 |
+| JSON 진행 사건에 대상과 모르는 slug가 함께 있음 | 확인된 대상 장애 우선, 범위 미확인은 별도 표시 |
+| RSS의 모르는 제품 경로 진행 사건 | 기존 CHECK |
+| 신뢰하지 않는 RSS 링크 | 기존 CHECK; 임의 링크 조회 없음 |
+
+Windows의 신규 summary slug 진단은 기존 `logs/status-ticker.log`에 남깁니다(64KiB·이전 파일 1개 순환).
+원문·이름·계정값 대신 slug만 기록하고 1회에 정렬/중복 제거한 최대 32개·slug당 80자와 초과 표시로 제한합니다.
+상태 클라이언트의 첫 확인 목록과 이후 목록 변경 때만 진단 콜백을 호출합니다. 순서·중복은 무시하고 출력 제한 전의 전체 slug 목록을 비교합니다.
+목록이 비면 `없음`을 한 번 기록하며, summary 수신/파싱 실패는 마지막 확인 목록을 지우지 않습니다. 진단 콜백이 실패해도 같은 목록으로 재호출하지 않습니다.
+진단 콜백/쓰기 실패는 판정에 영향을 주지 않습니다. Mac은 같은 공통 진단 콜백을 자기 로그에 연결해야 합니다.
+
+### 관찰한 페이지 JS 스키마 근거
+
+아래는 2026-11-14의 **관찰**입니다. 빌드 해시 파일명은 바뀔 수 있으며 앱이 이 JS를 런타임 의존성으로 사용하지 않습니다.
+
+| 공개 JS | 위치·필드 근거 |
+|---|---|
+| [0ab1vv5w2aedy.js](https://status.x.ai/_next/static/chunks/0ab1vv5w2aedy.js) | 변수 `y`의 구성 요소 enum, `m`의 summary 스키마(문자 위치 약 1457부터), `v`/`A`의 data.x.ai fetch(약 2467부터) |
+| [2tveg3bwn7u08.js](https://status.x.ai/_next/static/chunks/2tveg3bwn7u08.js) | 모듈 4489의 사건 스키마(약 5053부터), 모듈 66364의 단계·impact 변환(약 8202부터) |
+| [0t1wzwsnl9ci6.js](https://status.x.ai/_next/static/chunks/0t1wzwsnl9ci6.js) | 구성 요소별 라벨·색. 앱의 색을 이 값으로 바꾸지는 않음 |
+| [3j_53yv1rzqcj.js](https://status.x.ai/_next/static/chunks/3j_53yv1rzqcj.js) | `no_data`를 페이지 내부의 empty/No data로 바꾸는 처리 |
+
+- summary: `status.indicator`·`status.description`은 문자열이며 indicator enum은 없습니다. 전역 indicator로 대상 밖 장애를 작업 장애에 포함하지 않습니다. `components[]`는 비어 있지 않은 id/name과 상태 enum입니다. 응답의 추가 `incidents` 필드는 스키마 밖이므로 무시합니다.
+- 구성 요소 상태: `available` → 정상, `info` → 성능 저하, `disruption` → 일부 장애, `outage` → 주요 장애, `no_data` → 확인 불가 CHECK. 대상 구성 요소의 그 외 값은 형식 이상 CHECK입니다.
+- incidents: id/name/status/impact, created_at/updated_at/resolved_at, incident_updates, components 배열을 검사합니다. `resolved_at`은 null을 허용합니다. 날짜는 페이지 스키마의 UTC ISO datetime이며 앱의 JSON 날짜 파서로 검사합니다.
+- JSON 단계 enum은 investigating/monitoring/resolved뿐입니다. 호환 형식의 identified/postmortem/completed를 새 JSON의 유효 단계로 추정하지 않습니다. RSS의 기존 단계 인식은 그대로입니다.
+- impact는 `critical` → outage, `major`·`minor` → disruption, `none` → info입니다. 따라서 새 JSON의 **minor도 일부 장애**이며 RSS·페이지 JS의 같은 심각도에 맞춥니다.
+- 사건 제품은 `{slug,name}`입니다. update는 id/status/body/created_at을 검사하되 과거 본문으로 현재 상태를 판정하지 않습니다. `affected_components`는 관측 JSON에는 있지만 페이지 스키마/참조 코드에는 없으므로 무시합니다. 현재 사건의 `components[].slug`를 사용합니다.
+- 진행 중 사건의 빈 제품 배열은 범위를 확인할 수 없으므로 앱은 기존 기준대로 CHECK입니다. 페이지가 빈 배열 사건을 목록에서 제외하는 동작과 구분합니다. 알 수 없는 추가 필드는 무시합니다.
+
+위 스키마의 필수 필드 누락·잘못된 자료형/enum·잘못된 날짜·추가 필드·범위 조합을 합성 검사로 고정합니다.
+실제 비정상 응답 모양이나 진행 사건의 resolved_at=null은 아직 관찰하지 않았으며 합성 검사와 구분합니다.
+
+### 접근 확인과 검증
+
+- 앱 User-Agent `AIBurgerClock/2.9.2`로 두 data.x.ai JSON 모두 HTTP 200, Sunset 헤더 없음. summary 구성 요소 26개/전부 available, 이력 사건 98건/전부 resolved였습니다. 이것을 영구적인 개수·완전성·가용성 보장으로 해석하지 않습니다.
+- `https://data.x.ai/robots.txt`는 HTTP 404입니다. 명시적 허용/금지 지침을 확인한 것은 아닙니다.
+- Windows에서 status.x.ai HTML은 앱 User-Agent로 HTTP 403이었으나 위 정확한 JS URL 네 개는 같은 User-Agent로 HTTP 200이었습니다. 로그인·차단 우회는 하지 않았습니다. 앱은 HTML/JS가 아니라 고정 RSS/JSON만 읽습니다.
+- 합성 RED로 기존 파서가 새 정상 catalog를 CHECK로 판정함을 먼저 확인했습니다. 기존 호환 형식의 네 출처/결합 summary 사건 검사는 세 출처와 전용 incidents 입력으로 옮겼습니다. 폐기된 postmortem/completed 성공 조건은 새 JSON enum 거부 검사로 대체합니다.
+- 진단 중복 억제 추가 전 전체 검증 HEAD는 `f6a6670cebdf0c010ade518b8dd6da3a1d14b41d`입니다. SDK **10.0.404**, `build.ps1` 경고 **0**·오류 **0**, self-test **293,214 PASS**, 별도 Shared.Tests **292,085 PASS**(기존 symlink fixture 1건 SKIP), xAI 합성 검사 **594 PASS**입니다. 공통 검사 입력은 Shared.Tests를 실행한 `a2a9130`과 동일하며 마지막 추가는 Windows smoke 진단의 data.x.ai → Xai 분류뿐입니다.
+- #151 병합 전 진단 중복 억제 보완: 동일 목록 반복이 기존 코드에서 실패하는 RED를 확인한 뒤, xAI **603건**·공통 **292,094건**이 통과했습니다. 순서/중복 무관 비교·목록 변경·빈 목록·재생성·출력 제한 밖 변경·수신 실패·진단 예외를 합성 검사로 고정했습니다. 로그는 `artifacts/xai-diagnostic-changes-20261114/`에 보존하며, 병합 후 Windows 전체 검증과 사이트 C# 비교는 아직 하지 않았습니다.
+- 고정 after 슬롯 smoke는 **첫 1회 1,174 PASS / PNG 60개 / 종료 코드 0**이며 실제 휠 검사도 통과했습니다. 재실행하지 않았고 반복 트레이 누적 억제는 1회여서 미평가입니다. OS 알림 제출·등록 명령은 0회입니다.
+- **2026-11-14 13:02:45 KST**, 실제 `--check-providers`는 종료 코드 **0**, xAI **Operational / 확인 불가 사유 없음**이었습니다. 이 종료 코드는 다른 서비스까지 모두 정상이라는 뜻이 아니라 공식 응답 수신 결과이며 계정 한도는 조회하지 않았습니다.
+- 독립 정적 리뷰에서 RSS-only legacy slug가 summary에 새로 들어와도 상태에 반영되는 경계를 찾아 보완했습니다. summary 19개 allowlist·legacy 3개 진단 전용 회귀 검사와 C#/TypeScript 보완 후 재검토에서 남은 확정 P1/P2는 없었습니다. 정적 검토와 실행 검증은 구분합니다.
+- RED·첫 전체 검사 실패·최종 결과는 `../diagnostics/xai-native-json-20261114/`(저장소 밖 임시 작업 폴더)와 `artifacts/xai-native-json-20261114/`에 구분해 보존합니다. 초기 NuGet 감사 조회 NU1900은 감사 설정을 유지한 정상 restore로, 임시 DB 열기 오류는 기존 고정 테스트 임시 경로로 실행해 재확인했습니다. 이전 출처 기대 문구 이관 누락도 보완했고 합의한 범위 표·스키마 검사는 유지했습니다.
+
+### 모바일 준비·Mac 후속 확인
+
+- 같은 로컬 사이트 준비본을 고정 RSS + 새 JSON 두 개로 옮겼습니다. 위 HEAD의 실제 공통 C#에서 생성한 합성 상태 **314사례·333단계**가 일치하고, 사이트 **86/86**, TypeScript typecheck·Worker build·ESM 검증이 통과했습니다. 기존 시간표 19,972·권고 12·신선도/실패 47건 회귀도 통과했습니다.
+- 사이트는 로컬 준비/비교뿐이며 소스 동기화·게시·배포·실제 한도 데이터/토큰 접근은 하지 않았습니다. 현재 운영 사이트와 기준 커밋 표시는 유지하고 승인된 배포 때 최종 main으로 맞춥니다. 수신 계약·한도 박스·DB는 바꾸지 않습니다.
+- Mac은 삭제된 `XaiStatusFeed.ComponentsUrl`을 참조하는 `MacDetailTipSmoke.cs`를 새 SummaryUrl/세 출처로 바꿔야 합니다. Mac 파일을 이 PR에서 고치지 않았으므로 이 전환 전에는 Mac 전체 빌드를 통과했다고 보지 않습니다.
+- `MacApplication`의 ProviderStatusClient 생성 시 새 선택적 진단 콜백을 Mac 로그로 연결해야 합니다. summary 신규 slug가 카드/CHECK에 섞이지 않고 로그에만 남는지, 진단 실패가 판정에 영향을 주지 않는지도 확인합니다.
+- Mac 최종 HEAD의 공통 **292,094건**·xAI **603건**, 임시 사본의 `Mac/build.sh`·native smoke, 새 출처 User-Agent 수신, Agent SDK·no_data·필수 누락·범위 표·부분 실패·재시작/24시간 경계·정상화 오알림 방지를 확인해야 합니다. 최종 HEAD를 양쪽에서 확인한 뒤 main에 병합합니다.
+- Windows 배포 EXE SHA-256은 기존 `E6AD2CC165BEF4A748E950152731C042A07B5FC8800E82D6C0D83D89ECF445CC`로 불변을 확인했습니다. 검사 후 기존 2.9.2 외부 재실행 완료는 사용자 확인입니다. 이번 PR에서 버전·배포·운영 등록은 바꾸지 않습니다.
+
+## #98~#145 당시 대상·검증 기록 (이하 보존)
 
 공통 원본·Windows 연결과 Mac 전환을 양쪽에서 확인한 뒤 2026-10-27 #98로 병합했습니다.
 Windows 2.8.4의 버전·검사·EXE 교체와 외부 확인/실행 대기는 [배포 기록](MAINTENANCE_2_8_4.md)에 둡니다.

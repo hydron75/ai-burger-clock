@@ -161,7 +161,7 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
                 return;
             }
             http = ProviderStatusClient.CreateHttpClient();
-            statusMonitor = new(new ProviderStatusClient(http), store, scheduleAt: Schedule);
+            statusMonitor = new(new ProviderStatusClient(http, xaiDiagnostic: LogXaiDiagnostic), store, scheduleAt: Schedule);
             quotaMonitor = new(new AccountQuotaClient(), store);
             statusMonitor.Changed += QueueDisplayRefresh;
             quotaMonitor.Changed += QueueDisplayRefresh;
@@ -223,6 +223,10 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
         duplicateWarnings++;
         DisplayLog.Log(CoreFoundation.OSLogLevel.Default, message);
     }
+
+    // Optional xAI diagnostic from the shared parser (slugs of summary components it does not judge). It runs on the
+    // polling worker; it only logs and never changes an assessment.
+    private static void LogXaiDiagnostic(string message) => DisplayLog.Log(CoreFoundation.OSLogLevel.Default, message);
 
     private TickResult? RefreshDisplay(TickReason reason)
     {

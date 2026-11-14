@@ -5,7 +5,8 @@ using System.Text;
 namespace AiBurgerClock;
 
 // The Windows host's warning sink: no file is created until a warning is received.
-// StatusTicker calls it on the UI thread; failed logging must not stop a display tick.
+// StatusTicker uses it on the UI thread; public-status parsing can also use the
+// same instance on a worker. Failed logging must stop neither path.
 internal sealed class WindowsWarningLog
 {
     internal const int MaximumFileBytes = 64 * 1024;

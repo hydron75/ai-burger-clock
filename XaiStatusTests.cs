@@ -14,24 +14,25 @@ internal static class XaiStatusTests
     private static readonly DateTimeOffset Now = new(2026, 10, 27, 1, 0, 0, TimeSpan.Zero);
     private static readonly (string Id, string Name)[] Catalog =
     [
-        ("cursor-ios", "Cursor IDE (iOS)"), ("rflc60xp5jp2", "IDE"), ("mwv1g9sc7kdh", "Cloud Agents"),
-        ("vsny1qv7v86c", "CLI"), ("k0trcq273dr6", "Automations"), ("2x2chyqwmkzl", "Review Agents"),
-        ("third-party-models", "Third-party models"), ("sm5wkcnqkvr9", "Grok Bot"), ("jh0714rgjgt4", "cursor.com"),
-        ("xwjpvdf81qh9", "Origin"), ("enterprise-dashboard", "Enterprise Dashboard")
+        ("agent-sdk", "Agent SDK"), ("android-app", "Grok Android"), ("api-global", "Global API"), ("api-us", "US API"),
+        ("automations", "Automations"), ("cloud-agents", "Cloud Agents"), ("cursor-cli", "CLI"), ("cursor-com", "cursor.com"),
+        ("cursor-desktop", "Desktop"), ("cursor-ios", "Cursor iOS"), ("enterprise-dashboard", "Enterprise Dashboard"),
+        ("grok-bot", "Grok Bot"), ("grok-com", "grok.com"), ("grok-in-x", "Grok X"), ("ios-app", "Grok iOS"),
+        ("origin", "Origin"), ("review-agents", "Review Agents"), ("third-party-models", "Third-party models"), ("voice", "Voice")
     ];
-    internal static string ComponentsJson => Components();
     internal static string SummaryJson => Summary();
     internal const string IncidentsJson = "{\"incidents\":[]}";
 
-    private static object[] ComponentItems(string? omit = null, string? changed = null, string value = "operational") =>
+    private static object[] ComponentItems(string? omit = null, string? changed = null, string value = "available") =>
         Catalog.Where(item => item.Id != omit).Select(item => (object)new
-            { id = item.Id, name = item.Name, status = item.Id == changed ? value : "operational" }).ToArray();
-    private static string Components(string? omit = null, string? changed = null, string value = "operational") =>
-        JsonSerializer.Serialize(new { components = ComponentItems(omit, changed, value) });
-    private static string Summary(string? omit = null, string? changed = null, string value = "operational", object[]? incidents = null) =>
-        JsonSerializer.Serialize(new { status = new { indicator = "none" }, components = ComponentItems(omit, changed, value), incidents = incidents ?? [] });
+            { id = item.Id, name = item.Name, status = item.Id == changed ? value : "available" }).ToArray();
+    private static string Summary(string? omit = null, string? changed = null, string value = "available") =>
+        JsonSerializer.Serialize(new { status = new { indicator = "none", description = "Synthetic overall status" }, components = ComponentItems(omit, changed, value) });
+    private static string History(params object[] incidents) => JsonSerializer.Serialize(new { incidents });
     private static object Incident(string id = "synthetic-incident", string state = "investigating", string impact = "major", params string[] components) =>
-        new { id, name = "Synthetic issue", status = state, impact, components = components.Select(component => new { id = component }).ToArray() };
+        new { id, name = "Synthetic issue", status = state, impact, created_at = "2026-01-01T00:00:00Z",
+            updated_at = "2026-01-01T00:00:00Z", resolved_at = state == "resolved" ? "2026-01-01T00:00:00Z" : null,
+            incident_updates = System.Array.Empty<object>(), components = components.Select(slug => new { slug, name = "Synthetic component" }).ToArray() };
     internal static string Rss(params XElement[] items) => new XElement("rss", new XAttribute("version", "2.0"),
         new XElement("channel", new XElement("title", "xAI Status"), items)).ToString();
     internal static XElement Item(string service = "grok-com", string id = "synthetic-incident", string state = "investigating", string severity = "disruption") =>
@@ -45,8 +46,10 @@ internal static class XaiStatusTests
         int count = 0;
         void Check(bool value, string label)
         { count++; if (!value) throw new InvalidOperationException("xAI status: " + label); }
-        ProviderStatus Parse(string rss = EmptyRss, string? summary = null, string? components = null, string? history = null) =>
-            new XaiStatusFeed().Parse(rss, summary ?? SummaryJson, components ?? ComponentsJson, history ?? IncidentsJson, Now);
+        Check(new XaiStatusFeed().Parse(EmptyRss, SummaryJson, IncidentsJson, Now).Status == OfficialStatus.Operational,
+            "native data.x.ai available summary is healthy with the complete required slug catalog");
+        ProviderStatus Parse(string rss = EmptyRss, string? summary = null, string? history = null) =>
+            new XaiStatusFeed().Parse(rss, summary ?? SummaryJson, history ?? IncidentsJson, Now);
 
         var healthy = Parse();
         Check(healthy.Status == OfficialStatus.Operational && healthy.Reason == XaiStatusFeed.HealthyReason,
@@ -54,26 +57,26 @@ internal static class XaiStatusTests
         Check(RecommendationPolicy.Calculate(AgentState.FullThrottle, healthy.Status) == Recommendation.Go,
             "incident-free xAI is GO, not permanently gray");
         Check(healthy.LastSuccessfulCheckUtc == Now && healthy.AssessmentIssue.Length == 0, "normal receipt uses the injected clock");
-        var november05Catalog = JsonNode.Parse(ComponentsJson)!;
-        var november05Component = november05Catalog["components"]!.AsArray().Single(item => (string?)item!["id"] == "2x2chyqwmkzl")!;
+        var november05Catalog = JsonNode.Parse(SummaryJson)!;
+        var november05Component = november05Catalog["components"]!.AsArray().Single(item => (string?)item!["id"] == "review-agents")!;
         november05Component["id"] = "bugbot"; november05Component["name"] = "Bugbot";
         var november05Summary = JsonNode.Parse(SummaryJson)!;
         november05Summary["components"] = november05Catalog["components"]!.DeepClone();
-        var november05 = Parse(summary: november05Summary.ToJsonString(), components: november05Catalog.ToJsonString());
+        var november05 = Parse(summary: november05Summary.ToJsonString());
         Check(november05.Status == OfficialStatus.Unknown && november05.AssessmentIssue.Contains("필수 구성 요소 누락", StringComparison.Ordinal),
             "November 05 Bugbot catalog cannot replace the required Review Agents component");
         var legacyCatalog = november05Catalog.DeepClone();
         var legacyComponent = legacyCatalog["components"]!.AsArray().Single(item => (string?)item!["id"] == "third-party-models")!;
-        legacyComponent["id"] = "2x2chyqwmkzl"; legacyComponent["name"] = "Review Agents";
+        legacyComponent["id"] = "review-agents"; legacyComponent["name"] = "Review Agents";
         var legacySummary = JsonNode.Parse(SummaryJson)!;
         legacySummary["components"] = legacyCatalog["components"]!.DeepClone();
-        var legacy = Parse(summary: legacySummary.ToJsonString(), components: legacyCatalog.ToJsonString());
+        var legacy = Parse(summary: legacySummary.ToJsonString());
         Check(legacy.Status == OfficialStatus.Unknown && legacy.AssessmentIssue.Contains("필수 구성 요소 누락", StringComparison.Ordinal),
             "legacy Review Agents catalog cannot replace the required Third-party models component");
         var thirdPartyIncident = Parse(history: JsonSerializer.Serialize(new { incidents = new[] { Incident(components: ["third-party-models"]) } }));
         Check(thirdPartyIncident.Status == OfficialStatus.PartialOutage && thirdPartyIncident.RelevantComponent == "Cursor · Third-party models",
             "Third-party models JSON incident contributes to Cursor work status");
-        var reviewAgentsIncident = Parse(history: JsonSerializer.Serialize(new { incidents = new[] { Incident(components: ["2x2chyqwmkzl"]) } }));
+        var reviewAgentsIncident = Parse(history: JsonSerializer.Serialize(new { incidents = new[] { Incident(components: ["review-agents"]) } }));
         Check(reviewAgentsIncident.Status == OfficialStatus.PartialOutage && reviewAgentsIncident.RelevantComponent == "Cursor · Review Agents",
             "Review Agents JSON incident contributes to Cursor work status with the public display name");
         Check(Enum.GetValues<QuotaProvider>().SequenceEqual([QuotaProvider.Codex, QuotaProvider.Claude, QuotaProvider.Gemini, QuotaProvider.Xai])
@@ -90,7 +93,7 @@ internal static class XaiStatusTests
             ("cursor-desktop", "Cursor · Desktop"), ("cursor-ios", "Cursor · iOS"), ("cursor-cli", "Cursor · CLI"),
             ("cloud-agents", "Cursor · Cloud Agents"), ("automations", "Cursor · Automations"), ("bugbot", "Cursor · Bugbot"),
             ("third-party-models", "Cursor · Third-party models"),
-            ("review-agents", "Cursor · Review Agents"), ("cursor-com", "Cursor · cursor.com"), ("origin", "Cursor · Origin"),
+            ("review-agents", "Cursor · Review Agents"), ("agent-sdk", "Cursor · Agent SDK"), ("cursor-com", "Cursor · cursor.com"), ("origin", "Cursor · Origin"),
             ("enterprise-dashboard", "Cursor · Enterprise Dashboard"), ("grok-bot", "Grok Bot")
         ];
         foreach (var (path, label) in mappings)
@@ -117,12 +120,12 @@ internal static class XaiStatusTests
                 "ignored Imagine observation neither escalates nor resolves another product sharing the ID");
         }
         var ignoredTracker = new XaiStatusFeed();
-        _ = ignoredTracker.Parse(Rss(Item("grok-bot")), SummaryJson, ComponentsJson, IncidentsJson, Now);
-        var ignoredOnly = ignoredTracker.Parse(Rss(Item("imagine")), SummaryJson, ComponentsJson, IncidentsJson, Now.AddHours(1));
+        _ = ignoredTracker.Parse(Rss(Item("grok-bot")), SummaryJson, IncidentsJson, Now);
+        var ignoredOnly = ignoredTracker.Parse(Rss(Item("imagine")), SummaryJson, IncidentsJson, Now.AddHours(1));
         Check(ignoredOnly.Status == OfficialStatus.Unknown && ignoredOnly.XaiMissingIncidents.Count == 1,
             "Imagine alone does not hide disappearance of a previously affected work product");
         var ignoredRestart = new XaiStatusFeed(); ignoredRestart.Restore(ignoredOnly);
-        var ignoredExpired = ignoredRestart.Parse(Rss(Item("imagine")), SummaryJson, ComponentsJson, IncidentsJson, Now.AddHours(25));
+        var ignoredExpired = ignoredRestart.Parse(Rss(Item("imagine")), SummaryJson, IncidentsJson, Now.AddHours(25));
         Check(ignoredExpired.Status == OfficialStatus.Operational && ignoredExpired.XaiRecoveryUnconfirmed && ignoredExpired.PendingXaiIncidentIds.Length == 0,
             "Imagine does not pin a work incident ID past its persisted 24-hour disappearance period");
         var unsafeImagine = Item("imagine");
@@ -130,7 +133,7 @@ internal static class XaiStatusTests
         Check(Parse(Rss(unsafeImagine)).Status == OfficialStatus.Unknown, "Imagine exclusion never bypasses the trusted-link boundary");
         foreach (var item in Catalog)
         {
-            var status = Parse(components: Components(changed: item.Id, value: "degraded_performance"));
+            var status = Parse(summary: Summary(changed: item.Id, value: "info"));
             Check(status.Status == OfficialStatus.Degraded && status.RelevantComponent.Length > 0, "each Cursor/Bot component contributes: " + item.Name);
         }
         foreach (var (severity, expected) in new[] { ("info", OfficialStatus.Degraded), ("disruption", OfficialStatus.PartialOutage), ("outage", OfficialStatus.MajorOutage) })
@@ -144,36 +147,36 @@ internal static class XaiStatusTests
         Check(distantDates.CheckedAtUtc == Now && distantDates.Status == OfficialStatus.Operational, "old publication dates are not transport staleness");
 
         var duplicate = Parse(Rss(Item("grok-bot"), Item("cursor-cli"), Item("cursor-cli")),
-            Summary(incidents: [Incident(components: ["sm5wkcnqkvr9", "vsny1qv7v86c"])]));
+            history: History(Incident(components: ["grok-bot", "cursor-cli"])));
         Check(duplicate.IncidentId == "synthetic-incident" && duplicate.IncidentTitle == "[Synthetic product] Investigating synthetic issue | Synthetic issue",
             "same GUID in repeated products and JSON is deduplicated by episode without discarding titles");
         Check(duplicate.RelevantComponent.Contains("Grok Bot", StringComparison.Ordinal) && duplicate.RelevantComponent.Contains("Cursor · CLI", StringComparison.Ordinal),
             "duplicate episode retains all affected products");
         var worst = Parse(Rss(Item("grok-build", severity: "outage"), Item("grok-bot", id: "synthetic-second")),
-            components: Components(changed: "vsny1qv7v86c", value: "degraded_performance"));
+            summary: Summary(changed: "cursor-cli", value: "info"));
         Check(worst.Status == OfficialStatus.MajorOutage && worst.RelevantComponent.Contains("Grok Build", StringComparison.Ordinal) &&
             worst.RelevantComponent.Contains("Grok Bot", StringComparison.Ordinal) && worst.RelevantComponent.Contains("Cursor · CLI", StringComparison.Ordinal), "worst status with all product causes");
-        var titleOnly = Parse(summary: Summary(incidents: [Incident(components: [])]));
+        var titleOnly = Parse(history: History([Incident(components: [])]));
         Check(titleOnly.Status == OfficialStatus.Unknown && titleOnly.IncidentId.Length == 0 && titleOnly.UncertainIncidentId.Length > 0,
             "unscoped ongoing event is CHECK, not a fabricated all-product outage");
-        var partlyScoped = Parse(summary: Summary(incidents: [Incident(components: ["sm5wkcnqkvr9", "future-component"])]));
+        var partlyScoped = Parse(history: History([Incident(components: ["grok-bot", "future-component"])]));
         Check(partlyScoped.Status == OfficialStatus.PartialOutage && partlyScoped.AssessmentIssue.Length > 0, "known affected product wins alongside uncertain scope");
         var resolvedJson = Parse(history: JsonSerializer.Serialize(new { incidents = new[] { Incident(state: "resolved", impact: "critical") } }));
         Check(resolvedJson.Status == OfficialStatus.Operational, "resolved JSON event without a scope is historical only");
-        var conflicting = Parse(Rss(Item()), history: JsonSerializer.Serialize(new { incidents = new[] { Incident(state: "resolved") } }));
+        var conflicting = Parse(Rss(Item()), history: JsonSerializer.Serialize(new { incidents = new[] { Incident(state: "resolved", components: ["grok-com"]) } }));
         Check(conflicting.Status == OfficialStatus.PartialOutage && conflicting.AssessmentIssue.Contains("상충", StringComparison.Ordinal),
             "resolved observation cannot erase a still-open observation from another source");
-        var oppositeConflict = Parse(Rss(Item(state: "resolved")), Summary(incidents: [Incident(components: ["vsny1qv7v86c"])]));
+        var oppositeConflict = Parse(Rss(Item(state: "resolved")), history: History([Incident(components: ["cursor-cli"])]));
         Check(oppositeConflict.Status == OfficialStatus.PartialOutage && oppositeConflict.AssessmentIssue.Length > 0, "cross-source conflict is symmetric");
-        Check(Parse(summary: Summary(changed: "vsny1qv7v86c", value: "major_outage")).Status == OfficialStatus.MajorOutage,
+        Check(Parse(summary: Summary(changed: "cursor-cli", value: "outage")).Status == OfficialStatus.MajorOutage,
             "healthy complete catalog cannot erase a summary component outage");
-        Check(Parse(components: Components(changed: "vsny1qv7v86c", value: "major_outage")).Status == OfficialStatus.MajorOutage,
+        Check(Parse(summary: Summary(changed: "cursor-cli", value: "outage")).Status == OfficialStatus.MajorOutage,
             "healthy summary cannot erase a complete-catalog component outage");
 
         foreach (string id in Catalog.Select(item => item.Id))
         {
-            Check(Parse(summary: Summary(omit: id), components: Components(omit: id)).Status == OfficialStatus.Unknown, "missing expected component is CHECK: " + id);
-            Check(Parse(summary: Summary(omit: id)).Status == OfficialStatus.Operational, "complete catalog supplements summary omission: " + id);
+            Check(Parse(summary: Summary(omit: id)).Status == OfficialStatus.Unknown, "missing expected component is CHECK: " + id);
+            Check(Parse(summary: Summary(omit: id), history: History(Incident(state: "resolved", components: [id]))).Status == OfficialStatus.Unknown, "history cannot replace a missing current catalog entry: " + id);
         }
         foreach (string bad in new[] { "", "<html>Forbidden</html>", "<rss>", "<rss version=\"2.0\"/>",
             "<!DOCTYPE rss [<!ENTITY x SYSTEM 'file:///must-not-read'>]><rss version=\"2.0\"><channel><title>&x;</title></channel></rss>" })
@@ -187,48 +190,47 @@ internal static class XaiStatusTests
         }
         foreach (string bad in new[] { "", "{}", "[]", "{bad", "{\"components\":null}" })
         {
-            Check(Parse(components: bad).Status == OfficialStatus.Unknown, "bad catalog receipt is CHECK");
-            Check(Parse(Rss(Item(severity: "outage")), components: bad).Status == OfficialStatus.MajorOutage, "confirmed RSS outage survives a malformed catalog");
+            Check(Parse(summary: bad).Status == OfficialStatus.Unknown, "bad catalog receipt is CHECK");
+            Check(Parse(Rss(Item(severity: "outage")), summary: bad).Status == OfficialStatus.MajorOutage, "confirmed RSS outage survives a malformed catalog");
         }
-        Check(Parse(components: Components(changed: "sm5wkcnqkvr9", value: "new-state")).Status == OfficialStatus.Unknown, "unknown expected component state cannot be green");
+        Check(Parse(summary: Summary(changed: "grok-bot", value: "new-state")).Status == OfficialStatus.Unknown, "unknown expected component state cannot be green");
 
         var tracker = new XaiStatusFeed();
         var notifications = new RecommendationNotifications();
         bool Notice(ProviderStatus status) => notifications.Observe(ProviderKind.Xai, AgentState.FullThrottle,
             RecommendationPolicy.Calculate(AgentState.FullThrottle, status.Status), true);
-        var baseline = tracker.Parse(EmptyRss, SummaryJson, ComponentsJson, IncidentsJson, Now);
+        var baseline = tracker.Parse(EmptyRss, SummaryJson, IncidentsJson, Now);
         Check(!Notice(baseline), "first normal observation has no alert");
-        var open = tracker.Parse(Rss(Item("grok-bot")), SummaryJson, ComponentsJson, IncidentsJson, Now.AddMinutes(5));
+        var open = tracker.Parse(Rss(Item("grok-bot")), SummaryJson, IncidentsJson, Now.AddMinutes(5));
         Check(Notice(open), "confirmed issue after GO produces one work recommendation");
         for (int poll = 2; poll <= 4; poll++)
         {
-            var missing = tracker.Parse(EmptyRss, SummaryJson, ComponentsJson, IncidentsJson, Now.AddMinutes(poll * 5));
+            var missing = tracker.Parse(EmptyRss, SummaryJson, IncidentsJson, Now.AddMinutes(poll * 5));
             Check(missing.Status == OfficialStatus.Unknown && missing.UncertainIncidentId == "synthetic-incident", "unresolved disappearance stays uncertain on every later poll");
             Check(!Notice(missing), "disappearance cannot send a false recovery");
         }
-        var closed = tracker.Parse(Rss(Item("grok-bot", state: "resolved")), SummaryJson, ComponentsJson, IncidentsJson, Now.AddMinutes(25));
+        var closed = tracker.Parse(Rss(Item("grok-bot", state: "resolved")), SummaryJson, IncidentsJson, Now.AddMinutes(25));
         Check(closed.Status == OfficialStatus.Operational && Notice(closed), "explicit resolution releases the tracked incident and sends one recovery");
-        Check(!Notice(tracker.Parse(EmptyRss, SummaryJson, ComponentsJson, IncidentsJson, Now.AddMinutes(30))), "resolved episode can age out without duplicate recovery");
+        Check(!Notice(tracker.Parse(EmptyRss, SummaryJson, IncidentsJson, Now.AddMinutes(30))), "resolved episode can age out without duplicate recovery");
         var restarted = new XaiStatusFeed();
         restarted.Restore(open);
-        var missingAfterRestart = restarted.Parse(EmptyRss, SummaryJson, ComponentsJson, IncidentsJson, Now.AddHours(2));
+        var missingAfterRestart = restarted.Parse(EmptyRss, SummaryJson, IncidentsJson, Now.AddHours(2));
         Check(missingAfterRestart.Status == OfficialStatus.Unknown && missingAfterRestart.UncertainIncidentId == open.IncidentId,
             "cached unresolved identity is retained across restart instead of a fabricated recovery");
         var secondRestart = new XaiStatusFeed();
         secondRestart.Restore(missingAfterRestart);
-        Check(secondRestart.Parse(EmptyRss, SummaryJson, ComponentsJson, IncidentsJson, Now.AddHours(3)).Status == OfficialStatus.Unknown,
+        Check(secondRestart.Parse(EmptyRss, SummaryJson, IncidentsJson, Now.AddHours(3)).Status == OfficialStatus.Unknown,
             "cached disappearance diagnostics also retain the unresolved identity across another restart");
-        Check(restarted.Parse(Rss(Item("grok-bot", state: "resolved")), SummaryJson, ComponentsJson, IncidentsJson, Now.AddHours(3)).Status == OfficialStatus.Operational,
+        Check(restarted.Parse(Rss(Item("grok-bot", state: "resolved")), SummaryJson, IncidentsJson, Now.AddHours(3)).Status == OfficialStatus.Operational,
             "explicit resolution releases an identity restored from cache");
         var longIds = Enumerable.Range(0, 4).Select(index => new string((char)('a' + index), 128)).ToArray();
         var longTracker = new XaiStatusFeed();
-        _ = longTracker.Parse(Rss(longIds.Select(id => Item(id: id)).ToArray()), SummaryJson, ComponentsJson, IncidentsJson, Now);
-        var longMissing = longTracker.Parse(EmptyRss, SummaryJson, ComponentsJson, IncidentsJson, Now.AddMinutes(5));
+        _ = longTracker.Parse(Rss(longIds.Select(id => Item(id: id)).ToArray()), SummaryJson, IncidentsJson, Now);
+        var longMissing = longTracker.Parse(EmptyRss, SummaryJson, IncidentsJson, Now.AddMinutes(5));
         Check(longMissing.PendingXaiIncidentIds.Length == 515 && longMissing.UncertainIncidentId.Length == 500,
             "full pending identities remain distinct from truncated visible diagnostics");
         var longRestart = new XaiStatusFeed(); longRestart.Restore(longMissing);
-        Check(longRestart.Parse(Rss(longIds.Select(id => Item(id: id, state: "resolved")).ToArray()), SummaryJson, ComponentsJson,
-            IncidentsJson, Now.AddMinutes(10)).Status == OfficialStatus.Operational,
+        Check(longRestart.Parse(Rss(longIds.Select(id => Item(id: id, state: "resolved")).ToArray()), SummaryJson,             IncidentsJson, Now.AddMinutes(10)).Status == OfficialStatus.Operational,
             "truncated display ID never creates a phantom event after restart and explicit resolution");
         CheckMissingIncidentRelease(Check);
         CheckMissingIncidentExpiry(Check);
@@ -240,23 +242,25 @@ internal static class XaiStatusTests
             "shared xAI detail retains incident-feed scope without a usage link or obsolete quota exclusion");
         Check(TrayPresentation.ProviderNotification(ProviderKind.Xai, Recommendation.Stop, open.Reason, ProviderNames.Provider).Body.Contains("Grok Bot", StringComparison.Ordinal), "problem notification includes affected product");
         Check(TrayPresentation.ProviderNotification(ProviderKind.Xai, Recommendation.Go, closed.Reason, ProviderNames.Provider).Body.Contains("Grok·Cursor·Grok Bot", StringComparison.Ordinal), "recovery notification names the product scope without claiming runtime availability");
+        CheckNativeJsonSchema(Check);
+        CheckIgnoredComponentDiagnostics(Check);
 
-        for (int missing = 0; missing < 4; missing++)
+        for (int missing = 0; missing < 3; missing++)
         {
-            string?[] inputs = [EmptyRss, SummaryJson, ComponentsJson, IncidentsJson]; inputs[missing] = null;
-            var partial = new XaiStatusFeed().Parse(inputs[0], inputs[1], inputs[2], inputs[3], Now);
+            string?[] inputs = [EmptyRss, SummaryJson, IncidentsJson]; inputs[missing] = null;
+            var partial = new XaiStatusFeed().Parse(inputs[0], inputs[1], inputs[2], Now);
             Check(partial.Status == OfficialStatus.Unknown && partial.AssessmentIssue.Contains("수신 실패", StringComparison.Ordinal), "each required source failure is CHECK");
             Check(partial.LastSuccessfulCheckUtc == Now && partial.Source.Contains("[수신 실패]", StringComparison.Ordinal), "partial receipt is distinct from total transport failure");
         }
-        var partialOutage = new XaiStatusFeed().Parse(Rss(Item()), SummaryJson, null, IncidentsJson, Now);
+        var partialOutage = new XaiStatusFeed().Parse(Rss(Item()), null, IncidentsJson, Now);
         Check(partialOutage.Status == OfficialStatus.PartialOutage && partialOutage.AssessmentIssue.Length > 0, "fresh confirmed RSS problem wins over partial transport failure");
         using var handler = new FakeHandler();
         using var http = new HttpClient(handler);
         var client = new ProviderStatusClient(http, () => Now);
         var fetched = await client.FetchAsync(ProviderKind.Xai, CancellationToken.None);
-        Check(fetched.Status == OfficialStatus.Operational && handler.Requests.Count == 4 && handler.Requests.Distinct().Count() == 4, "one xAI poll reads only four fixed official public URLs");
+        Check(fetched.Status == OfficialStatus.Operational && handler.Requests.Count == 3 && handler.Requests.Distinct().Count() == 3, "one xAI poll reads only three fixed official public URLs");
         Check(handler.AcceptsXml && handler.HasUserAgent, "RSS Accept and versioned User-Agent are set without cookies or auth");
-        handler.Failed.Add(XaiStatusFeed.ComponentsUrl);
+        handler.Failed.Add(XaiStatusFeed.SummaryUrl);
         Check((await client.FetchAsync(ProviderKind.Xai, CancellationToken.None)).Status == OfficialStatus.Unknown, "client retains partial successful receipts");
         handler.Failed.UnionWith([XaiStatusFeed.RssUrl, XaiStatusFeed.SummaryUrl, XaiStatusFeed.IncidentsUrl]);
         bool threw = false;
@@ -268,14 +272,14 @@ internal static class XaiStatusTests
         try { await client.FetchAsync(ProviderKind.Xai, cancelled.Token); }
         catch (OperationCanceledException) { stopped = true; }
         Check(stopped, "shutdown cancellation is never converted to a successful receipt");
-        using (var partialHandler = new FakeHandler { RssOverride = Rss(Item("grok-bot")), OversizedUrl = XaiStatusFeed.ComponentsUrl })
+        using (var partialHandler = new FakeHandler { RssOverride = Rss(Item("grok-bot")), OversizedUrl = XaiStatusFeed.SummaryUrl })
         using (var partialHttp = new HttpClient(partialHandler))
         {
             var partial = await new ProviderStatusClient(partialHttp, () => Now).FetchAsync(ProviderKind.Xai, CancellationToken.None);
             Check(partial.Status == OfficialStatus.PartialOutage && partial.AssessmentIssue.Contains("수신 실패", StringComparison.Ordinal),
                 "one oversized body never erases a completed RSS outage");
         }
-        using (var partialHandler = new FakeHandler { RssOverride = Rss(Item("grok-bot")), BlockedUrl = XaiStatusFeed.ComponentsUrl })
+        using (var partialHandler = new FakeHandler { RssOverride = Rss(Item("grok-bot")), BlockedUrl = XaiStatusFeed.SummaryUrl })
         using (var partialHttp = new HttpClient(partialHandler))
         using (var deadline = new CancellationTokenSource())
         {
@@ -326,61 +330,221 @@ internal static class XaiStatusTests
         return count;
     }
 
+    private static void CheckIgnoredComponentDiagnostics(Action<bool, string> check)
+    {
+        string SummaryWith(params string[] ids) => JsonSerializer.Serialize(new
+        {
+            status = new { indicator = "none", description = "Synthetic status" },
+            components = ComponentItems().Concat(ids.Select(id => (object)new { id, name = "Synthetic ignored", status = "outage" }))
+        });
+        var diagnostics = new List<string>();
+        var feed = new XaiStatusFeed(diagnostics.Add);
+        void Read(string? summary) => feed.Parse(EmptyRss, summary, IncidentsJson, Now);
+        Read(SummaryWith("synthetic-b", "synthetic-a"));
+        Read(SummaryWith("synthetic-a", "synthetic-b", "synthetic-a"));
+        check(diagnostics.Count == 1 && diagnostics[0] == "xAI 판정 제외 구성 요소: synthetic-a,synthetic-b",
+            "same ignored summary set is logged once, regardless of order or duplicates");
+        Read(SummaryWith("synthetic-a", "synthetic-c"));
+        check(diagnostics.Count == 2 && diagnostics[1].EndsWith("synthetic-a,synthetic-c", StringComparison.Ordinal),
+            "changed ignored summary set is logged again");
+        Read(null);
+        Read("{");
+        Read(SummaryWith("synthetic-a", "synthetic-c"));
+        check(diagnostics.Count == 2, "failed summary reads do not reset the last confirmed ignored set");
+        Read(SummaryJson);
+        Read(SummaryJson);
+        check(diagnostics.Count == 3 && diagnostics[2] == "xAI 판정 제외 구성 요소: 없음",
+            "an emptied ignored summary set is logged once");
+        Read(SummaryWith("synthetic-a", "synthetic-c"));
+        check(diagnostics.Count == 4, "an ignored summary set returning after disappearance is logged again");
+        new XaiStatusFeed(diagnostics.Add).Parse(EmptyRss, SummaryWith("synthetic-a", "synthetic-c"), IncidentsJson, Now);
+        check(diagnostics.Count == 5, "a fresh status client logs its first ignored set again");
+
+        string[] many = Enumerable.Range(0, 33).Select(index => "synthetic-" + index.ToString("D2")).ToArray();
+        Read(SummaryWith(many));
+        many[^1] = "synthetic-99";
+        Read(SummaryWith(many));
+        check(diagnostics.Count == 7 && diagnostics[^1] == diagnostics[^2],
+            "ignored set comparison uses the full set, even beyond the bounded log output");
+        var emptyDiagnostics = new List<string>();
+        var emptyFeed = new XaiStatusFeed(emptyDiagnostics.Add);
+        emptyFeed.Parse(EmptyRss, SummaryJson, IncidentsJson, Now);
+        emptyFeed.Parse(EmptyRss, SummaryJson, IncidentsJson, Now);
+        check(emptyDiagnostics.Count == 1 && emptyDiagnostics[0] == "xAI 판정 제외 구성 요소: 없음",
+            "the first confirmed empty set is logged once per client");
+        int attempts = 0;
+        var failingFeed = new XaiStatusFeed(_ => { attempts++; throw new IOException("Synthetic diagnostic failure"); });
+        var first = failingFeed.Parse(EmptyRss, SummaryWith("synthetic-a"), IncidentsJson, Now);
+        var repeated = failingFeed.Parse(EmptyRss, SummaryWith("synthetic-a"), IncidentsJson, Now);
+        check(attempts == 1 && first.Status == OfficialStatus.Operational && repeated.Status == OfficialStatus.Operational,
+            "a throwing diagnostic callback is still called only once for an unchanged set and cannot change status");
+    }
+
+    private static void CheckNativeJsonSchema(Action<bool, string> check)
+    {
+        ProviderStatus Read(string? summary = null, string? history = null, Action<string>? log = null) =>
+            new XaiStatusFeed(log).Parse(EmptyRss, summary ?? SummaryJson, history ?? IncidentsJson, Now);
+        JsonObject Event() => JsonSerializer.SerializeToNode(Incident(components: ["grok-bot"]))!.AsObject();
+        string Events(JsonObject item) => History(item);
+        string[] excluded = ["imagine", "api-eu-west-1", "admin-apis", "api-console", "api-docs", "single-sign-on", "x-ai"];
+        foreach (var (state, expected) in new[] { ("available", OfficialStatus.Operational), ("info", OfficialStatus.Degraded),
+            ("disruption", OfficialStatus.PartialOutage), ("outage", OfficialStatus.MajorOutage), ("no_data", OfficialStatus.Unknown) })
+            foreach (var component in Catalog)
+                check(Read(Summary(changed: component.Id, value: state)).Status == expected,
+                    "native component vocabulary / " + component.Id + " / " + state);
+
+        foreach (string slug in excluded)
+        {
+            var summary = JsonNode.Parse(SummaryJson)!;
+            summary["components"]!.AsArray().Add(new JsonObject { ["id"] = slug, ["name"] = "Synthetic excluded", ["status"] = "outage" });
+            check(Read(summary.ToJsonString()).Status == OfficialStatus.Operational, "excluded summary component: " + slug);
+            check(Read(history: History(Incident(components: [slug]))).Status == OfficialStatus.Operational, "excluded-only JSON incident: " + slug);
+            check(new XaiStatusFeed().Parse(Rss(Item(slug)), SummaryJson, IncidentsJson, Now).Status == OfficialStatus.Operational,
+                "excluded-only trusted RSS incident: " + slug);
+            var combined = Read(history: History(Incident(components: [slug, "grok-bot"])));
+            check(combined.Status == OfficialStatus.PartialOutage && combined.RelevantComponent == "Grok Bot" && combined.AssessmentIssue.Length == 0,
+                "excluded slug cannot obscure an in-scope JSON incident: " + slug);
+        }
+        foreach (string value in new[] { "available", "outage", "future-state" })
+        {
+            var summary = JsonNode.Parse(SummaryJson)!;
+            summary["components"]!.AsArray().Add(new JsonObject { ["id"] = "synthetic-new-service", ["name"] = "must-not-log-name", ["status"] = value, ["extra"] = "must-not-log-body" });
+            var diagnostics = new List<string>();
+            var current = Read(summary.ToJsonString(), log: diagnostics.Add);
+            check(current.Status == OfficialStatus.Operational && current.AssessmentIssue.Length == 0 && current.RelevantComponent.Length == 0,
+                "a new summary slug changes neither assessment nor card scope: " + value);
+            check(diagnostics.Count == 1 && diagnostics[0].Contains("synthetic-new-service", StringComparison.Ordinal) &&
+                !diagnostics[0].Contains("must-not-log", StringComparison.Ordinal), "diagnostics contain only the new slug");
+            check(Read(summary.ToJsonString(), log: _ => throw new IOException("must-not-log-exception")).Status == OfficialStatus.Operational,
+                "diagnostic write failure is isolated from public status");
+        }
+        check(Read(history: History(Incident(components: ["synthetic-new-service"]))).Status == OfficialStatus.Unknown,
+            "unknown-only ongoing JSON scope is CHECK, unlike a new summary component");
+        check(Read(history: History(Incident(components: ["synthetic-new-service", "imagine"]))).Status == OfficialStatus.Unknown,
+            "excluded plus unknown ongoing JSON scope is still CHECK");
+        var partlyKnown = Read(history: History(Incident(components: ["synthetic-new-service", "grok-bot"])));
+        check(partlyKnown.Status == OfficialStatus.PartialOutage && partlyKnown.AssessmentIssue.Length > 0,
+            "known JSON outage takes priority while unknown affected scope remains explicit");
+        check(Read(history: History(Incident(components: ["agent-sdk"]))).RelevantComponent == "Cursor · Agent SDK",
+            "Agent SDK uses the Cursor display scope");
+        foreach (string legacy in new[] { "grok-build", "office-workspace-plugins", "bugbot" })
+        {
+            check(Read(history: History(Incident(components: [legacy]))).Status == OfficialStatus.PartialOutage,
+                "recognized legacy service remains assessed without a required catalog row: " + legacy);
+            var summary = JsonNode.Parse(SummaryJson)!;
+            summary["components"]!.AsArray().Add(new JsonObject { ["id"] = legacy, ["name"] = "Synthetic legacy", ["status"] = "outage" });
+            var diagnostics = new List<string>();
+            check(Read(summary.ToJsonString(), log: diagnostics.Add).Status == OfficialStatus.Operational &&
+                diagnostics.Count == 1 && diagnostics[0].Contains(legacy, StringComparison.Ordinal),
+                "RSS-only legacy slug appearing in summary is still diagnostic-only: " + legacy);
+        }
+
+        foreach (var (impact, expected) in new[] { ("none", OfficialStatus.Degraded), ("minor", OfficialStatus.PartialOutage),
+            ("major", OfficialStatus.PartialOutage), ("critical", OfficialStatus.MajorOutage) })
+            foreach (string phase in new[] { "investigating", "monitoring", "resolved" })
+                check(Read(history: History(Incident(state: phase, impact: impact, components: ["grok-bot"]))).Status ==
+                    (phase == "resolved" ? OfficialStatus.Operational : expected), "native incident impact / " + phase + " / " + impact);
+
+        foreach (string phase in new[] { "identified", "postmortem", "completed", "future-phase", "" })
+            check(Read(history: History(Incident(state: phase, components: ["grok-bot"]))).Status == OfficialStatus.Unknown,
+                "phase outside the page JSON enum is CHECK: " + phase);
+        var wrongIdentifier = Event();
+        wrongIdentifier["components"] = new JsonArray(new JsonObject { ["id"] = "grok-bot", ["name"] = "Synthetic" });
+        check(Read(history: Events(wrongIdentifier)).Status == OfficialStatus.Unknown, "incident components require slug, never id");
+        foreach (string name in new[] { "id", "name", "status", "impact", "created_at", "updated_at", "resolved_at", "incident_updates", "components" })
+        {
+            var item = Event(); item.Remove(name);
+            check(Read(history: Events(item)).Status == OfficialStatus.Unknown, "missing page-schema incident field: " + name);
+        }
+        foreach (string name in new[] { "created_at", "updated_at", "resolved_at" })
+        {
+            var item = Event(); item[name] = "not-a-time";
+            check(Read(history: Events(item)).Status == OfficialStatus.Unknown, "malformed ISO timestamp: " + name);
+        }
+        foreach (string name in new[] { "id", "name", "status" })
+        {
+            var summary = JsonNode.Parse(SummaryJson)!; summary["components"]![0]!.AsObject().Remove(name);
+            check(Read(summary.ToJsonString()).Status == OfficialStatus.Unknown, "missing page-schema summary component field: " + name);
+        }
+        foreach (string indicator in new[] { "none", "unobserved-global-indicator", "" })
+        {
+            var summary = JsonNode.Parse(SummaryJson)!; summary["status"]!["indicator"] = indicator;
+            summary["incidents"] = "outside-summary-schema";
+            check(Read(summary.ToJsonString()).Status == OfficialStatus.Operational,
+                "overall indicator is a string, not a product-scope enum; extra summary fields are ignored");
+        }
+        foreach (string name in new[] { "indicator", "description" })
+        {
+            var summary = JsonNode.Parse(SummaryJson)!; summary["status"]!.AsObject().Remove(name);
+            check(Read(summary.ToJsonString()).Status == OfficialStatus.Unknown, "missing summary status field: " + name);
+        }
+        var withUpdates = Event();
+        var update = new JsonObject { ["id"] = "synthetic-update", ["status"] = "investigating", ["body"] = "Resolved old text is not current state",
+            ["created_at"] = "2026-01-01T00:00:00Z", ["affected_components"] = new JsonArray("imagine") };
+        withUpdates["incident_updates"] = new JsonArray(update.DeepClone());
+        check(Read(history: Events(withUpdates)).Status == OfficialStatus.PartialOutage, "update body and affected_components never override current root scope/state");
+        foreach (string name in new[] { "id", "status", "body", "created_at" })
+        {
+            var item = withUpdates.DeepClone().AsObject(); item["incident_updates"]![0]!.AsObject().Remove(name);
+            check(Read(history: Events(item)).Status == OfficialStatus.Unknown, "missing page-schema update field: " + name);
+        }
+        foreach (string body in new[] { "null", "[]", "{bad", "{\"incidents\":null}", "{\"incidents\":[3]}" })
+            check(Read(history: body).Status == OfficialStatus.Unknown, "malformed native incidents root remains CHECK");
+    }
+
     private static void CheckMissingIncidentRelease(Action<bool, string> check)
     {
-        foreach (var (source, phase) in new[] { ("RSS", "resolved"), ("summary", "resolved"),
-            ("incidents", "resolved"), ("incidents", "postmortem"), ("incidents", "completed") })
+        foreach (var (source, phase) in new[] { ("RSS", "resolved"), ("incidents", "resolved"), ("both", "resolved") })
         foreach (bool restart in new[] { false, true })
         {
             string label = $"{source}/{phase}, restart={restart}: ";
             var tracker = new XaiStatusFeed();
-            _ = tracker.Parse(Rss(Item()), SummaryJson, ComponentsJson, IncidentsJson, Now);
-            var missing = tracker.Parse(EmptyRss, SummaryJson, ComponentsJson, IncidentsJson, Now.AddMinutes(5));
+            _ = tracker.Parse(Rss(Item()), SummaryJson, IncidentsJson, Now);
+            var missing = tracker.Parse(EmptyRss, SummaryJson, IncidentsJson, Now.AddMinutes(5));
             check(missing.Status == OfficialStatus.Unknown && missing.PendingXaiIncidentIds == "synthetic-incident", label + "disappearance enters CHECK");
             if (restart) { tracker = new XaiStatusFeed(); tracker.Restore(missing); }
-            var late = tracker.Parse(EmptyRss, SummaryJson, ComponentsJson, IncidentsJson, Now.AddHours(23));
+            var late = tracker.Parse(EmptyRss, SummaryJson, IncidentsJson, Now.AddHours(23));
             check(late.Status == OfficialStatus.Unknown && late.PendingXaiIncidentIds == "synthetic-incident", label + "elapsed time before 24 hours and restart retain the missing identity");
-            var unrelatedResolution = tracker.Parse(Rss(Item(id: "synthetic-other", state: "resolved")), SummaryJson, ComponentsJson, IncidentsJson, Now.AddHours(23).AddMinutes(5));
+            var unrelatedResolution = tracker.Parse(Rss(Item(id: "synthetic-other", state: "resolved")), SummaryJson, IncidentsJson, Now.AddHours(23).AddMinutes(5));
             check(unrelatedResolution.Status == OfficialStatus.Unknown && unrelatedResolution.PendingXaiIncidentIds == "synthetic-incident", label + "another incident resolution cannot clear CHECK");
-            var next = tracker.Parse(Rss(Item("cursor-cli", id: "synthetic-next")), SummaryJson, ComponentsJson, IncidentsJson, Now.AddHours(23).AddMinutes(10));
+            var next = tracker.Parse(Rss(Item("cursor-cli", id: "synthetic-next")), SummaryJson, IncidentsJson, Now.AddHours(23).AddMinutes(10));
             check(next.Status == OfficialStatus.PartialOutage && next.UncertainIncidentId == "synthetic-incident" && next.PendingXaiIncidentIds.Contains("synthetic-next", StringComparison.Ordinal), label + "new issue takes severity priority without forgetting the missing incident");
-            var nextResolved = tracker.Parse(Rss(Item("cursor-cli", id: "synthetic-next", state: "resolved")), SummaryJson, ComponentsJson, IncidentsJson, Now.AddHours(23).AddMinutes(15));
+            var nextResolved = tracker.Parse(Rss(Item("cursor-cli", id: "synthetic-next", state: "resolved")), SummaryJson, IncidentsJson, Now.AddHours(23).AddMinutes(15));
             check(nextResolved.Status == OfficialStatus.Unknown && nextResolved.PendingXaiIncidentIds == "synthetic-incident", label + "resolving the new incident returns to the original CHECK");
-            var reappeared = tracker.Parse(Rss(Item()), SummaryJson, ComponentsJson, IncidentsJson, Now.AddHours(23).AddMinutes(20));
+            var reappeared = tracker.Parse(Rss(Item()), SummaryJson, IncidentsJson, Now.AddHours(23).AddMinutes(20));
             check(reappeared.Status == OfficialStatus.PartialOutage && reappeared.PendingXaiIncidentIds == "synthetic-incident", label + "same incident reappearing as active is an outage rather than a recovery");
-            string resolved = JsonSerializer.Serialize(new { incidents = new[] { Incident(state: phase) } });
-            var closed = tracker.Parse(source == "RSS" ? Rss(Item(state: phase)) : EmptyRss,
-                source == "summary" ? Summary(incidents: [Incident(state: phase)]) : SummaryJson, ComponentsJson,
-                source == "incidents" ? resolved : IncidentsJson, Now.AddHours(23).AddMinutes(25));
+            string resolved = JsonSerializer.Serialize(new { incidents = new[] { Incident(state: phase, components: ["grok-com"]) } });
+            var closed = tracker.Parse(source is "RSS" or "both" ? Rss(Item(state: "resolved")) : EmptyRss,
+                SummaryJson, source is "incidents" or "both" ? resolved : IncidentsJson, Now.AddHours(23).AddMinutes(25));
             check(closed.Status == OfficialStatus.Operational && closed.PendingXaiIncidentIds.Length == 0 && closed.AssessmentIssue.Length == 0, label + "matching explicit resolution releases CHECK on that poll");
-            var after = tracker.Parse(EmptyRss, SummaryJson, ComponentsJson, IncidentsJson, Now.AddHours(23).AddMinutes(30));
+            var after = tracker.Parse(EmptyRss, SummaryJson, IncidentsJson, Now.AddHours(23).AddMinutes(30));
             check(after.Status == OfficialStatus.Operational && after.PendingXaiIncidentIds.Length == 0, label + "a resolved incident may leave the feed without recreating CHECK");
         }
 
         var conflict = new XaiStatusFeed();
-        _ = conflict.Parse(Rss(Item()), SummaryJson, ComponentsJson, IncidentsJson, Now);
-        var opposed = conflict.Parse(Rss(Item(state: "resolved")), Summary(incidents: [Incident(components: ["sm5wkcnqkvr9"])]), ComponentsJson, IncidentsJson, Now.AddMinutes(5));
+        _ = conflict.Parse(Rss(Item()), SummaryJson, IncidentsJson, Now);
+        var opposed = conflict.Parse(Rss(Item(state: "resolved")), SummaryJson, History(Incident(components: ["grok-bot"])), Now.AddMinutes(5));
         check(opposed.Status == OfficialStatus.PartialOutage && opposed.PendingXaiIncidentIds == "synthetic-incident", "active observation blocks matching resolution from another source");
-        check(conflict.Parse(EmptyRss, SummaryJson, ComponentsJson, IncidentsJson, Now.AddMinutes(10)).Status == OfficialStatus.Unknown, "a conflicted resolution cannot silently expire when both observations disappear");
-        check(conflict.Parse(Rss(Item(state: "resolved")), SummaryJson, ComponentsJson, IncidentsJson, Now.AddMinutes(15)).Status == OfficialStatus.Operational, "later unopposed matching resolution clears the conflict");
+        check(conflict.Parse(EmptyRss, SummaryJson, IncidentsJson, Now.AddMinutes(10)).Status == OfficialStatus.Unknown, "a conflicted resolution cannot silently expire when both observations disappear");
+        check(conflict.Parse(Rss(Item(state: "resolved")), SummaryJson, IncidentsJson, Now.AddMinutes(15)).Status == OfficialStatus.Operational, "later unopposed matching resolution clears the conflict");
 
         var multiple = new XaiStatusFeed();
-        _ = multiple.Parse(Rss(Item(), Item("grok-bot", id: "synthetic-second")), SummaryJson, ComponentsJson, IncidentsJson, Now);
-        var one = multiple.Parse(Rss(Item(state: "resolved")), SummaryJson, ComponentsJson, IncidentsJson, Now.AddMinutes(5));
+        _ = multiple.Parse(Rss(Item(), Item("grok-bot", id: "synthetic-second")), SummaryJson, IncidentsJson, Now);
+        var one = multiple.Parse(Rss(Item(state: "resolved")), SummaryJson, IncidentsJson, Now.AddMinutes(5));
         check(one.Status == OfficialStatus.Unknown && one.PendingXaiIncidentIds == "synthetic-second", "each missing incident must be resolved independently");
-        check(multiple.Parse(Rss(Item("grok-bot", id: "synthetic-second", state: "resolved")), SummaryJson, ComponentsJson, IncidentsJson, Now.AddMinutes(10)).Status == OfficialStatus.Operational, "resolving the final missing incident releases CHECK");
+        check(multiple.Parse(Rss(Item("grok-bot", id: "synthetic-second", state: "resolved")), SummaryJson, IncidentsJson, Now.AddMinutes(10)).Status == OfficialStatus.Operational, "resolving the final missing incident releases CHECK");
 
         var partial = new XaiStatusFeed();
-        _ = partial.Parse(Rss(Item()), SummaryJson, ComponentsJson, IncidentsJson, Now);
-        var receivedResolution = partial.Parse(Rss(Item(state: "resolved")), SummaryJson, null, IncidentsJson, Now.AddMinutes(5));
+        _ = partial.Parse(Rss(Item()), SummaryJson, IncidentsJson, Now);
+        var receivedResolution = partial.Parse(Rss(Item(state: "resolved")), null, IncidentsJson, Now.AddMinutes(5));
         check(receivedResolution.Status == OfficialStatus.Unknown && receivedResolution.PendingXaiIncidentIds.Length == 0 && receivedResolution.AssessmentIssue.Contains("수신 실패", StringComparison.Ordinal), "matching resolution clears the incident but a separate source failure still requires CHECK");
-        check(partial.Parse(EmptyRss, SummaryJson, ComponentsJson, IncidentsJson, Now.AddMinutes(10)).Status == OfficialStatus.Operational, "healthy receipt clears the remaining source failure without reviving a resolved incident");
+        check(partial.Parse(EmptyRss, SummaryJson, IncidentsJson, Now.AddMinutes(10)).Status == OfficialStatus.Operational, "healthy receipt clears the remaining source failure without reviving a resolved incident");
     }
 
     private const string ExpiryNote = "해결 표시 없이 피드에서 사라짐(24시간 경과로 해제)";
 
     private static ProviderStatus ReadAt(XaiStatusFeed tracker, DateTimeOffset at, string rss = EmptyRss) =>
-        tracker.Parse(rss, SummaryJson, ComponentsJson, IncidentsJson, at);
+        tracker.Parse(rss, SummaryJson, IncidentsJson, at);
 
     private static void CheckMissingIncidentExpiry(Action<bool, string> check)
     {
@@ -489,18 +653,18 @@ internal static class XaiStatusTests
         var mismatched = Item();
         mismatched.Elements("category").First(item => item.Value == "investigating").Value = "monitoring";
         var untitled = Item(); untitled.Element("title")!.Remove();
-        (string Label, string Rss, string Summary)[] readings =
+        (string Label, string Rss, string History)[] readings =
         [
-            ("RSS category/header mismatch", Rss(mismatched), SummaryJson),
-            ("RSS missing title", Rss(untitled), SummaryJson),
-            ("JSON empty status", EmptyRss, Summary(incidents: [Incident(state: "", components: ["sm5wkcnqkvr9"])]))
+            ("RSS category/header mismatch", Rss(mismatched), IncidentsJson),
+            ("RSS missing title", Rss(untitled), IncidentsJson),
+            ("JSON empty status", EmptyRss, History([Incident(state: "", components: ["grok-bot"])]))
         ];
         foreach (var reading in readings)
         {
             var tracker = new XaiStatusFeed();
             _ = ReadAt(tracker, Now, Rss(Item()));
             _ = ReadAt(tracker, firstMissing);
-            var malformed = tracker.Parse(reading.Rss, reading.Summary, ComponentsJson, IncidentsJson, firstMissing.AddHours(12));
+            var malformed = tracker.Parse(reading.Rss, SummaryJson, reading.History, firstMissing.AddHours(12));
             check(malformed.Status == OfficialStatus.Unknown && malformed.PendingXaiIncidentIds == "synthetic-incident" && malformed.XaiMissingIncidents.Count == 0,
                 reading.Label + ": seeing the same valid ID cancels the missing clock before field validation");
             DateTimeOffset newMissing = firstMissing.AddHours(24);
@@ -517,29 +681,29 @@ internal static class XaiStatusTests
 
     private static void CheckInvalidMissingReceipts(Action<bool, string> check)
     {
-        var invalid = new List<(string Label, string? Rss, string? Summary, string? Components, string? History)>();
-        for (int index = 0; index < 4; index++)
+        var invalid = new List<(string Label, string? Rss, string? Summary, string? History)>();
+        for (int index = 0; index < 3; index++)
         {
-            string?[] inputs = [EmptyRss, SummaryJson, ComponentsJson, IncidentsJson]; inputs[index] = null;
-            invalid.Add(("missing source " + index, inputs[0], inputs[1], inputs[2], inputs[3]));
-            inputs = [EmptyRss, SummaryJson, ComponentsJson, IncidentsJson]; inputs[index] = index == 0 ? "<rss>" : "{bad";
-            invalid.Add(("malformed source " + index, inputs[0], inputs[1], inputs[2], inputs[3]));
+            string?[] inputs = [EmptyRss, SummaryJson, IncidentsJson]; inputs[index] = null;
+            invalid.Add(("missing source " + index, inputs[0], inputs[1], inputs[2]));
+            inputs = [EmptyRss, SummaryJson, IncidentsJson]; inputs[index] = index == 0 ? "<rss>" : "{bad";
+            invalid.Add(("malformed source " + index, inputs[0], inputs[1], inputs[2]));
         }
-        invalid.Add(("missing product scope", EmptyRss, Summary(omit: "sm5wkcnqkvr9"), Components(omit: "sm5wkcnqkvr9"), IncidentsJson));
-        invalid.Add(("uncertain unrelated episode", Rss(Item("future-product", id: "synthetic-other")), SummaryJson, ComponentsJson, IncidentsJson));
-        invalid.Add(("unknown component state", EmptyRss, SummaryJson, Components(changed: "sm5wkcnqkvr9", value: "future-state"), IncidentsJson));
+        invalid.Add(("missing product scope", EmptyRss, Summary(omit: "grok-bot"), IncidentsJson));
+        invalid.Add(("uncertain unrelated episode", Rss(Item("future-product", id: "synthetic-other")), SummaryJson, IncidentsJson));
+        invalid.Add(("unknown component state", EmptyRss, Summary(changed: "grok-bot", value: "future-state"), IncidentsJson));
         foreach (var input in invalid)
         {
             var tracker = new XaiStatusFeed();
             _ = ReadAt(tracker, Now, Rss(Item()));
-            var invalidFirst = tracker.Parse(input.Rss, input.Summary, input.Components, input.History, Now.AddHours(1));
+            var invalidFirst = tracker.Parse(input.Rss, input.Summary, input.History, Now.AddHours(1));
             check(invalidFirst.Status == OfficialStatus.Unknown && invalidFirst.PendingXaiIncidentIds == "synthetic-incident" && invalidFirst.XaiMissingIncidents.Count == 0,
                 input.Label + ": invalid evidence cannot start a missing interval");
             DateTimeOffset firstMissing = Now.AddDays(2);
             var validFirst = ReadAt(tracker, firstMissing);
             check(validFirst.Status == OfficialStatus.Unknown && validFirst.XaiMissingIncidents.Single().MissingSinceUtc == firstMissing,
                 input.Label + ": the next complete valid absence starts its full 24 hours");
-            var invalidBoundary = tracker.Parse(input.Rss, input.Summary, input.Components, input.History, firstMissing.AddHours(24));
+            var invalidBoundary = tracker.Parse(input.Rss, input.Summary, input.History, firstMissing.AddHours(24));
             check(invalidBoundary.Status == OfficialStatus.Unknown && invalidBoundary.PendingXaiIncidentIds == "synthetic-incident" &&
                 invalidBoundary.XaiMissingIncidents.Single().MissingSinceUtc == firstMissing && invalidBoundary.XaiIncidentExpiryNote.Length == 0,
                 input.Label + ": invalid evidence at 24 hours preserves the first time without expiring");
@@ -711,7 +875,7 @@ internal static class XaiStatusTests
             string body = url switch
             {
                 XaiStatusFeed.RssUrl => RssOverride ?? EmptyRss, XaiStatusFeed.SummaryUrl => SummaryJson,
-                XaiStatusFeed.ComponentsUrl => ComponentsJson, XaiStatusFeed.IncidentsUrl => IncidentsJson,
+                XaiStatusFeed.IncidentsUrl => IncidentsJson,
                 _ => throw new InvalidOperationException("Unexpected URL")
             };
             return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(body, Encoding.UTF8) };

@@ -7,7 +7,7 @@
 
 ## 후속: xAI 호환 JSON sunset 2027-01-31
 
-- **xAI 호환 JSON(summary·components·incidents) sunset 2027-01-31: 대체 경로 조사 후 RSS 전용 판정 또는 새 API로 전환. 12월 중순까지 방향 결정.** 2026-11-14 세 JSON의 `Sunset: Sun, 31 Jan 2027 00:00:00 GMT`를 확인했고 RSS에는 이 헤더가 없다. 이번 Review Agents 필수 목록 보정과 분리하며 출처·판정 전환은 메인 결정 뒤 진행한다. [현행 출처·필수 목록·변경 이력](XAI_STATUS.md).
+- **방향 결정 · Draft 진행: 호환 JSON(summary·components·incidents) sunset 2027-01-31에 대비해 RSS + data.x.ai/status/summary.json·incidents.json으로 전환한다. 12월 중순 전 배포 목표.** RSS만으로 정상 fallback하지 않으며 새 JSON의 대상 19개 slug 누락·수신/형식 실패는 CHECK다. Agent SDK는 Cursor로 포함하고, summary 신규 slug는 진단만 남긴다. 처음 보는 사건 범위/RSS 경로 CHECK는 유지한다. Mac 최종 확인·사이트 C# 비교·main 병합 뒤 사용자 배포 지시가 필요하며 아직 버전/운영 EXE/사이트는 바꾸지 않는다. [스키마 관찰 근거·범위·전환 계약](XAI_STATUS.md).
 
 ## Windows 2.9.1 후보 준비: 병합된 링크·상세·SQLite·배포 검사 반영
 

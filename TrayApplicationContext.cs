@@ -101,7 +101,8 @@ namespace AiBurgerClock
             showQuotaNotification = quotaNotificationSink ?? (alert => SubmitNotification(WindowsNotificationRequest.FromQuota(alert)));
             this.openStatusPage = openStatusPage ?? ProviderStatusPages.Open;
             store = usageStore ?? new UsageStore();
-            statusTicker = new StatusTicker(WindowsProviderNames.Provider, warn: new WindowsWarningLog().Write);
+            var warningLog = new WindowsWarningLog();
+            statusTicker = new StatusTicker(WindowsProviderNames.Provider, warn: warningLog.Write);
             statusWindow = new StatusWindow();
             statusWindow.AutoStartChanged += OnWindowAutoStartChanged;
             statusWindow.RefreshRequested += (_, _) => RefreshAll();
@@ -190,7 +191,7 @@ namespace AiBurgerClock
                     ownedHttpClient = ProviderStatusClient.CreateHttpClient();
                 }
                 HttpClient httpClient = statusHttpClient ?? ownedHttpClient!;
-                monitor = new StatusMonitor(new ProviderStatusClient(httpClient, this.utcNow), store, this.utcNow, scheduleAt: GetSchedule);
+                monitor = new StatusMonitor(new ProviderStatusClient(httpClient, this.utcNow, warningLog.Write), store, this.utcNow, scheduleAt: GetSchedule);
                 quotaMonitor = new AccountQuotaMonitor(accountQuotaClient ?? new AccountQuotaClient(), store, this.utcNow);
                 _ = statusWindow.Handle; // Hidden marshal target; polling never touches WinForms from worker threads.
                 monitor.Changed += OnProviderChanged;

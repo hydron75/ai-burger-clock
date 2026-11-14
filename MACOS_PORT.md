@@ -2926,3 +2926,32 @@ smoke의 선택 기능(`AIBURGERCLOCK_SMOKE_IMAGES`)으로 큰 화면·1280×800
 - 앱 DB나 로그에서 앱 자신의 xAI 판정 값을 읽지 않았다. 번들에 실린 코드의 실제 조회 결과는 PR #145의 Mac 확인(main 코드 CHECK, PR 코드 Operational)에서 확인했고, 팝오버의 실제 화면은 위 사용자 확인으로 갈음한다.
 - 재로그인·재부팅 뒤 앱이 뜨는지는 0.9.2 때와 같게 사용자가 다음 재부팅 때 확인한다(경로·BTM 변화 없음).
 - 77절의 미확인 항목(마우스 휠·스크롤러 드래그, VoiceOver, 여러 디스플레이의 긴 팁, 앵커 창 경로, 모든 디스플레이가 덮였을 때의 SKIP 출력)은 그대로다.
+
+## 79. xAI 네이티브 JSON 전환(PR #150)의 Mac 후속
+
+2026-11-14. 공통 원본 PR #150(브랜치 `codex/xai-native-status-json`, HEAD `2877a677ba5dee8791e47e52d458e3268cc7a137`)이 xAI 호환 JSON 세 주소(2027-01-31 sunset)를 공식 상태 페이지가 쓰는 `data.x.ai` JSON 두 주소로 바꾼다. 이 브랜치를 base로 한 Mac 종속 PR이며 **버전은 올리지 않았다**(0.9.3 / build 30 그대로, 배포하지 않음). 병합 순서는 AGENTS.md "종속 PR 병합 순서"를 따른다: 이 PR을 #150 브랜치에 먼저 병합 → 합친 최종 HEAD를 양쪽에서 확인 → #150을 main에 병합.
+
+### Mac 변경 (Mac/ 두 파일, 공통 원본·Windows 파일 불변)
+| 파일 | 변경 |
+|---|---|
+| `Mac/MacDetailTipSmoke.cs` | 합성 xAI 카드의 출처 문구가 제거된 `XaiStatusFeed.ComponentsUrl`을 참조해 컴파일이 깨졌다. `SummaryUrl`로 바꿨다(합성 예시, 화면용 긴 줄 확인 목적은 그대로) |
+| `Mac/MacApplication.cs` | `new ProviderStatusClient(http)` → `new ProviderStatusClient(http, xaiDiagnostic: LogXaiDiagnostic)`. 새 진단 콜백(summary에 처음 보이는 구성 요소 slug 등)을 기존 `DisplayLog`(통합 로그, 카테고리 `display`)에 한 줄로 남긴다. Windows는 `logs/status-ticker.log` 파일에 쓰지만 Mac은 이미 중복 Provider 경고를 `DisplayLog`로 남기므로 같은 곳을 쓴다. 콜백은 조회 작업 스레드에서 불리고 로그 실패는 판정에 영향이 없다(공통 `XaiStatusFeed`가 예외를 삼킨다) |
+
+### 검증 (임시 worktree, 저장소 경로 아님)
+| 항목 | 결과 |
+|---|---|
+| 기준 | #150 HEAD `2877a67` + Mac 두 파일 수정 |
+| Shared.Tests | `dotnet run … -c Release --property:TreatWarningsAsErrors=true` **292,085건 PASS**(#150 본문과 일치), xAI 합성 검사 **594건** |
+| 빌드 | `bash Mac/build.sh` **옵션 없음**, 경고 0 / 오류 0 (수정 전에는 `ComponentsUrl` 참조로 이 브랜치에서 컴파일 실패) |
+| smoke 1회 | 종료 코드 0, **SKIP 0**, FAIL 0. `SCREEN: display 1 of 2 … the status item's display 2 is covered … popover is anchored to a smoke-only window` (앵커 창 경로) |
+| 실제 공개 상태 조회(저장소 밖 임시 프로브) | #150 HEAD 코드로 `FetchAsync(Xai)`: **Operational**, 사유 "정상 · 진행 중 장애 없음(공식 사건 피드 기준)", `AssessmentIssue` 없음, 진행 사건 ID 없음. 출처 세 개 모두 `[응답 수신]`: RSS(`status.x.ai/feed.xml`)·summary·incidents(`data.x.ai/status/…`). 진단 콜백 호출 0건(처음 보는 slug 없음) |
+| LaunchServices | smoke 뒤 등록 수 2 → `lsregister -u`(임시 사본) 후 **1**, 임시 worktree 삭제 |
+
+프로브는 이 Mac의 공개 상태 조회 결과만 확인한 것이며 계정 값이 없다. 프로브의 User-Agent는 임시 프로젝트 버전(`AIBurgerClock/0.9.3`)이다.
+
+### 수행하지 않은 검증
+- 실행 중인 앱(0.9.3, 구 호환 JSON 코드)은 건드리지 않았다. 새 출처로의 전환은 #150 병합과 Mac 버전·배포 지시 뒤에 팝오버·상세 출처 문구를 따로 확인해야 한다.
+- 비정상 상태의 실제 `data.x.ai` 응답(`info`·`disruption`·`outage`, 진행 사건의 `resolved_at: null`)은 관찰하지 못했다. 공통 합성 검사(594건)로만 확인했다.
+- 진단 콜백이 실제로 `DisplayLog`에 한 줄을 남기는 것은 이 시점에 호출 0건이라 눈으로 확인하지 못했다(합성 검사는 공통 원본, Mac 쪽은 로그 한 줄 연결뿐).
+- 새 진단 콜백은 처음 보는 slug가 있는 동안 조회마다 한 줄을 남긴다(Windows와 같은 동작, Mac 쪽 중복 억제는 두지 않았다).
+- 77절의 미확인 항목(마우스 휠·스크롤러 드래그, VoiceOver, 여러 디스플레이의 긴 팁, 모든 디스플레이가 덮였을 때의 SKIP 출력)은 그대로다.
