@@ -45,7 +45,7 @@ internal sealed class XaiStatusFeed
                 missingSince[missing.Id] = missing.MissingSinceUtc;
     }
 
-    // Public service paths and Cursor compatibility IDs checked on 2026-11-05.
+    // Public service paths and Cursor compatibility IDs checked on 2026-11-14.
     // In particular Cursor CLI is not Grok Build, and BugBot is not Grok Bot.
     private static readonly Dictionary<string, string> Services = new(StringComparer.Ordinal)
     {
@@ -69,7 +69,7 @@ internal sealed class XaiStatusFeed
     {
         ["cursor-ios"] = "cursor-ios", ["rflc60xp5jp2"] = "cursor-desktop",
         ["mwv1g9sc7kdh"] = "cloud-agents", ["vsny1qv7v86c"] = "cursor-cli",
-        ["k0trcq273dr6"] = "automations", ["bugbot"] = "bugbot", ["third-party-models"] = "third-party-models",
+        ["k0trcq273dr6"] = "automations", ["2x2chyqwmkzl"] = "review-agents", ["third-party-models"] = "third-party-models",
         ["sm5wkcnqkvr9"] = "grok-bot", ["jh0714rgjgt4"] = "cursor-com", ["xwjpvdf81qh9"] = "origin",
         ["enterprise-dashboard"] = "enterprise-dashboard"
     };

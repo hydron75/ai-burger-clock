@@ -1,5 +1,9 @@
 # 다음 개선 항목
 
+## 후속: xAI 호환 JSON sunset 2027-01-31
+
+- **xAI 호환 JSON(summary·components·incidents) sunset 2027-01-31: 대체 경로 조사 후 RSS 전용 판정 또는 새 API로 전환. 12월 중순까지 방향 결정.** 2026-11-14 세 JSON의 `Sunset: Sun, 31 Jan 2027 00:00:00 GMT`를 확인했고 RSS에는 이 헤더가 없다. 이번 Review Agents 필수 목록 보정과 분리하며 출처·판정 전환은 메인 결정 뒤 진행한다. [현행 출처·필수 목록·변경 이력](XAI_STATUS.md).
+
 ## Windows 2.9.1 후보 준비: 병합된 링크·상세·SQLite·배포 검사 반영
 
 - main `972c20c23c5c0845dc773cb63f7d83f420b1113e`의 #128·#130·#134·#135·#136을 기준으로 Windows 버전 세 필드와 문서만 올린다. 추가된 #137은 Mac 버전/문서뿐이며 Windows 후보 입력은 같다. 후보 build·bin/단일 EXE self-test 각 293,036건, 공통 291,907건, smoke 1,174건 통과. 합성 PNG 60개·layout JSON 41개는 #130 최종과 같다. [신원·검사·receipt·외부 명령](MAINTENANCE_2_9_1.md).

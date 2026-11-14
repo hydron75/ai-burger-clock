@@ -15,7 +15,7 @@ internal static class XaiStatusTests
     private static readonly (string Id, string Name)[] Catalog =
     [
         ("cursor-ios", "Cursor IDE (iOS)"), ("rflc60xp5jp2", "IDE"), ("mwv1g9sc7kdh", "Cloud Agents"),
-        ("vsny1qv7v86c", "CLI"), ("k0trcq273dr6", "Automations"), ("bugbot", "Bugbot"),
+        ("vsny1qv7v86c", "CLI"), ("k0trcq273dr6", "Automations"), ("2x2chyqwmkzl", "Review Agents"),
         ("third-party-models", "Third-party models"), ("sm5wkcnqkvr9", "Grok Bot"), ("jh0714rgjgt4", "cursor.com"),
         ("xwjpvdf81qh9", "Origin"), ("enterprise-dashboard", "Enterprise Dashboard")
     ];
@@ -54,7 +54,15 @@ internal static class XaiStatusTests
         Check(RecommendationPolicy.Calculate(AgentState.FullThrottle, healthy.Status) == Recommendation.Go,
             "incident-free xAI is GO, not permanently gray");
         Check(healthy.LastSuccessfulCheckUtc == Now && healthy.AssessmentIssue.Length == 0, "normal receipt uses the injected clock");
-        var legacyCatalog = JsonNode.Parse(ComponentsJson)!;
+        var november05Catalog = JsonNode.Parse(ComponentsJson)!;
+        var november05Component = november05Catalog["components"]!.AsArray().Single(item => (string?)item!["id"] == "2x2chyqwmkzl")!;
+        november05Component["id"] = "bugbot"; november05Component["name"] = "Bugbot";
+        var november05Summary = JsonNode.Parse(SummaryJson)!;
+        november05Summary["components"] = november05Catalog["components"]!.DeepClone();
+        var november05 = Parse(summary: november05Summary.ToJsonString(), components: november05Catalog.ToJsonString());
+        Check(november05.Status == OfficialStatus.Unknown && november05.AssessmentIssue.Contains("필수 구성 요소 누락", StringComparison.Ordinal),
+            "November 05 Bugbot catalog cannot replace the required Review Agents component");
+        var legacyCatalog = november05Catalog.DeepClone();
         var legacyComponent = legacyCatalog["components"]!.AsArray().Single(item => (string?)item!["id"] == "third-party-models")!;
         legacyComponent["id"] = "2x2chyqwmkzl"; legacyComponent["name"] = "Review Agents";
         var legacySummary = JsonNode.Parse(SummaryJson)!;
@@ -65,6 +73,9 @@ internal static class XaiStatusTests
         var thirdPartyIncident = Parse(history: JsonSerializer.Serialize(new { incidents = new[] { Incident(components: ["third-party-models"]) } }));
         Check(thirdPartyIncident.Status == OfficialStatus.PartialOutage && thirdPartyIncident.RelevantComponent == "Cursor · Third-party models",
             "Third-party models JSON incident contributes to Cursor work status");
+        var reviewAgentsIncident = Parse(history: JsonSerializer.Serialize(new { incidents = new[] { Incident(components: ["2x2chyqwmkzl"]) } }));
+        Check(reviewAgentsIncident.Status == OfficialStatus.PartialOutage && reviewAgentsIncident.RelevantComponent == "Cursor · Review Agents",
+            "Review Agents JSON incident contributes to Cursor work status with the public display name");
         Check(Enum.GetValues<QuotaProvider>().SequenceEqual([QuotaProvider.Codex, QuotaProvider.Claude, QuotaProvider.Gemini, QuotaProvider.Xai])
             && ProviderNames.Provider(ProviderKind.Xai) == "xAI" && ProviderNames.Quota(QuotaProvider.Xai) == "xAI",
             "xAI weekly quota is appended without changing the existing official status provider");
