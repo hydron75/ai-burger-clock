@@ -177,16 +177,18 @@ internal static class QuotaToolTipUiChecks
             CheckedAtUtc: now, LastSuccessfulCheckUtc: now, NextCheckUtc: now.AddHours(1), IsPrevious: true,
             Error: string.Concat(Enumerable.Repeat("합성 조회 오류의 긴 설명입니다. 실제 계정 정보가 아닙니다. ", 40)));
         bool wasVisible = owner.Visible;
-        host.Show(); // Independent: the real smoke status window may auto-hide on deactivation.
-        host.BringToFront();
+        Control? activeTarget = null;
         try
         {
+            await SmokeUiProbe.ShowFixtureAsync(host, owner);
             view.UpdateQuotas([state], now);
             var gemini = view.Controls.OfType<Panel>().Single(panel => panel.Name == "GeminiQuotaBox");
+            activeTarget = gemini;
             pointer = gemini.PointToScreen(new Point(4, 4));
             view.ShowDetail(QuotaProvider.Gemini, pointer);
             pointer = view.Details.Bounds.Location + new Size(12, 12);
             view.CheckDetailPointer(pointer);
+            await SmokeUiProbe.SettleAsync(view.Details);
             await StatusToolTipUiChecks.CheckNativeWheelAsync(view.Details, host, pointer, "quota/Gemini-64-long-error", check);
             if (reportDirectory is not null)
             {
@@ -201,6 +203,7 @@ internal static class QuotaToolTipUiChecks
             var codex = view.Controls.OfType<Panel>().Single(panel => panel.Name == "CodexQuotaBox");
             gemini = view.Controls.OfType<Panel>().Single(panel => panel.Name == "GeminiQuotaBox");
             Control below = gemini;
+            activeTarget = below;
             view.ScrollControlIntoView(gemini);
             pointer = codex.PointToScreen(new Point(4, 4));
             view.ShowDetail(QuotaProvider.Codex, pointer);
@@ -209,6 +212,8 @@ internal static class QuotaToolTipUiChecks
             await StatusToolTipUiChecks.CheckNativePassThroughAsync(view.Details, below,
                 () => view.Details.Visible && view.Details.DetailText == view.DetailFor(below), "quota", check);
         }
+        catch (Exception error)
+        { SmokeUiProbe.Failure("quota-native-fixture", host, activeTarget, view.Details, pointer, error); throw; }
         finally { view.HideDetail(); host.Hide(); if (wasVisible) owner.Show(); }
     }
 
@@ -516,6 +521,8 @@ internal static class QuotaToolTipUiChecks
         {
             Text = "AI Burger Clock 자동 검사";
             ControlBox = false;
+            AutoScaleMode = AutoScaleMode.Dpi;
+            AutoScaleDimensions = new SizeF(96, 96);
         }
 
         protected override bool ShowWithoutActivation => true;

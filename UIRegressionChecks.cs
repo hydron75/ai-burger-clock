@@ -73,6 +73,12 @@ internal static class UIRegressionChecks
             small.FitWorkArea(new Rectangle(0, 0, 640, 480));
             Check(small.Height <= 480 && small.AutoScrollMinSize.Height > small.ClientSize.Height,
                 "small working area exposes the complete four-card content through scrolling");
+            Check(small.Controls.Cast<Control>().All(control => SmokeUiProbe.LayoutArea(small).Contains(control.Bounds)),
+                "scrollable status layout contains its controls in the content area, even beyond the viewport");
+            var outside = new Panel { Bounds = new Rectangle(small.DisplayRectangle.Right + 20, 0, 4, 4) };
+            Check(!SmokeUiProbe.LayoutArea(small).Contains(outside.Bounds),
+                "scrollable layout still rejects a control outside its content area");
+            outside.Dispose();
             small.FitWorkArea(new Rectangle(0, 0, 3840, Math.Max(2160, 2 * 658 * small.DeviceDpi / 96)));
             Check(small.ClientSize.Height >= 658 && small.Controls.Cast<Control>().All(control => small.ClientRectangle.Contains(control.Bounds)),
                 "large working area restores full reachable status controls: client=" + small.ClientSize + "; outside=" +

@@ -1,5 +1,12 @@
 # 다음 개선 항목
 
+## 별도 Draft: Windows 화면 검사 결정성·실패 순간 진단
+
+- 2.8.9 첫 Control clipped, #145 첫 휠 검사, #150 첫 WindowFromPoint 실패는 같은 원인으로 확정하지 않는다. #150은 동일 바이너리의 승인된 1회 재검사에서 통과했고 두 실행을 보존했다.
+- 운영 앱·버전은 바꾸지 않고 독립 비활성화 합성 host·생성 후 DPI/물리 배치·메시지 큐 완료, 부모 범위 hit-test + 직접 WM_NCHITTEST, fixture 정리 전 HWND/PID/소유·기하·스크롤·DPI/모니터 진단을 검사 코드에서 보완한다. 입력/단언 재시도나 임의 대기 증가는 없다.
+- WinForms의 MouseClick 생성도 전역 WindowFromPoint에 의존한다. 일반 smoke에서는 부모 범위의 native down/up 전달과 기존 실제 상태 카드의 관리형 클릭/페이지/기록 경로를 구분하며, 전역 데스크톱 클릭 관통은 별도 통제 환경 검증으로 남긴다. 다른 앱 제목·본문은 읽거나 기록하지 않는다.
+- Windows 2.9.3 버전·배포 준비와 별도 Draft로 구현·검증했다. 해당 후보에 이 검사 변경은 포함하지 않는다. 최종 build 경고/오류 0, self-test 293,225건·smoke 1,179건 통과. PNG 저장 경로 오류 두 실행도 보존했다. [검사 계약·이전 실패·확인 범위](WINDOWS_SMOKE_DIAGNOSTICS.md).
+
 ## Windows 2.9.3 후보 준비: xAI 네이티브 JSON 전환
 
 - #150/#151이 main `fe84da2c5662b50bde189010e6c8eafc62e8c374`에 병합됐다. Windows 버전 세 필드와 문서만 변경하며 후보·검사·receipt는 별도 artifacts 경로에 둔다. 실제 백업·교체·등록 확인·실행은 사용자가 외부 MSI PowerShell에서 진행한다. [검사·신원·외부 명령](MAINTENANCE_2_9_3.md).
@@ -12,9 +19,9 @@
 - main `ba23cb21acc227988a78f9123a24fda430efb6ec`의 #145를 포함한다. Windows 버전 세 필드와 문서만 변경하며 후보·검사·receipt는 artifacts에 둔다. 사이트는 버전 14로 먼저 비공개 배포했고 기준 커밋 `ba23cb2`·xAI 정상 판정을 확인했다. 실제 앱 백업·교체·등록 확인·실행은 버전 PR 병합 뒤 사용자가 외부 MSI PowerShell에서 진행한다. [검사·SDK·신원·외부 명령](MAINTENANCE_2_9_2.md).
 - SDK 10.0.404, build·단일 EXE self-test 각 293,038건, smoke 첫 1회 1,174건 통과. 실제 휠 실패는 재현되지 않았고 재실행하지 않았다. 앞선 간헐 실패의 원인은 확인하지 않았으며 이번에 새 원인 조사 항목을 추가하지 않는다.
 
-## 후속: xAI 호환 JSON sunset 2027-01-31
+## 완료: xAI 호환 JSON sunset 2027-01-31 대응
 
-- **#150/#151 main 병합 완료 · 사이트 버전 16 반영 · Windows 2.9.3 후보 준비:** 호환 JSON(summary·components·incidents) sunset 2027-01-31에 대비해 RSS + data.x.ai/status/summary.json·incidents.json으로 전환했다. RSS만으로 정상 fallback하지 않으며 새 JSON의 대상 19개 slug 누락·수신/형식 실패는 CHECK다. Agent SDK는 Cursor로 포함하고, summary 신규 slug는 첫 확인·목록 변경 때만 진단에 남긴다. 처음 보는 사건 범위/RSS 경로 CHECK는 유지한다. Windows 운영 EXE 교체·실행은 외부 배포 전까지 하지 않는다. [스키마 관찰 근거·범위·전환 계약](XAI_STATUS.md).
+- **#150/#151 main 병합 · Windows 2.9.3·Mac 0.9.4·사이트 버전 16 배포 완료:** 호환 JSON(summary·components·incidents) sunset 2027-01-31에 대비해 세 출처(RSS·data.x.ai/status/summary.json·data.x.ai/status/incidents.json)로 전환했다. RSS만으로 정상 fallback하지 않으며 새 JSON의 대상 19개 slug 누락·수신/형식 실패는 CHECK다. Agent SDK는 Cursor로 포함하고, summary 신규 slug는 첫 확인·목록 변경 때만 진단에 남긴다. 처음 보는 사건 범위/RSS 경로 CHECK는 유지한다. 사이트 버전 16의 xAI 카드는 아이폰에서도 정상 확인했다(사용자 확인). 남은 미확인은 실제 비정상 data.x.ai 응답 관찰이다. [스키마 관찰 근거·범위·전환 계약](XAI_STATUS.md).
 
 ## Windows 2.9.1 후보 준비: 병합된 링크·상세·SQLite·배포 검사 반영
 

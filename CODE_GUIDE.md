@@ -1,5 +1,7 @@
 # 소스코드, 쉬운 말로 읽기
 
+**별도 Draft · Windows 화면 검사 진단:** 운영 앱·버전은 그대로 두고 `SmokeUiProbe.cs`를 검사 전용으로 추가합니다. 합성 host의 생성 후 DPI/물리 배치·메시지 큐 완료, 부모 범위 입력 계약과 직접 WM_NCHITTEST, 정리 전 실패 메타데이터를 담당합니다. 이 파일 추가 후 추적 C# 파일은 루트·Properties 127개 + Mac 23개 + 공통 검사 입구 1개 = 151개이며 공통 제품 원본은 추가하지 않습니다. 2.9.3 후보 PR과 분리합니다. [검사 범위·진단·개인정보 계약](WINDOWS_SMOKE_DIAGNOSTICS.md).
+
 **Windows 2.9.3 후보 기준:** main `fe84da2`의 #150/#151 네이티브 xAI JSON 전환을 포함합니다. Windows 버전 세 필드와 문서만 변경하며 공통/Windows C#·Mac·패키지·배포 스크립트는 바꾸지 않습니다. 사이트 버전 16 선행 배포와 후보·receipt·외부 배포 명령은 [2.9.3 기록](MAINTENANCE_2_9_3.md)을 봅니다. 화면 검사 진단 개선은 별도 Draft PR로 분리합니다.
 
 **진행 중 · xAI 네이티브 JSON 전환:** `XaiStatusFeed`·`ProviderStatusClient`가 고정 RSS + data.x.ai summary/incidents 세 출처를 집계합니다. summary 19개 slug·Agent SDK와 사건의 slug 범위를 검사하고, 새 summary slug는 진단 콜백으로만 보냅니다. Windows `TrayApplicationContext`는 같은 `WindowsWarningLog` 인스턴스를 ticker와 진단에 연결합니다. 새 C# 파일·버전·패키지는 추가하지 않습니다. [스키마 관찰·합성 검사·Mac/사이트 전환](XAI_STATUS.md).
@@ -508,6 +510,7 @@ Windows 내부 승인 형식은 알려진 경우만 해석합니다. 낯선 값�
 | [AccountQuotaUiChecks.cs](AccountQuotaUiChecks.cs) | 가짜 한도로 창 전환·사용률/막대·대표색·실패·공통 상세/접근성·Refresh·기존 상태 복귀 |
 | [QuotaToolTipUiChecks.cs](QuotaToolTipUiChecks.cs) | 실제 WinForms에서 상세 모양·배치·DPI·스크롤·10초 만료·재등장 방지·창 재열기 검사. 합성 fixture 수명 진단과 수동 닫힘 보호 |
 | [StatusToolTipUiChecks.cs](StatusToolTipUiChecks.cs) | 상태 상세 16건의 실제 고정 폭·클릭/기록·스크롤·수명/이탈/숨김/Dispose 검사와 공용 단어 단위 줄바꿈 8건 |
+| [SmokeUiProbe.cs](SmokeUiProbe.cs) | Windows 검사 전용: 비활성화 독립 host 배치·메시지 큐 sentinel·부모 범위 target·정리 전 창/스크롤/DPI/모니터 진단과 외부 창 메타데이터 allowlist. 제목·본문을 읽지 않음 |
 | [LiveQuotaProbe.cs](LiveQuotaProbe.cs) | 공식 CLI 실제 계정 조회 결과 중 한도 정보만 출력 |
 | [PortablePlatformTests.cs](PortablePlatformTests.cs) | 데이터 경로·IANA 시간대 경계·표시 형식·Mac CLI 경로 후보 검사 |
 

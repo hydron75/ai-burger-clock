@@ -88,6 +88,7 @@ internal static class SmokeTest
                         Check(context.TrayIcon.BalloonTipTitle == "FULL THROTTLE 시작", "Native FULL notification title");
                         Check(balloonRequests.Count == 1 && balloonRequests[0] is { Title: "FULL THROTTLE 시작", Icon: ToolTipIcon.Info, Timeout: 6000 },
                             "FULL notification reaches the fake balloon transport with unchanged duration and styling");
+                        await SmokeUiProbe.SettleAsync(context.StatusWindow);
                         RenderAndCheckLayout(context.StatusWindow, "full-throttle.png", reportDirectory);
                         await StatusToolTipUiChecks.RunAsync(context.StatusWindow, reportDirectory, Check);
                         context.RefreshStatus(true);
@@ -188,13 +189,21 @@ internal static class SmokeTest
         }
         foreach (Control control in window.Controls)
         {
-            if (!window.ClientRectangle.Contains(control.Bounds))
+            if (!SmokeUiProbe.LayoutArea(window).Contains(control.Bounds))
+            {
+                SmokeUiProbe.Failure("layout-control-clipped", window, control, null, null,
+                    new InvalidOperationException("Control bounds exceed the viewport or scrollable content."));
                 throw new InvalidOperationException($"Control clipped: {control.Text} at {control.Bounds}");
+            }
             if (control is Label label && !label.AutoSize)
             {
                 Size required = TextRenderer.MeasureText(label.Text, label.Font);
                 if (required.Width > label.Width || required.Height > label.Height)
+                {
+                    SmokeUiProbe.Failure("layout-label-clipped", window, label, null, null,
+                        new InvalidOperationException("Label text exceeds its bounds."));
                     throw new InvalidOperationException($"Label text clipped: {label.Text}, required {required}, available {label.Size}");
+                }
             }
         }
         // The new two-line timestamp must be fully readable, including UNKNOWN/STALE.
@@ -203,7 +212,11 @@ internal static class SmokeTest
         {
             Size required = TextRenderer.MeasureText(label.Text, label.Font);
             if (required.Width > label.Width || required.Height > label.Height)
+            {
+                SmokeUiProbe.Failure("layout-provider-label-clipped", window, label, null, null,
+                    new InvalidOperationException("Provider label exceeds its bounds."));
                 throw new InvalidOperationException($"Provider status/check time clipped: {label.Text}, required {required}, available {label.Size}");
+            }
         }
         if (reportDirectory is null)
             return;
