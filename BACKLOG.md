@@ -3,6 +3,7 @@
 ## Windows 2.9.2 후보 준비: Review Agents 필수 목록 보정
 
 - main `ba23cb21acc227988a78f9123a24fda430efb6ec`의 #145를 포함한다. Windows 버전 세 필드와 문서만 변경하며 후보·검사·receipt는 artifacts에 둔다. 사이트는 버전 14로 먼저 비공개 배포했고 기준 커밋 `ba23cb2`·xAI 정상 판정을 확인했다. 실제 앱 백업·교체·등록 확인·실행은 버전 PR 병합 뒤 사용자가 외부 MSI PowerShell에서 진행한다. [검사·SDK·신원·외부 명령](MAINTENANCE_2_9_2.md).
+- SDK 10.0.404, build·단일 EXE self-test 각 293,038건, smoke 첫 1회 1,174건 통과. 실제 휠 실패는 재현되지 않았고 재실행하지 않았다. 앞선 간헐 실패의 원인은 확인하지 않았으며 이번에 새 원인 조사 항목을 추가하지 않는다.
 
 ## 후속: xAI 호환 JSON sunset 2027-01-31
 
