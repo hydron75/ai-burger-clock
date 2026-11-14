@@ -43,8 +43,8 @@ internal static class StatusDetailTemplateTests
                     empty.EndsWith("사건\n진행 중 사건: 없음\n\n출처\n—", StringComparison.Ordinal), provider + " no-data placeholders do not invent receipt/history/incidents");
             }
             var xai = Fixtures(now).First(f => f.State.Provider == ProviderKind.Xai).State;
-            string partial = StatusPanelModel.Card(xai with { Source = XaiStatusFeed.RssUrl + " [수신 실패] + " + XaiStatusFeed.ComponentsUrl + " [응답 수신]" }, AgentState.FullThrottle).Detail;
-            Check(partial.EndsWith("출처\n" + XaiStatusFeed.RssUrl + " [수신 실패]\n" + XaiStatusFeed.ComponentsUrl, StringComparison.Ordinal), "partial-source failure evidence is retained");
+            string partial = StatusPanelModel.Card(xai with { Source = XaiStatusFeed.RssUrl + " [수신 실패] + " + XaiStatusFeed.SummaryUrl + " [응답 수신]" }, AgentState.FullThrottle).Detail;
+            Check(partial.EndsWith("출처\n" + XaiStatusFeed.RssUrl + " [수신 실패]\n" + StringComparison.Ordinal), "partial-source failure evidence is retained");
             string expired = StatusPanelModel.Card(xai with { XaiIncidentExpiryNote = XaiStatusFeed.ExpiryNote }, AgentState.FullThrottle).Detail;
             Check(expired.Contains("진행 중 사건: 없음\n과거 사건 해제: " + XaiStatusFeed.ExpiryNote + "\n\n출처", StringComparison.Ordinal), "expiry note remains historical and inside incident section");
             var ids = xai with { IncidentId = "synthetic-confirmed", UncertainIncidentId = "synthetic-uncertain" };
@@ -78,7 +78,7 @@ internal static class StatusDetailTemplateTests
             ProviderKind.OpenAI => "https://status.openai.com/api/v2/summary.json\nhttps://status.openai.com/api/v2/components.json\nhttps://status.openai.com/api/v2/incidents.json",
             ProviderKind.Claude => "https://status.claude.com/api/v2/summary.json",
             ProviderKind.Gemini => "https://www.google.com/appsstatus/dashboard/products.json\nhttps://www.google.com/appsstatus/dashboard/incidents.json",
-            _ => "https://status.x.ai/feed.xml\nhttps://status.x.ai/api/compat/summary.json\nhttps://status.x.ai/api/compat/components.json\nhttps://status.x.ai/api/compat/incidents.json"
+            _ => "https://status.x.ai/feed.xml\nhttps://data.x.ai/status/summary.json\nhttps://data.x.ai/status/incidents.json"
         };
         return $$"""
             클릭: 공식 상태 페이지 열기 · 우클릭: 사용 경험 기록
@@ -127,7 +127,7 @@ internal static class StatusDetailTemplateTests
                 ProviderKind.OpenAI => [ProviderStatusClient.OpenAiSummaryUrl, ProviderStatusClient.OpenAiComponentsUrl, ProviderStatusClient.OpenAiIncidentsUrl],
                 ProviderKind.Claude => [ProviderStatusClient.ClaudeSummaryUrl],
                 ProviderKind.Gemini => [ProviderStatusClient.GoogleProductsUrl, ProviderStatusClient.GoogleIncidentsUrl],
-                _ => [XaiStatusFeed.RssUrl, XaiStatusFeed.SummaryUrl, XaiStatusFeed.ComponentsUrl, XaiStatusFeed.IncidentsUrl]
+                _ => [XaiStatusFeed.RssUrl, XaiStatusFeed.SummaryUrl, XaiStatusFeed.IncidentsUrl]
             };
             string source = string.Join(" + ", urls.Select(url => url + (provider == ProviderKind.Xai ? " [응답 수신]" : "")));
             var normal = new ProviderStatus(provider, OfficialStatus.Operational, now, now, "합성 관련 서비스 정상",

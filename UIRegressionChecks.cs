@@ -576,11 +576,11 @@ internal static class UIRegressionChecks
         var expiryTracker = new XaiStatusFeed();
         DateTimeOffset firstMissing = xai.CheckedAtUtc.AddHours(-24);
         _ = expiryTracker.Parse(XaiStatusTests.Rss(XaiStatusTests.Item()), XaiStatusTests.SummaryJson,
-            XaiStatusTests.ComponentsJson, XaiStatusTests.IncidentsJson, firstMissing.AddMinutes(-5));
+            XaiStatusTests.IncidentsJson, firstMissing.AddMinutes(-5));
         _ = expiryTracker.Parse(XaiStatusTests.EmptyRss, XaiStatusTests.SummaryJson,
-            XaiStatusTests.ComponentsJson, XaiStatusTests.IncidentsJson, firstMissing);
+            XaiStatusTests.IncidentsJson, firstMissing);
         var expired = expiryTracker.Parse(XaiStatusTests.EmptyRss, XaiStatusTests.SummaryJson,
-            XaiStatusTests.ComponentsJson, XaiStatusTests.IncidentsJson, xai.CheckedAtUtc);
+            XaiStatusTests.IncidentsJson, xai.CheckedAtUtc);
         var expirySchedule = AgentSchedule.GetSnapshot(xai.CheckedAtUtc);
         context.StatusWindow.UpdateProviders(monitor.Snapshot().Select(status => status.Provider == ProviderKind.Xai ? expired : status).ToArray(),
             expirySchedule, refreshing: false, monitor.NextRefreshUtc);

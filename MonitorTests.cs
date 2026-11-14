@@ -43,7 +43,6 @@ internal sealed class TestStatusHttpHandler : HttpMessageHandler
             ? """{"products":[{"id":"test-gemini","title":"Gemini"}]}"""
             : url == XaiStatusFeed.RssUrl ? XaiRss ?? XaiStatusTests.EmptyRss
             : url == XaiStatusFeed.SummaryUrl ? XaiStatusTests.SummaryJson
-            : url == XaiStatusFeed.ComponentsUrl ? XaiStatusTests.ComponentsJson
             : url == XaiStatusFeed.IncidentsUrl ? XaiStatusTests.IncidentsJson
             : url == ProviderStatusClient.OpenAiComponentsUrl ? OpenAiComponentsJson ?? System.Text.Json.JsonSerializer.Serialize(new { components = defaultComponents })
             : url == ProviderStatusClient.OpenAiIncidentsUrl ? """{"incidents":[]}"""
@@ -154,7 +153,7 @@ internal static class MonitorTests
             "a receipt cannot date a different historical status when no confirmation timestamp exists");
         await monitor.RefreshOnceAsync();
         Check(monitor.Snapshot().All(s => s.Status == OfficialStatus.Operational), "All providers fetched independently");
-        Check(handler.RequestCount == 9, "One refresh makes nine official feed requests including four xAI public feeds");
+        Check(handler.RequestCount == 8, "One refresh makes eight official feed requests including three xAI public feeds");
         handler.OpenAiStatus = OfficialStatus.PartialOutage;
         await monitor.RefreshOnceAsync();
         Check(monitor.Snapshot().Single(s => s.Provider == ProviderKind.OpenAI).Status == OfficialStatus.PartialOutage, "OpenAI partial outage");
@@ -241,26 +240,26 @@ internal static class MonitorTests
         {
             BeforeResponseAsync = async (number, token) =>
             {
-                if (number != 18) return;
+                if (number != 16) return;
                 lastStarted.TrySetResult();
                 await releaseLast.Task.WaitAsync(token).ConfigureAwait(false);
             }
         };
         using var pollingHttp = new HttpClient(pollingHandler);
         using var polling = new StatusMonitor(new ProviderStatusClient(pollingHttp), pollInterval: TimeSpan.FromMilliseconds(100));
-        var initialPoll = CompletedCycle(polling, pollingHandler, 9);
-        var automaticPoll = CompletedCycle(polling, pollingHandler, 18);
+        var initialPoll = CompletedCycle(polling, pollingHandler, 8);
+        var automaticPoll = CompletedCycle(polling, pollingHandler, 16);
         polling.Start();
         await initialPoll.WaitAsync(TimeSpan.FromSeconds(5));
         await lastStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
-        Check(pollingHandler.RequestCount == 18 && polling.IsRefreshing && polling.NextRefreshUtc is null,
+        Check(pollingHandler.RequestCount == 16 && polling.IsRefreshing && polling.NextRefreshUtc is null,
             "Eighteen HTTP request starts do not imply that the gated second polling pass has completed");
         Check(!automaticPoll.IsCompleted, "The polling completion barrier waits for the final response, not request starts");
         releaseLast.TrySetResult();
         var completedAutomatic = await automaticPoll.WaitAsync(TimeSpan.FromSeconds(5));
         // Capture at the scheduling event: another timer pass cannot invalidate this
         // immutable observation if the assertion continuation is delayed by the host.
-        Check(completedAutomatic.RequestCount == 18 && completedAutomatic.NextRefreshUtc.HasValue && !completedAutomatic.IsRefreshing,
+        Check(completedAutomatic.RequestCount == 16 && completedAutomatic.NextRefreshUtc.HasValue && !completedAutomatic.IsRefreshing,
             "Automatic polling completes and schedules its next refresh");
         await polling.StopAsync();
         int stopped = pollingHandler.RequestCount;
@@ -275,15 +274,15 @@ internal static class MonitorTests
         var manualHandler = new TestStatusHttpHandler();
         using var manualHttp = new HttpClient(manualHandler);
         using var manual = new StatusMonitor(new ProviderStatusClient(manualHttp), pollInterval: TimeSpan.FromHours(1));
-        var manualInitial = CompletedCycle(manual, manualHandler, 9);
+        var manualInitial = CompletedCycle(manual, manualHandler, 8);
         manual.Start();
         var completedInitial = await manualInitial.WaitAsync(TimeSpan.FromSeconds(5));
-        Check(completedInitial.RequestCount == 9 && completedInitial.NextRefreshUtc.HasValue && !completedInitial.IsRefreshing,
+        Check(completedInitial.RequestCount == 8 && completedInitial.NextRefreshUtc.HasValue && !completedInitial.IsRefreshing,
             "Manual-refresh fixture has finished its initial pass before accepting a click");
-        var manualCompletion = CompletedCycle(manual, manualHandler, 18);
+        var manualCompletion = CompletedCycle(manual, manualHandler, 16);
         manual.RequestRefresh();
         var completedManual = await manualCompletion.WaitAsync(TimeSpan.FromSeconds(5));
-        Check(completedManual.RequestCount == 18 && completedManual.NextRefreshUtc.HasValue && !completedManual.IsRefreshing,
+        Check(completedManual.RequestCount == 16 && completedManual.NextRefreshUtc.HasValue && !completedManual.IsRefreshing,
             "Manual refresh completes a new pass without help from automatic polling");
         await manual.StopAsync();
 
@@ -291,11 +290,11 @@ internal static class MonitorTests
         using var faultyHttp = new HttpClient(faultyHandler);
         using var faulty = new StatusMonitor(new ProviderStatusClient(faultyHttp), pollInterval: TimeSpan.FromMilliseconds(100));
         faulty.Changed += () => throw new InvalidOperationException("Synthetic subscriber failure");
-        var faultyCompletion = CompletedCycle(faulty, faultyHandler, 18);
+        var faultyCompletion = CompletedCycle(faulty, faultyHandler, 16);
         faulty.Start();
         var completedFaulty = await faultyCompletion.WaitAsync(TimeSpan.FromSeconds(5));
         await faulty.StopAsync();
-        Check(completedFaulty.RequestCount == 18 && completedFaulty.NextRefreshUtc.HasValue && !completedFaulty.IsRefreshing,
+        Check(completedFaulty.RequestCount == 16 && completedFaulty.NextRefreshUtc.HasValue && !completedFaulty.IsRefreshing,
             "Subscriber failure does not stop polling completion or shutdown");
 
         // No scheduled poll within the test: only the queued request can start a second pass.
@@ -312,7 +311,7 @@ internal static class MonitorTests
         };
         using var queuedHttp = new HttpClient(queuedHandler);
         using var queued = new StatusMonitor(new ProviderStatusClient(queuedHttp), pollInterval: TimeSpan.FromHours(1));
-        var queuedCompletion = CompletedCycle(queued, queuedHandler, 18);
+        var queuedCompletion = CompletedCycle(queued, queuedHandler, 16);
         queued.Start();
         await firstStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
         Check(queued.IsRefreshing && !queuedCompletion.IsCompleted, "Queued refresh is requested while a response is explicitly held");
@@ -320,7 +319,7 @@ internal static class MonitorTests
         releaseFirst.TrySetResult();
         var completedQueued = await queuedCompletion.WaitAsync(TimeSpan.FromSeconds(5));
         await queued.StopAsync();
-        Check(completedQueued.RequestCount == 18 && completedQueued.NextRefreshUtc.HasValue && !completedQueued.IsRefreshing,
+        Check(completedQueued.RequestCount == 16 && completedQueued.NextRefreshUtc.HasValue && !completedQueued.IsRefreshing,
             "Refresh requested during an active poll completes another pass right after it");
 
         var blockedHandler = new TestStatusHttpHandler { Block = true };

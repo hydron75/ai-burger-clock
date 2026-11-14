@@ -6,11 +6,11 @@ using System.Text.RegularExpressions;
 namespace AiBurgerClock;
 
 /// <summary>Reads only public, structured official feeds. Owns neither HttpClient nor its lifetime.</summary>
-internal sealed class ProviderStatusClient(HttpClient client, Func<DateTimeOffset>? utcNow = null)
+internal sealed class ProviderStatusClient(HttpClient client, Func<DateTimeOffset>? utcNow = null, Action<string>? xaiDiagnostic = null)
 {
     // Incident begin/end comparisons use the same injected clock as the rest of the app.
     private readonly Func<DateTimeOffset> clock = utcNow ?? (() => DateTimeOffset.UtcNow);
-    private readonly XaiStatusFeed xai = new();
+    private readonly XaiStatusFeed xai = new(xaiDiagnostic);
     internal void RestoreXai(ProviderStatus cached) => xai.Restore(cached);
 
     internal const string OpenAiSummaryUrl = "https://status.openai.com/api/v2/summary.json";
@@ -63,7 +63,7 @@ internal sealed class ProviderStatusClient(HttpClient client, Func<DateTimeOffse
             // The monitor supplies its lifetime separately from its request deadline.
             // A single timed-out source must not discard already received public outages.
             var shutdown = shutdownToken ?? token;
-            string[] urls = [XaiStatusFeed.RssUrl, XaiStatusFeed.SummaryUrl, XaiStatusFeed.ComponentsUrl, XaiStatusFeed.IncidentsUrl];
+            string[] urls = [XaiStatusFeed.RssUrl, XaiStatusFeed.SummaryUrl, XaiStatusFeed.IncidentsUrl];
             var responses = await Task.WhenAll(urls.Select(ReadXaiAsync)).ConfigureAwait(false);
             shutdown.ThrowIfCancellationRequested();
             var bodies = responses.Select(response => response.Body).ToArray();
@@ -72,7 +72,7 @@ internal sealed class ProviderStatusClient(HttpClient client, Func<DateTimeOffse
                 if (responses.All(response => response.TimedOut)) throw new OperationCanceledException("xAI 공식 상태 조회 시간 초과");
                 throw new HttpRequestException("xAI 공식 상태 출처 응답 수신 실패");
             }
-            return xai.Parse(bodies[0], bodies[1], bodies[2], bodies[3], clock());
+            return xai.Parse(bodies[0], bodies[1], bodies[2], clock());
 
             async Task<(string? Body, bool TimedOut)> ReadXaiAsync(string url)
             {
