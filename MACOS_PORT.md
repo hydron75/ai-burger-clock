@@ -2868,3 +2868,61 @@ smoke의 선택 기능(`AIBURGERCLOCK_SMOKE_IMAGES`)으로 큰 화면·1280×800
 - ~~저장소 경로 빌드·교체·실행과 로그인 항목 갱신~~: 배포 단계에서 했다(위 "저장소 경로 빌드와 교체"). 팝오버의 실제 화면은 사용자 확인 대기.
 - 재로그인·재부팅 뒤 새 경로 앱이 뜨는지(BTM 항목은 새 경로를 가리키지만 실제 로그인 실행은 확인하지 않았다. 사용자가 다음 재부팅 때 확인 예정).
 - 실제 마우스 휠·스크롤러 드래그, VoiceOver, 여러 디스플레이의 긴 팁, 앵커 창 경로와 모든 디스플레이가 덮였을 때의 SKIP 출력(73·74·75절 미확인 항목 그대로).
+
+## 78. 0.9.3 정리
+
+2026-11-14. Mac 0.9.2 / build 29 → **0.9.3 / build 30**. 앱 화면·메뉴·알림·설정·번들 경로는 바뀌지 않고, 공통 원본 `XaiStatusFeed.cs`의 xAI 호환 JSON 필수 구성 요소 ID 한 곳(`bugbot` → `2x2chyqwmkzl` Review Agents, PR #145)만 번들에 싣는다. 이 보정 전에는 xAI 호환 JSON에서 `bugbot`이 빠지고 Review Agents가 다시 들어온 탓에 xAI 상태 카드가 `Cursor/Grok Bot 필수 구성 요소 누락` CHECK로 보일 수 있었다. 버전 PR(#146)은 버전 필드와 Mac/README만 바꿨다.
+
+### 포함된 변경
+| PR | 내용 | 기록 |
+|---|---|---|
+| #145 | 공통 원본: xAI 필수 구성 요소 목록 보정(`XaiStatusFeed.cs`), Windows·Mac 확인 | [XAI_STATUS](XAI_STATUS.md), PR #145 코멘트(Mac 확인) |
+| #143·#144 | Mac 0.9.2 배포 기록, Windows 2.9.1 런타임 10.0.15 확인 기록(문서, 번들에 영향 없음) | [77절](#77-092-정리) |
+
+### 버전 필드
+`Version` 0.9.3, `AssemblyVersion` 0.9.3.0, `FileVersion` 0.9.3.0, `ApplicationVersion` 30(`CFBundleVersion`). `Info.plist`에는 적지 않는다.
+
+### 기준
+| 항목 | 값 |
+|---|---|
+| main(작업 시작) | `ba23cb21acc227988a78f9123a24fda430efb6ec`(PR #145 병합) |
+| 버전 변경 커밋(앱 소스) | `36813dd3c728763f5b58d12be2583898c5c29a32` |
+| PR #146 병합(배포 기준 main) | `7e1487652a2e07d062437aa88506c48a7df7c6ca` |
+| 도구 | SDK 10.0.404, macOS 워크로드 27.2.10000, Xcode 27.2 (0.9.2와 같음) |
+
+### 배포 전 검증 (임시 사본, 저장소 경로 아님)
+| 항목 | 결과 |
+|---|---|
+| 빌드 | `bash Mac/build.sh` **옵션 없음**, 경고 0 / 오류 0, bundle **0.9.3 / 30** |
+| Shared.Tests | **291,909건 PASS**(SKIP 0) |
+| 번들 런타임 | `System.Private.CoreLib`에 10.0.15 문자열 있고 10.0.14는 없음 |
+| smoke 1회 | 종료 코드 0, **SKIP 0**, `SCREEN: display 2 of 2 (2560x1080pt): the status item's display, no full-screen app on it` |
+| LaunchServices | smoke 뒤 등록 수 2 → `lsregister -u`(임시 사본) 후 **1**, 임시 worktree 삭제 |
+
+임시 사본의 SHA-256은 기록하지 않았다(저장소 경로 빌드 값을 아래에 적는다).
+
+### 저장소 경로 빌드와 교체 (Claude Code 수행, 2026-11-14 11시대)
+메인 채팅의 "배포 진행" 지시(PR #146 병합 뒤, main `7e14876`)에 따라 AGENTS.md "Mac 배포" 절 순서로 진행했다. 경로 변경이 없어 로그인 항목·옛 번들 폴더 정리는 필요 없었다.
+
+| 항목 | 결과 |
+|---|---|
+| 시작 전 | 실행 중이던 0.9.2 / 29 앱 1개(PID 96888, 같은 번들 경로). 실행 파일 SHA-256 `a5f6a23b…`(77절 기록과 일치) |
+| 빌드 | 11:17:08~11:17:43, `bash Mac/build.sh --quit-running`(옵션 없음). 실행 중인 앱에 종료를 요청해 정상 종료된 뒤 빌드가 이어졌다. 경고 0 / 오류 0 |
+| 번들 | `CFBundleShortVersionString` **0.9.3**, `CFBundleVersion` **30**, `CFBundleIdentifier` `com.hydron75.aiburgerclock`, `LSMinimumSystemVersion` 27.0, `codesign --verify --deep --strict` 통과(ad-hoc 서명) |
+| 번들 런타임 | `System.Private.CoreLib`에 10.0.15 문자열 5개, 10.0.14는 0개 |
+| 실행 | `open`으로 실행. 프로세스 **1개**(PID 25852), 약 1분 20초 뒤에도 1개, 앱의 자식 프로세스 없음 |
+| SHA-256 실행 파일 | `de6bdf1f503ba1b9a116823e1cbc69ad0ffbeb65454fac8fe59ad4aeec859782` |
+| SHA-256 앱 DLL | `cdf3c65bc88a2111746be3775b3793d1a16af286ba88bfcd3d88f70faa7d2c8d` (`Contents/MonoBundle/AI Burger Clock.dll`) |
+| LaunchServices 등록 수 | **1** (등록이 늘지 않았다) |
+| 로그인 항목(BTM) | `sfltool dumpbtm`의 항목(식별자 `2.com.hydron75.aiburgerclock`)이 `enabled, allowed`, URL은 같은 번들 경로, Generation 4 그대로. 자동 실행 설정은 건드리지 않았다 |
+| 정리 | 로컬 브랜치 `claude/mac-0-9-3`는 main의 조상임을 확인한 뒤 삭제, `git remote prune origin` |
+
+(`grok`이 들어간 다른 프로세스가 보였으나 별개의 Grok Bot 데스크톱 앱이며 이 앱과 무관하다.)
+
+### 사용자 확인
+2026-11-14 사용자가 0.9.3 앱 팝오버에서 **xAI 카드가 정상으로 바뀐 것을 확인**했다(사용자 확인이며 이 Mac에서 화면을 읽은 값은 아니다).
+
+### 수행하지 않은 검증
+- 앱 DB나 로그에서 앱 자신의 xAI 판정 값을 읽지 않았다. 번들에 실린 코드의 실제 조회 결과는 PR #145의 Mac 확인(main 코드 CHECK, PR 코드 Operational)에서 확인했고, 팝오버의 실제 화면은 위 사용자 확인으로 갈음한다.
+- 재로그인·재부팅 뒤 앱이 뜨는지는 0.9.2 때와 같게 사용자가 다음 재부팅 때 확인한다(경로·BTM 변화 없음).
+- 77절의 미확인 항목(마우스 휠·스크롤러 드래그, VoiceOver, 여러 디스플레이의 긴 팁, 앵커 창 경로, 모든 디스플레이가 덮였을 때의 SKIP 출력)은 그대로다.
