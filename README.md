@@ -1,4 +1,6 @@
-# AI Burger Clock 2.9.1
+# AI Burger Clock 2.9.2
+
+**Windows 2.9.2 후보 준비(2026-11-14 KST):** main `ba23cb2`에 병합된 #145의 xAI 필수 JSON 목록 보정(Bugbot 제외·Review Agents 복귀)을 포함합니다. RSS 두 대응과 필수 항목 누락 CHECK는 유지합니다. 이 버전 PR은 Windows 버전 세 필드와 문서만 바꾸며 후보는 별도 artifacts 경로에 준비합니다. 사이트는 먼저 버전 14로 비공개 배포했고 기준 커밋 `ba23cb2`·실제 xAI 정상 판정을 확인했습니다. 후보 검사·SDK·신원·receipt·사용자 외부 명령은 [2.9.2 기록](MAINTENANCE_2_9_2.md)에 구분합니다. 아래 과거 기록은 유지합니다.
 
 **Windows 2.9.1 후보 준비(2026-11-09 KST):** main `972c20c`에 병합된 #128 xAI 사용량 링크 제거, #130 상태·한도 상세 틀/고정 폭과 긴 본문 스크롤 보정, #134 Microsoft.Data.Sqlite 10.0.14, #135 배포 receipt 누락의 `ReceiptNotFound`를 포함합니다. #136은 Mac smoke 화면 선택 보정이며 Windows 동작을 추가로 바꾸지 않습니다. 준비 중 추가된 #137도 Mac 버전/문서만 바꾸며 후보의 Windows 입력은 같습니다. 이번 PR은 Windows 버전 세 필드와 문서만 바꿉니다. 별도 단일 EXE 후보 build·self-test **각 293,036건**, 공통 **291,907건**, smoke **1,174 PASS**·종료 코드 0을 확인했습니다. 합성 PNG **60/60**·layout JSON **41/41**은 #130 최종과 같습니다. 기본 SQLitePCLRaw **2.1.13**·실제 SQLite 엔진 **3.53.3**입니다. [후보 신원·검사·receipt·외부 명령](MAINTENANCE_2_9_1.md).
 
@@ -361,6 +363,7 @@ Windows smoke와 수동 테스트 빌드는 PR별 산출물 폴더에서 직접 
 
 ## 더 자세히 보기
 
+- [2.9.2 후보·Review Agents 필수 목록·사이트 선행 배포·외부 명령](MAINTENANCE_2_9_2.md)
 - [2.9.1 후보·xAI 링크 제거·상세 통일·SQLite·receipt·사이트 배포 순서](MAINTENANCE_2_9_1.md)
 - [2.9.0 후보 준비·Grok 주간 크레딧·receipt·외부 배포](MAINTENANCE_2_9_0.md)
 - [MAINTENANCE_2_8_9.md](MAINTENANCE_2_8_9.md): 2.8.9 xAI 카탈로그 갱신 후보 검사·해시·사용자 외부 교체 절차.

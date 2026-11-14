@@ -1,5 +1,9 @@
 # 다음 개선 항목
 
+## Windows 2.9.2 후보 준비: Review Agents 필수 목록 보정
+
+- main `ba23cb21acc227988a78f9123a24fda430efb6ec`의 #145를 포함한다. Windows 버전 세 필드와 문서만 변경하며 후보·검사·receipt는 artifacts에 둔다. 사이트는 버전 14로 먼저 비공개 배포했고 기준 커밋 `ba23cb2`·xAI 정상 판정을 확인했다. 실제 앱 백업·교체·등록 확인·실행은 버전 PR 병합 뒤 사용자가 외부 MSI PowerShell에서 진행한다. [검사·SDK·신원·외부 명령](MAINTENANCE_2_9_2.md).
+
 ## 후속: xAI 호환 JSON sunset 2027-01-31
 
 - **xAI 호환 JSON(summary·components·incidents) sunset 2027-01-31: 대체 경로 조사 후 RSS 전용 판정 또는 새 API로 전환. 12월 중순까지 방향 결정.** 2026-11-14 세 JSON의 `Sunset: Sun, 31 Jan 2027 00:00:00 GMT`를 확인했고 RSS에는 이 헤더가 없다. 이번 Review Agents 필수 목록 보정과 분리하며 출처·판정 전환은 메인 결정 뒤 진행한다. [현행 출처·필수 목록·변경 이력](XAI_STATUS.md).
