@@ -1,4 +1,41 @@
-# AI Burger Clock 2.9.2 — Review Agents 필수 목록 보정 후보
+# AI Burger Clock 2.9.2 — Review Agents 필수 목록 보정·배포 확인 완료
+
+## 배포·사용자 확인 결과 (2026-11-14 KST 기록)
+
+버전 PR **#148**은 main **`4f934726b0f09467d154b855805481e71c6fcf2f`**에 병합됐습니다.
+사이트 선행 배포 뒤 사용자가 Codex 밖 PowerShell에서 Git 사전 확인과 외부 배포를 실행했고,
+**둘 다 통과했다**고 알려주셨습니다. 배포 최종 성공과 아래 실제 화면은 **사용자 확인**입니다.
+정확한 최종 실행 시각과 전체 콘솔 출력은 전달받지 않았으므로 개별 종료 코드·최종 출력 필드를 추정해서 적지 않습니다.
+
+- 읽기 전용 Git 사전 확인 통과.
+- 외부 배포 통과 및 Windows **2.9.2** 실행.
+- 트레이·상태 보기·한도 보기·xAI 카드 모두 정상.
+
+### 배포 메타데이터·EXE의 읽기 전용 대조
+
+Codex는 이번 기록 갱신에서 배포 메타데이터와 EXE 신원만 읽기 전용으로 대조했습니다.
+`artifacts/release-2.9.2-preparation-20261114/deployment-receipt.run/verified-before-launch.json`에는
+Receipt/Preflight/Backup/Replace/Inspect가 모두 **Passed**로 남아 있습니다.
+이 파일은 **앱 시작 직전**에 저장하므로 `Launch=NotRun`은 실행 실패의 증거가 아닙니다.
+이 단계 기록과 사용자가 알려주신 외부 배포 최종 성공·2.9.2 실제 화면 정상을 구분합니다.
+
+| 실제 배포 EXE·백업 | 확인 결과 |
+|---|---|
+| 배포 EXE | `dist/win-x64/AI Burger Clock.exe` |
+| FileVersion | **`2.9.2.0`** |
+| ProductVersion | `2.9.2+98320e7fb598a7b0fb32c659b44bfa65efce7ccb` |
+| 소스 커밋 | `98320e7fb598a7b0fb32c659b44bfa65efce7ccb` (PR 병합 커밋과 구분) |
+| SHA-256 | **`E6AD2CC165BEF4A748E950152731C042A07B5FC8800E82D6C0D83D89ECF445CC`** — 후보/receipt와 일치 |
+| 실제 백업 | `../backups/release-2.9.2.0-20261114-114249-f8ee4010/` |
+| 이전 EXE 백업 | `previous.exe` 존재, SHA-256 **`1A90FD80631F6E2D0F541B73CD1A2AC956291D98510596CEFC24831625E85986`**로 기록된 2.9.1 신원과 일치 |
+
+이번 PR은 **이 문서 하나만** 갱신합니다. 코드·버전·패키지·스크립트·사이트·배포 EXE·DB·설정·등록을 바꾸거나
+빌드·smoke·배포·앱 실행/재실행을 하지 않았습니다. 실제 계정 값·토큰·사이트 주소·캡처도 기록하지 않습니다.
+아이폰 재조회·기존 로컬 기록에서의 정상 복귀, 장기 상주·실제 복원·OS 알림 노출은 이번 사용자 확인에 포함되지 않습니다.
+
+## 후보 준비 당시 기록 (이하 보존)
+
+아래의 미배포·미확인 표기는 준비 당시 기록입니다. 이후 배포·사용자 확인 결과는 위 절을 기준으로 합니다.
 
 2026-11-14 KST. main `ba23cb21acc227988a78f9123a24fda430efb6ec`에서 준비합니다.
 이번 버전 PR은 Windows `Version`·`AssemblyVersion`·`FileVersion`과 문서만 변경합니다.
