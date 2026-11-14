@@ -21,7 +21,7 @@
 
 ## 완료: xAI 호환 JSON sunset 2027-01-31 대응
 
-- **#150/#151 main 병합 · Windows 2.9.3·Mac 0.9.4·사이트 버전 16 배포 완료:** 호환 JSON(summary·components·incidents) sunset 2027-01-31에 대비해 세 출처(RSS·data.x.ai/status/summary.json·data.x.ai/status/incidents.json)로 전환했다. RSS만으로 정상 fallback하지 않으며 새 JSON의 대상 19개 slug 누락·수신/형식 실패는 CHECK다. Agent SDK는 Cursor로 포함하고, summary 신규 slug는 첫 확인·목록 변경 때만 진단에 남긴다. 처음 보는 사건 범위/RSS 경로 CHECK는 유지한다. 남은 미확인은 실제 비정상 data.x.ai 응답 관찰이다. [스키마 관찰 근거·범위·전환 계약](XAI_STATUS.md).
+- **#150/#151 main 병합 · Windows 2.9.3·Mac 0.9.4·사이트 버전 16 배포 완료:** 호환 JSON(summary·components·incidents) sunset 2027-01-31에 대비해 세 출처(RSS·data.x.ai/status/summary.json·data.x.ai/status/incidents.json)로 전환했다. RSS만으로 정상 fallback하지 않으며 새 JSON의 대상 19개 slug 누락·수신/형식 실패는 CHECK다. Agent SDK는 Cursor로 포함하고, summary 신규 slug는 첫 확인·목록 변경 때만 진단에 남긴다. 처음 보는 사건 범위/RSS 경로 CHECK는 유지한다. 사이트 버전 16의 xAI 카드는 아이폰에서도 정상 확인했다(사용자 확인). 남은 미확인은 실제 비정상 data.x.ai 응답 관찰이다. [스키마 관찰 근거·범위·전환 계약](XAI_STATUS.md).
 
 ## Windows 2.9.1 후보 준비: 병합된 링크·상세·SQLite·배포 검사 반영
 
