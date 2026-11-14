@@ -1,5 +1,7 @@
 # 소스코드, 쉬운 말로 읽기
 
+**Windows 2.9.3 후보 기준:** main `fe84da2`의 #150/#151 네이티브 xAI JSON 전환을 포함합니다. Windows 버전 세 필드와 문서만 변경하며 공통/Windows C#·Mac·패키지·배포 스크립트는 바꾸지 않습니다. 사이트 버전 16 선행 배포와 후보·receipt·외부 배포 명령은 [2.9.3 기록](MAINTENANCE_2_9_3.md)을 봅니다. 화면 검사 진단 개선은 별도 Draft PR로 분리합니다.
+
 **진행 중 · xAI 네이티브 JSON 전환:** `XaiStatusFeed`·`ProviderStatusClient`가 고정 RSS + data.x.ai summary/incidents 세 출처를 집계합니다. summary 19개 slug·Agent SDK와 사건의 slug 범위를 검사하고, 새 summary slug는 진단 콜백으로만 보냅니다. Windows `TrayApplicationContext`는 같은 `WindowsWarningLog` 인스턴스를 ticker와 진단에 연결합니다. 새 C# 파일·버전·패키지는 추가하지 않습니다. [스키마 관찰·합성 검사·Mac/사이트 전환](XAI_STATUS.md).
 
 **Windows 2.9.2 후보 기준:** main `ba23cb2`의 #145 Review Agents 필수 목록 보정을 포함합니다. 이번 PR은 Windows 버전 세 필드·문서만 바꾸며 공통/Windows C#·Mac·패키지·배포 스크립트는 바꾸지 않습니다. 사이트 선행 배포·후보 검사·SDK·receipt·외부 명령은 [2.9.2 기록](MAINTENANCE_2_9_2.md)을 봅니다. 아래 과거 버전 기록과 파일 지도는 유지합니다.
