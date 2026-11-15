@@ -1,8 +1,16 @@
-# AI Burger Clock 2.9.4 — Gemini 한도 자동 조회 중단 후보
+# AI Burger Clock 2.9.4 — Gemini 한도 자동 조회 중단
 
 2026-11-16 KST. 기준 main `5fbfc6c7b1872ace712871710a3d42b464682442`(#156 병합).
-이 PR은 Windows Version/AssemblyVersion/FileVersion과 문서만 변경한다. 공통/Windows C#·Mac·패키지·배포 스크립트는 바꾸지 않는다.
+#160은 Windows Version/AssemblyVersion/FileVersion과 문서만 변경했다. 공통/Windows C#·Mac·패키지·배포 스크립트는 바꾸지 않았다.
 PR 생성 중 main에 #158이 병합되어 `3ec83eb29808d4c8dac89cdb64e06d78fa509605`가 됐다. 추가 차이는 Mac 버전 필드·Mac/README 두 파일뿐이며 Windows/공통 원본 차이는 0건이다. 검증한 후보·receipt를 유지하고 새 main과 병합 가능함을 확인했다.
+
+## 2026-11-16 외부 배포 완료 · 사용자 확인
+
+- #160 병합을 GitHub에서 확인했다. 병합 커밋은 `c30635fe7b2ad230a12549312640ef50f46d4ee2`이며 이 문서 PR은 해당 main에서 시작했다.
+- 사용자가 Codex 밖 PowerShell에서 읽기 전용 Git 사전 확인과 외부 배포를 실행했고, 두 절차 모두 통과했다고 알려 주었다. Codex가 운영 앱을 실행하거나 배포를 대신 수행한 결과가 아니다.
+- **Windows 사용자 확인:** 2.9.4 트레이·상태 보기·한도 보기, Gemini 조회 안 함 안내와 ChatGPT·Claude·xAI가 모두 정상이다. 새 버전 배포 전까지 앱을 종료 유지하던 단계는 완료됐다.
+- 이 기록은 사용자의 통과·화면 정상 보고를 근거로 한다. 이번 문서 PR에서 운영 EXE 해시·개별 검사 값·DB 경로를 재조회하거나 빌드·배포·운영 앱 실행·등록을 수행하지 않았다. 아래 후보 신원·검증 기록은 그대로 보존한다.
+- 실제 계정 값·토큰·사이트 주소·캡처는 기록하지 않는다. 기존 사이트 버전 17의 아이폰 사용자 확인도 아래에 유지한다.
 
 ## 2.9.3 이후 포함 변경
 
@@ -44,21 +52,21 @@ PR 생성 중 main에 #158이 병합되어 `3ec83eb29808d4c8dac89cdb64e06d78fa50
 - smoke·합성 PNG/진단: `artifacts/r294/windows-tests/after/20261116-072028-830-3fc719/`.
 - 화면 비교: `artifacts/release-2.9.4-preparation-20261116/render-comparison.json`.
 
-`candidate.json`을 생성하고 공식 `tools/New-WindowsDeploymentReceipt.ps1`로 새 `artifacts/release-2.9.4-preparation-20261116/deployment-receipt.json`을 만들었다. receipt는 미사용이며 `.run` 폴더가 없다. 기존 사전 확인 도구를 새 준비 폴더에 그대로 복사했다. Codex 컨텍스트에서 MSI PowerShell·C:\Windows\System32를 사용한 읽기 전용 검사에서 두 커밋 모두 GitExitCode=0·Readable=true였다. 사용자 외부 컨텍스트 확인은 아래 명령으로 별도 수행한다.
+`candidate.json`을 생성하고 공식 `tools/New-WindowsDeploymentReceipt.ps1`로 새 `artifacts/release-2.9.4-preparation-20261116/deployment-receipt.json`을 만들었다. 준비 당시 receipt는 미사용이었으며 `.run` 폴더가 없었다. 기존 사전 확인 도구를 새 준비 폴더에 그대로 복사했다. Codex 컨텍스트에서 MSI PowerShell·C:\Windows\System32를 사용한 읽기 전용 검사에서 두 커밋 모두 GitExitCode=0·Readable=true였다. 이후 사용자 외부 컨텍스트 확인도 통과했으며 실행 명령은 아래 당시 절차로 보존한다.
 이전 신원은 `artifacts/release-2.9.3-preparation-20261114/candidate.json`으로 공식 `New-WindowsDeploymentReceipt.ps1`에 전달한다.
 이전 FileVersion은 2.9.3.0, 소스는 `516a9e14d8d2ce7dc34bac26327b9a7f22477e3b`, SHA-256은 `C0E5F5E3E608A264D23D498C06B73C7A3F460FAE77C56AF2DAE03239064A1EF0`이다.
-이전 receipt/.run/백업은 보존하며 새 receipt도 준비만 하고 실행하지 않는다.
+준비 단계에서는 이전 receipt/.run/백업을 보존하고 새 receipt도 실행하지 않았다. 이후 외부 배포 통과는 위 사용자 확인에 기록했다.
 
-## 사용자 외부 절차
+## 사용자 외부 절차 · 배포 당시 기록
 
-PR 병합 뒤 아래 읽기 전용 사전 확인을 먼저 실행한다. MSI PowerShell 전체 경로이며 C:\Windows\System32에서도 동작한다.
+아래는 배포 준비 당시 안내한 절차를 보존한 것이며 같은 receipt의 재실행 안내가 아니다. PR 병합 뒤 읽기 전용 사전 확인을 먼저 실행하는 순서였다. MSI PowerShell 전체 경로이며 C:\Windows\System32에서도 동작한다.
 
 ~~~powershell
 & 'C:\Program Files\PowerShell\7\pwsh.exe' -NoLogo -NoProfile -File 'C:/Users/mc_bl/.codex/.chatgpt-projects/g-p-6aa5eb198fd88191b7382af0eb114af4/AiBurgerClock/artifacts/release-2.9.4-preparation-20261116/Read-DeploymentSourceCommits.ps1'
 ~~~
 
 기대값: Succeeded=true, Previous/Candidate 각각 GitExitCode=0·Readable=true, FilesChanged=false·AppLaunched=false.
-통과하고 앱이 정상 종료 상태이면 다음 한 줄을 실행한다. 앱은 사용자 방침에 따라 새 배포 전까지 종료 유지하며 구버전 재실행을 안내하지 않는다.
+통과하고 앱이 정상 종료 상태이면 다음 한 줄을 실행하는 절차였다. 당시 앱은 사용자 방침에 따라 새 배포 전까지 종료 유지했고 구버전 재실행은 안내하지 않았다.
 
 ~~~powershell
 & 'C:\Program Files\PowerShell\7\pwsh.exe' -NoLogo -NoProfile -File 'C:/Users/mc_bl/.codex/.chatgpt-projects/g-p-6aa5eb198fd88191b7382af0eb114af4/AiBurgerClock/deploy-windows.ps1' -ReceiptPath 'C:/Users/mc_bl/.codex/.chatgpt-projects/g-p-6aa5eb198fd88191b7382af0eb114af4/AiBurgerClock/artifacts/release-2.9.4-preparation-20261116/deployment-receipt.json'
@@ -70,6 +78,6 @@ PR 병합 뒤 아래 읽기 전용 사전 확인을 먼저 실행한다. MSI Pow
 
 ## 미확인·사용자 확인
 
-- 실제 외부 배포와 운영 2.9.4는 아직 확인하지 않았다. 배포 후 트레이·상태/한도 보기, Gemini 안내와 짧은 상세/막대 없음, 다른 세 Provider·모바일 송신 갱신은 사용자 확인이 필요하다.
+- 외부 Git 사전 확인·배포 통과와 2.9.4 트레이·상태/한도 보기·Gemini 안내·다른 세 Provider 정상은 위 사용자 확인으로 기록했다. Gemini 짧은 상세와 2.9.4의 모바일 송신 갱신은 이번 사용자 보고에서 별도로 확인되지 않았다.
 - 실제 OS 알림 노출·재부팅/절전 복귀·반복 트레이 기록 억제는 이번 1회 후보 smoke가 대신하지 않는다.
 - Mac 빌드/배포는 별도 담당 범위이며 이 PR에서 Mac 파일을 변경하지 않는다.
