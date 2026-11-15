@@ -35,11 +35,11 @@ internal static class MacDetailTipSmoke
     internal static QuotaState[] Quotas(QuotaState codex, QuotaState claude, QuotaState gemini, QuotaState xai) =>
         [codex with { Error = "조회 실패 합성 예시 " + LongToken + new string('c', 200) }, claude, gemini, xai];
 
-    // A Gemini box with the most windows the parser accepts (64, synthetic model names) and an overlong error: a detail
-    // taller than any screen.
-    internal static QuotaState TallGemini(QuotaState gemini, DateTimeOffset now) => gemini with
+    // A Claude box with the most windows the parser accepts (64, synthetic names) and an overlong error: a detail taller than
+    // any screen. (It was a Gemini box until the Gemini query was stopped in #156; the Gemini detail is now a short fixed text.)
+    internal static QuotaState TallClaude(QuotaState claude, DateTimeOffset now) => claude with
     {
-        Reading = new(QuotaProvider.Gemini, Enumerable.Range(0, 64)
+        Reading = new(QuotaProvider.Claude, Enumerable.Range(0, 64)
             .Select(i => new QuotaWindow($"synthetic-model-{i}", $"합성 모델 {i + 1}", (i * 7) % 100, now.AddHours(i + 1), 300)).ToList()),
         Error = "조회 실패 합성 예시 " + LongToken + new string('d', 300)
     };
@@ -104,9 +104,13 @@ internal static class MacDetailTipSmoke
         }
 
         // A detail taller than the screen: capped to the usable height and scrollable, nothing lost.
-        QuotaState[] tallQuotas = [codex, claude, TallGemini(gemini, now), xai];
-        string tall = QuotaPanelModel.Sections(tallQuotas, now).First(section => section.Provider == QuotaProvider.Gemini).Detail;
-        CheckText("tall Gemini box", tall);
+        QuotaState[] tallQuotas = [codex, TallClaude(claude, now), gemini, xai];
+        string tall = QuotaPanelModel.Sections(tallQuotas, now).First(section => section.Provider == QuotaProvider.Claude).Detail;
+        CheckText("tall Claude box", tall);
+        // Gemini's detail is the short fixed text even beside a tall one: it never scrolls and carries no old value.
+        string geminiDetail = QuotaPanelModel.Sections(tallQuotas, now).First(section => section.Provider == QuotaProvider.Gemini).Detail;
+        Check(geminiDetail.Contains(QuotaNames.GeminiUnavailableText, StringComparison.Ordinal) && geminiDetail.Length < tall.Length / 4,
+            "the Gemini detail is not the short fixed notice text.");
         const double ProbeHeight = 600;
         MacDetailTip.OverflowProbe probe = MacDetailTip.Probe(tall, ProbeHeight);
         Check(probe.Natural > ProbeHeight && probe.Overflows && probe.FrameHeight == ProbeHeight,
@@ -115,11 +119,11 @@ internal static class MacDetailTipSmoke
             $"tall detail: the end of the text is not reachable by scrolling (top {probe.TopOffset}, end {probe.EndOffset}, max {probe.MaxOffset}, viewport {probe.Viewport}, text {probe.Natural}).");
         string fits = QuotaPanelModel.Sections(quotas, now).First(section => section.Provider == QuotaProvider.Claude).Detail;
         Check(!MacDetailTip.Probe(fits, ProbeHeight).Overflows, "a detail that fits the screen must not scroll.");
-        string tallResult = $"tall Gemini detail (64 synthetic windows + long error, {probe.Natural:0}pt) capped at {ProbeHeight:0}pt and scrolls to its end; ";
+        string tallResult = $"tall Claude detail (64 synthetic windows + long error, {probe.Natural:0}pt) capped at {ProbeHeight:0}pt and scrolls to its end; ";
         if (panel.IsShown)
         {
             panel.Update(schedule, statuses, tallQuotas, false, now.AddMinutes(5), "");
-            CGRect? frame = panel.ShowDetailTip(null, QuotaProvider.Gemini);
+            CGRect? frame = panel.ShowDetailTip(null, QuotaProvider.Claude);
             Check(frame is { } f && MacDetailTip.IsShown, "tall detail: the tip did not appear.");
             NSScreen screen = NSScreen.Screens.FirstOrDefault(item => item.Frame.IntersectsWith(frame!.Value)) ?? NSScreen.MainScreen!;
             Check(screen.VisibleFrame.Contains(frame!.Value), $"tall detail: the tip {frame.Value} is not inside the screen {screen.VisibleFrame}.");
