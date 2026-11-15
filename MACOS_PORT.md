@@ -3085,3 +3085,41 @@ Gemini 한도를 Google AI Studio API 키 방식으로 바꿀 수 있는지 임�
 - 실제 계정·실제 `agy` 조회는 하지 않았다(앱이 실행하지 않는지만 프로세스 표본으로 확인).
 - 배포된 앱이 새 소스로 바뀐 뒤의 팝오버 화면은 아직 없다(배포는 메인 채팅 지시 뒤).
 - 77절의 미확인 항목(마우스 휠·스크롤러 드래그, 여러 디스플레이의 긴 팁, 모든 디스플레이가 덮였을 때의 SKIP 출력)은 그대로다.
+
+## 82. 0.9.5 정리 · 배포
+
+2026-11-16. Mac 0.9.4 / build 31 → **0.9.5 / build 32**. 앱 코드 변경 없이 공통 원본의 Gemini 한도 자동 조회 중단(PR #156)과 Mac 반영(PR #157)을 번들에 싣는다. 이 앱은 Antigravity CLI `agy`를 실행하지 않고 Gemini 한도를 조회하지 않는다. 자세한 동작은 [81절](#81-gemini-한도-자동-조회-중단pr-156의-mac-반영).
+
+### 버전 필드
+`Version` 0.9.5, `AssemblyVersion` 0.9.5.0, `FileVersion` 0.9.5.0, `ApplicationVersion` 32(`CFBundleVersion`). `Info.plist`에는 적지 않는다.
+
+### 기준
+| 항목 | 값 |
+|---|---|
+| 버전 변경 커밋(앱 소스) | `b9b4c47d…`(PR #158, 브랜치 `claude/mac-0-9-5`) |
+| PR #158 병합(배포 기준 main) | `3ec83eb29808d4c8dac89cdb64e06d78fa509605` |
+| 도구 | SDK 10.0.404, macOS 워크로드 27.2.10000, Xcode 27.2 (0.9.4와 같음) |
+
+### 배포 전 검증 (임시 사본, 저장소 경로 아님, PR #158 본문과 같음)
+Shared.Tests **291,495건 PASS**, `bash Mac/build.sh` 옵션 없음 경고 0 / 오류 0, smoke 1회 종료 코드 0·**SKIP 0**·FAIL 0, smoke 동안 프로세스 표본 103회에서 자식 0·`agy` 0줄, LaunchServices 2 → `lsregister -u` 후 1.
+
+### 저장소 경로 빌드와 실행 (Claude Code 수행, 2026-11-16 07시대)
+메인 채팅의 "배포 진행" 지시(PR #158 병합 뒤, main `3ec83eb`)에 따라 AGENTS.md "Mac 배포" 절 순서로 진행했다. 경로 변경이 없어 로그인 항목·옛 번들 폴더 정리는 필요 없었다.
+
+| 항목 | 결과 |
+|---|---|
+| 시작 전 | **실행 중인 앱 없음**(0.9.4 앱이 재부팅·종료 등으로 이미 내려가 있었다). `--quit-running`은 종료할 대상이 없어 그대로 통과 |
+| 빌드 | `bash Mac/build.sh --quit-running`(옵션 없음), 경고 0 / 오류 0 |
+| 번들 | `CFBundleShortVersionString` **0.9.5**, `CFBundleVersion` **32**, `codesign --verify --deep --strict` 통과 |
+| 실행 | `open`으로 실행. 프로세스 **1개**(PID 71315), 앱의 자식 프로세스 없음 |
+| SHA-256 실행 파일 | `6de35854e24deeb4a4b0579f3ba04683938925fcbba7911e1c01a7b75c742ace` |
+| SHA-256 앱 DLL | `28c315bbb341c0f06b4300dd470ff8baf16179e8917a2af3e7b83cad2f0d75b1` (`Contents/MonoBundle/AI Burger Clock.dll`) |
+| LaunchServices 등록 수 | **1** |
+| 로그인 항목(BTM) | 식별자 `2.com.hydron75.aiburgerclock`가 `enabled, allowed`, URL은 같은 번들 경로, Generation 4 그대로. 자동 실행 설정은 건드리지 않았다 |
+| **agy 미실행 확인** | 실행 후 약 6초 뒤부터 0.25초 간격 40회(약 10초), 이어서 0.1초 간격 100회(약 10초) 프로세스 목록을 표본: `agy` 프로세스 **0줄**, 앱의 자식 프로세스 0. 시작 직후 6초와 표본 간격보다 짧게 살아 있는 프로세스는 볼 수 없는 한계가 있다. 앱 통합 로그(`subsystem`) 조회는 0줄이라 근거로 쓰지 않았다 |
+
+### 수행하지 않은 검증
+- 배포된 0.9.5의 팝오버 화면(Gemini 박스가 안내 한 줄과 4줄 팁으로 나오는지)은 사용자 확인이 필요하다.
+- 실제 VoiceOver 낭독, 실제 계정·`agy` 조회는 하지 않았다.
+- 시작 직후 6초 동안의 프로세스 표본은 없다(실행 뒤 대기 시간).
+- 77절의 미확인 항목(마우스 휠·스크롤러 드래그, 여러 디스플레이의 긴 팁, 모든 디스플레이가 덮였을 때의 SKIP 출력)은 그대로다.
