@@ -14,8 +14,9 @@ internal sealed class MacStatusPanel : IDisposable
     private const int ContentWidth = PanelWidth - Inset * 2;
     private const int CardPadding = 8;
     // Quota area grows with its boxes up to this height; only extra model-scoped rows scroll.
-    // 340pt holds the three standard boxes (ChatGPT, Claude, Gemini: about 326pt with usage bars). The fourth box
-    // (xAI weekly credits) does not fit: the limit stays and the quota area scrolls instead of growing the popover.
+    // 340pt was sized for three boxes with usage bars (ChatGPT, Claude, Gemini: about 326pt). Gemini now shows only its fixed
+    // one-line notice (no bars), so the four boxes (incl. xAI weekly credits) are much shorter than before; the limit stays and
+    // the quota area scrolls instead of growing the popover whenever the boxes exceed it.
     private const int MaximumQuotaHeight = 340;
     // On a short screen the quota area gives up height first, down to about one box. Below that the whole panel
     // scrolls (four provider cards plus a box do not fit a 1024x640 screen), with the quota area at its full height.
@@ -306,12 +307,15 @@ internal sealed class MacStatusPanel : IDisposable
                     bars[row.WindowId] = bar;
                 }
                 var metadata = QuotaLine(lines, 10);
+                // Hidden before the refit below, so the quota area is measured without the blank line (see Apply further down).
+                metadata.Hidden = section.Metadata.Text.Length == 0;
                 quotaStack.AddArrangedSubview(box);
                 quotas[section.Provider] = new(box, heading, scope, rows, bars, metadata);
             }
             // Box count or rows changed: refit so no gap is left above the check times.
             FitContent();
         }
+        bool metadataVisibilityChanged = false;
         foreach (QuotaSectionText section in sections)
         {
             QuotaViews views = quotas[section.Provider];
@@ -336,7 +340,17 @@ internal sealed class MacStatusPanel : IDisposable
                 }
             }
             Apply(views.Metadata, section.Metadata);
+            // A box whose shared metadata line is empty (the Gemini fixed notice) shows no blank line under its row:
+            // a hidden arranged subview takes no room in the stack.
+            bool hideMetadata = section.Metadata.Text.Length == 0;
+            if (views.Metadata.Hidden != hideMetadata)
+            {
+                views.Metadata.Hidden = hideMetadata;
+                metadataVisibilityChanged = true;
+            }
         }
+        // The boxes got taller or shorter without a structure change: refit so no gap is left below them.
+        if (metadataVisibilityChanged) FitContent();
     }
 
     private static NSTextField QuotaLine(NSStackView box, int size, bool bold = false)
@@ -719,6 +733,8 @@ internal sealed class MacStatusPanel : IDisposable
         internal bool Split { get; private set; }
         internal bool ValueFits { get; private set; } = true;
         internal string VisibleName => name.StringValue;
+        // Smoke: the painted text of an unsplit row (the Gemini notice) is shown whole on its one line, not tail-truncated.
+        internal bool TextFits => !Split && !name.Hidden && Measure(name.StringValue) <= (double)nameWidth.Constant + 0.01;
         internal string VisibleValue => value.Hidden ? "" : value.StringValue;
         internal double NameWidth => nameWidth.Constant;
         internal double ValueWidth => valueWidth.Constant;
@@ -973,7 +989,7 @@ internal sealed class MacStatusPanel : IDisposable
         if (Math.Abs(X(quotaTitle) - titleX) > 0.5)
             throw new InvalidOperationException($"Quota title x {X(quotaTitle)} differs from the panel title x {titleX}.");
         NSView[] boxed = cards.Values.SelectMany(card => new NSView[] { card.Heading, card.Official, card.Reason })
-            .Concat(quotas.Values.SelectMany(q => new NSView?[] { q.Heading, q.Scope, q.Metadata }.OfType<NSView>()))
+            .Concat(quotas.Values.SelectMany(q => new NSView?[] { q.Heading, q.Scope, q.Metadata }.OfType<NSView>()).Where(view => !view.Hidden))
             .ToArray();
         // A label's frame sits a couple of points left of where its text starts (its alignment rect), so
         // a bar must start at its row's alignment-rect x, i.e. exactly where that row's text starts, and
@@ -1164,6 +1180,11 @@ internal sealed class MacStatusPanel : IDisposable
         QuotaRowView row = quotas[provider].Rows[windowId];
         return (row.VisibleName, row.VisibleValue, row.NameWidth, row.ValueWidth, row.ValueFits);
     }
+
+    // Smoke: whether a box's unsplit row text is shown whole on one line, and whether its metadata line takes no room.
+    internal bool QuotaRowTextFits(QuotaProvider provider, string windowId) => quotas[provider].Rows[windowId].TextFits;
+    internal bool QuotaMetadataHidden(QuotaProvider provider) => quotas[provider].Metadata.Hidden;
+    internal nfloat QuotaBoxHeight(QuotaProvider provider) => quotas[provider].Box.Frame.Height;
 
     // Smoke: spoken value of a row and the time layer of its bar.
     internal string QuotaRowSpoken(QuotaProvider provider, string windowId) =>

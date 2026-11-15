@@ -40,10 +40,10 @@ internal static class MacXaiQuotaSmoke
             return panel.Verify(schedule, providers, states);
         }
 
-        // ---- The standard fixture: four boxes, one more bar than the three-box fixture (7 -> 8) ----
+        // ---- The standard fixture: four boxes. Gemini is a bar-less notice since #156, so the bars are ChatGPT 2 + Claude 3 + xAI 1 ----
         MacStatusPanel.Layout standard = Show(codex, claude, gemini, xai);
         Check(panel.QuotaBoxCount == 4, $"expected four quota boxes, found {panel.QuotaBoxCount}.");
-        Check(panel.QuotaBarCount == 8, $"expected 8 bars in total (7 + the xAI weekly row), found {panel.QuotaBarCount}.");
+        Check(panel.QuotaBarCount == 6, $"expected 6 bars in total (2 + 3 + the xAI weekly row, none for Gemini), found {panel.QuotaBarCount}.");
         Check(panel.QuotaRowIds(QuotaProvider.Xai).SequenceEqual([RowId]), "the xAI box must hold exactly the weekly credit row.");
         QuotaSectionText section = QuotaPanelModel.Sections([codex, claude, gemini, xai], now).Single(item => item.Provider == QuotaProvider.Xai);
         Check(section.Heading.Text == "xAI" && section.Scope is null, "the xAI box heading must be 'xAI' with no scope line.");
@@ -66,16 +66,18 @@ internal static class MacXaiQuotaSmoke
             "the bar description must be the shared xAI detail (provider, weekly credits, KST).");
         bool helpIsDetail = access.Help == section.Detail;
 
-        // ---- Popover height: the limit stays; the fourth box scrolls inside the quota area ----
+        // ---- Popover height: the limit stays; the boxes scroll inside the quota area whenever they exceed it ----
+        // (Before #156 the four boxes always exceeded it; with the one-line Gemini notice they may fit, so this is not asserted.)
         panel.FitFor(standard.UsableHeight);
-        Check(panel.QuotaRowsHeight > MaximumQuotaAreaHeight, $"four boxes ({panel.QuotaRowsHeight:0}pt) were expected to exceed the {MaximumQuotaAreaHeight}pt limit.");
+        nfloat fourRows = panel.QuotaRowsHeight;
         Check(panel.QuotaAreaHeight <= MaximumQuotaAreaHeight + 0.5, $"quota area {panel.QuotaAreaHeight:0}pt is taller than its {MaximumQuotaAreaHeight}pt limit.");
         Check(standard.Size.Height <= standard.UsableHeight, "the popover is taller than this screen's usable height.");
         foreach (QuotaProvider provider in new[] { QuotaProvider.Codex, QuotaProvider.Claude, QuotaProvider.Gemini, QuotaProvider.Xai })
             Check(panel.QuotaBoxScrollsIntoView(provider), $"the {provider} box cannot be scrolled fully into view in the quota area.");
         MacStatusPanel.Layout three = Show(codex, claude, gemini);
-        Check(Math.Abs(three.Size.Height - standard.Size.Height) <= 40 && three.Size.Height <= standard.Size.Height + 0.5,
-            $"the fourth box changed the popover from {three.Size.Height:0}pt to {standard.Size.Height:0}pt (expected at most the quota area limit).");
+        nfloat threeRows = panel.QuotaRowsHeight;
+        Check(standard.Size.Height >= three.Size.Height - 0.5 && standard.Size.Height - three.Size.Height <= fourRows - threeRows + 0.5,
+            $"the fourth box changed the popover from {three.Size.Height:0}pt to {standard.Size.Height:0}pt (expected at most the {fourRows - threeRows:0}pt the boxes grew).");
         Show(codex, claude, gemini, xai);
 
         // ---- Colors under both appearances: current vs previous vs no value ----
@@ -99,7 +101,7 @@ internal static class MacXaiQuotaSmoke
 
         // ---- Previous value: gray fill, previous mark in the text, no time layer ----
         Show(codex, claude, gemini, Reading(now, 37, previous: true));
-        Check(panel.QuotaBarCount == 8 && panel.QuotaBarTime(QuotaProvider.Xai, RowId).Elapsed is null,
+        Check(panel.QuotaBarCount == 6 && panel.QuotaBarTime(QuotaProvider.Xai, RowId).Elapsed is null,
             "a previous xAI value must keep its bar without a time layer.");
         Check(panel.QuotaRowText(QuotaProvider.Xai, RowId).Contains("(이전)", StringComparison.Ordinal), "a previous xAI value must keep its previous mark.");
         Check(panel.QuotaRowSpoken(QuotaProvider.Xai, RowId) == panel.QuotaRowText(QuotaProvider.Xai, RowId),
@@ -107,11 +109,11 @@ internal static class MacXaiQuotaSmoke
 
         // ---- No value: a failed or waiting reading has a text row and no bar ----
         Show(codex, claude, gemini, new QuotaState(QuotaProvider.Xai, null, Error: "조회 실패 예시"));
-        Check(panel.QuotaBarCount == 7 && panel.QuotaRowIds(QuotaProvider.Xai).Length == 1, "a failed xAI reading must show one text row and no bar.");
+        Check(panel.QuotaBarCount == 5 && panel.QuotaRowIds(QuotaProvider.Xai).Length == 1, "a failed xAI reading must show one text row and no bar.");
         string failed = panel.QuotaRowText(QuotaProvider.Xai, panel.QuotaRowIds(QuotaProvider.Xai)[0]);
         Check(failed == "조회 실패 예시", "a failed xAI reading must show the shared error text.");
         Show(codex, claude, gemini, new QuotaState(QuotaProvider.Xai));
-        Check(panel.QuotaBarCount == 7, "a waiting xAI reading must have no bar.");
+        Check(panel.QuotaBarCount == 5, "a waiting xAI reading must have no bar.");
         string waiting = panel.QuotaRowText(QuotaProvider.Xai, panel.QuotaRowIds(QuotaProvider.Xai)[0]);
         Check(waiting.StartsWith("한도 조회 대기", StringComparison.Ordinal), $"a waiting xAI reading shows '{waiting}'.");
 
@@ -121,9 +123,9 @@ internal static class MacXaiQuotaSmoke
         Show(codex, claude, gemini, xai);
         panel.FitFor(standard.UsableHeight);
 
-        return $"xAI weekly credit box (4 boxes, 8 bars; row text, spoken name + shared detail" +
+        return $"xAI weekly credit box (4 boxes, 6 bars; row text, spoken name + shared detail" +
                $"{(helpIsDetail ? " + accessibility help" : "; accessibility help differs from tooltip")}; fill #202020 light / #EBEBEB dark, previous #808080, " +
-               $"each >= 3:1 from the panel and from each other; previous/failed/waiting/100% rows; quota area capped at {MaximumQuotaAreaHeight}pt, " +
-               $"all four boxes scroll into view, popover {standard.Size.Height:0}pt)";
+               $"each >= 3:1 from the panel and from each other; previous/failed/waiting/100% rows; quota area capped at {MaximumQuotaAreaHeight}pt " +
+               $"(boxes {fourRows:0}pt), all four boxes scroll into view, popover {standard.Size.Height:0}pt)";
     }
 }

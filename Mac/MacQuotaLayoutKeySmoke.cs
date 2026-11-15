@@ -39,6 +39,8 @@ internal static class MacQuotaLayoutKeySmoke
             foreach (QuotaSectionText section in sections)
             {
                 string[] expected = section.Rows.Select(row => row.WindowId).Order(StringComparer.Ordinal).ToArray();
+                if (section.Provider == QuotaProvider.Gemini)
+                    Check(expected.SequenceEqual([""]), $"{name}: the Gemini box must hold only the fixed notice row, not the passed window IDs.");
                 string[] actual = panel.QuotaRowIds(section.Provider);
                 Check(expected.SequenceEqual(actual, StringComparer.Ordinal),
                     $"{name}: {section.Provider} shows {actual.Length} rows [{string.Join(", ", actual.Select(id => "'" + id + "'"))}] but the model has {expected.Length} [{string.Join(", ", expected.Select(id => "'" + id + "'"))}].");
@@ -46,6 +48,8 @@ internal static class MacQuotaLayoutKeySmoke
             steps++;
         }
         QuotaState Claude(params string[] ids) => Boxes(QuotaProvider.Claude, 20, ids);
+        // Gemini's query is stopped (#156): the shared model shows one fixed notice row (ID "") whatever windows are passed, so the
+        // IDs below only prove that the Gemini box never follows them (checked in Step).
         QuotaState Gemini(params string[] ids) => Boxes(QuotaProvider.Gemini, 5, ids);
         QuotaState Xai(params string[] ids) => Boxes(QuotaProvider.Xai, 30, ids);
 

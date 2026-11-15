@@ -7,12 +7,13 @@ internal static class MacQuotaRowImages
 {
     internal const string EnvironmentVariable = "AIBURGERCLOCK_SMOKE_IMAGES";
 
-    internal static QuotaState Gemini(DateTimeOffset now, string longName, string suffix) => new(QuotaProvider.Gemini,
-        new(QuotaProvider.Gemini, [
-            new("gemini-5h", "5시간", 0, now.AddHours(5), 300),
-            new("gemini-weekly", "주간", 99.9, now.AddDays(6), 10080),
-            new("gemini-model:1:a", "주간 " + longName + " A" + suffix, 37, now.AddDays(4), 10080),
-            new("gemini-model:2:b", "주간 " + longName + " B" + suffix, 100, now.AddMinutes(14), 10080)]),
+    // Long model-style names in a Claude box (the Gemini box is a fixed notice since #156).
+    internal static QuotaState Claude(DateTimeOffset now, string longName, string suffix) => new(QuotaProvider.Claude,
+        new(QuotaProvider.Claude, [
+            new("session", "5시간", 0, now.AddHours(5), 300),
+            new("weekly_all", "주간", 99.9, now.AddDays(6), 10080),
+            new("weekly_model:1:a", "주간 " + longName + " A" + suffix, 37, now.AddDays(4), 10080),
+            new("weekly_model:2:b", "주간 " + longName + " B" + suffix, 100, now.AddMinutes(14), 10080)]),
         LastSuccessfulCheckUtc: now, NextCheckUtc: now.AddHours(1));
 
     // Synthetic review pictures of the four-card panel, light and dark, on the screens used for the xAI conversion: this Mac's usable
@@ -103,7 +104,7 @@ internal static class MacQuotaRowImages
     }
 
     internal static void Render(MacStatusPanel panel, ScheduleSnapshot schedule, IReadOnlyList<ProviderStatus> providers,
-        QuotaState codex, QuotaState claude, DateTimeOffset now, string prefix)
+        QuotaState codex, DateTimeOffset now, string prefix)
     {
         string? folder = Environment.GetEnvironmentVariable(EnvironmentVariable);
         if (string.IsNullOrEmpty(folder)) return;
@@ -116,7 +117,7 @@ internal static class MacQuotaRowImages
         ];
         foreach (var (sceneName, longName, suffix) in scenes)
         {
-            QuotaState[] states = [codex, claude, Gemini(now, longName, suffix)];
+            QuotaState[] states = [codex, Claude(now, longName, suffix)];
             panel.Update(schedule, providers, states, false, now.AddMinutes(5), "");
             panel.Verify(schedule, providers, states);
             if (panel.SnapshotPng() is { } png)
