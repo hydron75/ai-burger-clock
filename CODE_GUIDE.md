@@ -1,5 +1,7 @@
 # 소스코드, 쉬운 말로 읽기
 
+**Windows 2.9.4 후보 기준:** main `5fbfc6c`의 #155 및 #156/#157을 포함합니다. Windows 버전 세 필드와 문서만 변경하며 공통/Windows C#·Mac·패키지·배포 스크립트는 바꾸지 않습니다. 사이트 버전 17 선행 배포·아이폰 사용자 확인, 후보·receipt·외부 명령은 [2.9.4 기록](MAINTENANCE_2_9_4.md)을 봅니다. 이전 검증·파일 수 기록은 유지합니다.
+
 **#156 추가 정리(2026-11-16):** Gemini 상세는 `QuotaPanelModel.GeminiUnavailableDetail`의 짧은 4줄 안내를 사용합니다. `ParseGemini`·Mac agy 후보·미도달 표시 분기와 전용 `GeminiQuotaTests.cs`/`GeminiModelQuotaTests.cs`를 제거했습니다. 두 검사 파일 삭제 후 현재 추적 C#은 루트·Properties 125 + Mac 23 + 공통 검사 입구 1 = 149개입니다. 이전 배포 당시 파일 수 기록은 그대로 둡니다.
 
 **진행 중 · Gemini 한도 자동 조회 중단:** QuotaNames의 고정 정책으로 monitor/client/표시/알림을 차단하며 AccountQuotaClient의 agy 실행·버전·프로토콜 코드를 제거합니다. Windows 송신은 Gemini none/null/null/[]로 고정하고 enum/v2 Provider 4개와 공식 상태는 유지합니다. 기존 C# 파일만 바꾸며 Mac native 검증은 별도로 요청합니다. [FAQ·호환·과거 기록](GEMINI_ANTIGRAVITY_QUOTAS.md).

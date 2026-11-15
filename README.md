@@ -1,6 +1,6 @@
-# AI Burger Clock 2.9.3
+# AI Burger Clock 2.9.4
 
-**개발 중 변경(2026-11-16):** Gemini 한도는 Antigravity 공식 FAQ에 따라 앱 자동 조회를 중단하고 안내만 표시합니다. agy 실행 코드를 제거하며 Gemini 공식 서비스 상태는 유지합니다. 버전·배포는 아직 바꾸지 않습니다. [결정 근거·이전 캐시·호환](GEMINI_ANTIGRAVITY_QUOTAS.md).
+**Windows 2.9.4 후보 준비(2026-11-16 KST):** main `5fbfc6c`의 #156/#157 Gemini 한도 자동 조회 중단과 #155 Windows 화면 검사 개선을 포함합니다. Gemini는 안내와 짧은 상세만 표시하고 공식 상태는 유지합니다. 이 PR은 Windows 버전 세 필드와 문서만 변경합니다. 사이트 버전 17을 먼저 비공개 배포했고 아이폰 표시 정상은 사용자 확인입니다. 운영 EXE는 교체/실행하지 않습니다. [후보·검사·해시·receipt·외부 명령](MAINTENANCE_2_9_4.md).
 
 **Windows 2.9.3 후보 준비(2026-11-14 KST):** main `fe84da2`의 #150/#151 xAI 네이티브 JSON 전환을 포함합니다. RSS와 data.x.ai summary·incidents를 집계하고 Agent SDK·필수 19개 slug·범위 미확인/부분 실패 규칙을 사용합니다. 이 버전 PR은 Windows 버전 세 필드와 문서만 변경합니다. 사이트는 버전 16으로 먼저 비공개 배포했고 기준 커밋·xAI 정상·새 상세 출처를 확인했습니다. [후보·검사·해시·receipt·외부 명령](MAINTENANCE_2_9_3.md). 화면 검사 진단 개선은 별도 PR이며 이번 후보에 포함하지 않습니다. 아래 과거 준비·배포 기록은 유지합니다.
 
