@@ -371,6 +371,8 @@ Windows smoke와 수동 테스트 빌드는 PR별 산출물 폴더에서 직접 
 
 ## 더 자세히 보기
 
+- [MAINTENANCE_2_9_4.md](MAINTENANCE_2_9_4.md): Gemini 한도 자동 조회 중단 후보·사이트 사용자 확인·검사·해시·외부 배포 절차.
+
 - [2.9.2 후보·Review Agents 필수 목록·사이트 선행 배포·외부 명령](MAINTENANCE_2_9_2.md)
 - [2.9.1 후보·xAI 링크 제거·상세 통일·SQLite·receipt·사이트 배포 순서](MAINTENANCE_2_9_1.md)
 - [2.9.0 후보 준비·Grok 주간 크레딧·receipt·외부 배포](MAINTENANCE_2_9_0.md)

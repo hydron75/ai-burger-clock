@@ -2,6 +2,7 @@
 
 2026-11-16 KST. 기준 main `5fbfc6c7b1872ace712871710a3d42b464682442`(#156 병합).
 이 PR은 Windows Version/AssemblyVersion/FileVersion과 문서만 변경한다. 공통/Windows C#·Mac·패키지·배포 스크립트는 바꾸지 않는다.
+PR 생성 중 main에 #158이 병합되어 `3ec83eb29808d4c8dac89cdb64e06d78fa509605`가 됐다. 추가 차이는 Mac 버전 필드·Mac/README 두 파일뿐이며 Windows/공통 원본 차이는 0건이다. 검증한 후보·receipt를 유지하고 새 main과 병합 가능함을 확인했다.
 
 ## 2.9.3 이후 포함 변경
 
