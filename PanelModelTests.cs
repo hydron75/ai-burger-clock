@@ -355,20 +355,20 @@ internal static class PanelModelTests
             CheckedAtUtc: now, LastSuccessfulCheckUtc: now, NextCheckUtc: now.AddHours(6));
         var geminiSection = QuotaPanelModel.Section(gemini, now);
         same(geminiSection.Heading.Text, "Gemini", "Gemini keeps its product heading");
-        same(geminiSection.Scope!.Text, "Antigravity · Gemini 모델", "Gemini quota scope is explicit");
-        check(geminiSection.Scope.Tone == PanelTone.Muted && geminiSection.Scope.Detail.Contains("Gemini Apps") &&
-            geminiSection.Scope.Detail.Contains("Claude/GPT"), "Gemini scope does not imply web Apps or third-party subscription limits");
-        same(geminiSection.Rows[0].Text, "5시간  2% 사용 · 약 2시간 후 리셋", "Gemini five-hour countdown");
-        same(geminiSection.Rows[1].Text, "주간  0.3% 사용 · 약 6일 후 리셋", "Gemini weekly fraction is not the rounded TSV value");
-        check(geminiSection.Rows.All(row => row.Tone == PanelTone.Good), "Gemini uses existing quota tones");
-        check(geminiSection.Rows[0].Detail.StartsWith("Gemini 한도 · 모든 시각 KST\n범위: " + QuotaPanelModel.GeminiScopeDetail + "\n", StringComparison.Ordinal) &&
-            geminiSection.Rows[0].Detail.Contains("서버 데이터 생성 시각을 보장하지 않습니다"), "Gemini details preserve freshness qualification");
+        check(geminiSection.Scope is null, "Gemini query-disabled notice has no live quota scope line");
+        same(geminiSection.Rows.Single().Text, "조회 안 함 · Antigravity 정책에 따라 자동 조회하지 않음",
+            "Gemini supplied values are replaced by the fixed policy notice");
+        check(geminiSection.Rows.Single() is { UsedPercent: null, ElapsedPercent: null, ComparisonText: null,
+            Tone: PanelTone.Muted }, "Gemini displays no observed bar or time comparison");
+        same(geminiSection.Metadata.Text, "", "Gemini hides past and next observation times");
+        check(geminiSection.Detail.Contains("마지막 성공: —\n다음 조회: —\n최근 시도: —", StringComparison.Ordinal) &&
+            !geminiSection.Detail.Contains("2026", StringComparison.Ordinal), "Gemini detail does not reveal cached observation times");
         same(QuotaPanelModel.Section(new QuotaState(QuotaProvider.Gemini), now).Rows[0].Text,
-            "한도 조회 대기 · agy CLI 로그인 필요", "Gemini placeholder identifies agy");
+            QuotaNames.GeminiUnavailableText, "Gemini empty state has the same policy notice");
         var oldGemini = QuotaPanelModel.Section(gemini with { IsPrevious = true }, now);
-        same(oldGemini.Heading.Text, "Gemini · 이전 조회값", "failed Gemini quota is explicitly previous");
-        check(oldGemini.Rows.All(row => row.Tone == PanelTone.Muted) && oldGemini.Scope!.Text == geminiSection.Scope.Text,
-            "previous Gemini values retain scope and muted tones");
+        same(oldGemini.Heading.Text, "Gemini", "Gemini cached values cannot add a previous-reading heading");
+        check(oldGemini.Rows.SequenceEqual(geminiSection.Rows) && oldGemini.Detail == geminiSection.Detail,
+            "previous Gemini values retain only the unchanged disabled notice");
         check(QuotaPanelModel.Sections([codex, claude, gemini], now).Count == 3,
             "all three quota sections are available without replacing health data");
     }

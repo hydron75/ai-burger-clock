@@ -41,6 +41,14 @@ internal static class QuotaRecoveryNotificationTests
             var engine = new QuotaRecoveryNotifications();
             Check(engine.Observe(Provider(provider, 1, Row()), true) is null, provider + " silent first observation");
             QuotaRecoveryAlert? alert = engine.Observe(Provider(provider, 2, Row(used: 20)), true);
+            if (provider == QuotaProvider.Gemini)
+            {
+                Check(alert is null, "Gemini cannot produce recovery alerts from synthetic observations");
+                Check(engine.Observe(Provider(provider, 3, Row()), true) is null &&
+                    engine.Observe(Provider(provider, 4, Row(used: 0)), true) is null,
+                    "Disabled Gemini never arms a later recovery");
+                continue;
+            }
             Check(alert is not null, provider + " exhausted row recovers");
             Check(alert!.Provider == provider && alert.Sequence == 2 && alert.WindowIds.SequenceEqual(new[] { "synthetic-session" }),
                 provider + " provider/sequence/identity preserved");
@@ -71,11 +79,11 @@ internal static class QuotaRecoveryNotificationTests
         Check(distinctProviders.Observe(Provider(QuotaProvider.Codex, 5, Row()), true) is null, "Codex baseline created");
         Check(distinctProviders.Observe(Provider(QuotaProvider.Claude, 1, Row(used: 10)), true) is null,
             "another provider does not inherit exhaustion or sequence");
-        Check(distinctProviders.Observe(Provider(QuotaProvider.Gemini, 1, Row()), true) is null, "Gemini baseline independent");
+        Check(distinctProviders.Observe(Provider(QuotaProvider.Xai, 1, Row()), true) is null, "xAI baseline independent");
         Check(distinctProviders.Observe(Provider(QuotaProvider.Codex, 6, Row(used: 10)), true)?.Provider == QuotaProvider.Codex,
             "Codex transition remains independent");
-        Check(distinctProviders.Observe(Provider(QuotaProvider.Gemini, 2, Row(used: 10)), true)?.Provider == QuotaProvider.Gemini,
-            "Gemini transition remains independent");
+        Check(distinctProviders.Observe(Provider(QuotaProvider.Xai, 2, Row(used: 10)), true)?.Provider == QuotaProvider.Xai,
+            "xAI transition remains independent");
 
         var multi = Seed(Row(), Row("synthetic-weekly", minutes: 10080, label: "합성 주간 전체"),
             Row("synthetic-model", minutes: 10080, label: "합성 주간 모델"));

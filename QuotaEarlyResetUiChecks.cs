@@ -94,7 +94,7 @@ internal static class QuotaEarlyResetUiChecks
             await context!.Initialization;
             await Wait(() => context.ProviderMonitor is { IsRefreshing: false } &&
                 context.ProviderMonitor.Snapshot().All(state => state.LastSuccessfulCheckUtc.HasValue) &&
-                context.QuotaMonitor!.Snapshot().All(state => state.LastSuccessfulCheckUtc.HasValue &&
+                context.QuotaMonitor!.Snapshot().Where(state => QuotaNames.IsQueryEnabled(state.Provider)).All(state => state.LastSuccessfulCheckUtc.HasValue &&
                     !state.IsRefreshing && !state.IsPrevious), "private initial status and quota requests finish");
             await FlushUi();
         }
@@ -185,7 +185,8 @@ internal static class QuotaEarlyResetUiChecks
                 "Early reset tray preference starts available and OFF with shared wording");
             Check(context.QuotaEarlyResetMenuItem.ToolTipText == QuotaEarlyResetText.MenuDetail && nativeAlerts.Count == 0,
                 "Initial private live successes remain silent and the early reset menu explains opt-in scope");
-            Check(Enum.GetValues<QuotaProvider>().All(provider => HasDecision(provider, "Excluded", "Disabled")),
+            Check(Enum.GetValues<QuotaProvider>().Where(QuotaNames.IsQueryEnabled).All(provider => HasDecision(provider, "Excluded", "Disabled")) &&
+                Decisions().All(entry => entry.GetProperty("Provider").GetString() != "Gemini"),
                 "Windows records the OFF early reset decision for each private successful Provider query");
             var menu = context.TrayIcon.ContextMenuStrip!;
             Check(menu.Items.IndexOf(context.QuotaEarlyResetMenuItem) == menu.Items.IndexOf(context.QuotaRecoveryMenuItem) + 1 &&
@@ -201,6 +202,16 @@ internal static class QuotaEarlyResetUiChecks
                 "Actual early reset menu Click persists its independent opt-in with shared feedback");
             Check(client.TotalCalls == calls && handler.RequestCount == serviceCalls,
                 "Changing early reset opt-in does not trigger quota or service queries");
+            client.Set(QuotaProvider.Gemini, Rows(60, 60));
+            await Refresh(QuotaProvider.Gemini);
+            client.Set(QuotaProvider.Gemini, Rows(0, 0));
+            await Refresh(QuotaProvider.Gemini);
+            Drain();
+            Check(client.TotalCalls == calls && nativeAlerts.Count == 0 &&
+                context.RecentEarlyReset(QuotaProvider.Gemini) is null &&
+                context.QuotaMonitor!.Snapshot().Single(state => state.Provider == QuotaProvider.Gemini) is
+                    { Reading: null, IsRefreshing: false, LastSuccessfulCheckUtc: null, NextCheckUtc: null },
+                "Gemini opt-in refreshes cannot query, infer an early reset, retain history or submit a native banner");
             await SetSaveFailure(true);
             try
             {
@@ -438,10 +449,10 @@ internal static class QuotaEarlyResetUiChecks
             Check(nativeAlerts.Count == before,
                 "A queued early reset is discarded after its affected reset time expires rather than presented as current");
 
-            client.Set(QuotaProvider.Gemini, Rows(5, 5), block: true);
-            Task pending = Task.Run(() => context.QuotaMonitor.RefreshOnceAsync(QuotaProvider.Gemini));
-            await Wait(() => context.QuotaMonitor.Snapshot().Single(item => item.Provider == QuotaProvider.Gemini).IsRefreshing,
-                "a cancellable background synthetic Gemini request starts");
+            client.Set(QuotaProvider.Claude, Rows(5, 5), block: true);
+            Task pending = Task.Run(() => context.QuotaMonitor.RefreshOnceAsync(QuotaProvider.Claude));
+            await Wait(() => context.QuotaMonitor.Snapshot().Single(item => item.Provider == QuotaProvider.Claude).IsRefreshing,
+                "a cancellable background synthetic Claude request starts");
             await context.QuotaMonitor.StopAsync();
             bool canceled = false;
             try { await pending; }
@@ -521,7 +532,7 @@ internal static class QuotaEarlyResetUiChecks
             Check(cacheResetAlerts.Count == 1 && cacheResetAlerts[0] is
                 { Provider: QuotaProvider.Codex, Recovery: null, EarlyReset.Windows.Count: 1 } &&
                 context.QuotaEarlyResetNotificationsEnabled && !context.QuotaRecoveryNotificationsEnabled &&
-                cacheResetClient.TotalCalls == Enum.GetValues<QuotaProvider>().Length,
+                cacheResetClient.TotalCalls == Enum.GetValues<QuotaProvider>().Count(QuotaNames.IsQueryEnabled),
                 "A cached weekly early reset delivers one native request from normal startup reads without changing recovery or polling again");
             Check(HasDecision(QuotaProvider.Codex, "Alert", "Alert"),
                 "The first-live cached early reset candidate is recorded in its completed local diagnostic row");
@@ -602,7 +613,7 @@ internal static class QuotaEarlyResetUiChecks
             var deadline = DateTime.UtcNow.AddSeconds(5);
             while (context.ProviderMonitor is not { IsRefreshing: false } ||
                 context.ProviderMonitor.Snapshot().Any(state => !state.LastSuccessfulCheckUtc.HasValue) ||
-                context.QuotaMonitor!.Snapshot().Any(state => !state.LastSuccessfulCheckUtc.HasValue || state.IsRefreshing))
+                context.QuotaMonitor!.Snapshot().Any(state => QuotaNames.IsQueryEnabled(state.Provider) && (!state.LastSuccessfulCheckUtc.HasValue || state.IsRefreshing)))
             {
                 if (DateTime.UtcNow > deadline) throw new TimeoutException("Private delivery failure host startup");
                 await Task.Delay(20);

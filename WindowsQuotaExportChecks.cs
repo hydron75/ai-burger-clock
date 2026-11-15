@@ -162,6 +162,21 @@ internal static class WindowsQuotaExportChecks
             foreach (var provider in root.GetProperty("providers").EnumerateArray())
             {
                 Check(provider.EnumerateObject().Select(p => p.Name).SequenceEqual(new[] { "provider", "reading", "lastSuccessUtc", "nextCheckUtc", "rows" }), "Provider allowlist");
+                if (provider.GetProperty("provider").GetString() == "Gemini")
+                {
+                    Check(provider.GetProperty("reading").GetString() == "none" &&
+                        provider.GetProperty("lastSuccessUtc").ValueKind == JsonValueKind.Null &&
+                        provider.GetProperty("nextCheckUtc").ValueKind == JsonValueKind.Null &&
+                        provider.GetProperty("rows").GetArrayLength() == 0,
+                        "Gemini historical readings are suppressed as none/null/null/empty rows");
+                    continue;
+                }
+                Check(provider.GetProperty("reading").GetString() == "ok" &&
+                    provider.GetProperty("lastSuccessUtc").GetDateTimeOffset() == f.Time.GetUtcNow() &&
+                    provider.GetProperty("nextCheckUtc").GetDateTimeOffset() == f.Time.GetUtcNow().AddHours(1) &&
+                    provider.GetProperty("rows").GetArrayLength() == 1 &&
+                    provider.GetProperty("rows")[0].GetProperty("usedPercent").GetDouble() == 37.5,
+                    "enabled Provider readings and timestamps remain unchanged");
                 Check(provider.GetProperty("rows")[0].EnumerateObject().Select(p => p.Name).SequenceEqual(new[] { "id", "label", "usedPercent", "resetsAtUtc", "windowMinutes", "isPrevious" }), "row allowlist");
             }
             string json = Encoding.UTF8.GetString(f.Http.Last.Body);
@@ -172,7 +187,8 @@ internal static class WindowsQuotaExportChecks
             f.States = f.States.Select(s => s with { IsPrevious = true }).ToArray();
             f.Service.Completed(f.States); await f.Service.WaitForIdleAsync();
             using var previous = Body(f.Http.Last);
-            Check(previous.RootElement.GetProperty("providers").EnumerateArray().All(p => p.GetProperty("reading").GetString() == "previous"), "failed read keeps previous readings");
+            Check(previous.RootElement.GetProperty("providers").EnumerateArray().All(p => p.GetProperty("reading").GetString() ==
+                (p.GetProperty("provider").GetString() == "Gemini" ? "none" : "previous")), "failed enabled Provider read keeps previous readings while Gemini remains none");
             Check(Seq(f.Http.Last) == first + 1, "new snapshot reserves a greater sequence");
             f.States = Enum.GetValues<QuotaProvider>().Select(p => new QuotaState(p, Error: Credentials.SyntheticToken)).ToArray();
             f.Service.Completed(f.States); await f.Service.WaitForIdleAsync();
@@ -248,7 +264,7 @@ internal static class WindowsQuotaExportChecks
             {
                 client.Fail = round % 2 == 1;
                 await Task.WhenAll(Enum.GetValues<QuotaProvider>().Select(p => monitor.RefreshOnceAsync(p))).WaitAsync(TimeSpan.FromSeconds(3));
-                Check(completions == (round + 1) * Enum.GetValues<QuotaProvider>().Length, "parallel completion round has no missed or duplicate success/failure");
+                Check(completions == (round + 1) * Enum.GetValues<QuotaProvider>().Count(QuotaNames.IsQueryEnabled), "parallel completion round has no missed or duplicate enabled Provider success/failure");
             }
             Check(f.Http.Count <= 1, "slow sender never holds Provider callbacks");
             blocked.TrySetResult(new HttpResponseMessage(HttpStatusCode.OK)); await f.Service.WaitForIdleAsync();
@@ -268,12 +284,14 @@ internal static class WindowsQuotaExportChecks
             try
             {
                 monitor.Start();
-                await Wait(() => monitor.Snapshot().All(s => s.IsRefreshing && s.Reading is not null));
+                await Wait(() => monitor.Snapshot().Where(s => QuotaNames.IsQueryEnabled(s.Provider)).All(s => s.IsRefreshing && s.Reading is not null));
+                Check(monitor.Snapshot().Single(s => s.Provider == QuotaProvider.Gemini) is { IsRefreshing: false, Reading: null, NextCheckUtc: null },
+                    "startup ignores historical Gemini cache and starts no Gemini query");
                 Check(completions == 0 && f.Http.Count == 0 && f.Vault.Reads == 0, "startup/cache/start events do not export");
                 client.Gate.SetResult();
-                await Wait(() => Volatile.Read(ref completions) == Enum.GetValues<QuotaProvider>().Length);
+                await Wait(() => Volatile.Read(ref completions) == Enum.GetValues<QuotaProvider>().Count(QuotaNames.IsQueryEnabled));
                 await f.Service.WaitForIdleAsync();
-                Check(completions == Enum.GetValues<QuotaProvider>().Length && f.Http.Count > 0, "only completed live startup reads export");
+                Check(completions == Enum.GetValues<QuotaProvider>().Count(QuotaNames.IsQueryEnabled) && f.Http.Count > 0, "only completed live enabled Provider startup reads export");
             }
             finally { await monitor.StopAsync(); Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools(); }
         }
@@ -363,6 +381,29 @@ internal static class WindowsQuotaExportChecks
             f.Service.Completed(invalid); await f.Service.WaitForIdleAsync();
             Check(f.Http.Count == 0 && f.Service.Status.Failure == WindowsQuotaExportFailure.Payload && f.Service.Status.RetryAtUtc is null, "out-of-contract label fails export without truncating app data");
             Check(invalid[0].Reading!.Windows[0].Label.Length == 81, "sender never edits the existing reading");
+        }
+
+        using (var f = new Fixture())
+        {
+            await f.Service.Initialization;
+            const string historical = "SYNTHETIC-PRIVATE-GEMINI-HISTORY";
+            var gemini = f.States.Single(s => s.Provider == QuotaProvider.Gemini) with
+            {
+                Reading = new(QuotaProvider.Gemini, [new(historical, new string('x', 81), double.NaN, f.Time.GetUtcNow().AddDays(2), -1)]),
+                IsPrevious = true,
+                IsRefreshing = true
+            };
+            f.States = f.States.Select(s => s.Provider == QuotaProvider.Gemini ? gemini : s).ToArray();
+            f.Service.Completed(f.States); await f.Service.WaitForIdleAsync();
+            Check(f.Http.Count == 1, "invalid disabled Gemini history cannot reject the other Provider export");
+            using var doc = Body(f.Http.Last);
+            var exported = doc.RootElement.GetProperty("providers")[2];
+            Check(exported.GetProperty("provider").GetString() == "Gemini" && exported.GetProperty("reading").GetString() == "none" &&
+                exported.GetProperty("lastSuccessUtc").ValueKind == JsonValueKind.Null && exported.GetProperty("nextCheckUtc").ValueKind == JsonValueKind.Null &&
+                exported.GetProperty("rows").GetArrayLength() == 0 && !Encoding.UTF8.GetString(f.Http.Last.Body).Contains(historical, StringComparison.Ordinal),
+                "disabled Gemini suppresses stale/refreshing/invalid historical rows before validation and serialization");
+            Check(ReferenceEquals(gemini.Reading, f.States.Single(s => s.Provider == QuotaProvider.Gemini).Reading) && double.IsNaN(gemini.Reading!.Windows[0].UsedPercent),
+                "Gemini export suppression never mutates the source snapshot");
         }
 
         using (var f = new Fixture())

@@ -79,7 +79,8 @@ internal sealed class AccountQuotaMonitor : IDisposable
         lock (sync)
         {
             if (disposed) return;
-            runner ??= Task.WhenAll(Enum.GetValues<QuotaProvider>().Select(p => Task.Run(() => RunAsync(p))));
+            runner ??= Task.WhenAll(Enum.GetValues<QuotaProvider>().Where(QuotaNames.IsQueryEnabled)
+                .Select(p => Task.Run(() => RunAsync(p))));
         }
     }
 
@@ -89,7 +90,7 @@ internal sealed class AccountQuotaMonitor : IDisposable
         {
             if (disposed || lifetime.IsCancellationRequested) return;
             foreach (var provider in states.Keys)
-                if ((queueWhileRefreshing || !states[provider].IsRefreshing) && wakes[provider].CurrentCount == 0)
+                if (QuotaNames.IsQueryEnabled(provider) && (queueWhileRefreshing || !states[provider].IsRefreshing) && wakes[provider].CurrentCount == 0)
                     wakes[provider].Release();
         }
     }
@@ -142,6 +143,7 @@ internal sealed class AccountQuotaMonitor : IDisposable
 
     internal async Task RefreshOnceAsync(QuotaProvider provider, CancellationToken cancellationToken = default)
     {
+        if (!QuotaNames.IsQueryEnabled(provider)) return;
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, lifetime.Token);
         if (!await gates[provider].WaitAsync(0, linked.Token).ConfigureAwait(false)) return;
         QuotaObservation? observation = null;

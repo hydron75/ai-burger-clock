@@ -25,13 +25,13 @@ internal static class QuotaPanelModel
     public const string AccessibleName = "개인 계정 사용량";
     public const string ShowQuotas = "한도 보기";
     public const string ShowStatus = "상태 보기";
-    public const string ToggleDetail = "ChatGPT (Work/Codex) · Claude · Gemini (Antigravity) · xAI (Grok 주간 크레딧) 계정 한도. 일반 채팅의 모든 모델 한도를 뜻하지 않습니다. 공식 서비스 상태는 그대로 유지합니다.";
+    public const string ToggleDetail = "ChatGPT (Work/Codex) · Claude · xAI (Grok 주간 크레딧) 계정 한도. Gemini는 자동 조회하지 않습니다. 일반 채팅의 모든 모델 한도를 뜻하지 않습니다. 공식 서비스 상태는 그대로 유지합니다.";
     public const string Caption = "진함: 사용 · 연함/선: 조회 당시 시간\n마우스 올리기: 상세 · Refresh: 다시 조회";
     public const string CodexScope = "Work/Codex";
     public const string CodexScopeDetail = "ChatGPT 계정의 Work/Codex 한도입니다. 일반 채팅의 모든 모델 한도를 뜻하지 않습니다.";
     public const string ClaudeScopeDetail = "Claude Code CLI의 /usage 응답으로 받은 구독 사용 한도입니다.";
     public const string GeminiScope = "Antigravity · Gemini 모델";
-    public const string GeminiScopeDetail = "agy CLI의 Antigravity Gemini 모델 그룹 한도입니다. Gemini Apps 웹·모바일의 전체 한도가 아니며, Antigravity의 Claude/GPT 모델 그룹과 크레딧은 포함하지 않습니다.";
+    public const string GeminiScopeDetail = "Antigravity · 앱 자동 조회 중단";
     public const string XaiScopeDetail = "Grok CLI의 ACP _x.ai/billing 응답으로 받은 주간 크레딧 한도입니다.";
 
     // A previous value, or one whose reset time has passed, is never shown as current.
@@ -71,6 +71,16 @@ internal static class QuotaPanelModel
 
     public static QuotaSectionText Section(QuotaState state, DateTimeOffset now, QuotaEarlyResetAlert? recentEarlyReset = null)
     {
+        if (!QuotaNames.IsQueryEnabled(state.Provider))
+        {
+            string detail = $"{ProviderNames.Quota(state.Provider)} 한도 · 모든 시각 KST\n" +
+                "범위: Antigravity · 앱 자동 조회 중단\n\n리셋·한도 복원 예정\n조회 안 함\n\n" +
+                "시간·사용량 비교\n조회 안 함\n\n조회 상태\n마지막 성공: —\n다음 조회: —\n최근 시도: —\n" +
+                QuotaNames.GeminiUnavailableText + "\n\n조회 주기\n조회 안 함\n참고: 저장된 이전 값도 표시하지 않습니다.\n" +
+                "공식 CLI 응답 수신 시각: — · 조회 안 함";
+            return new(state.Provider, new(ProviderNames.Quota(state.Provider), PanelTone.Normal, detail), null,
+                [new(QuotaNames.GeminiUnavailableText, PanelTone.Muted, detail)], new("", PanelTone.Muted, detail));
+        }
         bool previous = state.IsPrevious;
         bool codex = state.Provider == QuotaProvider.Codex;
         bool gemini = state.Provider == QuotaProvider.Gemini;

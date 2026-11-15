@@ -1,5 +1,7 @@
 # 소스코드, 쉬운 말로 읽기
 
+**진행 중 · Gemini 한도 자동 조회 중단:** QuotaNames의 고정 정책으로 monitor/client/표시/알림을 차단하며 AccountQuotaClient의 agy 실행·버전·프로토콜 코드를 제거합니다. Windows 송신은 Gemini none/null/null/[]로 고정하고 enum/v2 Provider 4개와 공식 상태는 유지합니다. 기존 C# 파일만 바꾸며 Mac native 검증은 별도로 요청합니다. [FAQ·호환·과거 기록](GEMINI_ANTIGRAVITY_QUOTAS.md).
+
 **별도 Draft · Windows 화면 검사 진단:** 운영 앱·버전은 그대로 두고 `SmokeUiProbe.cs`를 검사 전용으로 추가합니다. 합성 host의 생성 후 DPI/물리 배치·메시지 큐 완료, 부모 범위 입력 계약과 직접 WM_NCHITTEST, 정리 전 실패 메타데이터를 담당합니다. 이 파일 추가 후 추적 C# 파일은 루트·Properties 127개 + Mac 23개 + 공통 검사 입구 1개 = 151개이며 공통 제품 원본은 추가하지 않습니다. 2.9.3 후보 PR과 분리합니다. [검사 범위·진단·개인정보 계약](WINDOWS_SMOKE_DIAGNOSTICS.md).
 
 **Windows 2.9.3 후보 기준:** main `fe84da2`의 #150/#151 네이티브 xAI JSON 전환을 포함합니다. Windows 버전 세 필드와 문서만 변경하며 공통/Windows C#·Mac·패키지·배포 스크립트는 바꾸지 않습니다. 사이트 버전 16 선행 배포와 후보·receipt·외부 배포 명령은 [2.9.3 기록](MAINTENANCE_2_9_3.md)을 봅니다. 화면 검사 진단 개선은 별도 Draft PR로 분리합니다.

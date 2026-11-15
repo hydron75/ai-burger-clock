@@ -9,6 +9,8 @@ internal static class LiveQuotaProbe
         int failures = 0;
         foreach (var provider in Enum.GetValues<QuotaProvider>())
         {
+            if (!QuotaNames.IsQueryEnabled(provider))
+            { Console.WriteLine(QuotaNames.GeminiUnavailableText); continue; }
             try
             {
                 var reading = await client.ReadAsync(provider, CancellationToken.None);

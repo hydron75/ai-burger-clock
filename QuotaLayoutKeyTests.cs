@@ -46,7 +46,7 @@ internal static class QuotaLayoutKeyTests
             foreach (var ids in new[] { new[] { first }, new[] { first, "a" }, new[] { "a", first } })
             {
                 string identity = System.Text.Json.JsonSerializer.Serialize(ids);
-                string key = Key(Section(QuotaProvider.Gemini, ids));
+                string key = Key(Section(QuotaProvider.Claude, ids));
                 Check(!signatures.TryGetValue(key, out string? previous) || previous == identity,
                     "opaque delimiter/Unicode/empty/long IDs remain structurally distinct");
                 signatures[key] = identity;

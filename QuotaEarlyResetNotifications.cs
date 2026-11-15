@@ -38,6 +38,8 @@ internal sealed class QuotaEarlyResetNotifications
 
     public QuotaEarlyResetEvaluation Evaluate(QuotaObservation observation, bool enabled)
     {
+        if (observation is null) return new(null, "InvalidObservation");
+        if (!QuotaNames.IsQueryEnabled(observation.Provider)) return new(null, "QueryDisabled");
         if (!Valid(observation)) return new(null, "InvalidObservation");
         baselines.TryGetValue(observation.Provider, out Baseline? baseline);
         if (baseline is not null && observation.Sequence <= baseline.Sequence)

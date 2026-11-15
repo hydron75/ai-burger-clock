@@ -57,6 +57,13 @@ internal static class QuotaEarlyResetNotificationTests
         {
             string name = provider + "/" + id;
             QuotaEarlyResetAlert? alert = Transition(provider, minutes, id);
+            if (provider == QuotaProvider.Gemini)
+            {
+                Check(alert is null, name + " disabled Provider cannot emit early-reset alerts");
+                Check(Transition(provider, minutes, id, oldUsed: 100, used: 0) is null,
+                    name + " disabled Provider ignores even an exhausted-to-zero change");
+                continue;
+            }
             Check(alert is not null && alert.Provider == provider && alert.Sequence == 2 && alert.ContinuityId == 1, name + " metadata");
             Check(alert!.CheckedAtUtc == now.AddHours(1) && alert.Windows.Count == 1 && alert.Windows[0].Id == id &&
                 alert.Windows[0].WindowMinutes == minutes, name + " row and receipt retained");
@@ -140,7 +147,9 @@ internal static class QuotaEarlyResetNotificationTests
         foreach (QuotaProvider provider in Enum.GetValues<QuotaProvider>())
         {
             QuotaEarlyResetAlert? alert = independent.Observe(For(provider, 2, now.AddHours(1), Changed()), true);
-            Check(alert?.Provider == provider && independent.Recent(provider) == alert, "separate latest history " + provider);
+            Check(provider == QuotaProvider.Gemini
+                ? alert is null && independent.Recent(provider) is null
+                : alert?.Provider == provider && independent.Recent(provider) == alert, "separate latest history or disabled Provider " + provider);
         }
         Check(independent.Recent((QuotaProvider)999) is null, "unknown Provider has no history");
 
@@ -344,6 +353,14 @@ internal static class QuotaEarlyResetNotificationTests
             QuotaObservation cached = Cached(provider);
             var startup = new QuotaEarlyResetNotifications();
             QuotaEarlyResetEvaluation detected = startup.Evaluate(cached, true);
+            if (provider == QuotaProvider.Gemini)
+            {
+                Check(detected.Alert is null && startup.Recent(provider) is null,
+                    "Disabled Gemini cache cannot seed an alert or session history");
+                Check(startup.Evaluate(cached with { Sequence = 2 }, true).Alert is null,
+                    "Repeated disabled Gemini observations remain silent");
+                continue;
+            }
             Check(detected is { Reason: "Alert", Alert: not null } && detected.Alert.Sequence == 1 &&
                 detected.Alert.Windows[0] is { PreviousUsedPercent: 17, UsedPercent: 0 } &&
                 detected.Alert.Windows[0].PreviousResetUtc == detected.Alert.Windows[0].ResetUtc,

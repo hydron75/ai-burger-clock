@@ -72,6 +72,20 @@ internal static class QuotaPresentationTests
                  new("missing", "모델별", 0, null)]),
                 CheckedAtUtc: now, LastSuccessfulCheckUtc: now, NextCheckUtc: now.AddHours(6));
             var section = QuotaPanelModel.Section(state, now);
+            if (provider == QuotaProvider.Gemini)
+            {
+                Check(section.Rows.Single() is { UsedPercent: null, ElapsedPercent: null, ComparisonText: null }
+                    && section.Rows.Single().Text == QuotaNames.GeminiUnavailableText,
+                    "Gemini hides incoming quota values and comparisons behind the policy notice");
+                Check(section.Heading.Text == "Gemini" && section.Scope is null && section.Metadata.Text == "",
+                    "Gemini hides scope and observation metadata");
+                Check(QuotaPanelModel.Section(state with { IsPrevious = true, IsRefreshing = true,
+                    Error = "합성 오류", CacheError = "합성 캐시 오류" }, now).Detail == section.Detail &&
+                    QuotaPanelModel.Section(new(provider), now).Detail == section.Detail &&
+                    !section.Detail.Contains("2026", StringComparison.Ordinal),
+                    "Gemini policy detail ignores old, empty, in-flight and failed query states");
+                continue;
+            }
             Check(section.Rows[0].Text == "5시간  12.3% 사용 · 약 25분 후 리셋", provider + " shared used row");
             Check(section.Rows[1].Text == "주간  92% 사용 · 약 7시간 후 리셋", provider + " weekly units");
             Check(section.Rows[0].UsedPercent == 12.34 && section.Rows[2].UsedPercent == 0, provider + " precise observed bar data");
@@ -119,6 +133,12 @@ internal static class QuotaPresentationTests
                 CheckedAtUtc: now, LastSuccessfulCheckUtc: now, NextCheckUtc: now.AddHours(6));
             var fresh = QuotaPanelModel.Section(state, now);
             var later = QuotaPanelModel.Section(state, now.AddMinutes(17));
+            if (provider == QuotaProvider.Gemini)
+            {
+                Check(fresh.Rows.Single().ElapsedPercent is null && later.Rows.Single().ComparisonText is null
+                    && fresh.Detail == later.Detail, "Gemini never reveals pacing or changing receipt age");
+                continue;
+            }
             Check(fresh.Rows[0].ElapsedPercent == 40 && fresh.Rows[1].ElapsedPercent == 25 &&
                 fresh.Rows[2].ElapsedPercent is null, provider + " optional time layer uses only eligible windows");
             Check(fresh.Rows[0].ComparisonText == "시간 경과 40% · 균등 사용 기준보다 15%p 빠름 · 방금 전 기준" &&
@@ -187,6 +207,18 @@ internal static class QuotaPresentationTests
             _ = engine.Observe(Reading(1, now.AddHours(-1), 60, now.AddDays(2)), true);
             var observation = Reading(2, now, 5, now.AddDays(6));
             var recent = engine.Observe(observation, true)!;
+            if (provider == QuotaProvider.Gemini)
+            {
+                Check(recent is null && engine.Recent(provider) is null,
+                    "Gemini does not retain synthetic early-reset history for presentation");
+                var hidden = new QuotaEarlyResetAlert(provider, 2, 1, now,
+                    [new("synthetic-weekly", "합성 주간", 10080, 60, 5, now.AddDays(2), now.AddDays(6))]);
+                var disabledState = new QuotaState(provider, observation.Reading, now, now, now.AddHours(1));
+                Check(QuotaPanelModel.Section(disabledState, now, hidden).Detail ==
+                    QuotaPanelModel.Section(new(provider), now).Detail,
+                    "Gemini ignores externally supplied historical reset alerts");
+                continue;
+            }
             var state = new QuotaState(provider, observation.Reading, now, now, now.AddHours(1));
             var original = QuotaPanelModel.Section(state, now);
             var detailed = QuotaPanelModel.Section(state, now, recent);

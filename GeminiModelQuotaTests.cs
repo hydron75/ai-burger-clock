@@ -136,7 +136,12 @@ internal static class GeminiModelQuotaTests
 
     private static void PacingAndRecovery(Action<bool, string> check, QuotaReading reading)
     {
-        var state = new QuotaState(QuotaProvider.Gemini, reading, Now, Now, Now.AddHours(6));
+        var disabled = QuotaPanelModel.Section(new(QuotaProvider.Gemini, reading, Now, Now, Now.AddHours(6)), Now);
+        check(disabled.Rows.Single() is { UsedPercent: null, ElapsedPercent: null, ComparisonText: null }
+            && disabled.Rows.Single().Text == QuotaNames.GeminiUnavailableText,
+            "Gemini model windows remain parsable but cannot appear as live quota rows");
+        // Exercise generic model-window presentation and recovery with an enabled synthetic Provider.
+        var state = new QuotaState(QuotaProvider.Claude, reading with { Provider = QuotaProvider.Claude }, Now, Now, Now.AddHours(6));
         var section = QuotaPanelModel.Section(state, Now);
         check(section.Rows.Count == 3 && section.Rows[2].Text.StartsWith("주간 Gemini Synthetic Model  60% 사용", StringComparison.Ordinal), "panel displays the scoped row after common weekly");
         check(section.Rows[2].ElapsedPercent is > 42 and < 43 && section.Rows[2].ComparisonText!.Contains("균등 사용 기준보다", StringComparison.Ordinal), "model weekly has a time layer, boundary and shared accessibility comparison");
@@ -152,7 +157,8 @@ internal static class GeminiModelQuotaTests
 
         var engine = new QuotaRecoveryNotifications();
         long sequence = 0;
-        QuotaRecoveryAlert? Observe(QuotaReading value) => engine.Observe(new(QuotaProvider.Gemini, ++sequence, Now.AddSeconds(sequence), value), true);
+        QuotaRecoveryAlert? Observe(QuotaReading value) => engine.Observe(new(QuotaProvider.Claude, ++sequence, Now.AddSeconds(sequence),
+            value with { Provider = QuotaProvider.Claude }), true);
         check(Observe(AccountQuotaParsers.ParseGemini(Data())) is null, "common-only live response seeds quietly");
         check(Observe(reading) is null, "first appearance of an available model window is not recovery");
         check(Observe(Read(Model(fraction: 0))) is null, "model exhaustion arms quietly");

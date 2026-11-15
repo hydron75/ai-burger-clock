@@ -206,7 +206,7 @@ internal static class QuotaSchedulingTests
         {
             (QuotaProvider.Codex, 20d, QuotaCheckReason.Regular),
             (QuotaProvider.Claude, 95d, QuotaCheckReason.LowRemaining),
-            (QuotaProvider.Gemini, 100d, QuotaCheckReason.Exhausted)
+            (QuotaProvider.Codex, 100d, QuotaCheckReason.Exhausted)
         })
         {
             used = percent;
@@ -222,14 +222,14 @@ internal static class QuotaSchedulingTests
         }
 
         fail = true;
-        await monitor.RefreshOnceAsync(QuotaProvider.Gemini);
+        await monitor.RefreshOnceAsync(QuotaProvider.Codex);
         QuotaPollingDiagnostic failed = Read(log).Entries[^1];
         check(!failed.Succeeded && failed.ConsecutiveFailures == 1
             && failed.Reason == QuotaCheckReason.FailureRetry.ToString()
             && failed.NextCheckUtc == now.AddMinutes(15) && failed.SelectedResetUtc is null,
             "a retry tied with an exhausted deadline records failure retry without changing the deadline");
-        check(State(monitor, QuotaProvider.Gemini).IsPrevious
-            && State(monitor, QuotaProvider.Gemini).LastSuccessfulCheckUtc == Now,
+        check(State(monitor, QuotaProvider.Codex).IsPrevious
+            && State(monitor, QuotaProvider.Codex).LastSuccessfulCheckUtc == Now,
             "diagnostics neither convert a failure into success nor replace the previous verified reading");
 
         fail = false;
@@ -271,7 +271,7 @@ internal static class QuotaSchedulingTests
 
     private static async Task HourlyDiagnosticIntegrationTestsAsync(string directory, Action<bool, string> check)
     {
-        foreach (QuotaProvider provider in Enum.GetValues<QuotaProvider>())
+        foreach (QuotaProvider provider in new[] { QuotaProvider.Codex, QuotaProvider.Claude, QuotaProvider.Xai })
         {
             var log = new QuotaPollingDiagnosticLog(Path.Combine(directory, "quota-hourly-diagnostics-" + provider));
             DateTimeOffset now = Now;
@@ -403,8 +403,8 @@ internal static class QuotaSchedulingTests
             Task.FromResult(new QuotaReading(provider, [Window(20)]))), utcNow: () => Now, diagnosticLog: log);
         int observations = 0;
         monitor.Succeeded += _ => observations++;
-        await monitor.RefreshOnceAsync(QuotaProvider.Gemini);
-        QuotaState state = State(monitor, QuotaProvider.Gemini);
+        await monitor.RefreshOnceAsync(QuotaProvider.Codex);
+        QuotaState state = State(monitor, QuotaProvider.Codex);
         check(state.LastSuccessfulCheckUtc == Now && state.NextCheckUtc == Now.AddHours(1)
             && !state.IsPrevious && state.Error.Length == 0 && observations == 1,
             "a diagnostic write failure cannot fail polling, change its deadline or suppress a successful observation");
@@ -429,7 +429,7 @@ internal static class QuotaSchedulingTests
         using (var restarted = new AccountQuotaMonitor(client, store, () => Now))
         {
             restarted.Start();
-            await MonitorTests.WaitUntilAsync(() => restarted.Snapshot().All(state =>
+            await MonitorTests.WaitUntilAsync(() => restarted.Snapshot().Where(state => state.Provider != QuotaProvider.Gemini).All(state =>
                 state.CheckedAtUtc.HasValue && !state.IsRefreshing), milliseconds: 5000);
             await restarted.StopAsync();
             QuotaCache? compact = await store.ReadQuotaAsync(QuotaProvider.Claude);
@@ -447,7 +447,7 @@ internal static class QuotaSchedulingTests
             ? advanced : new QuotaReading(provider, [Window(20)]));
         using var again = new AccountQuotaMonitor(client, store, () => inOldBand);
         again.Start();
-        await MonitorTests.WaitUntilAsync(() => again.Snapshot().All(state =>
+        await MonitorTests.WaitUntilAsync(() => again.Snapshot().Where(state => state.Provider != QuotaProvider.Gemini).All(state =>
             state.CheckedAtUtc.HasValue && !state.IsRefreshing), milliseconds: 5000);
         await again.StopAsync();
         QuotaCache? persisted = await store.ReadQuotaAsync(QuotaProvider.Claude);

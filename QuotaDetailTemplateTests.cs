@@ -32,12 +32,29 @@ internal static class QuotaDetailTemplateTests
                 Scope = section.Scope is {} scope ? scope with { Detail = "" } : null,
                 Rows = section.Rows.Select(row => row with { Detail = "" }), Metadata = section.Metadata with { Detail = "" } };
             string hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(unchanged))));
-            Check(hash == NonDetailHashes[key], key + " preserves every field other than Detail against the pre-change baseline");
+            if (state.Provider == QuotaProvider.Gemini)
+                Check(section.Heading with { Detail = "" } == new QuotaLine("Gemini", PanelTone.Normal, "") &&
+                    section.Scope is null && section.Metadata with { Detail = "" } == new QuotaLine("", PanelTone.Muted, "") &&
+                    section.Rows.Select(row => row with { Detail = "" }).SequenceEqual(
+                        new[] { new QuotaLine("조회 안 함 · Antigravity 정책에 따라 자동 조회하지 않음", PanelTone.Muted, "") }),
+                    key + " has the exact text-only disabled section contract");
+            else
+                Check(hash == NonDetailHashes[key], key + " preserves every field other than Detail against the pre-change baseline");
         }
         foreach (var provider in Enum.GetValues<QuotaProvider>())
         {
             var state = QuotaPresentationTests.DetailFixtures(now).First(f => f.State.Provider == provider).State;
             var empty = QuotaPanelModel.Section(state with { Reading = new(provider, []) }, now);
+            if (provider == QuotaProvider.Gemini)
+            {
+                var hidden = new QuotaEarlyResetAlert(provider, 1, 2, now,
+                    [new("synthetic-weekly", "합성 주간", 10080, 60, 5, now.AddDays(2), now.AddDays(7))]);
+                Check(empty.Rows.Single().UsedPercent is null && empty.Detail == Expected(provider, "none"),
+                    "Gemini empty windows retain the exact disabled notice");
+                Check(QuotaPanelModel.Section(state, now, hidden).Detail == empty.Detail,
+                    "Gemini session history cannot replace or extend the disabled notice");
+                continue;
+            }
             Check(empty.Rows.Count == 0 && empty.Detail.Contains("리셋·한도 복원 예정\n조회 값 없음", StringComparison.Ordinal) &&
                 empty.Detail.Contains("시간·사용량 비교", StringComparison.Ordinal), provider + " empty windows retain both sections without inventing rows");
             var recent = new QuotaEarlyResetAlert(provider, 1, 2, now,
@@ -53,11 +70,32 @@ internal static class QuotaDetailTemplateTests
 
     private static string Expected(QuotaProvider provider, string scenario)
     {
+        if (provider == QuotaProvider.Gemini)
+            return """
+                Gemini 한도 · 모든 시각 KST
+                범위: Antigravity · 앱 자동 조회 중단
+
+                리셋·한도 복원 예정
+                조회 안 함
+
+                시간·사용량 비교
+                조회 안 함
+
+                조회 상태
+                마지막 성공: —
+                다음 조회: —
+                최근 시도: —
+                조회 안 함 · Antigravity 정책에 따라 자동 조회하지 않음
+
+                조회 주기
+                조회 안 함
+                참고: 저장된 이전 값도 표시하지 않습니다.
+                공식 CLI 응답 수신 시각: — · 조회 안 함
+                """.ReplaceLineEndings("\n");
         (string name, string scope, string resetMinutes, string note) = provider switch
         {
             QuotaProvider.Codex => ("ChatGPT", "ChatGPT 계정의 Work/Codex 한도입니다. 일반 채팅의 모든 모델 한도를 뜻하지 않습니다.", "5", "—"),
             QuotaProvider.Claude => ("Claude", "Claude Code CLI의 /usage 응답으로 받은 구독 사용 한도입니다.", "5", "—"),
-            QuotaProvider.Gemini => ("Gemini", "agy CLI의 Antigravity Gemini 모델 그룹 한도입니다. Gemini Apps 웹·모바일의 전체 한도가 아니며, Antigravity의 Claude/GPT 모델 그룹과 크레딧은 포함하지 않습니다.", "5", "Gemini 사용 0% 창의 리셋은 빠른 조회 기준에서 제외합니다."),
             QuotaProvider.Xai => ("xAI", "Grok CLI의 ACP _x.ai/billing 응답으로 받은 주간 크레딧 한도입니다.", "10", "xAI 예약 조회는 최소 10분입니다. 시작·Refresh·복귀·네트워크 조회에는 적용하지 않습니다."),
             _ => throw new ArgumentOutOfRangeException(nameof(provider))
         };
@@ -105,10 +143,6 @@ internal static class QuotaDetailTemplateTests
         ["Claude/previous"] = "53472932E7ADAF8CE7241F92E256223005A4A10E9EA9C66FDFC6E61EE1CBB1E8",
         ["Claude/none"] = "9B96E8A17058749D425562A399B108600B502871341D46CB04125DE9F9156A56",
         ["Claude/error"] = "C86D8001E23A86F5D00C5AE399B53E66A82A7020AF6525DFEC1E27692554D03A",
-        ["Gemini/normal"] = "E2AD7C29E3A6AAB1F5F7C286BABA83794771AC2E730ED9B67F8094D92719A48A",
-        ["Gemini/previous"] = "148E7827AC939ED792F7F8BAEC41031872526FA6AD49E7F1B583F6CA3E9622D8",
-        ["Gemini/none"] = "C0E9A123523F5CB084188CCEC3EAA1C8F8A07F54A964CD3443BBF0C328C669AF",
-        ["Gemini/error"] = "560DDFB0CB21A29FFE39184E8DEB6197D460576530EB328411342AA3C12BB186",
         ["Xai/normal"] = "C7250220985173A40B6B0842FA04972CE8D20E2AE8297A6C5C83BFC57481538B",
         ["Xai/previous"] = "CAFBF586C5E328A0067AA291FEAE73D541F35C14CAB0DE12DCC15C8F900392DE",
         ["Xai/none"] = "7B7C32F1C48FEB8726A3563EFC88C68B71F8D1F43F9887A7DBCAFAEE60C73CA6",

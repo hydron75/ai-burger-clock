@@ -100,7 +100,7 @@ internal static class QuotaToolTipUiChecks
             }
             popup.Hide();
         }
-        foreach (var provider in Enum.GetValues<QuotaProvider>())
+        foreach (var provider in Enum.GetValues<QuotaProvider>().Where(QuotaNames.IsQueryEnabled))
         {
             string text = QuotaPanelModel.Section(new(provider), now).Detail;
             popup.Display(owner, string.Join('\n', Enumerable.Repeat(text, 10)), pointer, owner.DeviceDpi);
@@ -171,9 +171,9 @@ internal static class QuotaToolTipUiChecks
         using var view = new AccountQuotaView(() => pointer) { Dock = DockStyle.Fill };
         host.Controls.Add(view);
         var now = new DateTimeOffset(2032, 3, 4, 0, 0, 0, TimeSpan.Zero);
-        var windows = Enumerable.Range(1, 64).Select(i => new QuotaWindow("synthetic-gemini-" + i,
-            "합성 Gemini 모델 " + i, 25, now.AddDays(3.5), 10080)).ToArray();
-        var state = new QuotaState(QuotaProvider.Gemini, new(QuotaProvider.Gemini, windows),
+        var windows = Enumerable.Range(1, 64).Select(i => new QuotaWindow("synthetic-claude-" + i,
+            "합성 Claude 모델 " + i, 25, now.AddDays(3.5), 10080)).ToArray();
+        var state = new QuotaState(QuotaProvider.Claude, new(QuotaProvider.Claude, windows),
             CheckedAtUtc: now, LastSuccessfulCheckUtc: now, NextCheckUtc: now.AddHours(1), IsPrevious: true,
             Error: string.Concat(Enumerable.Repeat("합성 조회 오류의 긴 설명입니다. 실제 계정 정보가 아닙니다. ", 40)));
         bool wasVisible = owner.Visible;
@@ -182,14 +182,14 @@ internal static class QuotaToolTipUiChecks
         {
             await SmokeUiProbe.ShowFixtureAsync(host, owner);
             view.UpdateQuotas([state], now);
-            var gemini = view.Controls.OfType<Panel>().Single(panel => panel.Name == "GeminiQuotaBox");
-            activeTarget = gemini;
-            pointer = gemini.PointToScreen(new Point(4, 4));
-            view.ShowDetail(QuotaProvider.Gemini, pointer);
+            var claude = view.Controls.OfType<Panel>().Single(panel => panel.Name == "ClaudeQuotaBox");
+            activeTarget = claude;
+            pointer = claude.PointToScreen(new Point(4, 4));
+            view.ShowDetail(QuotaProvider.Claude, pointer);
             pointer = view.Details.Bounds.Location + new Size(12, 12);
             view.CheckDetailPointer(pointer);
             await SmokeUiProbe.SettleAsync(view.Details);
-            await StatusToolTipUiChecks.CheckNativeWheelAsync(view.Details, host, pointer, "quota/Gemini-64-long-error", check);
+            await StatusToolTipUiChecks.CheckNativeWheelAsync(view.Details, host, pointer, "quota/Claude-64-long-error", check);
             if (reportDirectory is not null)
             {
                 using var bitmap = new Bitmap(view.Details.Width, view.Details.Height);
@@ -198,13 +198,13 @@ internal static class QuotaToolTipUiChecks
             }
             view.HideDetail();
             var normal = QuotaPresentationTests.DetailFixtures(now).Where(f => f.Scenario == "normal" &&
-                f.State.Provider is QuotaProvider.Codex or QuotaProvider.Gemini).Select(f => f.State).ToArray();
+                f.State.Provider is QuotaProvider.Codex or QuotaProvider.Claude).Select(f => f.State).ToArray();
             view.UpdateQuotas(normal, now);
             var codex = view.Controls.OfType<Panel>().Single(panel => panel.Name == "CodexQuotaBox");
-            gemini = view.Controls.OfType<Panel>().Single(panel => panel.Name == "GeminiQuotaBox");
-            Control below = gemini;
+            claude = view.Controls.OfType<Panel>().Single(panel => panel.Name == "ClaudeQuotaBox");
+            Control below = claude;
             activeTarget = below;
-            view.ScrollControlIntoView(gemini);
+            view.ScrollControlIntoView(claude);
             pointer = codex.PointToScreen(new Point(4, 4));
             view.ShowDetail(QuotaProvider.Codex, pointer);
             pointer = below.PointToScreen(new Point(4, 4));
@@ -225,11 +225,18 @@ internal static class QuotaToolTipUiChecks
         string text = view.DetailFor(box);
         check(box.Controls.Cast<Control>().All(control => view.DetailFor(control) == text),
             "Every title, scope, quota row and bar shares one Provider tooltip: " + provider);
-        check(text.Contains("리셋·한도 복원 예정", StringComparison.Ordinal) && text.Contains(" KST", StringComparison.Ordinal) &&
-            text.Contains("실제 복원 여부는 새 조회로 확인", StringComparison.Ordinal),
-            "Provider detail includes exact reset times without promising unverified recovery: " + provider);
-        check(text.Split("기본 1시간", StringSplitOptions.None).Length == 2 && !text.Contains("사용 18% / 잔여 82%", StringComparison.Ordinal),
-            "Provider detail keeps polling explanation once instead of repeating visible percentages: " + provider);
+        if (QuotaNames.IsQueryEnabled(provider))
+        {
+            check(text.Contains("리셋·한도 복원 예정", StringComparison.Ordinal) && text.Contains(" KST", StringComparison.Ordinal) &&
+                text.Contains("실제 복원 여부는 새 조회로 확인", StringComparison.Ordinal),
+                "Provider detail includes exact reset times without promising unverified recovery: " + provider);
+            check(text.Split("기본 1시간", StringSplitOptions.None).Length == 2 && !text.Contains("사용 18% / 잔여 82%", StringComparison.Ordinal),
+                "Provider detail keeps polling explanation once instead of repeating visible percentages: " + provider);
+        }
+        else
+            check(text.Contains(QuotaNames.GeminiUnavailableText, StringComparison.Ordinal) &&
+                !text.Contains("기본 1시간", StringComparison.Ordinal) && !box.Controls.OfType<QuotaBalanceBar>().Any(),
+                "Gemini tooltip retains only its policy notice without polling, reset times or bars");
         Point pointer = view.PointToScreen(new Point(view.Width / 2, view.Height / 2));
         var owner = view.FindForm()!;
         bool ownerVisible = owner.Visible;

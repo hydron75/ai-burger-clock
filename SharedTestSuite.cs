@@ -34,11 +34,11 @@ internal static class SharedTestSuite
             Report("quota schemas/polling policy", quota);
             Report("Gemini Antigravity quota schemas/policy", GeminiQuotaTests.Run());
             Report("Gemini model weekly scopes/pacing/recovery/cache (synthetic)", await GeminiModelQuotaTests.RunAsync(directory));
-            Report("Gemini unused-reset polling/cache migration (synthetic)", await GeminiPollingPolicyTests.RunAsync(directory));
+            Report("Gemini legacy policy/disabled polling/cache preservation (synthetic)", await GeminiPollingPolicyTests.RunAsync(directory));
             Report("quota polling diagnostic history (synthetic)", await QuotaPollingDiagnosticTests.RunAsync(directory));
             Report("quota early-reset decision diagnostic history (synthetic)", await QuotaEarlyResetDiagnosticTests.RunAsync(directory));
             Report("quota scheduling reasons/reset coalescing (synthetic)", await QuotaSchedulingTests.RunAsync(directory));
-            Report("Gemini quota CLI guards/protocol (synthetic)", await GeminiQuotaClientTests.RunAsync());
+            Report("Gemini quota disabled/process/cache/alerts (synthetic)", await GeminiQuotaClientTests.RunAsync());
             Report("Grok weekly credits/ACP/scheduling/alerts/cache (synthetic)", await GrokQuotaTests.RunAsync(directory));
             Report("quota monitor/restart/cancellation (fake CLI)", await AccountQuotaMonitorTests.RunAsync());
             Report("weekly early-reset cache/decision integration (synthetic)", await WeeklyEarlyResetMonitorTests.RunAsync(directory));

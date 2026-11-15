@@ -1,5 +1,11 @@
 # 다음 개선 항목
 
+## 우선 처리 · Gemini 한도 자동 조회 중단(2026-11-16)
+
+- Antigravity [공식 FAQ](https://antigravity.google/docs/faq.md)의 소비자 요금제 제3자 앱 agy 래핑 제한에 따라 실행 코드를 제거한다. API 키 `/usage`의 빈 groups 응답은 Mac 측 확인 결과이며 대안 조회를 추가하지 않는다.
+- 박스·공통 상세는 조회 안 함 안내만, 기존 cache는 보존하되 읽기/표시/알림/송신에서 제외한다. 회복·조기 초기화는 차단하고 Gemini 공식 상태 카드·장애 알림은 유지한다. enum/송신 v2 Provider 4개는 유지한다.
+- 공통+Windows Draft로 검증하며 Mac native 확인과 사이트 준비본의 C# 비교가 필요하다. 사이트 배포·앱 버전/배포는 별도 메인 지시 이후다. [결정·호환·과거 기록](GEMINI_ANTIGRAVITY_QUOTAS.md).
+
 ## 별도 Draft: Windows 화면 검사 결정성·실패 순간 진단
 
 - 2.8.9 첫 Control clipped, #145 첫 휠 검사, #150 첫 WindowFromPoint 실패는 같은 원인으로 확정하지 않는다. #150은 동일 바이너리의 승인된 1회 재검사에서 통과했고 두 실행을 보존했다.

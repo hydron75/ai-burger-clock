@@ -79,15 +79,15 @@ internal static class QuotaRowUiChecks
             {
                 Windows = reading.Windows.Select((item, index) => item with
                 {
-                    Label = index < 2 ? item.Label : state.Provider == QuotaProvider.Gemini ? unicodeName : longName
+                    Label = index < 2 ? item.Label : state.Provider == QuotaProvider.Claude ? unicodeName : longName
                 }).ToArray()
             }
         }).ToArray();
         window.UpdateQuotas(synthetic, now);
         view.AutoScrollPosition = Point.Empty;
         SmokeTest.RenderAndCheckLayout(window, "account-quotas-long-names.png", reportDirectory);
-        view.ScrollControlIntoView(view.Controls.OfType<Panel>().Single(box => box.Name == "GeminiQuotaBox"));
-        SmokeTest.RenderAndCheckLayout(window, "account-quotas-long-names-gemini.png", reportDirectory);
+        view.ScrollControlIntoView(view.Controls.OfType<Panel>().Single(box => box.Name == "ClaudeQuotaBox"));
+        SmokeTest.RenderAndCheckLayout(window, "account-quotas-long-names-claude.png", reportDirectory);
         check(window.ClientSize == size && view.Controls.OfType<Panel>().Select(box => box.Height).SequenceEqual(heights) &&
             view.Controls.OfType<Panel>().Select(box => box.Controls.OfType<QuotaBalanceBar>().Count()).SequenceEqual(counts) &&
             !view.HorizontalScroll.Visible, "Long names do not add rows, change card/window height or introduce horizontal scrolling");
@@ -97,7 +97,7 @@ internal static class QuotaRowUiChecks
                 .Controls.OfType<AccountQuotaView.RowLabel>().ToArray();
             check(rows.Zip(section.Rows).All(pair => pair.First.NameText == pair.Second.NameText &&
                     pair.First.ValueText == pair.Second.ValueText && pair.First.Text == pair.Second.Text &&
-                    pair.First.AccessibleName == pair.Second.ReadingText && view.DetailFor(pair.First) == section.Detail),
+                    pair.First.AccessibleName == (pair.Second.ReadingText ?? pair.Second.Text) && view.DetailFor(pair.First) == section.Detail),
                 "Split Windows rows retain full names, readings and unchanged Provider detail: " + section.Provider);
         }
         window.UpdateQuotas(states, now);

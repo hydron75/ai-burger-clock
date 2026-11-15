@@ -1,5 +1,9 @@
 # Windows 모바일 사이트 한도 송신기
 
+## 2026-11-16 Gemini 조회 중단
+
+schemaVersion=2와 Provider 4개는 유지한다. Gemini는 입력에 이전 값이 있어도 `reading: none`, `lastSuccessUtc: null`, `nextCheckUtc: null`, `rows: []`로 보낸다. 시작/캐시 로드는 자동 전송을 만들지 않으며 다른 세 Provider의 조회 완료와 15분 하트비트는 그대로다. 사이트는 구형 v1/v2의 Gemini 값도 고정 조회 안 함 안내로 표시한다. 계정 값이나 오류 원문을 새 필드에 넣지 않는다. [근거와 캐시 보존 방안](GEMINI_ANTIGRAVITY_QUOTAS.md).
+
 ## 개발 중 PR A: v2 · xAI 주간 크레딧
 
 버전·배포는 유지하며 [Grok 한도 계약](GROK_QUOTAS.md)을 추가합니다. 아래 #111/v1 절은 당시 기록으로 보존합니다.

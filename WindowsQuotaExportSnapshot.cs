@@ -39,6 +39,8 @@ internal static class WindowsQuotaExportSnapshot
         var providers = Enum.GetValues<QuotaProvider>().Select(provider =>
         {
             var state = states.Single(s => s.Provider == provider);
+            if (!QuotaNames.IsQueryEnabled(provider))
+                return new WindowsQuotaExportProvider(provider.ToString(), "none", null, null, []);
             bool none = state.Reading is null;
             if (!none && (state.LastSuccessfulCheckUtc is null || state.Reading!.Windows.Count is < 1 or > 64 ||
                 state.Reading.Windows.Select(w => w.Id).Distinct(StringComparer.Ordinal).Count() != state.Reading.Windows.Count ||

@@ -36,6 +36,15 @@ internal static class QuotaRowTextTests
             var reading = new QuotaReading(provider, windows);
             var state = new QuotaState(provider, reading, now, now, now.AddHours(1));
             var section = QuotaPanelModel.Section(state, now.AddMinutes(17));
+            if (provider == QuotaProvider.Gemini)
+            {
+                Check(section.Rows.Count == 1 && section.Rows.Single().Text == QuotaNames.GeminiUnavailableText,
+                    "Gemini renders a single policy notice regardless of supplied windows");
+                Unsplit(section.Rows.Single(), "Gemini policy notice remains a text-only row");
+                Check(section.Rows.Single() is { UsedPercent: null, ElapsedPercent: null, ComparisonText: null, WindowId: "" },
+                    "Gemini policy notice contains no quota identity, values or pacing");
+                continue;
+            }
             string[] values =
             [
                 "55% 사용 · 약 2시간 43분 후 리셋",
