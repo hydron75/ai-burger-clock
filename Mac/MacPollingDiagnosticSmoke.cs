@@ -205,9 +205,9 @@ internal static class MacPollingDiagnosticSmoke
             {
                 if (section.Provider == QuotaProvider.Gemini)
                 {
-                    Check(section.Detail.Contains(QuotaNames.GeminiUnavailableText) && !section.Detail.Contains("기본 1시간") &&
+                    Check(section.Detail == QuotaPanelModel.GeminiUnavailableDetail && !section.Detail.Contains("기본 1시간") &&
                           !section.Detail.Contains("사용 0% 창의 리셋은 빠른 조회 기준에서 제외") && !section.Detail.Contains("리셋 전후 15분은"),
-                        "the Gemini detail must state that it is not queried, with no polling policy text.");
+                        "the Gemini detail must be the fixed not-queried text, with no polling policy text.");
                     continue;
                 }
                 Check(section.Detail.Contains("기본 1시간") && section.Detail.Contains("사용 90% 초과~100% 미만은 1시간") && !section.Detail.Contains("기본 6시간"),

@@ -107,10 +107,14 @@ internal static class MacDetailTipSmoke
         QuotaState[] tallQuotas = [codex, TallClaude(claude, now), gemini, xai];
         string tall = QuotaPanelModel.Sections(tallQuotas, now).First(section => section.Provider == QuotaProvider.Claude).Detail;
         CheckText("tall Claude box", tall);
-        // Gemini's detail is the short fixed text even beside a tall one: it never scrolls and carries no old value.
+        // Gemini's tip is the four fixed lines even beside a tall one (shared QuotaPanelModel.GeminiUnavailableDetail): it never
+        // scrolls and carries no old value; the box and a real tip (when the popover is shown) carry exactly this text.
         string geminiDetail = QuotaPanelModel.Sections(tallQuotas, now).First(section => section.Provider == QuotaProvider.Gemini).Detail;
-        Check(geminiDetail.Contains(QuotaNames.GeminiUnavailableText, StringComparison.Ordinal) && geminiDetail.Length < tall.Length / 4,
-            "the Gemini detail is not the short fixed notice text.");
+        Check(geminiDetail == QuotaPanelModel.GeminiUnavailableDetail && geminiDetail.Split('\n').Length == 4 &&
+              geminiDetail.StartsWith("Gemini 한도 · 조회 안 함\n", StringComparison.Ordinal) &&
+              geminiDetail.EndsWith("\n공식 서비스 상태는 상태 카드에서 확인하세요.", StringComparison.Ordinal),
+            "the Gemini tip is not the four fixed lines.");
+        Check(panel.QuotaDetail(QuotaProvider.Gemini) == geminiDetail, "the Gemini box carries a tip other than the four fixed lines.");
         const double ProbeHeight = 600;
         MacDetailTip.OverflowProbe probe = MacDetailTip.Probe(tall, ProbeHeight);
         Check(probe.Natural > ProbeHeight && probe.Overflows && probe.FrameHeight == ProbeHeight,

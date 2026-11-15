@@ -23,6 +23,13 @@ internal static class MacGeminiQuotaOffSmoke
         QuotaState codex, QuotaState claude, QuotaState xai, DateTimeOffset now)
     {
         string notice = QuotaNames.GeminiUnavailableText;
+        string[] expectedDetailLines =
+        [
+            "Gemini 한도 · 조회 안 함",
+            "Antigravity 약관상 앱에서 자동 조회하지 않습니다.",
+            "근거: https://antigravity.google/docs/faq.md",
+            "공식 서비스 상태는 상태 카드에서 확인하세요."
+        ];
         QuotaWindow[] ordinary =
         [
             new("gemini-5h", "5시간", 0, now.AddHours(5), 300),
@@ -82,10 +89,9 @@ internal static class MacGeminiQuotaOffSmoke
                 where + "the Gemini box must be heading + notice only (no scope line, no check-time line).");
             // The Provider detail is the same fixed text whatever the input: no old value, time or error leaks into it.
             string detail = panel.QuotaDetail(QuotaProvider.Gemini);
-            Check(detail == section.Detail && detail.Contains(notice, StringComparison.Ordinal), where + "the box carries a text other than the shared fixed detail.");
-            Check(!Regex.IsMatch(detail, @"\d"), where + "the fixed detail contains a number (an old value, time or percent).");
-            Check(!detail.Contains("합성", StringComparison.Ordinal) && !detail.Contains("조회 실패", StringComparison.Ordinal) && !detail.Contains("캐시 오류", StringComparison.Ordinal),
-                where + "the fixed detail repeats the input's error text.");
+            Check(detail == section.Detail && detail == QuotaPanelModel.GeminiUnavailableDetail, where + "the box carries a text other than the shared fixed detail.");
+            // The tip is exactly these four lines (shared constant, Windows wording): no old value, time, error or polling text.
+            Check(detail.Split('\n').SequenceEqual(expectedDetailLines), where + "the Gemini tip is not the four fixed lines.");
             firstDetail ??= detail;
             Check(detail == firstDetail, where + "the Provider detail depends on the input.");
             // The box, the popover and the quota rows keep the same size for every input (the 64-window input must not grow anything).
@@ -98,6 +104,10 @@ internal static class MacGeminiQuotaOffSmoke
             Check(panel.QuotaAreaHeight <= MaximumQuotaAreaHeight + 0.5 && layout.Size.Height <= layout.UsableHeight, where + "the popover or quota area is too tall.");
         }
 
+        // The tip is not just equal text: it fits the fixed-width tip without cutting off (a long line wraps, none is cut off).
+        MacDetailTip.Metrics tip = MacDetailTip.Measure(firstDetail!);
+        Check(Math.Abs((double)tip.Size.Width - MacDetailTip.Width) < 0.5 && tip.PlacedCharacters == tip.Characters,
+            $"the Gemini tip does not lay out whole at {MacDetailTip.Width}pt (placed {tip.PlacedCharacters} of {tip.Characters} characters).");
         // The box is a heading plus one line: shorter than the box of the one-row xAI credit (heading + row + bar + check-time line).
         nfloat xaiBoxHeight = panel.QuotaBoxHeight(QuotaProvider.Xai);
         Check(firstBoxHeight!.Value < xaiBoxHeight - 0.5,
@@ -137,7 +147,7 @@ internal static class MacGeminiQuotaOffSmoke
         Show(codex, claude, scenes[0].State, xai);
 
         return $"Gemini quota off ({scenes.Length} inputs incl. old values, 64 windows, refresh, error, waiting, no windows: one fixed notice row shown whole on one line, " +
-               $"no bar/time layer/check-time line/scope line, {baselineBars} bars unchanged, fixed detail without numbers or error text, Gemini box {firstBoxHeight:0.#}pt (xAI box {xaiBoxHeight:0.#}pt), " +
+               $"no bar/time layer/check-time line/scope line, {baselineBars} bars unchanged, fixed four-line tip (shared constant, fits the tip width), Gemini box {firstBoxHeight:0.#}pt (xAI box {xaiBoxHeight:0.#}pt), " +
                $"popover {firstPopover:0}pt unchanged by input, Gemini early-reset record ignored, spoken as the plain notice, 1280x800 {fitted[0]:0}pt and 1024x640 {fitted[1]:0}pt not cut off)";
     }
 }
