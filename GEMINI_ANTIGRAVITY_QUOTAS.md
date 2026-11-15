@@ -11,11 +11,13 @@
 
 ### 추가 정리(2026-11-16, Mac #157 병합 전)
 
+검증 코드 커밋은 `589031010e628dc6aacd2ed0a50e247a41ab14ca`이며 이후 커밋은 실행 기록만 보완한다. 공통 로그는 `artifacts/gemini-cleanup-shared.txt`, Windows 컴파일 로그는 `artifacts/gemini-cleanup-compile.txt`다.
+
 - `MacCliPaths.Candidates(Gemini, ...)`는 빈 목록이며 agy 실행 파일명 후보를 제거했다. `AccountQuotaParsers.ParseGemini`는 캐시 역직렬화와 무관하므로 삭제했다. 캐시는 `QuotaCache` JSON을 `QuotaJsonContext`로 읽는 별도 경로이며 데이터·스키마·키는 바꾸지 않았다. 운영 monitor는 계속 Gemini cache를 읽지 않는다.
 - `QuotaPanelModel.GeminiScope`·`GeminiScopeDetail`과 도달하지 않던 Gemini scope/login/polling 참고 분기를 제거했다. 새 공통 상세 상수는 `GeminiUnavailableDetail`이다. inline 안내 `QuotaNames.GeminiUnavailableText`는 바꾸지 않았다.
 - 파서 전용 `GeminiQuotaTests`·`GeminiModelQuotaTests` 파일과 SharedTestSuite 등록 두 건을 삭제했다. cache 보존/읽기 제외/조회 0/알림 차단 검사는 `GeminiQuotaClientTests`·`GeminiPollingPolicyTests` 등에 유지한다. Mac 후보 없음과 짧은 상세는 기존 공통 검사에서 고정한다.
 - Shared.Tests **291,495 PASS**(이전 291,685보다 190 감소: 삭제한 파서/모델 검사 182 + 짧은 상세 검사 전환 8). 기존 임시 symlink fixture 1건 SKIP은 유지한다. Windows 컴파일 경고 0·오류 0. 독립 정적 리뷰에서 확정 P1/P2 없음.
-- 사이트의 한도 박스에는 상세 팝업이 없다. 새 상세 기능은 추가하지 않고 기존 고정 안내/옛 값 숨김을 유지한다. 새 공통 코드로 C# 기준을 다시 생성하며 Gemini 16사례와 다른 세 Provider 180사례를 재비교한다. 사이트 배포는 하지 않는다.
+- 사이트의 한도 박스에는 상세 팝업이 없다. 새 상세 기능은 추가하지 않고 기존 고정 안내/옛 값 숨김을 유지한다. 새 공통 코드로 C# 기준을 다시 생성해 Gemini 16사례와 다른 세 Provider 180사례 재비교가 통과했다. 준비본의 test 89/89·typecheck·Worker build도 통과했다. 사이트 배포는 하지 않는다.
 - 이번 단계에서는 Windows self-test/smoke를 다시 실행하지 않는다. 사용자가 #157을 이 브랜치에 병합했다고 알리면 합친 최종 HEAD에서 build·self-test·smoke, Mac 전용 diff와 사이트 비교를 확인한 뒤 #156 Ready 여부를 결정한다. 버전·운영 EXE·등록은 그대로다.
 
 ### 최초 중단 변경 검증(2026-11-16)
