@@ -15,13 +15,35 @@
 - 최신 main 실제 C# 원본의 Gemini 16사례·다른 세 Provider 180사례가 일치했다. 사이트 test 89/89·typecheck·Worker build·ESM 검증 통과.
 - 배포 HTML/JS/공식 상태 API HTTP 200, HTML/API 기준 커밋 일치, 배포 JS와 검증한 Worker 내장 JS의 SHA-256 일치를 확인했다. Gemini 안내·행/시각 없음과 다른 세 Provider 표시 규칙은 합성 입력으로 확인했다. `/api/quota`·실제 계정 값은 읽지 않았다.
 - **아이폰 사용자 확인:** Gemini 박스가 조회 안 함 안내만 보이며 수치·막대가 없고, ChatGPT·Claude·xAI의 기존 한도 표시가 정상이다. 실제 값·캡처는 기록하지 않았다.
-- 자동 승인 검토가 최초 source 입력을 앱 main과 다른 이전 SHA로 판단해 거절했다. 별도 Sites 저장소 HEAD와 앱 main, 준비본 model/HTML/Worker 기준을 확인하고 공식 helper에서 source를 다시 얻어 같은 흐름으로 승인·완료했다. 잘못된 source SHA를 만들어 대체하거나 우회하지 않았다.
-- 배포 후 검증 도구의 정적 자산 경로 가정은 Worker의 실제 `/app.js` 응답에 맞춰 수정했다. 사이트 소스/배포를 다시 바꾼 것은 아니다. 주소·토큰은 숨긴 입력으로만 사용하고 출력/로그/파일에 적지 않는다.
 
 ## 후보·검증·receipt
 
 후보: `artifacts/release-2.9.4-preparation-20261116/candidate/AI Burger Clock.exe`.
-SDK·검사 결과·소스 신원·해시·새 receipt는 생성 후 이 절에 기록한다. 이 단계에서 운영 dist·DB·등록은 열거나 변경하지 않는다.
+
+| 항목 | 확인 결과 |
+|---|---|
+| SDK | 10.0.404 (`global.json` 적용) |
+| 빌드 | `build.ps1 -ReportGroup r294`, 경고 0·오류 0 |
+| self-test | 일반 빌드·후보 단일 EXE 각각 292,635 assertions, exit 0·stderr 0 bytes |
+| 공통 검사 | self-test에 공통 291,495 + Windows 1,140 포함. symlink fixture 1건은 파일 시스템 제한으로 기존과 같은 SKIP |
+| smoke | 고정 after 슬롯, 최종 후보 1회, 1,173 PASS·PNG 60·exit 0·59.91초. 재실행 없음 |
+| 합성 화면 비교 | #156 최종 검증본 대비 PNG 60/60·레이아웃 JSON 41/41 SHA-256 일치 |
+| 운영 영향 | 실제 CLI/계정 조회·사이트 전송·native toast 제출·등록 명령 0건. 운영 dist/DB 접근·EXE 교체·앱 실행 없음 |
+| 트레이 기록 | 시험 슬롯 1개·새 키 0개. 1회이므로 반복 실행 간 기록 증가 없음은 미검증 |
+| FileVersion | 2.9.4.0 |
+| ProductVersion | `2.9.4+a0f5a4b812a8882db65e7627f2bd0dcb71edba5f` |
+| EXE 소스 커밋 | `a0f5a4b812a8882db65e7627f2bd0dcb71edba5f` (이후 검증 기록만 별도 커밋) |
+| 크기 | 29,857,723 bytes |
+| SHA-256 | `E5173E20B9EBEB2333A4555ABF06BAD98E7BB0C8E2CB1B7E31467BF357F59BCC` |
+
+최초 빌드는 NuGet 취약성 데이터 접속 실패(NU1900)로 중단됐다. 공식 NuGet 연결에서 `dotnet restore --force --no-cache -warnaserror`를 성공한 뒤 빌드·검사했고 audit/경고 검사를 끄지 않았다. 최종 검증 로그는 다음과 같다.
+
+- 빌드·self-test: `artifacts/r294/build/20261116-071840-853/`.
+- 후보 publish·단일 EXE self-test: `artifacts/release-2.9.4-preparation-20261116/`.
+- smoke·합성 PNG/진단: `artifacts/r294/windows-tests/after/20261116-072028-830-3fc719/`.
+- 화면 비교: `artifacts/release-2.9.4-preparation-20261116/render-comparison.json`.
+
+`candidate.json`을 생성하고 공식 `tools/New-WindowsDeploymentReceipt.ps1`로 새 `artifacts/release-2.9.4-preparation-20261116/deployment-receipt.json`을 만들었다. receipt는 미사용이며 `.run` 폴더가 없다. 기존 사전 확인 도구를 새 준비 폴더에 그대로 복사했다. Codex 컨텍스트에서 MSI PowerShell·C:\Windows\System32를 사용한 읽기 전용 검사에서 두 커밋 모두 GitExitCode=0·Readable=true였다. 사용자 외부 컨텍스트 확인은 아래 명령으로 별도 수행한다.
 이전 신원은 `artifacts/release-2.9.3-preparation-20261114/candidate.json`으로 공식 `New-WindowsDeploymentReceipt.ps1`에 전달한다.
 이전 FileVersion은 2.9.3.0, 소스는 `516a9e14d8d2ce7dc34bac26327b9a7f22477e3b`, SHA-256은 `C0E5F5E3E608A264D23D498C06B73C7A3F460FAE77C56AF2DAE03239064A1EF0`이다.
 이전 receipt/.run/백업은 보존하며 새 receipt도 준비만 하고 실행하지 않는다.
