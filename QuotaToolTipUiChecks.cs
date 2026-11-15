@@ -267,9 +267,10 @@ internal static class QuotaToolTipUiChecks
             check(fitted == text.Length, "Complete Provider detail fits the wrapped popup: " + provider);
             check(box.Controls.OfType<Label>().Where(label => label.Text.Contains('%')).All(label =>
                 view.DetailFor(label) == text && label.AccessibleDescription != text) &&
-                box.AccessibleDescription == text && text.Contains("리셋·한도 복원 예정", StringComparison.Ordinal) &&
-                text.Contains(" KST", StringComparison.Ordinal),
-                "Row accessibility is separate from the unchanged Provider tooltip with precise reset data: " + provider);
+                box.AccessibleDescription == text && (QuotaNames.IsQueryEnabled(provider)
+                    ? text.Contains("리셋·한도 복원 예정", StringComparison.Ordinal) && text.Contains(" KST", StringComparison.Ordinal)
+                    : text == QuotaPanelModel.GeminiUnavailableDetail),
+                "Row accessibility is separate from its Provider's live detail or disabled policy notice: " + provider);
             if (reportDirectory is not null)
             {
                 Directory.CreateDirectory(reportDirectory);
