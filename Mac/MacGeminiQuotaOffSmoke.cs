@@ -99,8 +99,9 @@ internal static class MacGeminiQuotaOffSmoke
         }
 
         // The box is a heading plus one line: shorter than the box of the one-row xAI credit (heading + row + bar + check-time line).
-        Check(firstBoxHeight!.Value < panel.QuotaBoxHeight(QuotaProvider.Xai) - 0.5,
-            $"the Gemini box ({firstBoxHeight.Value:0.#}pt) is not shorter than the xAI box ({panel.QuotaBoxHeight(QuotaProvider.Xai):0.#}pt).");
+        nfloat xaiBoxHeight = panel.QuotaBoxHeight(QuotaProvider.Xai);
+        Check(firstBoxHeight!.Value < xaiBoxHeight - 0.5,
+            $"the Gemini box ({firstBoxHeight.Value:0.#}pt) is not shorter than the xAI box ({xaiBoxHeight:0.#}pt).");
         // The other boxes are unaffected: same bars, same text as without Gemini input.
         Show(codex, claude, scenes[0].State, xai);
         Check(panel.QuotaBarCount == baselineBars && panel.QuotaRowIds(QuotaProvider.Codex).Length == 2 && panel.QuotaRowIds(QuotaProvider.Claude).Length == 3 &&
@@ -136,7 +137,7 @@ internal static class MacGeminiQuotaOffSmoke
         Show(codex, claude, scenes[0].State, xai);
 
         return $"Gemini quota off ({scenes.Length} inputs incl. old values, 64 windows, refresh, error, waiting, no windows: one fixed notice row shown whole on one line, " +
-               $"no bar/time layer/check-time line/scope line, {baselineBars} bars unchanged, fixed detail without numbers or error text, box {firstBoxHeight:0.#}pt shorter than xAI, " +
+               $"no bar/time layer/check-time line/scope line, {baselineBars} bars unchanged, fixed detail without numbers or error text, Gemini box {firstBoxHeight:0.#}pt (xAI box {xaiBoxHeight:0.#}pt), " +
                $"popover {firstPopover:0}pt unchanged by input, Gemini early-reset record ignored, spoken as the plain notice, 1280x800 {fitted[0]:0}pt and 1024x640 {fitted[1]:0}pt not cut off)";
     }
 }

@@ -307,12 +307,15 @@ internal sealed class MacStatusPanel : IDisposable
                     bars[row.WindowId] = bar;
                 }
                 var metadata = QuotaLine(lines, 10);
+                // Hidden before the refit below, so the quota area is measured without the blank line (see Apply further down).
+                metadata.Hidden = section.Metadata.Text.Length == 0;
                 quotaStack.AddArrangedSubview(box);
                 quotas[section.Provider] = new(box, heading, scope, rows, bars, metadata);
             }
             // Box count or rows changed: refit so no gap is left above the check times.
             FitContent();
         }
+        bool metadataVisibilityChanged = false;
         foreach (QuotaSectionText section in sections)
         {
             QuotaViews views = quotas[section.Provider];
@@ -339,8 +342,15 @@ internal sealed class MacStatusPanel : IDisposable
             Apply(views.Metadata, section.Metadata);
             // A box whose shared metadata line is empty (the Gemini fixed notice) shows no blank line under its row:
             // a hidden arranged subview takes no room in the stack.
-            views.Metadata.Hidden = section.Metadata.Text.Length == 0;
+            bool hideMetadata = section.Metadata.Text.Length == 0;
+            if (views.Metadata.Hidden != hideMetadata)
+            {
+                views.Metadata.Hidden = hideMetadata;
+                metadataVisibilityChanged = true;
+            }
         }
+        // The boxes got taller or shorter without a structure change: refit so no gap is left below them.
+        if (metadataVisibilityChanged) FitContent();
     }
 
     private static NSTextField QuotaLine(NSStackView box, int size, bool bold = false)
