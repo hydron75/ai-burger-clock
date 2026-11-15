@@ -3032,8 +3032,8 @@ Gemini 한도를 Google AI Studio API 키 방식으로 바꿀 수 있는지 임�
 ### 기준
 | 항목 | 값 |
 |---|---|
-| 공통 PR #156 HEAD(base) | `cf7c98d5021e9e1087c4fc746f8519d993a47ec6` |
-| Mac 커밋 | 화면·native 검사 `1dd6984a764d5b8471b21602019eba28a31f03d3` → 수정(아래 "1차 smoke 실패") `3a101784d58ded667a8e7dfe038317781bc5afe0` |
+| 공통 PR #156 HEAD(base) | 처음 `cf7c98d5021e9e1087c4fc746f8519d993a47ec6` → 갱신 `39517278ffd294c9f3e058be331d73ab21d7e2c9`(아래 "#156 갱신(3951727) 반영") |
+| Mac 커밋 | 화면·native 검사 `1dd6984a764d5b8471b21602019eba28a31f03d3` → 수정(아래 "1차 smoke 실패") `3a101784d58ded667a8e7dfe038317781bc5afe0` → #156 갱신 병합 `1365fc6eded479e0d31aba26ffb868b301bab4c6` → 새 상세 문구 검사 `04630ddf3e870ed103969a11cb9d034931909146` |
 | 도구 | SDK 10.0.404, macOS 워크로드 27.2.10000, Xcode 27.2 |
 
 ### 바뀐 것 (Mac 파일만, 공통 원본은 고치지 않음)
@@ -3059,6 +3059,23 @@ Gemini 한도를 Google AI Studio API 키 방식으로 바꿀 수 있는지 임�
 | 합성 리뷰 이미지 확인 | smoke가 저장한 합성 이미지에서 Gemini 박스가 제목 "Gemini"와 안내 한 줄만 보이고 막대·시간층·빈 줄이 없음을 눈으로 확인했다(이미지는 커밋하지 않음). 상세 팁은 같은 고정 문구 |
 | LaunchServices | smoke 뒤 등록 수 2 → `lsregister -u`(임시 사본) 후 **1** |
 | 정리 | 임시 worktree·시험 폴더 삭제, 이전 API 키 시험 폴더 삭제 |
+
+### #156 갱신(3951727) 반영 (2026-11-16)
+#156에 커밋이 더해져(HEAD `39517278…`) 최신 `codex/disable-gemini-quota`를 이 브랜치에 merge했다(충돌 없음, 강제 푸시 없음). 공통 변경: Gemini 상세가 **4줄 고정**(`QuotaPanelModel.GeminiUnavailableDetail`: "Gemini 한도 · 조회 안 함" / "Antigravity 약관상 앱에서 자동 조회하지 않습니다." / "근거: https://antigravity.google/docs/faq.md" / "공식 서비스 상태는 상태 카드에서 확인하세요.")이 되고, `GeminiScope`·`GeminiScopeDetail`·`ParseGemini`·`MacCliPaths`의 Gemini(agy) 후보·미도달 표시 분기, 검사 `GeminiQuotaTests`·`GeminiModelQuotaTests`가 제거됐다. 행 문구(`GeminiUnavailableText`)는 그대로다. Mac 소스는 제거된 심볼을 쓰지 않아 컴파일 오류는 없었고, 옛 상세(행 문구를 포함하는 긴 문구)를 기대한 smoke 단언만 바꿨다(공통 원본은 고치지 않음).
+- `MacGeminiQuotaOffSmoke.cs`: 입력 8가지 모두 상세가 `GeminiUnavailableDetail`과 같고 정확히 위 4줄인지 검사한다. 팁이 고정 폭 320pt에서 잘리지 않고 배치되는지(`MacDetailTip.Measure`)도 추가했다. 옛 "숫자 없음·입력 오류 문구 없음" 단언은 4줄 일치로 대체돼 불필요해졌다.
+- `MacDetailTipSmoke.cs`: Gemini 상세가 긴 상세 옆에서도 같은 4줄이고, 화면의 Gemini 박스(`QuotaDetail`)가 그 문구와 같은지 검사한다.
+- `MacPollingDiagnosticSmoke.cs`: Gemini 상세가 고정 문구이고 조회 주기 문구가 없음을 새 상수로 검사한다.
+
+| 항목(2차, 임시 사본) | 결과 |
+|---|---|
+| Shared.Tests | **291,495건 PASS**(#156 갱신 수치와 같음) |
+| 빌드 | `bash Mac/build.sh` **옵션 없음**, 경고 0 / 오류 0 |
+| smoke 1회 | 종료 코드 0, **SKIP 0**, FAIL 0. 화면 가드: 메뉴바 디스플레이, 전체 화면 앱 없음. 팝오버 895pt, 팁 8개가 같은 폭으로 표시·제거 |
+| 앱이 agy를 실행하지 않음 | 0.1초 간격 표본 107회(smoke 실행 중): smoke 프로세스의 자식 0, `agy` 줄 0(표본 간격보다 짧은 프로세스는 볼 수 없음) |
+| 합성 리뷰 이미지 | smoke가 저장한 Gemini 한도 팁이 위 4줄로 나옴을 눈으로 확인(이미지는 커밋하지 않음) |
+| LaunchServices | smoke 뒤 2 → `lsregister -u` 후 **1**, 임시 사본·시험 폴더 삭제 |
+
+1차(`cf7c98d` 기준) 검증은 위 표대로 남기며, 이 2차가 현재 HEAD의 기준이다. 폴링 진단 smoke는 앱 전체 smoke에 포함돼 돌았다(별도 앱 없는 시험은 하지 않음).
 
 ### 현재 배포된 Mac 앱 (관찰, 변경 없음)
 이 PR이 병합·배포되기 전까지 배포된 0.9.4 앱은 이전 소스라 **`agy -p /usage`를 계속 자동 실행한다**(조회 주기 1시간). 새 버전 배포 전에 이를 멈출지는 메인 채팅이 정한다(앱을 정상 종료해 두는 방법이 Windows와 같다). 이 PR은 앱을 종료·교체하지 않았다.
