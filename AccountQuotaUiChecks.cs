@@ -342,7 +342,7 @@ internal static class AccountQuotaUiChecks
             ProviderLabels(QuotaProvider.Gemini).All(l => !l.Text.Contains("%", StringComparison.Ordinal)),
             "Gemini retains its card with a fixed muted policy notice and no quota values");
         Check(!geminiBox.Controls.OfType<QuotaBalanceBar>().Any() && client.Calls(QuotaProvider.Gemini) == 0 &&
-            context.StatusWindow.QuotaView.DetailFor(geminiBox).Contains(QuotaNames.GeminiUnavailableText, StringComparison.Ordinal),
+            context.StatusWindow.QuotaView.DetailFor(geminiBox) == QuotaPanelModel.GeminiUnavailableDetail,
             "Gemini creates no usage/time bar or automatic query and its detail explains the policy");
         Check(context.StatusWindow.ClientSize == size && context.StatusWindow.QuotaView.VerticalScroll.Visible &&
             !context.StatusWindow.QuotaView.HorizontalScroll.Visible && boxes.All(box =>

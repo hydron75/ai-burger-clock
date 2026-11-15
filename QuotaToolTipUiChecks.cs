@@ -234,7 +234,7 @@ internal static class QuotaToolTipUiChecks
                 "Provider detail keeps polling explanation once instead of repeating visible percentages: " + provider);
         }
         else
-            check(text.Contains(QuotaNames.GeminiUnavailableText, StringComparison.Ordinal) &&
+            check(text == QuotaPanelModel.GeminiUnavailableDetail &&
                 !text.Contains("기본 1시간", StringComparison.Ordinal) && !box.Controls.OfType<QuotaBalanceBar>().Any(),
                 "Gemini tooltip retains only its policy notice without polling, reset times or bars");
         Point pointer = view.PointToScreen(new Point(view.Width / 2, view.Height / 2));
