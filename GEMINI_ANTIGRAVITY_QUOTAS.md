@@ -4,12 +4,21 @@
 
 - [공식 FAQ](https://antigravity.google/docs/faq.md)의 제3자 소프트웨어 및 headless mode 항목을 확인했다. 소비자 요금제에서 제3자 앱이 agy를 감싸 실행하는 방식은 지원되지 않는다고 명시한다. 따라서 버전 확인·명령 생성·프로세스 실행·응답 프로토콜 경로를 삭제한다. 시작·예약·Refresh·절전 복귀·네트워크 복구에서도 Gemini 한도 클라이언트를 호출하지 않는다. 설정으로 다시 켜는 기능은 없다.
 - API 키 방식의 `/usage`는 빈 `groups`만 반환해 대안이 되지 않았다는 **Mac 측 확인 결과**를 근거로 한다. Windows에서 계정 조회를 다시 실행하지 않았다. 비공개 endpoint나 인증 우회로 대체하지 않는다.
-- Gemini 박스는 **조회 안 함 · Antigravity 정책에 따라 자동 조회하지 않음** 안내 한 줄만 표시한다. 수치·막대·시간층·옛 성공/예정 시각·오류 원문·조기 초기화 이력은 표시하지 않는다. 상세의 공통 구역 순서는 유지하며 조회 안 함 이유를 적는다. Gemini 공식 서비스 상태 카드·장애 알림은 유지한다.
-- 캐시는 **삭제하지 않고 보존하는 방안을 권고**한다. 이전 배포 복원/조사 자료를 되돌리기 어렵게 지울 필요가 없다. 실행 모니터가 Gemini 캐시를 읽지 않으며 화면·알림·송신도 별도로 차단한다. 실제 DB·캐시 삭제/마이그레이션은 하지 않는다. 순수 구형 파서·캐시 직렬화 호환 검사는 과거 자료 읽기 검증으로 남긴다.
+- Gemini 박스는 **조회 안 함 · Antigravity 정책에 따라 자동 조회하지 않음** 안내 한 줄만 표시한다. 수치·막대·시간층·옛 성공/예정 시각·오류 원문·조기 초기화 이력은 표시하지 않는다. Gemini 상세는 예외로 제목·약관상 조회하지 않는 이유·공식 FAQ URL·상태 카드 안내의 4줄만 표시한다. 다른 세 Provider 상세 틀은 유지한다. Gemini 공식 서비스 상태 카드·장애 알림은 유지한다.
+- 캐시는 **삭제하지 않고 보존하는 방안을 권고**한다. 이전 배포 복원/조사 자료를 되돌리기 어렵게 지울 필요가 없다. 실행 모니터가 Gemini 캐시를 읽지 않으며 화면·알림·송신도 별도로 차단한다. 실제 DB·캐시 삭제/마이그레이션은 하지 않는다. 캐시 JSON 직렬화 호환 검사는 과거 자료 보존 검증으로 남긴다. 캐시에서 사용하지 않는 CLI 응답 파서는 추가 정리에서 제거했다.
 - enum의 Gemini 숫자 ID와 송신 schemaVersion=2의 Provider 4개는 유지한다. Gemini는 reading=none, lastSuccessUtc=null, nextCheckUtc=null, rows=[]로 강제한다. 입력에 옛 값이 있어도 보내지 않는다. 사이트도 v1/v2의 옛 Gemini 값을 안내로 가리는 준비본만 만들고 배포는 메인 지시를 기다린다.
 - 공통 합성 검사에서 직접 클라이언트·실행 정보 생성·파일 탐색 거부, 시작/예약/Refresh/복귀/네트워크 경로의 Gemini client 호출 0, 캐시 보존/표시 차단, 회복·조기 초기화·pending 차단을 확인한다. 다른 세 Provider의 조회·대기열·실패/취소 검사는 유지한다. Mac은 공통 변경을 반영하고 별도 native smoke 기대를 전환해야 한다.
 
-### 중단 변경 검증(2026-11-16)
+### 추가 정리(2026-11-16, Mac #157 병합 전)
+
+- `MacCliPaths.Candidates(Gemini, ...)`는 빈 목록이며 agy 실행 파일명 후보를 제거했다. `AccountQuotaParsers.ParseGemini`는 캐시 역직렬화와 무관하므로 삭제했다. 캐시는 `QuotaCache` JSON을 `QuotaJsonContext`로 읽는 별도 경로이며 데이터·스키마·키는 바꾸지 않았다. 운영 monitor는 계속 Gemini cache를 읽지 않는다.
+- `QuotaPanelModel.GeminiScope`·`GeminiScopeDetail`과 도달하지 않던 Gemini scope/login/polling 참고 분기를 제거했다. 새 공통 상세 상수는 `GeminiUnavailableDetail`이다. inline 안내 `QuotaNames.GeminiUnavailableText`는 바꾸지 않았다.
+- 파서 전용 `GeminiQuotaTests`·`GeminiModelQuotaTests` 파일과 SharedTestSuite 등록 두 건을 삭제했다. cache 보존/읽기 제외/조회 0/알림 차단 검사는 `GeminiQuotaClientTests`·`GeminiPollingPolicyTests` 등에 유지한다. Mac 후보 없음과 짧은 상세는 기존 공통 검사에서 고정한다.
+- Shared.Tests **291,495 PASS**(이전 291,685보다 190 감소: 삭제한 파서/모델 검사 182 + 짧은 상세 검사 전환 8). 기존 임시 symlink fixture 1건 SKIP은 유지한다. Windows 컴파일 경고 0·오류 0. 독립 정적 리뷰에서 확정 P1/P2 없음.
+- 사이트의 한도 박스에는 상세 팝업이 없다. 새 상세 기능은 추가하지 않고 기존 고정 안내/옛 값 숨김을 유지한다. 새 공통 코드로 C# 기준을 다시 생성하며 Gemini 16사례와 다른 세 Provider 180사례를 재비교한다. 사이트 배포는 하지 않는다.
+- 이번 단계에서는 Windows self-test/smoke를 다시 실행하지 않는다. 사용자가 #157을 이 브랜치에 병합했다고 알리면 합친 최종 HEAD에서 build·self-test·smoke, Mac 전용 diff와 사이트 비교를 확인한 뒤 #156 Ready 여부를 결정한다. 버전·운영 EXE·등록은 그대로다.
+
+### 최초 중단 변경 검증(2026-11-16)
 
 - 검증 코드: `8a6eba2691b1a83b159528aeddcd500400f4218f`. 이후 커밋은 검증 기록만 추가한다. 버전·Mac 파일·배포 EXE·운영 등록은 변경하지 않았다.
 - SDK 10.0.404, `build.ps1` 경고 0·오류 0. Shared.Tests **291,685건**, Windows `--self-test` **292,825건** 통과. 기존 임시 파일시스템 symlink fixture 1건 SKIP은 유지한다.

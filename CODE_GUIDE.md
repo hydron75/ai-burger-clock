@@ -1,5 +1,7 @@
 # 소스코드, 쉬운 말로 읽기
 
+**#156 추가 정리(2026-11-16):** Gemini 상세는 `QuotaPanelModel.GeminiUnavailableDetail`의 짧은 4줄 안내를 사용합니다. `ParseGemini`·Mac agy 후보·미도달 표시 분기와 전용 `GeminiQuotaTests.cs`/`GeminiModelQuotaTests.cs`를 제거했습니다. 두 검사 파일 삭제 후 현재 추적 C#은 루트·Properties 125 + Mac 23 + 공통 검사 입구 1 = 149개입니다. 이전 배포 당시 파일 수 기록은 그대로 둡니다.
+
 **진행 중 · Gemini 한도 자동 조회 중단:** QuotaNames의 고정 정책으로 monitor/client/표시/알림을 차단하며 AccountQuotaClient의 agy 실행·버전·프로토콜 코드를 제거합니다. Windows 송신은 Gemini none/null/null/[]로 고정하고 enum/v2 Provider 4개와 공식 상태는 유지합니다. 기존 C# 파일만 바꾸며 Mac native 검증은 별도로 요청합니다. [FAQ·호환·과거 기록](GEMINI_ANTIGRAVITY_QUOTAS.md).
 
 **별도 Draft · Windows 화면 검사 진단:** 운영 앱·버전은 그대로 두고 `SmokeUiProbe.cs`를 검사 전용으로 추가합니다. 합성 host의 생성 후 DPI/물리 배치·메시지 큐 완료, 부모 범위 입력 계약과 직접 WM_NCHITTEST, 정리 전 실패 메타데이터를 담당합니다. 이 파일 추가 후 추적 C# 파일은 루트·Properties 127개 + Mac 23개 + 공통 검사 입구 1개 = 151개이며 공통 제품 원본은 추가하지 않습니다. 2.9.3 후보 PR과 분리합니다. [검사 범위·진단·개인정보 계약](WINDOWS_SMOKE_DIAGNOSTICS.md).
@@ -500,8 +502,6 @@ Windows 내부 승인 형식은 알려진 경우만 해석합니다. 낯선 값�
 | [AccountQuotaTests.cs](AccountQuotaTests.cs) | 한도 파서·잘못된 값·리셋 경계·조회 주기 |
 | [AccountQuotaClientTests.cs](AccountQuotaClientTests.cs) | Windows 전용 CLI 경로 예시 |
 | [SharedQuotaProtocolTests.cs](SharedQuotaProtocolTests.cs) | POSIX 경로·가짜 CLI 입출력·명령·크기 제한·취소·0턴 검증 |
-| [GeminiQuotaTests.cs](GeminiQuotaTests.cs) | 합성 agy 응답의 Gemini 그룹·5시간/주간·잔여율·리셋·잘못된 값 검사 |
-| [GeminiModelQuotaTests.cs](GeminiModelQuotaTests.cs) | 합성 모델 전용 주간의 보수적 구조·동적 이름/ID·순서·시간 비교·회복·캐시 호환. 공통 실행 목록에 한 번 등록 |
 | [GeminiPollingPolicyTests.cs](GeminiPollingPolicyTests.cs) | 미사용 이동 리셋·가짜 시계 7일·극소 양수·다른 Provider·구형/새 캐시 재시작 246건 |
 | [QuotaPollingDiagnosticTests.cs](QuotaPollingDiagnosticTests.cs) | 임시 파일의 256건/128KiB·동시 기록·재시작·스키마·권한/잠금/손상 격리 367건 |
 | [QuotaSchedulingTests.cs](QuotaSchedulingTests.cs) | 예약 이유와 실제 예정 일치·1분 압축/구간 보존·실패/취소·임시 DB 통합 107건 |

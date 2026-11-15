@@ -115,8 +115,7 @@ internal static class QuotaPresentationTests
                 provider + " placeholder and non-quota lines have no row comparison");
             var noWindows = QuotaPanelModel.Section(state with { Reading = new(provider, []) }, now);
             Check(noWindows.Rows.Count == 0 && noWindows.Detail.Contains("리셋·한도 복원 예정\n조회 값 없음", StringComparison.Ordinal), provider + " empty windows retain a filled reset section");
-            string? scope = provider == QuotaProvider.Codex ? QuotaPanelModel.CodexScopeDetail :
-                provider == QuotaProvider.Gemini ? QuotaPanelModel.GeminiScopeDetail : null;
+            string? scope = provider == QuotaProvider.Codex ? QuotaPanelModel.CodexScopeDetail : null;
             Check(scope is null || section.Detail.Split(scope, StringSplitOptions.None).Length == 2, provider + " scope appears once");
         }
         var expired = QuotaPanelModel.Section(new(QuotaProvider.Claude, new(QuotaProvider.Claude,

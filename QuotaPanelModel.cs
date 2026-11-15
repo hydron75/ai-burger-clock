@@ -30,8 +30,10 @@ internal static class QuotaPanelModel
     public const string CodexScope = "Work/Codex";
     public const string CodexScopeDetail = "ChatGPT 계정의 Work/Codex 한도입니다. 일반 채팅의 모든 모델 한도를 뜻하지 않습니다.";
     public const string ClaudeScopeDetail = "Claude Code CLI의 /usage 응답으로 받은 구독 사용 한도입니다.";
-    public const string GeminiScope = "Antigravity · Gemini 모델";
-    public const string GeminiScopeDetail = "Antigravity · 앱 자동 조회 중단";
+    public const string GeminiUnavailableDetail = "Gemini 한도 · 조회 안 함\n" +
+        "Antigravity 약관상 앱에서 자동 조회하지 않습니다.\n" +
+        "근거: https://antigravity.google/docs/faq.md\n" +
+        "공식 서비스 상태는 상태 카드에서 확인하세요.";
     public const string XaiScopeDetail = "Grok CLI의 ACP _x.ai/billing 응답으로 받은 주간 크레딧 한도입니다.";
 
     // A previous value, or one whose reset time has passed, is never shown as current.
@@ -73,17 +75,12 @@ internal static class QuotaPanelModel
     {
         if (!QuotaNames.IsQueryEnabled(state.Provider))
         {
-            string detail = $"{ProviderNames.Quota(state.Provider)} 한도 · 모든 시각 KST\n" +
-                "범위: Antigravity · 앱 자동 조회 중단\n\n리셋·한도 복원 예정\n조회 안 함\n\n" +
-                "시간·사용량 비교\n조회 안 함\n\n조회 상태\n마지막 성공: —\n다음 조회: —\n최근 시도: —\n" +
-                QuotaNames.GeminiUnavailableText + "\n\n조회 주기\n조회 안 함\n참고: 저장된 이전 값도 표시하지 않습니다.\n" +
-                "공식 CLI 응답 수신 시각: — · 조회 안 함";
+            string detail = GeminiUnavailableDetail;
             return new(state.Provider, new(ProviderNames.Quota(state.Provider), PanelTone.Normal, detail), null,
                 [new(QuotaNames.GeminiUnavailableText, PanelTone.Muted, detail)], new("", PanelTone.Muted, detail));
         }
         bool previous = state.IsPrevious;
         bool codex = state.Provider == QuotaProvider.Codex;
-        bool gemini = state.Provider == QuotaProvider.Gemini;
         string name = ProviderNames.Quota(state.Provider);
         var succeeded = state.LastSuccessfulCheckUtc is { } success ? AgentSchedule.ToKst(success).ToString("MM-dd HH:mm") : "—";
         var next = state.NextCheckUtc is { } due ? AgentSchedule.ToKst(due).ToString("MM-dd HH:mm") : "—";
@@ -94,13 +91,12 @@ internal static class QuotaPanelModel
         var heading = new QuotaLine(
             name + (state.IsRefreshing ? " · 확인 중" : previous && state.Reading is not null ? " · 이전 조회값" : ""),
             PanelTone.Normal, note);
-        var scope = codex ? new QuotaLine(CodexScope, PanelTone.Muted, note) :
-            gemini ? new QuotaLine(GeminiScope, PanelTone.Muted, note) : null;
+        var scope = codex ? new QuotaLine(CodexScope, PanelTone.Muted, note) : null;
         var metadata = new QuotaLine($"성공 {succeeded} · 다음 {next}",
             state.CacheError.Length > 0 ? PanelTone.Danger : PanelTone.Muted, note);
 
         QuotaLine[] rows = state.Reading is null
-            ? [new(state.Error.Length > 0 ? state.Error : gemini ? "한도 조회 대기 · agy CLI 로그인 필요" : "한도 조회 대기 · 공식 CLI 로그인 필요", PanelTone.Muted, note)]
+            ? [new(state.Error.Length > 0 ? state.Error : "한도 조회 대기 · 공식 CLI 로그인 필요", PanelTone.Muted, note)]
             : state.Reading.Windows.Select((window, index) =>
             {
                 bool elapsed = window.ResetsAtUtc is { } reset && reset <= now;
@@ -119,12 +115,10 @@ internal static class QuotaPanelModel
     private static string ProviderDetail(QuotaState state, DateTimeOffset now, IReadOnlyList<QuotaPace> paces,
         QuotaEarlyResetAlert? recentEarlyReset)
     {
-        bool gemini = state.Provider == QuotaProvider.Gemini;
         string scope = state.Provider switch
         {
             QuotaProvider.Codex => CodexScopeDetail,
             QuotaProvider.Claude => ClaudeScopeDetail,
-            QuotaProvider.Gemini => GeminiScopeDetail,
             QuotaProvider.Xai => XaiScopeDetail,
             _ => throw new ArgumentOutOfRangeException(nameof(state))
         };
@@ -172,7 +166,7 @@ internal static class QuotaPanelModel
             : "기본 1시간 · 사용 90% 초과~100% 미만은 1시간 · 사용 100%는 15분 · 리셋 전후 15분은 5분 · 실패 시 15분부터 재시도");
         lines.Add("참고: " + (state.Provider == QuotaProvider.Xai
             ? "xAI 예약 조회는 최소 10분입니다. 시작·Refresh·복귀·네트워크 조회에는 적용하지 않습니다."
-            : gemini ? "Gemini 사용 0% 창의 리셋은 빠른 조회 기준에서 제외합니다." : "—"));
+            : "—"));
         lines.Add("공식 CLI 응답 수신 시각이며 서버 데이터 생성 시각을 보장하지 않습니다.");
         return string.Join('\n', lines);
     }
