@@ -9,7 +9,17 @@
 - enum의 Gemini 숫자 ID와 송신 schemaVersion=2의 Provider 4개는 유지한다. Gemini는 reading=none, lastSuccessUtc=null, nextCheckUtc=null, rows=[]로 강제한다. 입력에 옛 값이 있어도 보내지 않는다. 사이트도 v1/v2의 옛 Gemini 값을 안내로 가리는 준비본만 만들고 배포는 메인 지시를 기다린다.
 - 공통 합성 검사에서 직접 클라이언트·실행 정보 생성·파일 탐색 거부, 시작/예약/Refresh/복귀/네트워크 경로의 Gemini client 호출 0, 캐시 보존/표시 차단, 회복·조기 초기화·pending 차단을 확인한다. 다른 세 Provider의 조회·대기열·실패/취소 검사는 유지한다. Mac은 공통 변경을 반영하고 별도 native smoke 기대를 전환해야 한다.
 
-아래 절은 당시 구현·검증 기록이다. agy 실행·한도 수치에 관한 이전 설명은 현재 앱 동작을 뜻하지 않는다.
+### 중단 변경 검증(2026-11-16)
+
+- 검증 코드: `8a6eba2691b1a83b159528aeddcd500400f4218f`. 이후 커밋은 검증 기록만 추가한다. 버전·Mac 파일·배포 EXE·운영 등록은 변경하지 않았다.
+- SDK 10.0.404, `build.ps1` 경고 0·오류 0. Shared.Tests **291,685건**, Windows `--self-test` **292,825건** 통과. 기존 임시 파일시스템 symlink fixture 1건 SKIP은 유지한다.
+- 고정 after 슬롯 최종 `--smoke-test` **첫 1회 1,173 PASS·PNG 60개·exit 0**. 실제 OS 알림·등록 API·사이트 전송은 가짜 발송기로 0회, 실제 CLI/계정 조회는 하지 않았다. Gemini 안내·막대 0·상세·캐시/알림/송신 차단과 다른 세 Provider UI/지연/실패/취소 회귀를 검사했다.
+- 공통 건수는 Gemini의 구 CLI 프로토콜 검사와 비활성 Provider의 반복 운영 기대를 차단 검사로 교체하면서 바뀌었다. 구 파서·DB 캐시 직렬화 검사는 남기고, 일반 pacing·알림 큐 검사는 활성 Provider 합성 입력으로 유지했다.
+- 빌드 로그 `artifacts/gq-off/build/20261116-055023-874/`, smoke 로그·합성 PNG `artifacts/gq-off/windows-tests/after/20261116-055155-553-49e9ab/`.
+- 사이트는 로컬 준비본만 수정했다. 실제 공통 C# Section과 Gemini 16사례, 기존 다른 세 Provider 180사례가 일치한다. 기존 pacing 4,457건·palette 28건 비교도 통과하며 사이트 test 89/89·typecheck·Worker build가 통과했다. 서비스에 배포/저장/조회하지 않았다.
+- 독립 정적 리뷰의 사이트 TS2367 1건을 수정했고 추가 확정 P1/P2는 없었다. 리뷰어는 실행 결과를 독립 재실행하지 않았다. Mac native 빌드·smoke와 사이트 아이폰 표시는 미확인이다.
+
+아래 절은 당시 구현·검증 기록이다. agy 실행·한도 수치에 관한 이전 설명은 현재 개발 코드의 동작을 뜻하지 않는다. 이 중단은 아직 배포 전이며 운영 2.9.3에는 포함되지 않는다.
 
 ## 현재 개발 정책: 공통 1시간
 

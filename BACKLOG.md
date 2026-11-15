@@ -4,7 +4,7 @@
 
 - Antigravity [공식 FAQ](https://antigravity.google/docs/faq.md)의 소비자 요금제 제3자 앱 agy 래핑 제한에 따라 실행 코드를 제거한다. API 키 `/usage`의 빈 groups 응답은 Mac 측 확인 결과이며 대안 조회를 추가하지 않는다.
 - 박스·공통 상세는 조회 안 함 안내만, 기존 cache는 보존하되 읽기/표시/알림/송신에서 제외한다. 회복·조기 초기화는 차단하고 Gemini 공식 상태 카드·장애 알림은 유지한다. enum/송신 v2 Provider 4개는 유지한다.
-- 공통+Windows Draft로 검증하며 Mac native 확인과 사이트 준비본의 C# 비교가 필요하다. 사이트 배포·앱 버전/배포는 별도 메인 지시 이후다. [결정·호환·과거 기록](GEMINI_ANTIGRAVITY_QUOTAS.md).
+- 공통+Windows Draft 구현·검증 완료: Shared.Tests 291,685건, Windows self-test 292,825건·smoke 첫 1회 1,173건 통과. 사이트 준비본은 C# Gemini 16사례·다른 세 Provider 180사례와 일치한다. Mac native 확인과 사이트 배포·앱 버전/배포는 별도 메인 지시 이후다. [결정·호환·검증·과거 기록](GEMINI_ANTIGRAVITY_QUOTAS.md).
 
 ## 별도 Draft: Windows 화면 검사 결정성·실패 순간 진단
 
