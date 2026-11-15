@@ -23,7 +23,7 @@ internal static class QuotaDetailTemplateTests
             string[] titles = ["리셋·한도 복원 예정", "시간·사용량 비교", "조회 상태", "조회 주기"];
             string[] lines = section.Detail.Split('\n');
             int[] positions = titles.Select(title => Array.IndexOf(lines, title)).ToArray();
-            Check(positions.All(position => position >= 0) && positions.SequenceEqual(positions.Order()) &&
+            Check(state.Provider == QuotaProvider.Gemini ? lines.Length == 4 && titles.All(title => !lines.Contains(title)) : positions.All(position => position >= 0) && positions.SequenceEqual(positions.Order()) &&
                 titles.All(title => lines.Count(line => line == title) == 1) && lines[1].StartsWith("범위: ", StringComparison.Ordinal),
                 key + " has the same section titles once and in order");
             Check(section.Rows.All(row => row.Detail == section.Detail) && section.Metadata.Detail == section.Detail &&
@@ -71,27 +71,10 @@ internal static class QuotaDetailTemplateTests
     private static string Expected(QuotaProvider provider, string scenario)
     {
         if (provider == QuotaProvider.Gemini)
-            return """
-                Gemini 한도 · 모든 시각 KST
-                범위: Antigravity · 앱 자동 조회 중단
-
-                리셋·한도 복원 예정
-                조회 안 함
-
-                시간·사용량 비교
-                조회 안 함
-
-                조회 상태
-                마지막 성공: —
-                다음 조회: —
-                최근 시도: —
-                조회 안 함 · Antigravity 정책에 따라 자동 조회하지 않음
-
-                조회 주기
-                조회 안 함
-                참고: 저장된 이전 값도 표시하지 않습니다.
-                공식 CLI 응답 수신 시각: — · 조회 안 함
-                """.ReplaceLineEndings("\n");
+            return "Gemini 한도 · 조회 안 함\n" +
+                "Antigravity 약관상 앱에서 자동 조회하지 않습니다.\n" +
+                "근거: https://antigravity.google/docs/faq.md\n" +
+                "공식 서비스 상태는 상태 카드에서 확인하세요.";
         (string name, string scope, string resetMinutes, string note) = provider switch
         {
             QuotaProvider.Codex => ("ChatGPT", "ChatGPT 계정의 Work/Codex 한도입니다. 일반 채팅의 모든 모델 한도를 뜻하지 않습니다.", "5", "—"),

@@ -87,7 +87,7 @@ internal static class GeminiPollingPolicyTests
             provider: QuotaProvider.Gemini) == Now.AddMinutes(15).AddHours(1), "no trailing five-minute poll follows a genuine band");
         foreach (QuotaProvider provider in Enum.GetValues<QuotaProvider>())
             check(QuotaPanelModel.Section(new(provider), Now).Detail.Contains(
-                QuotaNames.GeminiUnavailableText, StringComparison.Ordinal)
+                "Antigravity 약관상", StringComparison.Ordinal)
                 == (provider == QuotaProvider.Gemini), "automatic-query stop is explained only in Gemini's Provider detail");
     }
 

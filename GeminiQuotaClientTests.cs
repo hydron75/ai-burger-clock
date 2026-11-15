@@ -55,9 +55,10 @@ internal static class GeminiQuotaClientTests
                 var section = QuotaPanelModel.Section(old, now);
                 Check(section.Rows.Count == 1 && section.Rows[0].Text == QuotaNames.GeminiUnavailableText && section.Rows[0].UsedPercent is null && section.Rows[0].ElapsedPercent is null, "all old states have one fixed row without usage/pacing");
                 Check(!section.Detail.Contains("Synthetic model") && !section.Detail.Contains("private synthetic") && section.Metadata.Text == "", "detail/metadata never reveal old values, errors or dates");
-                string[] headings = ["범위:", "리셋·한도 복원 예정", "시간·사용량 비교", "조회 상태", "조회 주기", "공식 CLI 응답 수신 시각"];
-                int prior = -1;
-                foreach (string heading in headings) { int index = section.Detail.IndexOf(heading, StringComparison.Ordinal); Check(index > prior, "shared detail section order: " + heading); prior = index; }
+                Check(section.Detail.StartsWith("Gemini 한도 · 조회 안 함\n", StringComparison.Ordinal), "disabled title has no stale timestamps");
+                Check(section.Detail.Contains("Antigravity 약관상 앱에서 자동 조회하지 않습니다.", StringComparison.Ordinal) && section.Detail.Contains("https://antigravity.google/docs/faq.md", StringComparison.Ordinal), "reason includes the FAQ basis");
+                Check(section.Detail.EndsWith("공식 서비스 상태는 상태 카드에서 확인하세요.", StringComparison.Ordinal), "official status remains on its card");
+                Check(section.Detail.Split('\n').Length == 4 && !section.Detail.Contains("조회 주기") && !section.Detail.Contains("응답 수신 시각"), "disabled detail has only four explanatory lines");
             }
             var recovery = new QuotaRecoveryNotifications();
             var early = new QuotaEarlyResetNotifications();

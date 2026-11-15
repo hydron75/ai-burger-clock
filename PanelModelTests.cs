@@ -361,7 +361,9 @@ internal static class PanelModelTests
         check(geminiSection.Rows.Single() is { UsedPercent: null, ElapsedPercent: null, ComparisonText: null,
             Tone: PanelTone.Muted }, "Gemini displays no observed bar or time comparison");
         same(geminiSection.Metadata.Text, "", "Gemini hides past and next observation times");
-        check(geminiSection.Detail.Contains("마지막 성공: —\n다음 조회: —\n최근 시도: —", StringComparison.Ordinal) &&
+        check(!geminiSection.Detail.Contains("마지막 성공:", StringComparison.Ordinal) &&
+            !geminiSection.Detail.Contains("다음 조회:", StringComparison.Ordinal) &&
+            !geminiSection.Detail.Contains("최근 시도:", StringComparison.Ordinal) &&
             !geminiSection.Detail.Contains("2026", StringComparison.Ordinal), "Gemini detail does not reveal cached observation times");
         same(QuotaPanelModel.Section(new QuotaState(QuotaProvider.Gemini), now).Rows[0].Text,
             QuotaNames.GeminiUnavailableText, "Gemini empty state has the same policy notice");

@@ -42,13 +42,9 @@ internal sealed class TestAccountQuotaClient(Func<DateTimeOffset> clock, SmokeQu
             QuotaProvider.Codex => [new("session", "5시간", 18, now.AddHours(2), 300), new("weekly", "주간", 92, now.AddDays(2), 10080)],
             QuotaProvider.Claude => [new("session", "5시간", 0, now.AddMinutes(12), 300), new("weekly", "주간", 45, now.AddDays(3), 10080), new("fable", "주간 · Fable", 1, now.AddDays(3), 10080)],
             QuotaProvider.Xai => [new(AccountQuotaParsers.GrokWeeklyWindowId, "주간 크레딧", 37.5, now.AddDays(4), 10080)],
-            _ => AccountQuotaParsers.ParseGemini($$"""
-                {"groups":[{"name":"Gemini Models","buckets":[
-                  {"id":"gemini-5h","window":"5h","remaining_fraction":0.9799,"reset_time":"{{now.AddHours(3):O}}"},
-                  {"id":"gemini-weekly","window":"weekly","remaining_fraction":0.9966,"reset_time":"{{now.AddDays(6):O}}"}]},
-                  {"name":"Gemini Synthetic Model","buckets":[
-                    {"id":"gemini-synthetic-weekly","window":"weekly","remaining_fraction":0.65,"reset_time":"{{now.AddDays(4):O}}"}]}]}
-                """).Windows.ToArray()
+            _ => [new("gemini-5h", "5시간", 2.01, now.AddHours(3), 300),
+                new("gemini-weekly", "주간", 0.34, now.AddDays(6), 10080),
+                new("synthetic-weekly", "합성 이전 모델", 35, now.AddDays(4), 10080)]
         };
         return new QuotaReading(provider, windows);
     }
