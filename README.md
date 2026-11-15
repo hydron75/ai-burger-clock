@@ -1,6 +1,6 @@
-# AI Burger Clock 2.9.3
+# AI Burger Clock 2.9.4
 
-**개발 중 변경(2026-11-16):** Gemini 한도는 Antigravity 공식 FAQ에 따라 앱 자동 조회를 중단하고 안내만 표시합니다. agy 실행 코드를 제거하며 Gemini 공식 서비스 상태는 유지합니다. 버전·배포는 아직 바꾸지 않습니다. [결정 근거·이전 캐시·호환](GEMINI_ANTIGRAVITY_QUOTAS.md).
+**Windows 2.9.4 후보 준비(2026-11-16 KST):** main `5fbfc6c`의 #156/#157 Gemini 한도 자동 조회 중단과 #155 Windows 화면 검사 개선을 포함합니다. Gemini는 안내와 짧은 상세만 표시하고 공식 상태는 유지합니다. 이 PR은 Windows 버전 세 필드와 문서만 변경합니다. 사이트 버전 17을 먼저 비공개 배포했고 아이폰 표시 정상은 사용자 확인입니다. 운영 EXE는 교체/실행하지 않습니다. [후보·검사·해시·receipt·외부 명령](MAINTENANCE_2_9_4.md).
 
 **Windows 2.9.3 후보 준비(2026-11-14 KST):** main `fe84da2`의 #150/#151 xAI 네이티브 JSON 전환을 포함합니다. RSS와 data.x.ai summary·incidents를 집계하고 Agent SDK·필수 19개 slug·범위 미확인/부분 실패 규칙을 사용합니다. 이 버전 PR은 Windows 버전 세 필드와 문서만 변경합니다. 사이트는 버전 16으로 먼저 비공개 배포했고 기준 커밋·xAI 정상·새 상세 출처를 확인했습니다. [후보·검사·해시·receipt·외부 명령](MAINTENANCE_2_9_3.md). 화면 검사 진단 개선은 별도 PR이며 이번 후보에 포함하지 않습니다. 아래 과거 준비·배포 기록은 유지합니다.
 
@@ -370,6 +370,8 @@ Windows smoke와 수동 테스트 빌드는 PR별 산출물 폴더에서 직접 
 **Windows 2.8.7의 알림:** 시간표·공식 상태·공휴일과 한도 알림을 기존 등록의 토스트로 보냅니다. 알림 센터에서 `시간표·상태`/`한도` 두 Header를 쓰고, 상태 계열에는 정보/경고 그림을 표시합니다. 같은 종류의 고정 Tag만 교체하며 Provider 문제와 정상화는 별개로 보관하고 한도는 개별 보관합니다. 기본 self-test·smoke는 실제 OS 알림·운영 등록 없이 가짜 발송기로 검증합니다. 정상 등록이 같은 배포 경로를 가리키면 재등록하지 않습니다. 내용 없는 v2 발송 기록과 오류 대체·무동작 COM·등록/해제 계약은 [Windows 알림 안내](WINDOWS_QUOTA_NOTIFICATIONS.md), 외부 확인·실행과 실제 OS 사용자 확인 항목은 [2.8.7 기록](MAINTENANCE_2_8_7.md)에 있습니다. 실제 센터 보관·그림·Header 클릭은 가짜 검사 통과와 구분합니다.
 
 ## 더 자세히 보기
+
+- [MAINTENANCE_2_9_4.md](MAINTENANCE_2_9_4.md): Gemini 한도 자동 조회 중단 후보·사이트 사용자 확인·검사·해시·외부 배포 절차.
 
 - [2.9.2 후보·Review Agents 필수 목록·사이트 선행 배포·외부 명령](MAINTENANCE_2_9_2.md)
 - [2.9.1 후보·xAI 링크 제거·상세 통일·SQLite·receipt·사이트 배포 순서](MAINTENANCE_2_9_1.md)

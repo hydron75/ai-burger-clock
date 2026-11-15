@@ -1,5 +1,10 @@
 # 다음 개선 항목
 
+## Windows 2.9.4 후보 준비: Gemini 한도 자동 조회 중단
+
+- #156/#157이 main `5fbfc6c7b1872ace712871710a3d42b464682442`에 병합됐다. Gemini의 agy 실행·숫자 표시·한도 알림을 제거하고 짧은 예외 상세/캐시 보존·미사용 파서 제거를 포함한다. #155 화면 검사 개선도 이 후보에 포함한다.
+- 사이트는 버전 17로 먼저 소유자 전용 배포했고 Gemini 안내 및 다른 세 Provider 표시 정상은 아이폰 사용자 확인이다. Windows는 버전 세 필드·문서만 바꿔 별도 candidate를 검사하고 새 receipt를 만든다. 운영 EXE 교체·실행·등록은 외부 배포 전까지 하지 않는다. [준비·검사·신원·외부 명령](MAINTENANCE_2_9_4.md).
+
 ## 우선 처리 · Gemini 한도 자동 조회 중단(2026-11-16)
 
 - Antigravity [공식 FAQ](https://antigravity.google/docs/faq.md)의 소비자 요금제 제3자 앱 agy 래핑 제한에 따라 실행 코드를 제거한다. API 키 `/usage`의 빈 groups 응답은 Mac 측 확인 결과이며 대안 조회를 추가하지 않는다.
