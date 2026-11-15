@@ -8,11 +8,11 @@ internal static class MacCliPaths
     internal static IReadOnlyList<string> Candidates(QuotaProvider provider, IEnumerable<string> pathEntries,
         string homeDirectory, string currentDirectory)
     {
+        if (!QuotaNames.IsQueryEnabled(provider)) return [];
         string name = provider switch
         {
             QuotaProvider.Codex => "codex",
             QuotaProvider.Claude => "claude",
-            QuotaProvider.Gemini => "agy",
             QuotaProvider.Xai => "grok",
             _ => throw new ArgumentOutOfRangeException(nameof(provider))
         };

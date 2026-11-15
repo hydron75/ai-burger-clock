@@ -35,7 +35,7 @@ internal static class WeeklyEarlyResetMonitorTests
         int arrivals = 0;
         return new(async (provider, token) =>
         {
-            if (Interlocked.Increment(ref arrivals) == Enum.GetValues<QuotaProvider>().Length) ready.TrySetResult();
+            if (Interlocked.Increment(ref arrivals) == 3) ready.TrySetResult();
             await ready.Task.WaitAsync(token).ConfigureAwait(false);
             return Weekly(provider, 0, Now.AddDays(4.6));
         });
@@ -77,7 +77,7 @@ internal static class WeeklyEarlyResetMonitorTests
                 }
             };
             monitor.Start();
-            await MonitorTests.WaitUntilAsync(() => observations.Count == Enum.GetValues<QuotaProvider>().Length && monitor.Snapshot().All(state => !state.IsRefreshing), 5000);
+            await MonitorTests.WaitUntilAsync(() => observations.Count == 3 && monitor.Snapshot().All(state => !state.IsRefreshing), 5000);
             await monitor.StopAsync();
             check(overlappingEngines == 0 && activeEngines == 0,
                 "Simultaneously released Provider callbacks serialize access to the shared early-reset and recovery engines");
@@ -93,7 +93,7 @@ internal static class WeeklyEarlyResetMonitorTests
                 check(item.Observation.PreviousSuccess.Reading.Windows is not QuotaWindow[],
                     "The previous cache snapshot owns a read-only window collection");
             }
-            check(Entries(log) is var rows && rows.Length == Enum.GetValues<QuotaProvider>().Length && rows.All(row => row is { Succeeded: true, Outcome: "Alert", Reason: "Alert" }),
+            check(Entries(log) is var rows && rows.Length == 3 && rows.All(row => row is { Succeeded: true, Outcome: "Alert", Reason: "Alert" }),
                 "Each live read has one completed decision row, not a second row from the UI");
         }
 
@@ -118,13 +118,13 @@ internal static class WeeklyEarlyResetMonitorTests
                 }
             };
             restarted.Start();
-            await MonitorTests.WaitUntilAsync(() => results.Count == Enum.GetValues<QuotaProvider>().Length && restarted.Snapshot().All(state => !state.IsRefreshing), 5000);
+            await MonitorTests.WaitUntilAsync(() => results.Count == 3 && restarted.Snapshot().All(state => !state.IsRefreshing), 5000);
             await restarted.StopAsync();
             check(overlappingEngines == 0 && activeEngines == 0,
                 "Simultaneously released restart callbacks serialize their shared engine and decision updates");
             check(results.All(result => result.Alert is null && result.Reason == "UsageNotDecreased"),
                 "Successful cache persistence prevents the same zero reading alerting again after restart");
-            check(Entries(log).Length == 2 * Enum.GetValues<QuotaProvider>().Length && Entries(log).Count(row => row.Outcome == "Alert") == Enum.GetValues<QuotaProvider>().Length,
+            check(Entries(log).Length == 2 * 3 && Entries(log).Count(row => row.Outcome == "Alert") == 3,
                 "Restart adds new excluded query decisions without duplicating the original alert rows");
         }
         var saved = await store.ReadQuotaAsync(QuotaProvider.Codex);
@@ -203,7 +203,7 @@ internal static class WeeklyEarlyResetMonitorTests
         });
         using var monitor = new AccountQuotaMonitor(client, utcNow: () => Now, earlyResetDiagnosticLog: log);
         using var cancel = new CancellationTokenSource();
-        Task active = monitor.RefreshOnceAsync(QuotaProvider.Gemini, cancel.Token);
+        Task active = monitor.RefreshOnceAsync(QuotaProvider.Claude, cancel.Token);
         await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
         cancel.Cancel();
         try { await active; } catch (OperationCanceledException) { }

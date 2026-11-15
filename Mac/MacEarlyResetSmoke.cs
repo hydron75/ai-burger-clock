@@ -417,15 +417,18 @@ internal static class MacEarlyResetSmoke
         int barsBefore = panel.QuotaBarCount;
         var recent = new Dictionary<QuotaProvider, QuotaEarlyResetAlert>
         {
-            [QuotaProvider.Claude] = new(QuotaProvider.Claude, 5, 1, now, [new("weekly_all", "합성 주간", 10080, 60, 4, now.AddDays(3), now.AddDays(7).AddMinutes(-1))])
+            [QuotaProvider.Claude] = new(QuotaProvider.Claude, 5, 1, now, [new("weekly_all", "합성 주간", 10080, 60, 4, now.AddDays(3), now.AddDays(7).AddMinutes(-1))]),
+            // Gemini's query is stopped (#156): even a record offered for it must not reach its box (the shared model ignores it).
+            [QuotaProvider.Gemini] = new(QuotaProvider.Gemini, 5, 1, now, [new("gemini-weekly", "합성 주간", 10080, 60, 4, now.AddDays(3), now.AddDays(7).AddMinutes(-1))])
         };
         panel.Update(schedule, providers, quotas, false, now.AddMinutes(5), "", recent);
         // Verify also checks that every tooltip of the Claude box equals the shared Provider detail built WITH the record.
         MacStatusPanel.Layout shown = panel.Verify(schedule, providers, quotas, recent);
         QuotaSectionText claude = QuotaPanelModel.Sections(quotas, now, recent).Single(section => section.Provider == QuotaProvider.Claude);
         QuotaSectionText gemini = QuotaPanelModel.Sections(quotas, now, recent).Single(section => section.Provider == QuotaProvider.Gemini);
-        Require(claude.Detail.Contains("최근 조기 초기화 가능성") && !gemini.Detail.Contains("조기 초기화"),
-            "the record must appear in its own Provider's detail only");
+        Require(claude.Detail.Contains("최근 조기 초기화 가능성") && !gemini.Detail.Contains("조기 초기화") &&
+                gemini.Detail == QuotaPanelModel.Sections(quotas, now).Single(section => section.Provider == QuotaProvider.Gemini).Detail,
+            "the record must appear in its own Provider's detail only, and never in the stopped Gemini box");
         Require(plain.Size == shown.Size && panel.QuotaBarCount == barsBefore &&
               panel.QuotaRowText(QuotaProvider.Claude, "session") == rowBefore && panel.QuotaRowSpoken(QuotaProvider.Claude, "session") == spokenBefore,
             "the record must not change the popover size, rows, bars or the spoken row");

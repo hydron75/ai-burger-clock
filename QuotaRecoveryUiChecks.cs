@@ -104,7 +104,7 @@ internal static class QuotaRecoveryUiChecks
             await context.Initialization;
             await Wait(() => context.ProviderMonitor is { IsRefreshing: false } &&
                 context.ProviderMonitor.Snapshot().All(state => state.LastSuccessfulCheckUtc.HasValue) &&
-                context.QuotaMonitor!.Snapshot().All(state => state.LastSuccessfulCheckUtc.HasValue && !state.IsRefreshing),
+                context.QuotaMonitor!.Snapshot().Where(state => QuotaNames.IsQueryEnabled(state.Provider)).All(state => state.LastSuccessfulCheckUtc.HasValue && !state.IsRefreshing),
                 "initial fake status and quota requests complete");
             await FlushUi();
             Check(!context.QuotaRecoveryNotificationsEnabled && !context.QuotaRecoveryMenuItem.Checked &&
@@ -121,6 +121,15 @@ internal static class QuotaRecoveryUiChecks
                 "Actual tray Click persists quota recovery ON and displays shared save feedback");
             Check(client.TotalCalls == calls && handler.RequestCount == statusCalls,
                 "Enabling quota recovery neither polls nor alters other Provider requests");
+            client.Set(QuotaProvider.Gemini, used: 100, weeklyUsed: 100);
+            await Refresh(QuotaProvider.Gemini);
+            client.Set(QuotaProvider.Gemini, used: 25, weeklyUsed: 25);
+            await Refresh(QuotaProvider.Gemini);
+            AdvanceNotificationQueue();
+            Check(client.TotalCalls == calls && alerts.Count == 0 && submitted.Count == 0 &&
+                context.QuotaMonitor!.Snapshot().Single(state => state.Provider == QuotaProvider.Gemini) is
+                    { Reading: null, IsRefreshing: false, LastSuccessfulCheckUtc: null, NextCheckUtc: null },
+                "Gemini opt-in refreshes cannot query or submit a recovery notification");
 
             await SetSettingFailure(true);
             try
@@ -214,7 +223,7 @@ internal static class QuotaRecoveryUiChecks
             Check(alerts.Count == 4 && submitted[^1].Title == alerts[^1].Title,
                 "Queued quota recovery drains after official balloon closure and existing notification spacing");
 
-            foreach (var provider in new[] { QuotaProvider.Codex, QuotaProvider.Gemini })
+            foreach (var provider in new[] { QuotaProvider.Codex, QuotaProvider.Claude })
             {
                 client.Set(provider, used: 100, weeklyUsed: 100);
                 await Refresh(provider);
@@ -227,7 +236,7 @@ internal static class QuotaRecoveryUiChecks
                 "Multiple recovered windows in one response share one Provider notification");
             AdvanceNotificationQueue();
             Check(alerts.Count == 6 && alerts.TakeLast(2).Select(alert => alert.Provider).Distinct().Count() == 2 &&
-                alerts.TakeLast(2).All(alert => alert.Provider is QuotaProvider.Codex or QuotaProvider.Gemini),
+                alerts.TakeLast(2).All(alert => alert.Provider is QuotaProvider.Codex or QuotaProvider.Claude),
                 "Separate Provider recoveries drain individually without losing either queued notification");
 
             handler.OpenAiStatus = OfficialStatus.Operational;
@@ -294,9 +303,9 @@ internal static class QuotaRecoveryUiChecks
             client.Set(QuotaProvider.Codex, used: 100, weeklyUsed: 100);
             await Refresh(QuotaProvider.Codex);
 
-            client.Set(QuotaProvider.Gemini, used: 25, weeklyUsed: 25, block: true);
-            Task pending = context.QuotaMonitor.RefreshOnceAsync(QuotaProvider.Gemini);
-            await Wait(() => context.QuotaMonitor.Snapshot().Single(state => state.Provider == QuotaProvider.Gemini).IsRefreshing,
+            client.Set(QuotaProvider.Claude, used: 25, weeklyUsed: 25, block: true);
+            Task pending = context.QuotaMonitor.RefreshOnceAsync(QuotaProvider.Claude);
+            await Wait(() => context.QuotaMonitor.Snapshot().Single(state => state.Provider == QuotaProvider.Claude).IsRefreshing,
                 "cancellable fake quota request starts");
             await context.QuotaMonitor.StopAsync();
             bool cancelled = false;
@@ -323,7 +332,7 @@ internal static class QuotaRecoveryUiChecks
             await context.Initialization;
             await Wait(() => context.ProviderMonitor is { IsRefreshing: false } &&
                 context.ProviderMonitor.Snapshot().All(state => state.LastSuccessfulCheckUtc.HasValue) &&
-                context.QuotaMonitor!.Snapshot().All(state => state.LastSuccessfulCheckUtc.HasValue && !state.IsRefreshing && !state.IsPrevious),
+                context.QuotaMonitor!.Snapshot().Where(state => QuotaNames.IsQueryEnabled(state.Provider)).All(state => state.LastSuccessfulCheckUtc.HasValue && !state.IsRefreshing && !state.IsPrevious),
                 "restarted fake Provider initial success completes");
             await FlushUi();
             AdvanceNotificationQueue();

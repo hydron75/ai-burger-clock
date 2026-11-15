@@ -5,6 +5,10 @@ internal enum QuotaProvider { Codex, Claude, Gemini, Xai }
 
 internal static class QuotaNames
 {
+    // Fixed policy, not a user setting. Keep the enum/cache/wire identity for compatibility.
+    public static bool IsQueryEnabled(QuotaProvider provider) => provider != QuotaProvider.Gemini;
+    public const string GeminiUnavailableText = "조회 안 함 · Antigravity 정책에 따라 자동 조회하지 않음";
+
     public static string For(QuotaProvider provider) => provider switch
     {
         QuotaProvider.Codex => "Work / Codex",

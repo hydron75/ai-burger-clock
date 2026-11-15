@@ -1,135 +1,89 @@
-using System.Text.Json.Nodes;
+using System.Collections.Concurrent;
 
 namespace AiBurgerClock;
 
-// Portable transport fixtures only; never starts an installed agy CLI.
+// Fixed policy regression: no agy discovery, process setup, cache use or notification.
 internal static class GeminiQuotaClientTests
 {
-    private const string Success = """
-        {"conversation_id":"","status":"SUCCESS","response":"Human TSV is deliberately not quota data",
-         "duration_seconds":0,"num_turns":0,
-         "usage":{"input_tokens":0,"output_tokens":0,"thinking_tokens":0,"cache_read_tokens":0,"total_tokens":0},
-         "command":{"name":"usage","data":{"groups":[
-           {"name":"Gemini Models","buckets":[
-             {"id":"gemini-5h","window":"5h","remaining_fraction":0.984375,"reset_time":"2027-02-10T16:05:00Z"},
-             {"id":"gemini-weekly","window":"weekly","remaining_fraction":0.99609375,"reset_time":"2027-02-17T11:05:00Z"}]},
-           {"name":"Gemini Synthetic Model","buckets":[
-             {"id":"gemini-synthetic-weekly","window":"weekly","remaining_fraction":0.4,"reset_time":"2027-02-14T10:00:00Z"}]},
-           {"name":"Claude and GPT models","buckets":[{"id":"3p-5h","remaining_fraction":0}]}
-         ]}}}
-        """;
-
     internal static async Task<int> RunAsync()
     {
         int count = 0;
-        void Check(bool condition, string label)
+        void Check(bool condition, string label) { count++; if (!condition) throw new InvalidOperationException("Gemini disabled: " + label); }
+        var now = new DateTimeOffset(2032, 4, 5, 6, 0, 0, TimeSpan.Zero);
+        var reading = new QuotaReading(QuotaProvider.Gemini, [new("synthetic-week", "Synthetic model", 100, now.AddDays(3), 10080)]);
+        string directory = Directory.CreateTempSubdirectory("gemini-disabled-").FullName;
+        try
         {
-            count++;
-            if (!condition) throw new InvalidOperationException("Gemini CLI: " + label);
-        }
-        async Task Reject(Func<Task> call, string label)
-        {
-            try { await call(); Check(false, label); }
-            catch (InvalidDataException error)
+            string unusedWorking = Path.Combine(directory, "must-not-be-created");
+            try { await new AccountQuotaClient(workingDirectory: unusedWorking).ReadAsync(QuotaProvider.Gemini, CancellationToken.None); Check(false, "direct client must refuse"); }
+            catch (NotSupportedException error) { Check(error.Message == QuotaNames.GeminiUnavailableText, "client refuses before filesystem or process work"); }
+            Check(!Directory.Exists(unusedWorking), "no CLI working directory created");
+            try { AccountQuotaClient.CreateStartInfo(QuotaProvider.Gemini, "/synthetic/agy", directory); Check(false, "no process start info"); }
+            catch (NotSupportedException) { Check(true, "no Gemini process command can be constructed"); }
+            try { AccountQuotaClient.FindExecutable(QuotaProvider.Gemini); Check(false, "no discovery"); }
+            catch (NotSupportedException) { Check(true, "no agy discovery"); }
+            var store = new UsageStore(Path.Combine(directory, "synthetic.db"));
+            await store.SaveQuotaAsync(new(1, reading, now, []));
+            var fake = new CountingClient(now);
+            using var monitor = new AccountQuotaMonitor(fake, store, () => now);
+            int geminiSuccesses = 0;
+            monitor.Succeeded += observation => { if (observation.Provider == QuotaProvider.Gemini) Interlocked.Increment(ref geminiSuccesses); };
+            monitor.Start();
+            try
             {
-                Check(!error.Message.Contains("private-secret", StringComparison.Ordinal), label + "; no raw output");
+                await fake.FirstThree.Task.WaitAsync(TimeSpan.FromSeconds(5));
+                // These all enter the same public wake path used by Refresh, resume and network recovery.
+                monitor.RequestRefresh();
+                monitor.RequestRefresh(queueWhileRefreshing: true);
+                foreach (string trigger in new[] { "startup", "scheduled", "Refresh", "resume", "network-recovery" })
+                {
+                    await monitor.RefreshOnceAsync(QuotaProvider.Gemini);
+                    Check(fake.Calls.GetValueOrDefault(QuotaProvider.Gemini) == 0, trigger + " invokes no Gemini client/process");
+                }
             }
+            finally { await monitor.StopAsync(); }
+            var state = monitor.Snapshot().Single(s => s.Provider == QuotaProvider.Gemini);
+            Check(state.Reading is null && state.CheckedAtUtc is null && state.LastSuccessfulCheckUtc is null && state.NextCheckUtc is null && !state.IsRefreshing, "cached Gemini is never loaded or scheduled");
+            Check(geminiSuccesses == 0, "no Gemini observation or alert callback");
+            Check(new[] { QuotaProvider.Codex, QuotaProvider.Claude, QuotaProvider.Xai }.All(p => fake.Calls.GetValueOrDefault(p) > 0), "other three providers still run");
+            var preserved = await store.ReadQuotaAsync(QuotaProvider.Gemini);
+            Check(preserved is not null && preserved.Reading.Windows.SequenceEqual(reading.Windows) && preserved.SuccessfulAtUtc == now, "legacy cache preserved unchanged for rollback; never displayed");
+            foreach (bool previous in new[] { false, true })
+            foreach (bool refreshing in new[] { false, true })
+            {
+                var old = new QuotaState(QuotaProvider.Gemini, reading, now, now, now.AddHours(1), refreshing, previous, "private synthetic error", "private synthetic cache error");
+                var section = QuotaPanelModel.Section(old, now);
+                Check(section.Rows.Count == 1 && section.Rows[0].Text == QuotaNames.GeminiUnavailableText && section.Rows[0].UsedPercent is null && section.Rows[0].ElapsedPercent is null, "all old states have one fixed row without usage/pacing");
+                Check(!section.Detail.Contains("Synthetic model") && !section.Detail.Contains("private synthetic") && section.Metadata.Text == "", "detail/metadata never reveal old values, errors or dates");
+                Check(section.Detail.StartsWith("Gemini 한도 · 조회 안 함\n", StringComparison.Ordinal), "disabled title has no stale timestamps");
+                Check(section.Detail.Contains("Antigravity 약관상 앱에서 자동 조회하지 않습니다.", StringComparison.Ordinal) && section.Detail.Contains("https://antigravity.google/docs/faq.md", StringComparison.Ordinal), "reason includes the FAQ basis");
+                Check(section.Detail.EndsWith("공식 서비스 상태는 상태 카드에서 확인하세요.", StringComparison.Ordinal), "official status remains on its card");
+                Check(section.Detail.Split('\n').Length == 4 && !section.Detail.Contains("조회 주기") && !section.Detail.Contains("응답 수신 시각"), "disabled detail has only four explanatory lines");
+            }
+            var recovery = new QuotaRecoveryNotifications();
+            var early = new QuotaEarlyResetNotifications();
+            var oldObservation = new QuotaObservation(QuotaProvider.Gemini, 1, now, reading, 1);
+            var current = reading with { Windows = [reading.Windows[0] with { UsedPercent = 0 }] };
+            Check(recovery.Observe(oldObservation, true) is null && recovery.Observe(oldObservation with { Sequence = 2, Reading = current }, true) is null, "no recovery alert from old/exhausted Gemini values");
+            Check(early.Evaluate(oldObservation, true).Reason == "QueryDisabled" && early.Evaluate(oldObservation with { Sequence = 2, Reading = current }, true).Alert is null, "no early reset alert");
+            var recoveryAlert = new QuotaRecoveryAlert(QuotaProvider.Gemini, 2, "synthetic", "synthetic", ["synthetic-week"]);
+            var earlyAlert = new QuotaEarlyResetAlert(QuotaProvider.Gemini, 2, 1, now, []);
+            Check(!QuotaPendingAlertPolicy.RecoveryStillCurrent(recoveryAlert, reading, current, now), "pending Gemini recovery is discarded");
+            Check(!QuotaPendingAlertPolicy.EarlyResetStillCurrent(earlyAlert, reading, current, now, 1), "pending Gemini early reset is discarded");
+            return count;
         }
-        Task<QuotaReading> Read(string json) => AccountQuotaClient.ReadGeminiProtocolAsync(new StringReader(json), CancellationToken.None);
-        string Change(Action<JsonNode> update)
-        {
-            var root = JsonNode.Parse(Success)!;
-            update(root);
-            return root.ToJsonString();
-        }
-
-        string? updaterBefore = Environment.GetEnvironmentVariable("AGY_CLI_DISABLE_AUTO_UPDATE");
-        var start = AccountQuotaClient.CreateStartInfo(QuotaProvider.Gemini, "/synthetic path/agy", "/neutral");
-        Check(!start.UseShellExecute && start.CreateNoWindow, "no shell or terminal");
-        Check(start.RedirectStandardInput && start.RedirectStandardOutput && start.RedirectStandardError, "all pipes redirected");
-        Check(start.FileName == "/synthetic path/agy" && start.WorkingDirectory == "/neutral", "absolute executable and neutral directory retained");
-        Check(start.ArgumentList.SequenceEqual(new[] { "-p", "/usage", "--output-format", "json", "--print-timeout", "20s" }),
-            "only the builtin read-only command with explicit timeout");
-        Check(start.Environment["AGY_CLI_DISABLE_AUTO_UPDATE"] == "true", "documented exact updater opt-out in child environment");
-        Check(Environment.GetEnvironmentVariable("AGY_CLI_DISABLE_AUTO_UPDATE") == updaterBefore, "parent settings remain unchanged");
-        Check(!start.ArgumentList.Contains("--disable-slash-commands") && !start.ArgumentList.Contains("--agent") &&
-            !start.ArgumentList.Contains("--remote-control") && !start.ArgumentList.Contains("--continue"), "no model fallback or remote/resume options");
-        foreach (string version in new[] { "1.3.1", "1.3.1\r\n", "1.3.2", "1.3.6", "1.3.10", "1.4.0", "1.4.12", "1.10.0" })
-            Check(AccountQuotaClient.IsSupportedGeminiVersion(version), "stable supported version accepted: " + version.Trim());
-        foreach (string version in new[] { "", "1.1.10", "1.1.11", "1.2.99", "1.3.0", "2.0.0", "2.1.0", "agy 1.3.1",
-            "1.3.1\n/usage", "1.3", "1.3.1.0", "1.3.2-beta.1", "1.3.2+build.5", "1.03.1", "1.3.-1", "1.3.2147483648",
-            "1.3.x", "1. 3.1" })
-            Check(!AccountQuotaClient.IsSupportedGeminiVersion(version), "unsupported or ambiguous version blocked before sending a prompt: " + version);
-
-        QuotaReading reading = await Read(Success);
-        Check(reading.Provider == QuotaProvider.Gemini && reading.Windows.Count == 3, "single pretty-printed common and scoped command result is accepted");
-        Check(reading.Windows[0].Id == "gemini-5h" && reading.Windows[1].Id == "gemini-weekly", "only typed Gemini buckets, not prose or 3p, are used");
-        Check(Math.Abs(reading.Windows[1].RemainingPercent - 99.609375) < 1e-12, "precise fractions survive transport");
-        Check(reading.Windows[2].Label == "주간 Gemini Synthetic Model", "model weekly survives the zero-activity transport guards");
-        Check((await Read(Change(root => root["response"] = "wrong prose"))).Windows.Count == 3, "human response field never supplies limits");
-        await Reject(() => Read(Change(root => root["status"] = "ERROR")), "error status rejected");
-        await Reject(() => Read(Change(root => root["conversation_id"] = "created-conversation")), "new conversation rejected");
-        await Reject(() => Read(Change(root => root["conversation_id"] = null)), "missing conversation evidence rejected");
-        await Reject(() => Read(Change(root => root["num_turns"] = 1)), "agent turn rejected");
-        await Reject(() => Read(Change(root => root["num_turns"] = null)), "missing turn evidence rejected");
-        foreach (string counter in new[] { "input_tokens", "output_tokens", "thinking_tokens", "cache_read_tokens", "total_tokens" })
-        {
-            await Reject(() => Read(Change(root => root["usage"]![counter] = 1)), "nonzero " + counter + " rejected");
-            await Reject(() => Read(Change(root => root["usage"]!.AsObject().Remove(counter))), "missing " + counter + " rejected");
-        }
-        await Reject(() => Read(Change(root => root["usage"]!["extra_tokens"] = 1)), "future nonzero token field rejected");
-        await Reject(() => Read(Change(root => root["usage"] = null)), "missing usage evidence rejected");
-        await Reject(() => Read(Change(root => root["total_cost_usd"] = 0.01)), "reported model cost rejected");
-        await Reject(() => Read(Change(root => root["command"]!["name"] = "other")), "wrong builtin rejected");
-        await Reject(() => Read(Change(root => root["command"]!["data"] = null)), "missing typed data rejected");
-        await Reject(() => Read(Change(root => root["command"] = null)), "prose alone cannot supply limits");
-        foreach (string invalid in new[] { "", "private-secret", "null", "[]", Success + Success, "notice\n" + Success })
-            await Reject(() => Read(invalid), "not one complete JSON object");
-        await Reject(() => Read(new string('x', AccountQuotaClient.MaximumOutputCharacters + 1)), "unterminated output bounded");
-
-        foreach (string marker in new[] { "Authentication required", "Waiting for authentication", "Could not authenticate", "Sign in to continue", "https://accounts.google.com/o/oauth2/auth" })
-        {
-            await Reject(() => AccountQuotaClient.ReadGeminiProtocolAsync(new ChunkedReader(marker + " private-secret", 1), CancellationToken.None),
-                "stdout authentication prompt split across chunks stops without user input");
-            await Reject(() => AccountQuotaClient.DrainErrorAsync(new ChunkedReader(marker + " private-secret", 1), CancellationToken.None, true),
-                "stderr authentication prompt split across chunks is not swallowed");
-        }
-        await AccountQuotaClient.DrainErrorAsync(new StringReader("ordinary diagnostics private-secret"), CancellationToken.None, true);
-        Check(true, "ordinary diagnostics are discarded without retaining or exposing output");
-        using (var cancellation = new CancellationTokenSource(TimeSpan.FromMilliseconds(30)))
-        {
-            bool stopped = false;
-            try { await AccountQuotaClient.ReadGeminiProtocolAsync(new WaitingReader(), cancellation.Token); }
-            catch (OperationCanceledException) { stopped = true; }
-            Check(stopped, "blocked agy stdout honors cancellation");
-        }
-        using (var cancellation = new CancellationTokenSource())
-        {
-            cancellation.Cancel();
-            bool stopped = false;
-            try { await new AccountQuotaClient().ReadAsync(QuotaProvider.Gemini, cancellation.Token); }
-            catch (OperationCanceledException) { stopped = true; }
-            Check(stopped, "pre-cancelled Gemini request never looks up or starts an executable");
-        }
-        bool relativeRejected = false;
-        try { await new AccountQuotaClient(geminiExecutable: "agy.exe").ReadAsync(QuotaProvider.Gemini, CancellationToken.None); }
-        catch (FileNotFoundException) { relativeRejected = true; }
-        Check(relativeRejected, "relative agy path cannot execute from the current directory");
-        return count;
+        finally { Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools(); Directory.Delete(directory, recursive: true); }
     }
 
-    private sealed class WaitingReader : TextReader
+    private sealed class CountingClient(DateTimeOffset now) : IAccountQuotaClient
     {
-        public override async ValueTask<int> ReadAsync(Memory<char> buffer, CancellationToken cancellationToken = default)
+        internal readonly ConcurrentDictionary<QuotaProvider, int> Calls = new();
+        internal readonly TaskCompletionSource FirstThree = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public Task<QuotaReading> ReadAsync(QuotaProvider provider, CancellationToken token)
         {
-            await Task.Delay(Timeout.Infinite, cancellationToken);
-            return 0;
+            Calls.AddOrUpdate(provider, 1, (_, count) => count + 1);
+            if (Calls.Count >= 3) FirstThree.TrySetResult();
+            return Task.FromResult(new QuotaReading(provider, [new("synthetic-week", "Synthetic", 25, now.AddDays(2), 10080)]));
         }
-    }
-
-    private sealed class ChunkedReader(string text, int chunk) : StringReader(text)
-    {
-        public override ValueTask<int> ReadAsync(Memory<char> buffer, CancellationToken cancellationToken = default) =>
-            base.ReadAsync(buffer[..Math.Min(chunk, buffer.Length)], cancellationToken);
     }
 }

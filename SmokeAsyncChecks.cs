@@ -15,7 +15,7 @@ internal static class SmokeAsyncChecks
     internal static async Task RunAsync(Action<bool, string> check)
     {
         await CheckStepSerializationAsync(check);
-        await CheckGeminiCompletionGateAsync(check);
+        await CheckClaudeCompletionGateAsync(check);
     }
 
     private static async Task CheckStepSerializationAsync(Action<bool, string> check)
@@ -76,34 +76,34 @@ internal static class SmokeAsyncChecks
         finally { timer.Stop(); initialization.TrySetResult(); }
     }
 
-    private static async Task CheckGeminiCompletionGateAsync(Action<bool, string> check)
+    private static async Task CheckClaudeCompletionGateAsync(Action<bool, string> check)
     {
         var now = new DateTimeOffset(2026, 9, 19, 12, 0, 0, TimeSpan.FromHours(9));
         var responseGate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        var client = new TestAccountQuotaClient(() => now) { NextGeminiResponseGate = responseGate };
+        var client = new TestAccountQuotaClient(() => now) { NextClaudeResponseGate = responseGate };
         using var monitor = new AccountQuotaMonitor(client, utcNow: () => now);
         using var cancellation = new CancellationTokenSource();
-        Task response = monitor.RefreshOnceAsync(QuotaProvider.Gemini, cancellation.Token);
+        Task response = monitor.RefreshOnceAsync(QuotaProvider.Claude, cancellation.Token);
         using var heartbeat = new Timer { Interval = 20 };
         var uiContinuation = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         heartbeat.Tick += (_, _) => { heartbeat.Stop(); uiContinuation.TrySetResult(); };
         try
         {
-            check(!response.IsCompleted && monitor.Snapshot().Single(s => s.Provider == QuotaProvider.Gemini).IsRefreshing,
-                "Synthetic Gemini response remains pending until its explicit completion gate is released");
+            check(!response.IsCompleted && monitor.Snapshot().Single(s => s.Provider == QuotaProvider.Claude).IsRefreshing,
+                "Synthetic Claude response remains pending until its explicit completion gate is released");
             heartbeat.Start();
             await uiContinuation.Task.WaitAsync(TimeSpan.FromSeconds(5));
             check(!response.IsCompleted && !responseGate.Task.IsCompleted &&
-                monitor.Snapshot().Single(s => s.Provider == QuotaProvider.Gemini).IsRefreshing,
-                "A delayed Windows timer continuation cannot accidentally complete the held Gemini response");
+                monitor.Snapshot().Single(s => s.Provider == QuotaProvider.Claude).IsRefreshing,
+                "A delayed Windows timer continuation cannot accidentally complete the held Claude response");
             responseGate.SetResult();
             await response.WaitAsync(TimeSpan.FromSeconds(5));
-            check(!monitor.Snapshot().Single(s => s.Provider == QuotaProvider.Gemini).IsRefreshing &&
-                !monitor.Snapshot().Single(s => s.Provider == QuotaProvider.Gemini).IsPrevious && client.Calls(QuotaProvider.Gemini) == 1,
-                "Explicit gate release accepts exactly one successful Gemini response");
-            await monitor.RefreshOnceAsync(QuotaProvider.Gemini, cancellation.Token).WaitAsync(TimeSpan.FromSeconds(5));
-            check(client.Calls(QuotaProvider.Gemini) == 2 && !monitor.Snapshot().Single(s => s.Provider == QuotaProvider.Gemini).IsRefreshing,
-                "Synthetic response gate is consumed once and does not delay the next Gemini read");
+            check(!monitor.Snapshot().Single(s => s.Provider == QuotaProvider.Claude).IsRefreshing &&
+                !monitor.Snapshot().Single(s => s.Provider == QuotaProvider.Claude).IsPrevious && client.Calls(QuotaProvider.Claude) == 1,
+                "Explicit gate release accepts exactly one successful Claude response");
+            await monitor.RefreshOnceAsync(QuotaProvider.Claude, cancellation.Token).WaitAsync(TimeSpan.FromSeconds(5));
+            check(client.Calls(QuotaProvider.Claude) == 2 && !monitor.Snapshot().Single(s => s.Provider == QuotaProvider.Claude).IsRefreshing,
+                "Synthetic response gate is consumed once and does not delay the next Claude read");
         }
         finally
         {

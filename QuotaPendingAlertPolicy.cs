@@ -7,14 +7,14 @@ namespace AiBurgerClock;
 internal static class QuotaPendingAlertPolicy
 {
     public static bool RecoveryStillCurrent(QuotaRecoveryAlert alert, QuotaReading expected,
-        QuotaReading current, DateTimeOffset now) => alert.WindowIds.All(id =>
+        QuotaReading current, DateTimeOffset now) => QuotaNames.IsQueryEnabled(alert.Provider) && alert.WindowIds.All(id =>
             current.Windows.Any(window => window.Id == id && window.UsedPercent < 100 &&
                 (window.ResetsAtUtc is null || window.ResetsAtUtc > now) &&
                 expected.Windows.Any(old => old.Id == id && old.WindowMinutes == window.WindowMinutes)));
 
     public static bool EarlyResetStillCurrent(QuotaEarlyResetAlert alert, QuotaReading expected,
         QuotaReading current, DateTimeOffset now, long continuityId) =>
-        continuityId > 0 && continuityId == alert.ContinuityId && now >= alert.CheckedAtUtc &&
+        QuotaNames.IsQueryEnabled(alert.Provider) && continuityId > 0 && continuityId == alert.ContinuityId && now >= alert.CheckedAtUtc &&
         expected.Windows.Select(window => (window.Id, window.WindowMinutes)).ToHashSet()
             .SetEquals(current.Windows.Select(window => (window.Id, window.WindowMinutes))) &&
         alert.Windows.All(change => change.WindowMinutes == 10080 &&
