@@ -31,7 +31,8 @@ internal enum GeminiUsageFailureRule
 internal sealed record GeminiUsageDiagnostic(GeminiUsageFailureRule Rule, int LineCount);
 internal sealed record GeminiUsageResult(GeminiUsageOutcome Outcome, QuotaReading? Reading = null,
     GeminiUsageDiagnostic? Diagnostic = null);
-internal sealed record GeminiWebQuotaState(GeminiUsageOutcome? Outcome = null, GeminiUsageDiagnostic? Diagnostic = null);
+internal sealed record GeminiWebQuotaState(GeminiUsageOutcome? Outcome = null, GeminiUsageDiagnostic? Diagnostic = null,
+    bool IsEnabled = true);
 
 internal static partial class GeminiUsagePage
 {
@@ -45,6 +46,7 @@ internal static partial class GeminiUsagePage
     private const string WeeklyLabel = "주간";
     private const int FiveHourMinutes = 300;
     private const int WeekMinutes = 10080;
+    private const int ResetToleranceMinutes = 15;
     private const string CurrentUsage = "Current usage";
     private const string WeeklyLimit = "Weekly limit";
     private const string ResetPrefix = "Resets";
@@ -112,9 +114,9 @@ internal static partial class GeminiUsagePage
             return Changed(GeminiUsageFailureRule.MissingUsage);
         if (fiveHour.Reset is null || weekly.Reset is null) return Changed(GeminiUsageFailureRule.MissingReset);
 
-        var fiveFailure = ConvertReset(fiveHour.Reset, now, timeZone, out var fiveReset);
+        var fiveFailure = ConvertReset(fiveHour.Reset, now, timeZone, FiveHourMinutes, out var fiveReset);
         if (fiveFailure is { } invalidFive) return Changed(invalidFive);
-        var weekFailure = ConvertReset(weekly.Reset, now, timeZone, out var weekReset);
+        var weekFailure = ConvertReset(weekly.Reset, now, timeZone, WeekMinutes, out var weekReset);
         if (weekFailure is { } invalidWeek) return Changed(invalidWeek);
         return new(GeminiUsageOutcome.Ok, new(QuotaProvider.Gemini,
             Array.AsReadOnly(new QuotaWindow[]
@@ -135,12 +137,12 @@ internal static partial class GeminiUsagePage
         Math.Truncate(window.UsedPercent) == window.UsedPercent;
 
     private static GeminiUsageFailureRule? ConvertReset(string source, DateTimeOffset now, TimeZoneInfo zone,
-        out DateTimeOffset reset)
+        int windowMinutes, out DateTimeOffset reset)
     {
         reset = default;
-        DateTimeOffset earliest = now.AddMinutes(-15);
+        DateTimeOffset earliest = now.AddMinutes(-ResetToleranceMinutes);
+        DateTimeOffset latest = now.AddMinutes(windowMinutes + ResetToleranceMinutes);
         DateTime localDay = TimeZoneInfo.ConvertTime(now, zone).Date;
-        DateTimeOffset[] matches;
 
         if (source.StartsWith("at ", StringComparison.Ordinal))
         {
@@ -148,35 +150,26 @@ internal static partial class GeminiUsagePage
                 DateTimeStyles.None, out var time))
                 return GeminiUsageFailureRule.InvalidReset;
             DateTime local = localDay.Add(time.ToTimeSpan());
-            var candidates = UtcInstants(local, zone).ToArray();
-            bool beforeWindow = candidates.Length == 0
-                ? local < TimeZoneInfo.ConvertTime(earliest, zone).DateTime
-                : candidates.All(candidate => candidate < earliest);
-            if (beforeWindow)
-                candidates = UtcInstants(local.AddDays(1), zone).ToArray();
-            DateTimeOffset latest = now.AddHours(5).AddMinutes(15);
-            matches = candidates.Where(candidate => candidate >= earliest && candidate <= latest).ToArray();
-        }
-        else
-        {
-            DateTimeOffset latest = now.AddDays(7).AddMinutes(15);
-            var candidates = new List<DateTimeOffset>();
-            bool validDate = false;
-            foreach (int year in new[] { localDay.Year - 1, localDay.Year, localDay.Year + 1 })
-            {
-                if (!DateTime.TryParseExact(source + " " + year.ToString("D4", CultureInfo.InvariantCulture),
-                    "MMM d 'at' h:mm tt yyyy", CultureInfo.InvariantCulture, DateTimeStyles.None, out var local))
-                    continue;
-                validDate = true;
-                candidates.AddRange(UtcInstants(local, zone).Where(candidate => candidate >= earliest && candidate <= latest));
-            }
-            if (!validDate) return GeminiUsageFailureRule.InvalidReset;
-            matches = candidates.ToArray();
+            var first = UtcInstants(local, zone).Concat(UtcInstants(local.AddDays(1), zone))
+                .Where(candidate => candidate >= earliest).Min(candidate => (DateTimeOffset?)candidate);
+            if (first is not { } occurrence || occurrence > latest) return GeminiUsageFailureRule.ResetOutsideWindow;
+            reset = occurrence;
+            return null;
         }
 
-        // A DST gap yields no instant. A fold may yield two in-range instants.
-        // A single instant must follow from the displayed time and the allowed window.
-        if (matches.Length != 1) return GeminiUsageFailureRule.ResetOutsideWindow;
+        var matches = new List<DateTimeOffset>();
+        bool validDate = false;
+        foreach (int year in new[] { localDay.Year - 1, localDay.Year, localDay.Year + 1 })
+        {
+            if (!DateTime.TryParseExact(source + " " + year.ToString("D4", CultureInfo.InvariantCulture),
+                "MMM d 'at' h:mm tt yyyy", CultureInfo.InvariantCulture, DateTimeStyles.None, out var local))
+                continue;
+            validDate = true;
+            matches.AddRange(UtcInstants(local, zone).Where(candidate => candidate >= earliest && candidate <= latest));
+        }
+        if (!validDate) return GeminiUsageFailureRule.InvalidReset;
+        // A dated reset must identify one instant, even in a DST fold.
+        if (matches.Count != 1) return GeminiUsageFailureRule.ResetOutsideWindow;
         reset = matches[0];
         return null;
     }

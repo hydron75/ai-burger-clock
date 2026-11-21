@@ -42,7 +42,7 @@ internal sealed partial class AccountQuotaMonitor
     {
         lock (sync)
         {
-            if (disposed || lifetime.IsCancellationRequested || states[Gemini].GeminiWeb is null) return;
+            if (disposed || lifetime.IsCancellationRequested || states[Gemini].GeminiWeb is not { IsEnabled: true }) return;
             geminiWebRefreshRequested = true;
             WakeGeminiWeb();
         }
@@ -54,16 +54,16 @@ internal sealed partial class AccountQuotaMonitor
     }
 
     private static QuotaState NewGeminiWebState(bool enabled) =>
-        new(Gemini, ContinuityId: 1, GeminiWeb: enabled ? new() : null);
+        new(Gemini, ContinuityId: 1, GeminiWeb: new(IsEnabled: enabled));
 
     // Called under sync. Only a manual wake or a fresh login can leave the
     // login-required state. Failures and successes use the same fixed interval.
     private TimeSpan? GeminiWebDelay(DateTimeOffset now)
     {
         var state = states[Gemini];
-        if (state.GeminiWeb is null) return null;
+        if (state.GeminiWeb is not { IsEnabled: true } web) return null;
         if (geminiWebRefreshRequested) return TimeSpan.Zero;
-        if (state.GeminiWeb.Outcome == GeminiUsageOutcome.LoginRequired) return null;
+        if (web.Outcome == GeminiUsageOutcome.LoginRequired) return null;
         return state.NextCheckUtc is { } next ? next - now : TimeSpan.Zero;
     }
 
@@ -90,7 +90,7 @@ internal sealed partial class AccountQuotaMonitor
     {
         if (store is null) return;
         lock (sync)
-            if (geminiWebGeneration != 0 || states[Gemini].GeminiWeb is null) return;
+            if (geminiWebGeneration != 0 || states[Gemini].GeminiWeb is not { IsEnabled: true }) return;
 
         QuotaCache? cache = null;
         string error = "";

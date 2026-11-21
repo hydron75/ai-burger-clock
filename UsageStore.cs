@@ -51,6 +51,17 @@ internal sealed class UsageStore(string? databasePath = null)
     internal Task<QuotaCache?> ReadGeminiWebQuotaAsync(CancellationToken cancellationToken = default) =>
         ReadQuotaCacheAsync(GeminiWebQuotaCacheKey, QuotaProvider.Gemini, cancellationToken);
 
+    // On logout, the host disables the reader first, then clears the cache through
+    // the same store used by the monitor so in-flight writes are ordered before deletion.
+    internal Task DeleteGeminiWebQuotaAsync(CancellationToken cancellationToken = default) =>
+        ExecuteAsync(connection =>
+        {
+            using var command = connection.CreateCommand();
+            command.CommandText = "DELETE FROM AppMetadata WHERE Key=$key;";
+            command.Parameters.AddWithValue("$key", GeminiWebQuotaCacheKey);
+            return command.ExecuteNonQuery();
+        }, cancellationToken);
+
     private Task<QuotaCache?> ReadQuotaCacheAsync(string key, QuotaProvider provider, CancellationToken cancellationToken) =>
         ExecuteAsync<QuotaCache?>(connection =>
         {

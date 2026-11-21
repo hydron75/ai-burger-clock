@@ -9,8 +9,9 @@
 - Antigravity의 제3자 래핑에 관한 10월 초 Google 표식 포럼 답변은 서로 달랐습니다. 읽기 전용 조회의 예외와 정책 시행일은 미확인입니다. [10월 8일 답변(KST)](https://discuss.ai.google.dev/t/can-a-local-ai-coordinator-launch-the-official-antigravity-cli-with-subscription-sign-in/186246/2) · [10월 9일 답변(KST)](https://discuss.ai.google.dev/t/is-google-ai-pro-antigravity-cli-automation-with-codex-permitted/187241/2)
 - Windows WebView2와 macOS WKWebView 수동 시험에서 본인 로그인, 세션 유지, 창을 드러내지 않은 상태의 읽기, 일반 브라우저 표시값과의 일치를 확인했습니다(macOS 결과는 사용자 보고). Windows의 숨김 동작은 호스트 창 최소화로 확인했습니다. 사용률과 리셋은 사용량 영역의 표시 텍스트에 있었으며 숫자용 progressbar·ARIA 수치 속성은 확인되지 않았습니다. 영문 보기의 두 구역은 각 필드의 순서가 달랐습니다. Windows에서는 로그인하지 않은 시험 프로필을 `/usage`로 열었을 때 `/app`으로 이동했습니다.
 - 공용 코드는 영문 URL과 사용량 영역의 표시 텍스트만 가져오는 스크립트를 정의합니다. 후속 호스트는 사용자 본인 로그인 후에만 켜고 끄기·로그아웃을 제공합니다. 조회마다 숨긴 WebView를 만들고 정리하며 쿠키·토큰 읽기와 내부 API 호출을 사용하지 않습니다. 리더 등록과 활성 설정이 모두 있어야 웹 조회를 시작합니다. 자동 주기와 일반 실패 후 재조회는 15분이며, 로그인 필요가 확인되면 자동 조회를 멈춥니다. 호스트의 로그인 완료 신호 또는 수동 Refresh로 재개합니다.
-- 새 창 ID는 `gemini-web:five-hour`와 `gemini-web:weekly`입니다. 검증된 값만 기존 DB의 별도 `AccountQuota.v1.GeminiWeb` 키에 저장합니다. 옛 `agy` 캐시는 보존하며 읽기·삭제·변환 대상에서 제외합니다. 실패 진단은 규칙 코드와 파싱한 유효 줄 수로 제한합니다. Gemini 회복·조기 초기화·대기 알림 차단과 모바일 송신 v2의 `reading=none`은 유지합니다.
-- 이 단계에는 실제 웹 리더와 설정 UI가 포함되지 않습니다. Windows·Mac의 리더 미등록 상태는 현재의 `조회 안 함` 표시와 같습니다.
+- 리셋 시각만 있으면 로컬 오늘·내일 중 조회 시각 −15분 이상인 첫 후보를 사용합니다. 날짜가 있으면 전년·당해·내년 후보 중 허용 범위에 드는 시각이 하나여야 합니다. 하한은 두 구역 모두 −15분이며, 상한은 문구 형식에 관계없이 5시간 구역은 +5시간 15분, 주간 구역은 +7일 15분입니다.
+- 새 창 ID는 `gemini-web:five-hour`와 `gemini-web:weekly`입니다. 검증된 값만 기존 DB의 별도 `AccountQuota.v1.GeminiWeb` 키에 저장합니다. 끄기에서는 캐시를 보존합니다. 로그아웃에서는 호스트가 먼저 `SetGeminiWebEnabled(false)`를 호출하고, 모니터와 같은 저장소 인스턴스에서 `DeleteGeminiWebQuotaAsync`를 기다립니다. 삭제는 웹 키 한 개에만 적용됩니다. 옛 `agy` 캐시는 보존하며 읽기·삭제·변환 대상에서 제외합니다. 실패 진단은 규칙 코드와 파싱한 유효 줄 수로 제한합니다. Gemini 회복·조기 초기화·대기 알림 차단과 모바일 송신 v2의 `reading=none`은 유지합니다.
+- 리더가 등록됐지만 꺼져 있을 때는 `꺼짐 · 로그인하면 Gemini 앱 사용량 조회`를 표시하며 조회나 캐시 로드를 하지 않습니다. 리더 미등록 상태에는 기존 `조회 안 함` 표시를 적용합니다. 이 단계에는 실제 웹 리더와 설정 UI가 포함되지 않습니다.
 
 ## 2026-11-16 결정: 앱 자동 조회 중단
 

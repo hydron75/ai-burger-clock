@@ -54,8 +54,8 @@ internal sealed partial class AccountQuotaMonitor : IDisposable
         earlyResetLog = earlyResetDiagnosticLog ?? CreateEarlyResetLog(store);
         this.geminiWebReader = geminiWebReader;
         this.geminiWebTimeZone = geminiWebTimeZone;
-        if (geminiWebReader is not null && geminiWebEnabled)
-            states[QuotaProvider.Gemini] = NewGeminiWebState(enabled: true);
+        if (geminiWebReader is not null)
+            states[QuotaProvider.Gemini] = NewGeminiWebState(geminiWebEnabled);
     }
 
     // Hosts finish the existing per-query row after dispatching to their UI thread.

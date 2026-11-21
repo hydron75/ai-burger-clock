@@ -34,6 +34,10 @@ internal static class QuotaPanelModel
         "Antigravity 약관상 앱에서 자동 조회하지 않습니다.\n" +
         "근거: https://antigravity.google/docs/faq.md\n" +
         "공식 서비스 상태는 상태 카드에서 확인하세요.";
+    private const string GeminiWebScopeDetail = "gemini.google.com/usage에서 읽은 Gemini 앱 한도입니다. Antigravity 한도와 별개입니다.";
+    private const string GeminiWebOffText = "꺼짐 · 로그인하면 Gemini 앱 사용량 조회";
+    private const string GeminiWebOffDetail = "Gemini 한도 · 꺼짐\n" + GeminiWebScopeDetail + "\n" +
+        "Gemini에 로그인하면 웹 사용량 조회가 켜집니다.";
     public const string XaiScopeDetail = "Grok CLI의 ACP _x.ai/billing 응답으로 받은 주간 크레딧 한도입니다.";
 
     // A previous value, or one whose reset time has passed, is never shown as current.
@@ -74,11 +78,13 @@ internal static class QuotaPanelModel
     public static QuotaSectionText Section(QuotaState state, DateTimeOffset now, QuotaEarlyResetAlert? recentEarlyReset = null)
     {
         var web = state.Provider == QuotaProvider.Gemini ? state.GeminiWeb : null;
-        if (web is null && !QuotaNames.IsQueryEnabled(state.Provider))
+        bool webOff = web is { IsEnabled: false };
+        if (webOff || (web is null && !QuotaNames.IsQueryEnabled(state.Provider)))
         {
-            string detail = GeminiUnavailableDetail;
+            string detail = webOff ? GeminiWebOffDetail : GeminiUnavailableDetail;
+            string notice = webOff ? GeminiWebOffText : QuotaNames.GeminiUnavailableText;
             return new(state.Provider, new(ProviderNames.Quota(state.Provider), PanelTone.Normal, detail), null,
-                [new(QuotaNames.GeminiUnavailableText, PanelTone.Muted, detail)], new("", PanelTone.Muted, detail));
+                [new(notice, PanelTone.Muted, detail)], new("", PanelTone.Muted, detail));
         }
         if (web is not null)
         {
@@ -135,7 +141,7 @@ internal static class QuotaPanelModel
         {
             QuotaProvider.Codex => CodexScopeDetail,
             QuotaProvider.Claude => ClaudeScopeDetail,
-            QuotaProvider.Gemini => "gemini.google.com/usage에서 읽은 Gemini 앱 한도입니다. Antigravity 한도와 별개입니다.",
+            QuotaProvider.Gemini => GeminiWebScopeDetail,
             QuotaProvider.Xai => XaiScopeDetail,
             _ => throw new ArgumentOutOfRangeException(nameof(state))
         };

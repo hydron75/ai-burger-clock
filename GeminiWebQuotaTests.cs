@@ -39,7 +39,16 @@ internal static class GeminiWebQuotaTests
         monitor.Succeeded += observation => { if (observation.Provider == QuotaProvider.Gemini) observations++; };
         monitor.RequestGeminiWebRefresh();
         await monitor.RefreshGeminiWebIfDueAsync();
-        Check(reader.Calls == 0 && GeminiState(monitor).GeminiWeb is null, "registered reader alone is off");
+        var off = GeminiState(monitor);
+        Check(reader.Calls == 0 && off.GeminiWeb is { IsEnabled: false } && off.NextCheckUtc is null,
+            "registration alone neither polls nor schedules");
+        var offSection = QuotaPanelModel.Section(off, now);
+        Check(offSection.Rows.Single() is { Text: "꺼짐 · 로그인하면 Gemini 앱 사용량 조회", UsedPercent: null, ElapsedPercent: null } &&
+            offSection.Metadata.Text.Length == 0, "registered but off has its own notice and no quota or timestamps");
+        Check(offSection.Detail.Contains("gemini.google.com/usage", StringComparison.Ordinal) &&
+            offSection.Detail.Contains("Antigravity 한도와 별개", StringComparison.Ordinal) &&
+            offSection.Detail.Contains("로그인하면 웹 사용량 조회가 켜집니다", StringComparison.Ordinal),
+            "off detail names the source and explains how to enable");
         Check(await store.ReadGeminiWebQuotaAsync() is null, "web cache key starts empty despite legacy records");
         monitor.SetGeminiWebEnabled(true);
         await monitor.RefreshOnceAsync(QuotaProvider.Gemini);
@@ -152,8 +161,11 @@ internal static class GeminiWebQuotaTests
         await inFlight.WaitAsync(TimeSpan.FromSeconds(5));
         await monitor.RefreshGeminiWebIfDueAsync();
         Check(reader.Cancellation.IsCancellationRequested && reader.Calls == 8 &&
-            GeminiState(monitor) == new QuotaState(QuotaProvider.Gemini, ContinuityId: 1),
+            GeminiState(monitor) == off,
             "disabling cancels the active read and ignores its late result and pending refresh");
+        var retained = await store.ReadGeminiWebQuotaAsync();
+        Check(retained is not null && retained.SuccessfulAtUtc == now && retained.Reading.Windows.SequenceEqual(current.Windows),
+            "turning off keeps the last valid web cache");
 
         var blocking = new TaskCompletionSource<QuotaState>(TaskCreationOptions.RunContinuationsAsynchronously);
         var cancellation = new TaskCompletionSource<QuotaState>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -183,6 +195,29 @@ internal static class GeminiWebQuotaTests
         Check(reader.Calls == 9 && cli.GeminiCalls == 0 &&
             (await store.ReadQuotaAsync(QuotaProvider.Gemini))?.Reading.Windows.SequenceEqual(legacy.Reading.Windows) == true,
             "start and shutdown preserve the legacy cache and never invoke a Gemini CLI");
+
+        var late = new TaskCompletionSource<GeminiUsagePageLoad>(TaskCreationOptions.RunContinuationsAsynchronously);
+        reader.Load = _ => late.Task;
+        monitor.SetGeminiWebEnabled(true);
+        Task logoutRead = monitor.RefreshGeminiWebIfDueAsync();
+        Check(reader.Calls == 10 && GeminiState(monitor).IsRefreshing, "simulate logout with a read in progress");
+        monitor.SetGeminiWebEnabled(false);
+        try { await store.DeleteGeminiWebQuotaAsync(); }
+        finally
+        {
+            late.TrySetResult(later);
+            await logoutRead.WaitAsync(TimeSpan.FromSeconds(5));
+        }
+        monitor.RequestGeminiWebRefresh();
+        await monitor.RefreshGeminiWebIfDueAsync();
+        Check(reader.Cancellation.IsCancellationRequested && reader.Calls == 10 && GeminiState(monitor) == off,
+            "logout leaves the registered reader off and ignores refresh");
+        Check(await store.ReadGeminiWebQuotaAsync() is null, "a late result cannot restore the deleted web cache");
+        await store.DeleteGeminiWebQuotaAsync();
+        var preserved = await store.ReadQuotaAsync(QuotaProvider.Gemini);
+        Check(preserved is not null && preserved.SuccessfulAtUtc == legacy.SuccessfulAtUtc &&
+            preserved.Reading.Windows.SequenceEqual(legacy.Reading.Windows),
+            "repeated logout does not change the legacy cache");
         Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
         return count;
     }

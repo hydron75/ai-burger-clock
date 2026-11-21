@@ -124,6 +124,13 @@ internal static class GeminiUsagePageTests
             Changed(English.Replace("at 12:00 PM", outside), GeminiUsageFailureRule.ResetOutsideWindow);
         foreach (string outside in new[] { "Apr 5 at 9:44 AM", "Apr 12 at 10:16 AM" })
             Changed(English.Replace("Apr 9 at 9:25 AM", outside), GeminiUsageFailureRule.ResetOutsideWindow);
+        Check(Parse(English.Replace("Apr 9 at 9:25 AM", "at 9:25 PM"))
+            .Reading?.Windows[1].ResetsAtUtc == Utc(2035, 4, 5, 21, 25),
+            "a time-only weekly reset may be more than five hours away on the same day");
+        Check(Parse(English.Replace("at 12:00 PM", "Apr 5 at 3:15 PM"))
+            .Reading?.Windows[0].ResetsAtUtc == Utc(2035, 4, 5, 15, 15),
+            "a dated five-hour reset includes the upper boundary");
+        Changed(English.Replace("at 12:00 PM", "Apr 5 at 3:16 PM"), GeminiUsageFailureRule.ResetOutsideWindow);
 
         var korea = TimeZoneInfo.CreateCustomTimeZone("synthetic plus nine", TimeSpan.FromHours(9), "plus nine", "plus nine");
         var minusFour = TimeZoneInfo.CreateCustomTimeZone("synthetic minus four", TimeSpan.FromHours(-4), "minus four", "minus four");
@@ -132,6 +139,11 @@ internal static class GeminiUsagePageTests
             Utc(2035, 12, 31, 14, 55), korea);
         Check(crossed.Reading?.Windows[0].ResetsAtUtc == Utc(2035, 12, 31, 15, 10), "local midnight rolls to the next day");
         Check(crossed.Reading?.Windows[1].ResetsAtUtc == Utc(2036, 1, 3, 0, 25), "December selects only next year's January within range");
+        var datedFiveHour = GeminiUsagePage.Parse(new(GeminiUsagePage.Url,
+            English.Replace("at 12:00 PM", "Jan 1 at 12:10 AM").Replace("Apr 9 at 9:25 AM", "Jan 3 at 9:25 AM")),
+            Utc(2035, 12, 31, 14, 55), korea);
+        Check(datedFiveHour.Reading?.Windows[0].ResetsAtUtc == Utc(2035, 12, 31, 15, 10),
+            "a dated five-hour reset can cross local midnight and the year boundary");
         var previousYear = GeminiUsagePage.Parse(new(GeminiUsagePage.Url,
             English.Replace("at 12:00 PM", "at 1:30 AM").Replace("Apr 9 at 9:25 AM", "Dec 31 at 11:57 PM")),
             Utc(2036, 1, 1, 4, 5), minusFour);
@@ -139,11 +151,17 @@ internal static class GeminiUsagePageTests
         Check(previousYear.Reading?.Windows[1].ResetsAtUtc == Utc(2036, 1, 1, 3, 57), "only the previous local year is in range");
 
         var eastern = TimeZoneInfo.FindSystemTimeZoneById("America/New_York");
-        var fold = GeminiUsagePage.Parse(new(GeminiUsagePage.Url,
-            English.Replace("at 12:00 PM", "at 1:30 AM").Replace("Apr 9 at 9:25 AM", "Nov 5 at 9:25 AM")),
+        string foldText = English.Replace("at 12:00 PM", "at 1:30 AM").Replace("Apr 9 at 9:25 AM", "Nov 5 at 9:25 AM");
+        var fold = GeminiUsagePage.Parse(new(GeminiUsagePage.Url, foldText), Utc(2035, 11, 4, 4, 30), eastern);
+        Check(fold.Reading?.Windows[0].ResetsAtUtc == Utc(2035, 11, 4, 5, 30),
+            "a time-only reset selects the first occurrence of a repeated local time");
+        var laterFold = GeminiUsagePage.Parse(new(GeminiUsagePage.Url, foldText), Utc(2035, 11, 4, 6, 0), eastern);
+        Check(laterFold.Reading?.Windows[0].ResetsAtUtc == Utc(2035, 11, 4, 6, 30),
+            "a time-only reset skips the occurrence before the lower boundary");
+        var datedFold = GeminiUsagePage.Parse(new(GeminiUsagePage.Url, foldText.Replace("at 1:30 AM", "Nov 4 at 1:30 AM")),
             Utc(2035, 11, 4, 4, 30), eastern);
-        Check(fold is { Outcome: GeminiUsageOutcome.FormatChanged, Diagnostic.Rule: GeminiUsageFailureRule.ResetOutsideWindow },
-            "two defensible interpretations of a repeated local time are rejected");
+        Check(datedFold is { Outcome: GeminiUsageOutcome.FormatChanged, Diagnostic.Rule: GeminiUsageFailureRule.ResetOutsideWindow },
+            "a dated reset must still identify a single instant");
         var gapEarlierToday = GeminiUsagePage.Parse(new(GeminiUsagePage.Url,
             English.Replace("at 12:00 PM", "at 2:30 AM").Replace("Apr 9 at 9:25 AM", "Mar 13 at 9:25 AM")),
             Utc(2035, 3, 12, 3, 30), eastern);
