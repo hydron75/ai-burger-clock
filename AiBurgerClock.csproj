@@ -32,4 +32,10 @@
          entry point or the portable test runner in the Windows executable. -->
     <Compile Remove="Mac/**/*.cs;Shared.Tests/**/*.cs;artifacts/**/*.cs" />
   </ItemGroup>
+  <Target Name="ExcludeWebView2SdkDocumentation" AfterTargets="ResolveAssemblyReferences">
+    <ItemGroup>
+      <ReferenceCopyLocalPaths Remove="@(ReferenceCopyLocalPaths)"
+          Condition="'%(ReferenceCopyLocalPaths.Filename)%(ReferenceCopyLocalPaths.Extension)' == 'Microsoft.Web.WebView2.Core.xml'" />
+    </ItemGroup>
+  </Target>
 </Project>
