@@ -36,7 +36,7 @@ internal sealed class MacGeminiLoginWindow
         this.succeeded = succeeded;
         leftGemini = verifying = false;
         ui = new();
-        navigation = new(stayOnGemini: false);
+        navigation = new();
         web = new WKWebView(new CGRect(0, 0, 980, 760), MacGeminiWebKit.Configuration(restrictPlayback: false))
         {
             NavigationDelegate = navigation,

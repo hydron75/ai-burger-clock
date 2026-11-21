@@ -62,14 +62,28 @@ internal static class MacGeminiWebSmoke
         Check(incomplete.Attempts == 21 && GeminiUsagePage.Parse(incomplete.Load, now, TimeZoneInfo.Utc).Outcome == GeminiUsageOutcome.FormatChanged,
             "a usage page without the two sections was not retried and reported as a format change.");
 
-        // A redirect away from the usage page ends the read at once; only host and path are kept (a sign-in token in the
-        // query never leaves the web view). The parser calls that "sign-in needed".
+        // Another page does not end the read: it keeps looking for the whole 5 s window and returns the last page seen, with
+        // only host and path (a sign-in token in the query never leaves the web view). The parser calls that "sign-in needed".
         var app = await Run(_ => Page("https://gemini.google.com/app?synthetic-token=ABC", null));
-        Check(app.Attempts == 1 && app.Delays.Count == 0 && app.Load.FinalUrl == "https://gemini.google.com/app" &&
-              GeminiUsagePage.Parse(app.Load, now, TimeZoneInfo.Utc).Outcome == GeminiUsageOutcome.LoginRequired, "a redirect to the app page was not reported as sign-in needed.");
-        var accounts = await Run(_ => Page("https://accounts.google.com/v3/signin/identifier?continue=synthetic-token#fragment", null));
-        Check(accounts.Attempts == 1 && accounts.Load.FinalUrl == "https://accounts.google.com/v3/signin/identifier" &&
-              GeminiUsagePage.Parse(accounts.Load, now, TimeZoneInfo.Utc).Outcome == GeminiUsageOutcome.LoginRequired, "a redirect to the sign-in host kept a query or fragment.");
+        Check(app.Attempts == 21 && app.Delays.Aggregate(TimeSpan.Zero, (sum, span) => sum + span) == TimeSpan.FromSeconds(5) &&
+              app.Load.FinalUrl == "https://gemini.google.com/app" &&
+              GeminiUsagePage.Parse(app.Load, now, TimeZoneInfo.Utc).Outcome == GeminiUsageOutcome.LoginRequired, "a page that stays on the app page was not reported as sign-in needed after 5 s.");
+        const string signIn = "https://accounts.google.com/v3/signin/identifier?continue=synthetic-token#fragment";
+        var accounts = await Run(_ => Page(signIn, null));
+        Check(accounts.Attempts == 21 && accounts.Load.FinalUrl == "https://accounts.google.com/v3/signin/identifier" &&
+              GeminiUsagePage.Parse(accounts.Load, now, TimeZoneInfo.Utc).Outcome == GeminiUsageOutcome.LoginRequired, "a page that stays on the sign-in host kept a query or fragment or was not sign-in needed.");
+        // Through another host and back to the usage page: the sections are read there (Ok), no sign-in needed.
+        var bounce = await Run(attempt => attempt < 4 ? Page(signIn, null) : Page(UsageUrl, UsageText));
+        Check(bounce.Attempts == 5 && bounce.Delays.Count == 4 && GeminiUsagePage.Parse(bounce.Load, now, TimeZoneInfo.Utc).Outcome == GeminiUsageOutcome.Ok,
+            "a pass through another host and back to the usage page was not read.");
+        // Back on the usage page but the values come late: still read.
+        var bounceLate = await Run(attempt => attempt < 3 ? Page(signIn, null) : attempt < 8 ? Page(UsageUrl, null) : Page(UsageUrl, UsageText));
+        Check(bounceLate.Attempts == 9 && GeminiUsagePage.Parse(bounceLate.Load, now, TimeZoneInfo.Utc).Outcome == GeminiUsageOutcome.Ok,
+            "a late value after a pass through another host was not read.");
+        // An unreadable answer in the middle of a move does not replace the last page seen.
+        var midMove = await Run(attempt => attempt < 20 ? Page(signIn, null) : null);
+        Check(midMove.Attempts == 21 && GeminiUsagePage.Parse(midMove.Load, now, TimeZoneInfo.Utc).Outcome == GeminiUsageOutcome.LoginRequired,
+            "an unreadable last answer replaced the last page seen.");
 
         // No answer from the page (or an unreadable one): retried for the same 5 s, then a failed load.
         foreach (string? answer in new string?[] { null, "not json", "{\"text\":\"x\"}", "{\"url\":5}" })
@@ -87,7 +101,7 @@ internal static class MacGeminiWebSmoke
         catch (OperationCanceledException) { threw = true; }
         Check(threw, "a cancelled read did not stop.");
 
-        return "page reading (ready at once; late element retried every 250 ms; missing element 20 retries = 5 s then format changed; redirect ends at once with host+path only; " +
+        return "page reading (ready at once; late element retried every 250 ms; missing element 20 retries = 5 s then format changed; another page is waited out for 5 s (host+path only, then sign-in needed) and a return to the usage page is read; " +
                "unreadable answer = failed load; cancellation; 30 s total limit)";
     }
 
@@ -117,23 +131,23 @@ internal static class MacGeminiWebSmoke
         NSMenuItem? item = contextMenu.Items.FirstOrDefault(entry => entry.Title == MacGeminiWebController.MenuTitle);
         Check(item?.Submenu is { } appSubmenu && appSubmenu.Items.Select(entry => entry.Title).SequenceEqual(["로그인…", "끄기", "로그아웃"]),
             "the right-click menu has no 'Gemini 사용량' submenu with 로그인… / 끄기 / 로그아웃.");
-        Check(!appController.Enabled && !appController.HasSession && appController.Items == (true, false, false),
-            "a fresh run is not off with only the sign-in item usable.");
+        Check(!appController.Enabled && !appController.HasSession && appController.Items == (true, false, true),
+            "a fresh run is not off with sign-in and logout usable.");
 
         // Which items can be used in each state.
-        (bool Enabled, bool Session, bool LoginOpen, bool Busy, (bool, bool, bool) Expected)[] states =
+        // 로그아웃 is usable in every state except while a logout is running.
+        (bool Enabled, bool LoginOpen, bool Busy, (bool, bool, bool) Expected)[] states =
         [
-            (false, false, false, false, (true, false, false)),
-            (false, false, true, false, (false, false, false)),
-            (true, true, false, false, (true, true, true)),
-            (true, true, true, false, (false, true, true)),
-            (false, true, false, false, (true, false, true)),
-            (true, true, false, true, (false, false, false)),
-            (false, true, false, true, (false, false, false))
+            (false, false, false, (true, false, true)),
+            (false, true, false, (false, false, true)),
+            (true, false, false, (true, true, true)),
+            (true, true, false, (false, true, true)),
+            (true, false, true, (false, false, false)),
+            (false, false, true, (false, false, false))
         ];
         foreach (var state in states)
-            Check(MacGeminiWebController.ItemsFor(state.Enabled, state.Session, state.LoginOpen, state.Busy) == state.Expected,
-                $"menu items for enabled={state.Enabled} session={state.Session} login-open={state.LoginOpen} busy={state.Busy}.");
+            Check(MacGeminiWebController.ItemsFor(state.Enabled, state.LoginOpen, state.Busy) == state.Expected,
+                $"menu items for enabled={state.Enabled} login-open={state.LoginOpen} busy={state.Busy}.");
 
         string directory = Path.Combine(Path.GetTempPath(), "gemini-web-smoke-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(directory);
@@ -155,18 +169,18 @@ internal static class MacGeminiWebSmoke
             var controller = new MacGeminiWebController(settings, backend, (text, error) => feedback.Add((text, error)));
             Check(controller.MenuItem.Title == "Gemini 사용량" && controller.MenuItem.Submenu!.Items.Length == 3, "the controller's submenu is wrong.");
 
-            // 끄기 / 로그아웃 do nothing while off without a session.
+            // 끄기 does nothing while off.
             controller.Off();
             Check(backend.Calls.Count == 0, "'끄기' acted while off.");
 
             // 로그인…: the window opens, nothing is switched on, the sign-in item waits.
             controller.Login();
-            Check(backend.Calls.SequenceEqual(["show-login"]) && !settings.Enabled && controller.Items == (false, false, false),
+            Check(backend.Calls.SequenceEqual(["show-login"]) && !settings.Enabled && controller.Items == (false, false, true),
                 "opening the sign-in window switched something on or left the sign-in item usable.");
             // Closed without signing in: nothing changed, the sign-in item is usable again.
             backend.LoginOpen = false;
             controller.UpdateMenu();
-            Check(!MacGeminiWebSettings.Load(directory).Enabled && controller.Items == (true, false, false) && feedback.Count == 0,
+            Check(!MacGeminiWebSettings.Load(directory).Enabled && controller.Items == (true, false, true) && feedback.Count == 0,
                 "closing the sign-in window without signing in changed something.");
             // Signed in: switched on, saved, usable items follow.
             controller.Login();
@@ -192,7 +206,7 @@ internal static class MacGeminiWebSmoke
             backend.LoginOpen = true; // a sign-in window is open: it is closed too
             await controller.LogoutAsync();
             Check(backend.Calls.SequenceEqual(["enabled:False", "close-login", "delete-cache", "wait-reads", "remove-store"]) &&
-                  MacGeminiWebSettings.Load(directory) is { Enabled: false, HasSession: false } && controller.Items == (true, false, false) &&
+                  MacGeminiWebSettings.Load(directory) is { Enabled: false, HasSession: false } && controller.Items == (true, false, true) &&
                   feedback[^1] is { Error: false } && feedback[^1].Text.Contains("삭제했습니다", StringComparison.Ordinal),
                 "logout did not run off -> cache -> web views -> data store, or left a session behind.");
 
@@ -212,8 +226,15 @@ internal static class MacGeminiWebSmoke
                 "a logout that threw left the menu unusable or dropped the session flag.");
             backend.ThrowOnRemove = false;
             await controller.LogoutAsync();
-            Check(MacGeminiWebSettings.Load(directory) is { Enabled: false, HasSession: false } && controller.Items == (true, false, false) && !feedback[^1].Error,
+            Check(MacGeminiWebSettings.Load(directory) is { Enabled: false, HasSession: false } && controller.Items == (true, false, true) && !feedback[^1].Error,
                 "the repeated logout did not finish.");
+
+            // 로그아웃 also runs with nothing recorded (a session may sit in the data store without a confirmed login).
+            backend.Calls.Clear();
+            await controller.LogoutAsync();
+            Check(backend.Calls.SequenceEqual(["enabled:False", "delete-cache", "wait-reads", "remove-store"]) &&
+                  MacGeminiWebSettings.Load(directory) is { Enabled: false, HasSession: false } && controller.Items == (true, false, true),
+                "logout did not run its cleanup while off with no session recorded.");
 
             // Shutdown closes an open sign-in window.
             controller.Login();
@@ -222,7 +243,7 @@ internal static class MacGeminiWebSmoke
         }
         finally { Directory.Delete(directory, recursive: true); }
 
-        return "Gemini menu (right-click 'Gemini 사용량' with 로그인… / 끄기 / 로그아웃; 7 usable-item states; settings missing/garbage/on-without-session = off, round trip; " +
+        return "Gemini menu (right-click 'Gemini 사용량' with 로그인… / 끄기 / 로그아웃; 6 usable-item states (로그아웃 always usable unless busy); settings missing/garbage/on-without-session = off, round trip; " +
                "sign-in window closed without login = no change; login = on + saved; 끄기 keeps login; logout = off -> cache -> web views -> data store, failure and exception keep retry, repeat finishes; shutdown closes sign-in)";
     }
 

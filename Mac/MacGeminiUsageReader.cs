@@ -7,8 +7,10 @@ using WebKit;
 namespace AiBurgerClock;
 
 // What one hidden read does after the page has finished loading, kept free of AppKit so the native smoke can drive it
-// with synthetic answers. The script is tried right away and then every 250 ms until 5 s have passed; a redirect away
-// from the usage page ends it at once. The whole read (load + retries) is limited to 30 s by the caller.
+// with synthetic answers. The script is tried right away and then every 250 ms until 5 s have passed. Leaving the usage
+// page does not end it: Google may pass through another host and come back, so the read keeps looking for the two
+// sections for the whole window and otherwise returns the last page it saw. The whole read (load + retries) is limited to
+// 30 s by the caller.
 internal static class MacGeminiPageReading
 {
     internal const int RetryMilliseconds = 250;
@@ -18,15 +20,18 @@ internal static class MacGeminiPageReading
     internal static async Task<GeminiUsagePageLoad> ReadAsync(Func<CancellationToken, Task<string?>> run,
         Func<TimeSpan, CancellationToken, Task> delay, CancellationToken cancellationToken)
     {
-        GeminiUsagePageLoad last = GeminiUsagePageLoad.LoadFailed;
+        GeminiUsagePageLoad? page = null;
         for (int attempt = 0; attempt <= RetryWindowMilliseconds / RetryMilliseconds; attempt++)
         {
             if (attempt > 0) await delay(TimeSpan.FromMilliseconds(RetryMilliseconds), cancellationToken).ConfigureAwait(true);
             cancellationToken.ThrowIfCancellationRequested();
-            last = Interpret(await run(cancellationToken).ConfigureAwait(true));
-            if (IsFinal(last)) return last;
+            GeminiUsagePageLoad current = Interpret(await run(cancellationToken).ConfigureAwait(true));
+            // An answer that cannot be read (the page is in the middle of a move) does not replace the last page seen.
+            if (current.FinalUrl is null) continue;
+            page = current;
+            if (IsUsagePageWithSections(current)) return current;
         }
-        return last;
+        return page ?? GeminiUsagePageLoad.LoadFailed;
     }
 
     // The page's answer is {url, text}. The URL is cut to scheme, host and path before it goes anywhere else.
@@ -52,15 +57,12 @@ internal static class MacGeminiPageReading
         Uri.TryCreate(url, UriKind.Absolute, out Uri? parsed) && parsed.Scheme == Uri.UriSchemeHttps &&
         parsed.Host == MacGeminiWebKit.Host && parsed.AbsolutePath == "/usage";
 
-    // Done when the page is somewhere else (no point waiting) or when the usage text has both sections. A usage page
-    // without them is retried until the 5 s are up and then returned as it is (the parser calls that a format change).
-    private static bool IsFinal(GeminiUsagePageLoad load)
-    {
-        if (load.FinalUrl is null) return false;
-        if (!IsUsagePage(load.FinalUrl)) return true;
-        return load.Text is { } text && text.Contains("Weekly limit", StringComparison.Ordinal) &&
-            text.Contains("% used", StringComparison.Ordinal);
-    }
+    // Done only when the usage page shows both sections. Any other page (a usage page without them, or another address)
+    // is retried until the 5 s are up and then returned as it is: the parser calls the first a format change and the
+    // second sign-in needed.
+    private static bool IsUsagePageWithSections(GeminiUsagePageLoad load) =>
+        IsUsagePage(load.FinalUrl) && load.Text is { } text && text.Contains("Weekly limit", StringComparison.Ordinal) &&
+        text.Contains("% used", StringComparison.Ordinal);
 }
 
 // IGeminiUsagePageReader for the Mac host. Every read builds one hidden window with one WKWebView on the app's own
@@ -96,9 +98,7 @@ internal sealed class MacGeminiUsageReader(Action<Action> runOnMainThread) : IGe
         try
         {
             session = new Session();
-            Session.Result navigation = await session.LoadAsync(url, linked.Token);
-            if (navigation.Left is { } destination) return new(destination, null);
-            if (!navigation.Finished) return GeminiUsagePageLoad.LoadFailed;
+            if (!await session.LoadAsync(url, linked.Token)) return GeminiUsagePageLoad.LoadFailed;
             return await MacGeminiPageReading.ReadAsync(token => session.EvaluateAsync(script, token), Task.Delay, linked.Token);
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
@@ -161,14 +161,11 @@ internal sealed class MacGeminiUsageReader(Action<Action> runOnMainThread) : IGe
 
     private sealed class Session : IDisposable
     {
-        internal readonly record struct Result(bool Finished, string? Left);
-
         private readonly NSWindow window;
         private readonly WKWebView web;
-        private readonly MacGeminiNavigationDelegate navigation = new(stayOnGemini: true);
+        private readonly MacGeminiNavigationDelegate navigation = new();
         private readonly MacGeminiUiDelegate ui = new();
-        private string? blockedDestination;
-        private readonly TaskCompletionSource<Result> loaded = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource<bool> loaded = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
         internal Session()
         {
@@ -184,17 +181,12 @@ internal sealed class MacGeminiUsageReader(Action<Action> runOnMainThread) : IGe
             {
                 // No sound from a hidden page, whatever it tries to start.
                 web.SetAllMediaPlaybackSuspended(true, () => { });
-                loaded.TrySetResult(new(true, null));
+                loaded.TrySetResult(true);
             };
-            navigation.Failed = () => loaded.TrySetResult(new(false, null));
-            navigation.Left = destination =>
-            {
-                blockedDestination = destination;
-                loaded.TrySetResult(new(false, destination));
-            };
+            navigation.Failed = () => loaded.TrySetResult(false);
         }
 
-        internal async Task<Result> LoadAsync(string url, CancellationToken cancellationToken)
+        internal async Task<bool> LoadAsync(string url, CancellationToken cancellationToken)
         {
             using CancellationTokenRegistration registration = cancellationToken.Register(() => loaded.TrySetCanceled(cancellationToken));
             cancellationToken.ThrowIfCancellationRequested();
@@ -202,12 +194,8 @@ internal sealed class MacGeminiUsageReader(Action<Action> runOnMainThread) : IGe
             return await loaded.Task;
         }
 
-        // A move away from gemini.google.com that was blocked after the page had finished loading (a script redirect)
-        // still ends the read as "somewhere else": the page itself stays on the usage address because the move was refused.
         internal async Task<string?> EvaluateAsync(string script, CancellationToken cancellationToken)
         {
-            if (blockedDestination is { } destination)
-                return "{\"url\":\"" + destination.Replace("\\", "\\\\").Replace("\"", "\\\"") + "\",\"text\":null}";
             // EvaluateJavaScript cannot be cancelled: stop waiting for it when the read is cancelled or times out.
             Task<NSObject?> evaluation = web.EvaluateJavaScriptAsync(script)!;
             var cancelled = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -224,7 +212,6 @@ internal sealed class MacGeminiUsageReader(Action<Action> runOnMainThread) : IGe
         public void Dispose()
         {
             navigation.Finished = navigation.Failed = null;
-            navigation.Left = null;
             MacGeminiWebKit.Release(window, web);
         }
     }

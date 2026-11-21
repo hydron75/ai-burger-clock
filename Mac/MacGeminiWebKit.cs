@@ -50,9 +50,6 @@ internal static class MacGeminiWebKit
         web?.Dispose();
         window?.Dispose();
     }
-
-    // Host and path only: a query or fragment (which could carry a sign-in token) never leaves the web view.
-    internal static string Sanitize(NSUrl url) => $"{url.Scheme}://{url.Host}{url.Path}";
 }
 
 // Everything the page may ask for is refused: new windows (window.open, target=_blank), camera/microphone capture and
@@ -66,14 +63,12 @@ internal sealed class MacGeminiUiDelegate : WKUIDelegate
         WKMediaCaptureType type, Action<WKPermissionDecision> decisionHandler) => decisionHandler(WKPermissionDecision.Deny);
 }
 
-// Main-frame navigation guard and completion callbacks. Only https is loaded. The hidden reader also never follows a
-// redirect away from gemini.google.com: it stops there and reports that destination (sign-in needed); the visible login
-// window follows it because that is where the user signs in.
-internal sealed class MacGeminiNavigationDelegate(bool stayOnGemini) : WKNavigationDelegate
+// Main-frame navigation guard and completion callbacks. Only https is loaded; every https main-frame move is followed
+// (Google may refresh a signed-in session through accounts.google.com and come back, so a hidden read must not stop it).
+internal sealed class MacGeminiNavigationDelegate : WKNavigationDelegate
 {
     internal Action? Finished;
     internal Action? Failed;
-    internal Action<string>? Left;
     internal Action<string>? Navigated;
 
     public override void DecidePolicy(WKWebView webView, WKNavigationAction navigationAction,
@@ -89,12 +84,6 @@ internal sealed class MacGeminiNavigationDelegate(bool stayOnGemini) : WKNavigat
         if (url is null || url.Scheme != "https")
         {
             decisionHandler(WKNavigationActionPolicy.Cancel);
-            return;
-        }
-        if (stayOnGemini && url.Host != MacGeminiWebKit.Host)
-        {
-            decisionHandler(WKNavigationActionPolicy.Cancel);
-            Left?.Invoke(MacGeminiWebKit.Sanitize(url));
             return;
         }
         Navigated?.Invoke(url.Host ?? "");

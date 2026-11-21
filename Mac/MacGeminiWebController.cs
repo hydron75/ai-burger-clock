@@ -62,16 +62,16 @@ internal sealed class MacGeminiWebController
 
     internal bool HasSession => settings.HasSession;
 
-    // Which items can be used: sign-in while no sign-in window is open, "끄기" only while on, "로그아웃" while on or while
-    // a session may exist, nothing while a logout is running.
-    internal static (bool Login, bool Off, bool Logout) ItemsFor(bool enabled, bool hasSession, bool loginOpen, bool busy) =>
-        busy ? (false, false, false) : (!loginOpen, enabled, enabled || hasSession);
+    // Which items can be used: sign-in while no sign-in window is open, "끄기" only while on, "로그아웃" always (a session
+    // may sit in the web data store even when no login was confirmed here), nothing while a logout is running.
+    internal static (bool Login, bool Off, bool Logout) ItemsFor(bool enabled, bool loginOpen, bool busy) =>
+        busy ? (false, false, false) : (!loginOpen, enabled, true);
 
     internal (bool Login, bool Off, bool Logout) Items => (login.Enabled, off.Enabled, logout.Enabled);
 
     internal void UpdateMenu()
     {
-        var (canLogin, canOff, canLogout) = ItemsFor(settings.Enabled, settings.HasSession, backend.LoginOpen, busy);
+        var (canLogin, canOff, canLogout) = ItemsFor(settings.Enabled, backend.LoginOpen, busy);
         login.Enabled = canLogin;
         off.Enabled = canOff;
         logout.Enabled = canLogout;
