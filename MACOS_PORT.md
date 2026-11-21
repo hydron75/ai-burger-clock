@@ -3212,3 +3212,30 @@ Shared.Tests **291,495건 PASS**, `bash Mac/build.sh` 옵션 없음 경고 0 / �
 ### 병합과 Windows 확인 (2026-11-21)
 - **Windows 확인(ChatGPT, PR #164 `773966d`):** 빌드 경고 0 / 오류 0, Shared.Tests 291,593, self-test 292,736.
 - **병합:** PR #164가 main에 병합됐다(병합 HEAD `773966d`, 병합 커밋 `d5fdc2d`). 사용자가 수동 확인한 실행 빌드(`30a4932`)와 병합 HEAD의 코드 차이는 메뉴 문구 상수의 `GeminiWebText.cs` 이동뿐이다(위 "공통 문구 상수"). 재배포는 하지 않았고, 실행 중인 앱은 계속 `30a4932` 빌드다. 다음 배포는 메인 지시 때 병합 HEAD로 한다.
+
+## 84. 0.9.7 정리 (xAI 공지 판정 포함)
+
+2026-11-21. Mac 0.9.6 / build 33 → **0.9.7 / build 34**. 앱 코드 변경 없이 공통 원본의 xAI 정보 공지·RSS ACTIVE 단계 처리(PR #167)를 번들에 싣는다. 배포는 하지 않았다("배포 진행" 지시 대기).
+
+### 버전 필드
+`Version` 0.9.7, `AssemblyVersion` 0.9.7.0, `FileVersion` 0.9.7.0, `ApplicationVersion` 34(`CFBundleVersion`). `Info.plist`에는 적지 않는다.
+
+### 기준
+| 항목 | 값 |
+|---|---|
+| 기준 main(PR #167 병합) | `5f9795468e6a804f378571d11de19aa9ee4ead5c` |
+| 버전 변경 커밋(앱 소스) | `8fa5696…`(브랜치 `claude/mac-0-9-7`, 이 절의 기록 커밋은 문서만 바꿈) |
+
+### 이번 번들에 실리는 공통 변경
+xAI의 정보 공지(summary·RSS `info`, incidents `impact=none`)를 정상 공지로 처리하고, RSS `ACTIVE` 단계를 인식한다. 정상일 때 카드 둘째 줄에 `공지: …`가, 상세에 공지 제목·관련·사건 ID가 나온다. 같은 ID의 실제 장애가 확인되면 장애(STOP/HOLD 판정)가 우선하고 공지만으로는 HOLD 알림이 나지 않는다. Mac은 카드 문구를 `StatusPanelModel`에서 그대로 받아 표시하며 코드 변경이 없다([MacStatusPanel.cs](Mac/MacStatusPanel.cs)의 카드 필드 일치 검사 그대로). #167 공통 확인 결과: Shared.Tests 291,593 → 291,619(xAI 629건), Mac 파일 변경 없음.
+
+### 배포 전 검증 (임시 사본, 저장소 경로 아님)
+Shared.Tests **291,619건 PASS**, `bash Mac/build.sh` 옵션 없음 경고 0 / 오류 0, 번들 버전 0.9.7 / 34, native `--smoke-test` 1회 종료 코드 0·FAIL 0·SKIP 0. 임시 사본은 `lsregister -u` 후 삭제했고 LaunchServices 등록 수는 1이다.
+
+### 배포 뒤 사용자 확인 항목 (배포 후 기록)
+- xAI 카드: 공지가 진행 중이면 정상 표시이면서 둘째 줄에 `공지: …`.
+- 카드 상세: 공지 제목·관련·사건 ID.
+- 공지가 없는 평소에는 카드가 기존과 같다.
+
+### 수행하지 않은 검증
+- 실제 xAI 공지가 올라온 상태의 앱 화면(합성 입력과 공용 검사로만 확인). 배포 뒤 사용자 확인으로 따로 적는다.
