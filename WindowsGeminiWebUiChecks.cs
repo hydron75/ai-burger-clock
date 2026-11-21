@@ -78,8 +78,15 @@ internal static class WindowsGeminiWebUiChecks
 
             session.LoginSucceeds = true;
             session.ReadPage = () => new("https://gemini.google.com/app", null);
-            WithMenu(() => items[0].PerformClick());
-            await WaitAsync(() => Gemini().GeminiWeb?.Outcome == GeminiUsageOutcome.LoginRequired && !Gemini().IsRefreshing);
+            bool menusClosedBeforeLogin = false;
+            session.BeforeSignIn = () => menusClosedBeforeLogin = !menu.Visible && !root.DropDown.Visible;
+            try
+            {
+                WithMenu(() => items[0].PerformClick());
+                await WaitAsync(() => Gemini().GeminiWeb?.Outcome == GeminiUsageOutcome.LoginRequired && !Gemini().IsRefreshing);
+                check(menusClosedBeforeLogin, "Gemini native login starts after both tray menus close");
+            }
+            finally { session.BeforeSignIn = null; }
             await ShowStateAsync("login-required", "로그인 필요 · Gemini 앱 사용량", "로그인 필요 · Gemini 앱 사용량", 0, [true, true, true]);
 
             session.ReadPage = () => WindowsGeminiWebChecks.ValidPage(clock(), TimeZoneInfo.Local);

@@ -12,7 +12,7 @@ internal sealed record WindowsGeminiPageDom(string? Url, string? Text);
 [JsonSerializable(typeof(WindowsGeminiWebSettings))]
 internal partial class WindowsGeminiWebJson : JsonSerializerContext;
 
-internal sealed class WindowsGeminiWebSession(Control dispatcher, string dataDirectory) : IWindowsGeminiWebSession
+internal sealed class WindowsGeminiWebSession(Control dispatcher, string dataDirectory, Action<string> reportLoginIssue) : IWindowsGeminiWebSession
 {
     internal const string ProfileName = "GeminiWeb";
     private static readonly TimeSpan ViewTimeout = TimeSpan.FromSeconds(30);
@@ -125,7 +125,14 @@ internal sealed class WindowsGeminiWebSession(Control dispatcher, string dataDir
         host.FormClosed += Closed;
         try
         {
-            host.Show();
+            if (!WindowsGeminiLoginWindow.Show(host))
+            {
+                lifetime.Token.ThrowIfCancellationRequested();
+                reportLoginIssue("Gemini 로그인 [창 표시] WindowNotVisible");
+                MessageBox.Show("Gemini 로그인 창을 표시하지 못했습니다. 트레이 메뉴에서 다시 시도해 주세요.",
+                    host.Text, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return false;
+            }
             var signIn = SignInOnUiAsync(host, lifetime.Token);
             return await WaitWithinAsync(signIn, lifetime.Token);
         }
@@ -150,12 +157,29 @@ internal sealed class WindowsGeminiWebSession(Control dispatcher, string dataDir
             {
                 var completion = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
                 var core = controller.CoreWebView2;
+                bool NavigateToUsage()
+                {
+                    try
+                    {
+                        core.Navigate(GeminiUsagePage.Url);
+                        return true;
+                    }
+                    catch (Exception error) when (!token.IsCancellationRequested)
+                    {
+                        reportLoginIssue($"Gemini 로그인 [탐색 시작] 0x{error.HResult:X8}");
+                        return false;
+                    }
+                }
+
+                var navigation = new LoginNavigation(() => NavigateToUsage(), reportLoginIssue);
+                core.NavigationStarting += (_, args) => navigation.Started(args.NavigationId, args.Uri, args.IsRedirected);
                 core.NavigationCompleted += (_, args) =>
                 {
-                    if (args.IsSuccess && IsUsagePage(core.Source)) completion.TrySetResult(true);
+                    if (!token.IsCancellationRequested &&
+                        navigation.Completed(args.NavigationId, core.Source, args.IsSuccess, args.WebErrorStatus))
+                        completion.TrySetResult(true);
                 };
-                core.Navigate(GeminiUsagePage.Url);
-                return await completion.Task.WaitAsync(token);
+                return NavigateToUsage() && await completion.Task.WaitAsync(token);
             }
             finally
             {
@@ -164,6 +188,45 @@ internal sealed class WindowsGeminiWebSession(Control dispatcher, string dataDir
             }
         }
         finally { profileUse.Release(); }
+    }
+
+    internal sealed class LoginNavigation(Action reopenUsage, Action<string> reportIssue)
+    {
+        private ulong? initialId;
+        private ulong? currentId;
+        private bool leftGemini;
+        private bool reopenedUsage;
+
+        internal void Started(ulong id, string? url, bool redirected = false)
+        {
+            if (!redirected)
+            {
+                if (initialId is null && !IsUsagePage(url)) return;
+                initialId ??= id;
+                currentId = id;
+            }
+            if (id == currentId && Uri.TryCreate(url, UriKind.Absolute, out var uri) &&
+                uri.Scheme is "https" or "http" && !IsGeminiOrigin(uri))
+                leftGemini = true;
+        }
+
+        internal bool Completed(ulong id, string? url, bool success, CoreWebView2WebErrorStatus error)
+        {
+            if (id != currentId) return false;
+            if (!success)
+            {
+                if (id == initialId && error != CoreWebView2WebErrorStatus.OperationCanceled)
+                    reportIssue($"Gemini 로그인 [초기 탐색] {error}");
+                return false;
+            }
+            if (IsUsagePage(url)) return true;
+            if (leftGemini && !reopenedUsage && Uri.TryCreate(url, UriKind.Absolute, out var uri) && IsGeminiOrigin(uri))
+            {
+                reopenedUsage = true;
+                reopenUsage();
+            }
+            return false;
+        }
     }
 
     private static async Task<T> WaitWithinAsync<T>(Task<T> task, CancellationToken token)
@@ -297,9 +360,11 @@ internal sealed class WindowsGeminiWebSession(Control dispatcher, string dataDir
         catch (DirectoryNotFoundException) { }
     }
 
+    private static bool IsGeminiOrigin(Uri uri) =>
+        uri.Scheme == Uri.UriSchemeHttps && uri.IsDefaultPort && uri.UserInfo.Length == 0 && uri.Host == "gemini.google.com";
+
     internal static bool IsUsagePage(string? url) =>
-        Uri.TryCreate(url, UriKind.Absolute, out var uri) && uri.Scheme == Uri.UriSchemeHttps &&
-        uri.IsDefaultPort && uri.UserInfo.Length == 0 && uri.Host == "gemini.google.com" && uri.AbsolutePath == "/usage";
+        Uri.TryCreate(url, UriKind.Absolute, out var uri) && IsGeminiOrigin(uri) && uri.AbsolutePath == "/usage";
 
     internal static WindowsGeminiPageDom? DecodePage(string encoded)
     {

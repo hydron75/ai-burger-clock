@@ -20,7 +20,7 @@ internal sealed partial class TrayApplicationContext
             ReportGeminiIssue("Gemini 웹 조회 설정을 읽지 못했습니다. 조회를 꺼 둡니다.");
         }
 
-        geminiWebSession = session ?? new WindowsGeminiWebSession(statusWindow, dataDirectory);
+        geminiWebSession = session ?? new WindowsGeminiWebSession(statusWindow, dataDirectory, ReportGeminiIssue);
         statusWindow.UseGeminiWebQuota();
         var quotas = new AccountQuotaMonitor(client, store, utcNow, geminiWebReader: geminiWebSession,
             geminiWebEnabled: settings.Enabled);
@@ -45,7 +45,14 @@ internal sealed partial class TrayApplicationContext
 
         menu.Opening += (_, _) => UpdateMenu();
         root.DropDownOpening += (_, _) => UpdateMenu();
-        login.Click += async (_, _) => await RunGeminiActionAsync(access.LoginAsync, "Gemini 로그인 창을 열거나 설정을 저장하지 못했습니다.");
+        login.Click += (_, _) =>
+        {
+            root.HideDropDown();
+            menu.Close(ToolStripDropDownCloseReason.ItemClicked);
+            if (exiting || disposed) return;
+            statusWindow.BeginInvoke((Action)(() =>
+                _ = RunGeminiActionAsync(access.LoginAsync, "Gemini 로그인 창을 열거나 설정을 저장하지 못했습니다.")));
+        };
         off.Click += async (_, _) => await RunGeminiActionAsync(_ =>
         {
             access.TurnOff();

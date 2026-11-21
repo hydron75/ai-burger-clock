@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Runtime.InteropServices;
 using System.Text.Json;
+using Microsoft.Web.WebView2.Core;
 
 namespace AiBurgerClock;
 
@@ -14,12 +15,14 @@ internal static class WindowsGeminiWebChecks
         internal int ProfileDeletes { get; private set; }
         internal bool LoginSucceeds { get; set; }
         internal Func<GeminiUsagePageLoad> ReadPage { get; set; } = () => GeminiUsagePageLoad.LoadFailed;
+        internal Action? BeforeSignIn { get; set; }
         internal Func<CancellationToken, Task>? BeforeDelete { get; set; }
         public bool HasProfile { get; set; }
 
         public Task<bool> SignInAsync(CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            BeforeSignIn?.Invoke();
             SignIns++;
             HasProfile |= LoginSucceeds;
             return Task.FromResult(LoginSucceeds);
@@ -101,6 +104,45 @@ internal static class WindowsGeminiWebChecks
             !WindowsGeminiWebSession.IsUsagePage("http://gemini.google.com/usage") &&
             !WindowsGeminiWebSession.IsUsagePage("https://gemini.google.com.example.test/usage"),
             "login completion requires the exact HTTPS origin and path");
+        const string app = "https://gemini.google.com/app";
+        const CoreWebView2WebErrorStatus noError = CoreWebView2WebErrorStatus.Unknown;
+        int reopens = 0;
+        var warnings = new List<string>();
+        var redirect = new WindowsGeminiWebSession.LoginNavigation(() => reopens++, warnings.Add);
+        redirect.Started(1, GeminiUsagePage.Url);
+        redirect.Started(1, accounts, redirected: true);
+        redirect.Started(1, app, redirected: true);
+        Check(!redirect.Completed(1, app, true, noError) && reopens == 1, "an off-origin redirect returning to the app reopens usage once");
+        redirect.Started(2, GeminiUsagePage.Url);
+        Check(redirect.Completed(2, GeminiUsagePage.Url, true, noError) && reopens == 1, "the reopened usage page finishes login");
+
+        reopens = 0;
+        var separateNavigations = new WindowsGeminiWebSession.LoginNavigation(() => reopens++, warnings.Add);
+        separateNavigations.Started(3, GeminiUsagePage.Url);
+        Check(!separateNavigations.Completed(3, app, true, noError) && reopens == 0, "an initial app redirect alone does not reopen usage");
+        separateNavigations.Started(4, accounts);
+        Check(!separateNavigations.Completed(4, accounts, true, noError) && reopens == 0, "off-origin login stays open");
+        separateNavigations.Started(5, app);
+        Check(!separateNavigations.Completed(5, app, true, noError) && reopens == 1, "an interactive sign-in returning to the app reopens usage");
+        separateNavigations.Started(6, GeminiUsagePage.Url);
+        Check(!separateNavigations.Completed(6, app, true, noError) && reopens == 1, "a retry landing on the app keeps the window open without looping");
+        separateNavigations.Started(7, accounts);
+        separateNavigations.Started(8, app);
+        Check(!separateNavigations.Completed(8, app, true, noError) && reopens == 1, "another sign-in detour cannot reopen usage again");
+
+        var failed = new WindowsGeminiWebSession.LoginNavigation(() => reopens++, warnings.Add);
+        failed.Started(9, GeminiUsagePage.Url);
+        Check(!failed.Completed(9, "https://example.test/?fixture=private", false, CoreWebView2WebErrorStatus.CannotConnect) &&
+            warnings.SequenceEqual(["Gemini 로그인 [초기 탐색] CannotConnect"]),
+            "a failed initial navigation keeps waiting and reports only stage and error code");
+        var superseded = new WindowsGeminiWebSession.LoginNavigation(() => reopens++, warnings.Add);
+        superseded.Started(10, GeminiUsagePage.Url);
+        Check(!superseded.Completed(10, app, false, CoreWebView2WebErrorStatus.OperationCanceled) && warnings.Count == 1,
+            "a canceled navigation does not report an initial failure");
+        superseded.Started(11, accounts);
+        Check(!superseded.Completed(10, app, false, CoreWebView2WebErrorStatus.CannotConnect) && warnings.Count == 1,
+            "late completions cannot affect the new navigation");
+
         bool loader = NativeLibrary.TryLoad("WebView2Loader.dll", typeof(Microsoft.Web.WebView2.Core.CoreWebView2Environment).Assembly, null, out var handle);
         if (loader) NativeLibrary.Free(handle);
         Check(loader, "the x64 loader resolves without creating a WebView");
