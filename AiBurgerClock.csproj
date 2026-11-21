@@ -17,12 +17,17 @@
     <Title>AI Burger Clock</Title>
     <Description>DST-aware AI Agent schedule, official status and local observations</Description>
     <Product>AI Burger Clock</Product>
-    <Version>2.9.4</Version>
-    <AssemblyVersion>2.9.4.0</AssemblyVersion>
-    <FileVersion>2.9.4.0</FileVersion>
+    <Version>2.9.5</Version>
+    <AssemblyVersion>2.9.5.0</AssemblyVersion>
+    <FileVersion>2.9.5.0</FileVersion>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.14" />
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4314.35" ExcludeAssets="build;buildTransitive" GeneratePathProperty="true" />
+    <!-- The native HWND host needs only the SDK's Core projection and x64 loader. -->
+    <Reference Include="Microsoft.Web.WebView2.Core">
+      <HintPath>$(PkgMicrosoft_Web_WebView2)\lib_manual\netcoreapp3.0\Microsoft.Web.WebView2.Core.dll</HintPath>
+    </Reference>
     <!-- Each OS host compiles the same canonical logic. Do not include the Mac
          entry point or the portable test runner in the Windows executable. -->
     <Compile Remove="Mac/**/*.cs;Shared.Tests/**/*.cs;artifacts/**/*.cs" />

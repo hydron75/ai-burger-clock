@@ -234,9 +234,10 @@ internal static class QuotaToolTipUiChecks
                 "Provider detail keeps polling explanation once instead of repeating visible percentages: " + provider);
         }
         else
-            check(text == QuotaPanelModel.GeminiUnavailableDetail &&
+            check(text.StartsWith("Gemini 한도 · 꺼짐\n", StringComparison.Ordinal) &&
+                text.Contains("로그인하면 웹 사용량 조회가 켜집니다", StringComparison.Ordinal) &&
                 !text.Contains("기본 1시간", StringComparison.Ordinal) && !box.Controls.OfType<QuotaBalanceBar>().Any(),
-                "Gemini tooltip retains only its policy notice without polling, reset times or bars");
+                "Gemini off tooltip explains login without polling, reset times or bars");
         Point pointer = view.PointToScreen(new Point(view.Width / 2, view.Height / 2));
         var owner = view.FindForm()!;
         bool ownerVisible = owner.Visible;
@@ -269,8 +270,8 @@ internal static class QuotaToolTipUiChecks
                 view.DetailFor(label) == text && label.AccessibleDescription != text) &&
                 box.AccessibleDescription == text && (QuotaNames.IsQueryEnabled(provider)
                     ? text.Contains("리셋·한도 복원 예정", StringComparison.Ordinal) && text.Contains(" KST", StringComparison.Ordinal)
-                    : text == QuotaPanelModel.GeminiUnavailableDetail),
-                "Row accessibility is separate from its Provider's live detail or disabled policy notice: " + provider);
+                    : text.StartsWith("Gemini 한도 · 꺼짐\n", StringComparison.Ordinal)),
+                "Row accessibility is separate from its Provider's detail: " + provider);
             if (reportDirectory is not null)
             {
                 Directory.CreateDirectory(reportDirectory);

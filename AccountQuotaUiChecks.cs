@@ -329,6 +329,7 @@ internal static class AccountQuotaUiChecks
             context.StatusWindow.QuotaView.DetailFor(xaiBox).Contains("최소 10분", StringComparison.Ordinal),
             "xAI has one weekly-credit row, time boundary and ten-minute scheduled-policy detail");
         var geminiBox = Box(QuotaProvider.Gemini);
+        const string geminiWebOff = "꺼짐 · 로그인하면 Gemini 앱 사용량 조회";
         Check(geminiBox.BackColor == Color.White && geminiBox.BorderStyle == boxes[0].BorderStyle &&
             geminiBox.Width == boxes[0].Width && geminiBox.Cursor == Cursors.Default &&
             geminiBox.Controls.OfType<Label>().All(label => label.Left == boxes[0].Controls.OfType<Label>().First().Left),
@@ -338,12 +339,12 @@ internal static class AccountQuotaUiChecks
         Check(geminiBox.BackColor == Color.White && geminiBox.Controls.Cast<Control>().All(control => control.BackColor == Color.White),
             "Gemini quota box has no hover effect");
         Check(ProviderLabels(QuotaProvider.Gemini).Any(l => l.Text == "Gemini") &&
-            ProviderLabels(QuotaProvider.Gemini).Single(l => l.Text == QuotaNames.GeminiUnavailableText).ForeColor == Color.DimGray &&
+            ProviderLabels(QuotaProvider.Gemini).Single(l => l.Text == geminiWebOff).ForeColor == Color.DimGray &&
             ProviderLabels(QuotaProvider.Gemini).All(l => !l.Text.Contains("%", StringComparison.Ordinal)),
-            "Gemini retains its card with a fixed muted policy notice and no quota values");
+            "Registered Gemini web reader starts with a muted off notice and no quota values");
         Check(!geminiBox.Controls.OfType<QuotaBalanceBar>().Any() && client.Calls(QuotaProvider.Gemini) == 0 &&
-            context.StatusWindow.QuotaView.DetailFor(geminiBox) == QuotaPanelModel.GeminiUnavailableDetail,
-            "Gemini creates no usage/time bar or automatic query and its detail explains the policy");
+            context.StatusWindow.QuotaView.DetailFor(geminiBox).Contains("로그인하면 웹 사용량 조회가 켜집니다", StringComparison.Ordinal),
+            "Off Gemini has no usage/time bars or CLI queries, and its detail explains opt-in");
         Check(context.StatusWindow.ClientSize == size && context.StatusWindow.QuotaView.VerticalScroll.Visible &&
             !context.StatusWindow.QuotaView.HorizontalScroll.Visible && boxes.All(box =>
                 box.Controls.OfType<Label>().All(label => label.Bottom <= box.Height)),
@@ -390,10 +391,10 @@ internal static class AccountQuotaUiChecks
         context.StatusWindow.UpdateQuotas(comparisonSnapshot, clock());
         SmokeTest.RenderAndCheckLayout(context.StatusWindow, "account-quotas.png", reportDirectory);
         context.StatusWindow.QuotaView.ScrollControlIntoView(geminiBox);
-        var geminiMetadata = ProviderLabels(QuotaProvider.Gemini).Single(l => l.Text == QuotaNames.GeminiUnavailableText);
+        var geminiMetadata = ProviderLabels(QuotaProvider.Gemini).Single(l => l.Text == geminiWebOff);
         Check(context.StatusWindow.QuotaView.RectangleToScreen(context.StatusWindow.QuotaView.ClientRectangle)
             .Contains(geminiMetadata.RectangleToScreen(geminiMetadata.ClientRectangle)),
-            "Gemini policy notice is reachable by quota-only vertical scrolling");
+            "Gemini off notice is reachable by quota-only vertical scrolling");
         var scrollPosition = context.StatusWindow.QuotaView.AutoScrollPosition;
         var retainedBoxes = boxes.ToArray();
         context.StatusWindow.UpdateQuotas(monitor.Snapshot(), clock().AddSeconds(1));
@@ -435,9 +436,9 @@ internal static class AccountQuotaUiChecks
             monitor.Snapshot().Single(s => s.Provider == QuotaProvider.Gemini) is { Reading: null, IsRefreshing: false, NextCheckUtc: null },
             "Explicit Gemini refresh leaves the disabled provider idle without invoking its client");
         Check(ProviderLabels(QuotaProvider.Gemini).Any(l => l.Text == "Gemini") &&
-            ProviderLabels(QuotaProvider.Gemini).Any(l => l.Text == QuotaNames.GeminiUnavailableText) &&
+            ProviderLabels(QuotaProvider.Gemini).Any(l => l.Text == geminiWebOff) &&
             !Box(QuotaProvider.Gemini).Controls.OfType<QuotaBalanceBar>().Any(),
-            "Explicit Gemini refresh retains the fixed policy notice without previous values");
+            "Explicit Gemini CLI refresh retains the web off notice without previous values");
         context.StatusWindow.QuotaView.ScrollControlIntoView(Box(QuotaProvider.Gemini));
         SmokeTest.RenderAndCheckLayout(context.StatusWindow, "account-quotas-gemini-previous.png", reportDirectory);
 

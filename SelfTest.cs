@@ -33,7 +33,9 @@ internal static class SelfTest
             // a message loop. Network fakes run independently of that context.
             int quotaExport = await Task.Run(WindowsQuotaExportChecks.RunAsync).ConfigureAwait(false);
             Console.WriteLine($"PASS Windows mobile quota export: {quotaExport:N0} assertions (fake HTTP/vault, temporary settings; zero site calls)");
-            Console.WriteLine($"PASS ALL: {autoStart + shared + tray + quotaClient + warningLog + quotaNotifications + quotaToast + quotaLayout + detailWrapping + smokePrivacy + notifications + quotaExport:N0} assertions");
+            int gemini = await WindowsGeminiWebChecks.RunAsync().ConfigureAwait(false);
+            Console.WriteLine($"PASS Windows Gemini web settings, refresh and logout: {gemini:N0} assertions (fake reader, temporary files)");
+            Console.WriteLine($"PASS ALL: {autoStart + shared + tray + quotaClient + warningLog + quotaNotifications + quotaToast + quotaLayout + detailWrapping + smokePrivacy + notifications + quotaExport + gemini:N0} assertions");
             return 0;
         }
         catch (Exception error)

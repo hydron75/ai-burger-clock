@@ -8,7 +8,7 @@ using Timer = System.Windows.Forms.Timer;
 
 namespace AiBurgerClock
 {
-    internal sealed class TrayApplicationContext : ApplicationContext
+    internal sealed partial class TrayApplicationContext : ApplicationContext
     {
         private readonly NotifyIcon trayIcon;
         private readonly StatusWindow statusWindow;
@@ -78,7 +78,7 @@ namespace AiBurgerClock
         internal event Action<QuotaNotificationAlert>? QuotaNotificationRequested;
 
         // Normal runs use UTC now; the explicit smoke test supplies a clock without changing Windows time.
-        public TrayApplicationContext(bool startedAutomatically, Func<DateTimeOffset>? utcNow = null, bool enableServices = true, UsageStore? usageStore = null, HttpClient? statusHttpClient = null, Action<Uri>? openStatusPage = null, IAccountQuotaClient? accountQuotaClient = null, Func<long>? notificationMilliseconds = null, Action<QuotaNotificationAlert>? quotaNotificationSink = null, Action<NotifyIcon, int>? balloonNotificationSink = null, Action<WindowsNotificationRequest>? notificationSink = null, WindowsQuotaExportService? mobileExportService = null)
+        public TrayApplicationContext(bool startedAutomatically, Func<DateTimeOffset>? utcNow = null, bool enableServices = true, UsageStore? usageStore = null, HttpClient? statusHttpClient = null, Action<Uri>? openStatusPage = null, IAccountQuotaClient? accountQuotaClient = null, Func<long>? notificationMilliseconds = null, Action<QuotaNotificationAlert>? quotaNotificationSink = null, Action<NotifyIcon, int>? balloonNotificationSink = null, Action<WindowsNotificationRequest>? notificationSink = null, WindowsQuotaExportService? mobileExportService = null, IWindowsGeminiWebSession? geminiSession = null)
         {
             this.utcNow = utcNow ?? (() => DateTimeOffset.UtcNow);
             this.notificationMilliseconds = notificationMilliseconds ?? (() => Environment.TickCount64);
@@ -105,7 +105,7 @@ namespace AiBurgerClock
             statusTicker = new StatusTicker(WindowsProviderNames.Provider, warn: warningLog.Write);
             statusWindow = new StatusWindow();
             statusWindow.AutoStartChanged += OnWindowAutoStartChanged;
-            statusWindow.RefreshRequested += (_, _) => RefreshAll();
+            statusWindow.RefreshRequested += (_, _) => RefreshAll(fromStatusButton: true);
             statusWindow.StatisticsRequested += (_, _) => ShowStatistics();
             statusWindow.RecordRequested += RecordMeasurement;
             statusWindow.StatusPageRequested += OpenStatusPage;
@@ -141,7 +141,7 @@ namespace AiBurgerClock
             menu.Items.Add(countdownMenuItem);
             menu.Items.Add(new ToolStripSeparator());
             menu.Items.Add(showItem);
-            var refreshItem = new ToolStripMenuItem("상태·한도 새로 고침") { ToolTipText = "공식 서비스 상태와 ChatGPT (Work/Codex)·Claude·xAI 계정 한도를 함께 갱신 · Gemini 한도는 조회 안 함" };
+            var refreshItem = new ToolStripMenuItem("상태·한도 새로 고침") { ToolTipText = "공식 서비스 상태와 ChatGPT (Work/Codex)·Claude·xAI 계정 한도를 함께 갱신" };
             refreshItem.Click += (_, _) => RefreshAll();
             menu.Items.Add(refreshItem);
             var recordRoot = new ToolStripMenuItem("사용 경험 기록");
@@ -192,8 +192,8 @@ namespace AiBurgerClock
                 }
                 HttpClient httpClient = statusHttpClient ?? ownedHttpClient!;
                 monitor = new StatusMonitor(new ProviderStatusClient(httpClient, this.utcNow, warningLog.Write), store, this.utcNow, scheduleAt: GetSchedule);
-                quotaMonitor = new AccountQuotaMonitor(accountQuotaClient ?? new AccountQuotaClient(), store, this.utcNow);
                 _ = statusWindow.Handle; // Hidden marshal target; polling never touches WinForms from worker threads.
+                quotaMonitor = CreateWindowsQuotaMonitor(accountQuotaClient ?? new AccountQuotaClient(), geminiSession);
                 monitor.Changed += OnProviderChanged;
                 quotaMonitor.Changed += OnProviderChanged;
                 quotaMonitor.Succeeded += OnQuotaSucceeded;
@@ -262,6 +262,8 @@ namespace AiBurgerClock
             RefreshStatus(false); // Initial policy load is not a service recovery or a time transition.
             monitor?.Start();
             quotaMonitor?.Start();
+            if (geminiWebAccess is { LogoutPending: true } access)
+                await RunGeminiActionAsync(access.RetryLogoutAsync, WindowsGeminiWebAccess.LogoutPendingText);
         }
 
         internal async Task SetHolidayAdjustmentAsync(bool enabled)
@@ -390,11 +392,11 @@ namespace AiBurgerClock
                 networkRefresh?.OnNetworkAvailable();
         }
 
-        private void RefreshAll(bool queueWhileRefreshing = false)
+        private void RefreshAll(bool queueWhileRefreshing = false, bool fromStatusButton = false)
         {
             if (exiting || disposed) return;
             monitor?.RequestRefresh(queueWhileRefreshing);
-            quotaMonitor?.RequestRefresh(queueWhileRefreshing);
+            WindowsGeminiWebAccess.RequestRefresh(quotaMonitor, queueWhileRefreshing, fromStatusButton);
         }
 
         private IReadOnlyList<ProviderStatus> CurrentProviders() => monitor?.Snapshot() ??
@@ -884,6 +886,7 @@ namespace AiBurgerClock
         {
             if (exiting) return;
             exiting = true;
+            geminiWebLifetime.Cancel();
             mobileExportBridge?.Dispose();
             mobileExport.Stop();
             mobileExportWindow?.Close();
@@ -928,6 +931,9 @@ namespace AiBurgerClock
             if (disposing && !disposed)
             {
                 disposed = true;
+                geminiWebLifetime.Cancel();
+                geminiWebSession?.Dispose();
+                geminiWebLifetime.Dispose();
                 mobileExportBridge?.Dispose();
                 mobileExport.Dispose();
                 mobileExportWindow?.Dispose();

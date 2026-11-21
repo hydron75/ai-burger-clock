@@ -87,6 +87,9 @@ internal sealed class WindowsQuotaExportBridge : IDisposable
             var states = monitor.Snapshot();
             foreach (var state in states)
             {
+                // While export v2 emits Gemini as reading=none, its web reads
+                // and UI transitions do not schedule a snapshot for transport.
+                if (state.Provider == QuotaProvider.Gemini) continue;
                 if (state.IsRefreshing) started.Add(state.Provider);
                 else if (started.Remove(state.Provider) && state.CheckedAtUtc is not null && state.NextCheckUtc is not null)
                     completed(states); // Includes failed reads; excludes cache load, start and cancellation without a result.
