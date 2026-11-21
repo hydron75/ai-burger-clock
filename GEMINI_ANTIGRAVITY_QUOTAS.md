@@ -19,6 +19,66 @@
 - 새 창 ID는 `gemini-web:five-hour`와 `gemini-web:weekly`입니다. 검증된 값만 기존 DB의 별도 `AccountQuota.v1.GeminiWeb` 키에 저장합니다. 끄기에서는 캐시를 보존합니다. 로그아웃에서는 호스트가 먼저 `SetGeminiWebEnabled(false)`를 호출하고, 모니터와 같은 저장소 인스턴스에서 `DeleteGeminiWebQuotaAsync`를 기다립니다. 삭제는 웹 키 한 개에만 적용됩니다. 옛 `agy` 캐시는 보존하며 읽기·삭제·변환 대상에서 제외합니다. 실패 진단은 규칙 코드와 파싱한 유효 줄 수로 제한합니다. Gemini 회복·조기 초기화·대기 알림 차단과 모바일 송신 v2의 `reading=none`은 유지합니다.
 - 리더가 등록됐지만 꺼져 있을 때는 `꺼짐 · 로그인하면 Gemini 앱 사용량 조회`를 표시하며 조회나 캐시 로드를 하지 않습니다. 리더 미등록 상태에는 기존 `조회 안 함` 표시를 적용합니다. 이 단계에는 실제 웹 리더와 설정 UI가 포함되지 않습니다.
 
+2026-11-21 이후 Gemini 앱 한도는 웹 사용량 경로로 표시한다. 이 절은 Antigravity(agy) 구독 한도 기록이며, agy 재사용 가능성에 대비해 감시를 유지한다.
+
+## 2026-11-17 기록: 자동 조회 중단 유지·허용 경로 주간 확인
+
+조사 기준일은 **2026-11-16 KST**, 문서 기록일은 **2026-11-17 KST**다. 아래 출처와 공개 저장소 이력을 읽었으며 agy 실행·계정 조회·모델 요청·로그인·인증 정보 접근은 하지 않았다. 이 절은 과거 구현·검증 기록을 대체하지 않는다.
+
+### 조사 결론과 재개 조건
+
+- **Gemini(Antigravity) 구독 한도 자동 조회 중단을 유지한다.** 개인 데스크톱 앱이 모델 그룹별 5시간·주간 사용률과 리셋 시각을 정기 조회하는 용도로, 공식 기능과 약관상 허용을 함께 확인할 수 있는 경로는 찾지 못했다. 기술적 경로 자체가 없다는 뜻은 아니다. 허용 범위와 필요한 데이터 계약이 모두 확인돼도 앱 조회 재개·구현·배포는 사용자가 별도로 결정한다.
+- [FAQ](https://antigravity.google/docs/faq.md)는 `agy -p`를 직접 스크립팅·CI 용도로 설명하고 소비자 요금제에서 제3자 코딩 에이전트·앱이 agy를 감싸 실행하는 것을 지원하지 않는다고 명시한다. [추가 약관 §6](https://antigravity.google/terms)에도 제3자 소프트웨어의 서비스 접근 제한과 계정 제재 가능성이 있다. **읽기 전용 한도 조회 예외는 확인되지 않았다.** 모델 호출이 없다는 사실만으로 기존 앱 호출을 허용된 것으로 보지 않는다.
+
+| 후보 | 2026-11-16 공개 자료에서 확인한 기능 | 앱 적용 판단 |
+|---|---|---|
+| 공식 앱 Settings·Models, 대화형 `/usage`·`/quota` | 사람이 구독 baseline quota를 확인하는 공식 경로다. `/usage`는 모델 설정·한도를 서버에서 새로 조회한다. [Plans](https://antigravity.google/docs/plans.md) · [/usage](https://antigravity.google/docs/cli/commands/usage.md) | 직접 확인 가능. 제3자 앱의 자동 조회 허용과 구분한다. |
+| 사용자 정의 statusLine | CLI가 상태 변화 때 사용자 스크립트에 `quota`를 전달한다. bucket별 `remaining_fraction` 또는 `remaining_amount`, `reset_time`, `reset_in_seconds`가 문서화돼 있다. [statusLine](https://antigravity.google/docs/cli/statusline.md) | **외부 앱 전달의 허용 범위 미확인.** 독립적인 정기 조회가 아니며 전체 모델 그룹·두 창의 완전성과 서버 데이터 신선도 보장도 미확인이다. 전체 payload에는 계정 관련 필드도 있으므로 그대로 수집하는 근거로 쓰지 않는다. |
+| 공식 ACP·사용자 정의 클라이언트 | 공식 문서는 임의의 ACP 클라이언트 연결을 지원하며 Gemini 모델을 모든 클라이언트에 제공한다고 설명한다. ACP 계열의 `/usage` 추가 기록도 있다. [ACP](https://antigravity.google/docs/ide/extensions/acp) · [CLI ACP](https://antigravity.google/docs/cli/acp) · [Changelog](https://antigravity.google/docs/changelog) | **한도 전용 정기 조회 클라이언트의 허용 범위·응답 계약 미확인.** ACP 전체를 금지된 방식 또는 조회 재개가 승인된 대안으로 단정하지 않는다. |
+| Gemini API·AI Studio·Antigravity SDK | API 프로젝트의 rate limit·과금과 SDK의 API 키·Cloud 인증 경로는 공식이다. [API 한도](https://ai.google.dev/gemini-api/docs/rate-limits) · [SDK](https://antigravity.google/docs/sdk/overview.md) | Antigravity Pro/Ultra 구독의 모델 그룹별 5시간·주간 한도와 별개다. Mac의 agy 1.5.9 API 키 시험에서 `/usage`의 `groups`가 빈 배열이었다는 결과는 전달받은 시험이며 이번 조사에서 재실행하지 않았다. |
+| MCP·웹·내보내기·알림 | [MCP 문서](https://antigravity.google/docs/mcp.md)에는 외부 도구 연결, [Remote Control](https://antigravity.google/docs/remote-control.md)에는 공식 원격 세션, [Google One 도움말](https://support.google.com/googleone/answer/14534406?hl=en)에는 baseline 소진 알림이 있다. [AI credits](https://support.google.com/googleone/answer/16287445?hl=en)는 별도 잔액·이용 내역을 제공한다. | 구독 quota용 공식 MCP 도구·독립 API·외부 알림 구독 계약은 찾지 못했다. Remote Control의 해당 한도 화면 범위와 [Takeout](https://support.google.com/accounts/answer/3024190?hl=en)의 quota 내보내기 지원은 미확인이다. 크레딧 잔액을 구독 한도로 대체하지 않는다. |
+
+### 공개 이력과 근거의 한계
+
+- **CLI 기준선:** 조사 당시 최신 확인 버전은 **1.5.9(2026-11-14)**다. [공식 Releases](https://github.com/google-antigravity/antigravity-cli/releases) · [공식 CHANGELOG](https://github.com/google-antigravity/antigravity-cli/blob/1.5.9/CHANGELOG.md). 2026-10-12 ACP 계열 1.4.0의 `/usage` 추가와 2026-11-04 CLI 1.5.0의 `agy acp` 추가는 서로 다른 릴리스 계열이다. 2026-10-24 CLI 1.4.7은 headless에서 사용자 정의 statusLine 실행을 생략한다. 1.5.8의 ACP context 사용량과 1.5.9의 인증·quota 오류 보고 개선은 구독 한도 자동 조회 허용 변경으로 보지 않는다. [날짜별 Changelog](https://antigravity.google/docs/changelog)
+- **이전 API 방식:** [10월 초 BACKLOG](https://github.com/hydron75/ai-burger-clock/blob/612df8716e507733847204c5f3ce8214c6f1b357/BACKLOG.md#L116)는 Gemini 개인 Apps 한도의 공식 독립 경로를 찾지 못했다고 기록한다. [2026-10-08 #30 최초 기록](https://github.com/hydron75/ai-burger-clock/blob/14cef69de9350803158da39090635167a799ae05/GEMINI_ANTIGRAVITY_QUOTAS.md)은 별도 제품인 Antigravity의 공식 CLI `/usage` 성공을 확인한다. 특정 직접 API의 실패 호출·HTTP 오류·실패 원인이나 CLI로 바꾼 인과관계는 공개 이력에서 확인하지 못했다. 현재 그 API가 해결됐다고 판정할 근거도 없다.
+- **포럼 답변 충돌:** Google 표식·moderator가 확인되는 [chunduriv 프로필](https://discuss.ai.google.dev/u/chunduriv.json)의 답변자는 **10-08 00:03 KST**에 개인 코디네이터가 공식 agy를 하위 프로세스로 실행하는 것을 허용한다고 답했고, **10-09 02:34 KST**에는 제3자 에이전트 래핑 미지원·제재 가능성을 답했다. [이전 답변](https://discuss.ai.google.dev/t/can-a-local-ai-coordinator-launch-the-official-antigravity-cli-with-subscription-sign-in/186246/2) · [후속 답변](https://discuss.ai.google.dev/t/is-google-ai-pro-antigravity-cli-automation-with-codex-permitted/187241/2). 모두 모델 작업을 맡기는 문의이며 읽기 전용 quota만을 직접 판정한 답변은 아니다. 답변 날짜를 정책 시행일로 보지 않는다.
+- [읽기 전용 quota 앱 문의](https://discuss.ai.google.dev/t/supported-read-only-antigravity-quota-access-for-an-iphone-app/186734)에는 부정적인 답변이 있지만 작성자의 Google 직원 신분은 확인하지 못했다. [FAQ가 10월 중순 개정됐다는 설명](https://discuss.ai.google.dev/t/paying-google-ai-pro-subscriber-allow-subscription-use-with-third-party-agents-like-openclaw/191689/8)도 같은 한계가 있다. 정확한 FAQ·약관 개정일, 비교 가능한 웹 아카이브 원문, 읽기 전용 조회를 허용한 Google 직원 신분 확인 답변은 미확인이다. **11월 16일은 앱 중단 결정일**이며 정책 도입일을 뜻하지 않는다.
+- [추가 커뮤니티 정리](https://gall.dcinside.com/mgallery/board/view/?id=ai_utilize&no=186831)는 원문을 찾는 참고 자료로만 사용했다. 정지 호소 통계·분류를 재집계하지 않았고 정지 원인·확률로 해석하지 않는다. [개인 모니터링 앱 문의](https://discuss.ai.google.dev/t/policy-clarification-private-monitoring-app-using-official-antigravity-cli-and-subscription-quota/190756)는 한도 읽기가 아니라 요약·오류 정보를 모델에 보내 분석시키는 용도다. 커뮤니티 해석이나 다른 동작이 함께 있는 제재 사례를 한도 조회 단독 판정으로 일반화하지 않는다.
+
+### 주간 모니터링 기준·일정
+
+- `Antigravity·Gemini 앱 사용량 경로 주간 확인`(ID `antigravity`)은 **매주 월요일 10:00 KST**, 첫 예정일 **2026-11-23**이다. 2026-11-17에 Antigravity 공개 조사로 등록했고, **2026-11-21**에 기존 예약의 이름과 감시 범위를 확장한 뒤 **ACTIVE**를 확인했다. 이 채팅의 로컬 Codex 예약이므로 PC와 Codex 앱이 실행 중이어야 한다.
+- 확인 대상은 위 기준선과 직전 확인 결과다. FAQ·약관·ACP 두 문서·statusLine·`/usage`·headless·Changelog·Releases·Plans를 매번 읽고, [Antigravity 포럼](https://discuss.ai.google.dev/c/antigravity/64)에서 최근 7일에 작성·갱신된 `quota`, `usage`, `third-party`, `read-only`, `monitoring` 관련 글·답변을 확인한다. 날짜가 없는 자료는 발표일 대신 확인일을 적고, 포럼 작성자의 소속 표식·공개 프로필·역할을 대조한다. 배지가 없다는 사실만으로 비직원이라고 단정하지 않는다.
+
+| 확인할 공식 페이지 | 재검토 신호 |
+|---|---|
+| [FAQ](https://antigravity.google/docs/faq.md) · [약관](https://antigravity.google/terms) | 제3자 앱·읽기 전용 한도 조회·개인 대시보드·모니터링의 허용 또는 예외 문구 |
+| [ACP](https://antigravity.google/docs/ide/extensions/acp) · [CLI ACP](https://antigravity.google/docs/cli/acp) | quota 전용 정기 조회 클라이언트의 허용 및 구조화된 요청·응답 계약, 사용자 정의 클라이언트 제한 변경 |
+| [statusLine](https://antigravity.google/docs/cli/statusline.md) | quota 외부 전달 허용, 모델 그룹·두 창·신선도 계약, quota 필드 제거 |
+| [/usage](https://antigravity.google/docs/cli/commands/usage.md) · [headless](https://antigravity.google/docs/cli/headless.md) | 독립 한도 조회·JSON 스키마와 제3자 앱의 사용 범위 명시 |
+| [Changelog](https://antigravity.google/docs/changelog) · [CLI Releases](https://github.com/google-antigravity/antigravity-cli/releases) · [Plans](https://antigravity.google/docs/plans.md) | 공식 구독 quota API·ACP·내보내기·허용 범위 변경. context·세션 토큰과 구분 |
+| [Gemini 앱 한도 도움말](https://support.google.com/gemini/answer/16275805) · [Gemini 앱 한도 도움말 17004136](https://support.google.com/gemini/answer/17004136) | Gemini 앱의 공식 API·내보내기·위젯 등 독립 조회 경로와 5시간·주간 창 또는 요금제별 구성 변경 |
+| [Google 서비스 약관](https://policies.google.com/terms?hl=en) · [Gemini robots.txt](https://gemini.google.com/robots.txt) · [Gemini 앱 도움말](https://support.google.com/gemini/) | 자동 접근 조항, `/usage`에 적용되는 규칙, Gemini 앱 전용 고지의 자동 접근 문구 변화 |
+| [Gemini 앱 도움말](https://support.google.com/gemini/) · [공개 공식 포럼](https://support.google.com/gemini/community) | 사용량 페이지 주소·구성 변경에 관한 공식 공지 |
+
+다음 중 하나가 새로 확인되면 상세 보고한다. 같은 변화는 반복 보고하지 않되 후속 정정·철회·범위 변경은 새 변화로 다룬다.
+
+1. FAQ·약관에 제3자 앱, 읽기 전용 사용량 조회, 개인 대시보드·모니터링에 대한 허용·예외가 생김.
+2. 모델 그룹별 5시간·주간 사용률·리셋 시각을 제공하는 공식 API·ACP 요청·내보내기 또는 statusLine 외부 전달 허용이 문서화됨.
+3. Google 직원 신분이 확인되는 포럼 답변이 읽기 전용 한도 조회를 허용하거나 명확히 금지함.
+4. statusLine quota 제거·ACP 사용자 정의 클라이언트 제한 강화처럼 기준선과 반대 방향의 중요한 변화가 생김.
+5. 공식 Gemini 앱 사용량 API·내보내기·공식 위젯 등 독립 조회 경로가 등장함.
+6. Gemini 앱 도움말의 5시간·주간 창이나 요금제별 한도 구성이 바뀜.
+7. Google 서비스 약관 자동 접근 조항, Gemini robots.txt의 `/usage`에 적용되는 규칙, Gemini 앱 전용 고지의 자동 접근 문구가 바뀜.
+8. 공식 포럼이나 도움말에서 사용량 페이지 주소·구성 변경 공지가 확인됨.
+
+context·세션 토큰 사용량, 일반 오류 처리·UI 개선, 단순 버전 증가, 커뮤니티 의견만으로는 관련 변화로 판정하지 않는다. 확인을 완료했고 변화가 없으면 **`변화 없음 (확인일 YYYY-MM-DD, CLI 최신 버전 X.Y.Z)`** 한 줄로 보고한다. 변화가 있으면 **결론 → 조건 번호 → 변화·짧은 원문 인용 → 출처 URL·날짜 → 앱에 주는 의미·추가 확인** 순서로 보고한다. 접근 실패·자료 부족은 **미확인**으로 표시하고 변화 없음으로 처리하지 않는다.
+
+조사는 공개 자료의 읽기·검색만 한다. agy·계정 조회 CLI 실행, 로그인, 인증 파일·토큰·쿠키 접근, 비공식·역분석 endpoint 조사·호출, 모델 요청·실제 사용량 조회·차단 우회는 하지 않는다. 코드·문서·설정·PR·사이트·배포·예약을 자동으로 바꾸거나 조회를 재개하지 않는다. 실제 계정 정보·사용량은 수집·게시하지 않는다.
+
+Gemini 앱의 실제 사용량 페이지는 열지 않는다. 주소와 구성 변경은 공개 공지에서 확인하며, 실제 페이지 구조 변화는 앱의 `형식 변경` 표시로 감지한다.
+
 ## 2026-11-16 결정: 앱 자동 조회 중단
 
 - [공식 FAQ](https://antigravity.google/docs/faq.md)의 제3자 소프트웨어 및 headless mode 항목을 확인했다. 소비자 요금제에서 제3자 앱이 agy를 감싸 실행하는 방식은 지원되지 않는다고 명시한다. 따라서 버전 확인·명령 생성·프로세스 실행·응답 프로토콜 경로를 삭제한다. 시작·예약·Refresh·절전 복귀·네트워크 복구에서도 Gemini 한도 클라이언트를 호출하지 않는다. 설정으로 다시 켜는 기능은 없다.
