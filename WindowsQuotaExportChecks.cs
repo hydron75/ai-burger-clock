@@ -93,8 +93,10 @@ internal static class WindowsQuotaExportChecks
 
     private sealed class GeminiReader(GeminiUsagePageLoad load) : IGeminiUsagePageReader
     {
+        internal GeminiUsagePageLoad Page { get; set; } = load;
+
         public Task<GeminiUsagePageLoad> LoadAsync(string url, string script, CancellationToken cancellationToken) =>
-            Task.FromResult(load);
+            Task.FromResult(Page);
     }
 
     private sealed class UnreadContent : HttpContent
@@ -397,17 +399,18 @@ internal static class WindowsQuotaExportChecks
             {
                 Reading = new(QuotaProvider.Gemini, [new(historical, new string('x', 81), double.NaN, f.Time.GetUtcNow().AddDays(2), -1)]),
                 IsPrevious = true,
-                IsRefreshing = true
+                IsRefreshing = true,
+                GeminiWeb = new(GeminiUsageOutcome.Ok)
             };
             f.States = f.States.Select(s => s.Provider == QuotaProvider.Gemini ? gemini : s).ToArray();
             f.Service.Completed(f.States); await f.Service.WaitForIdleAsync();
-            Check(f.Http.Count == 1, "invalid disabled Gemini history cannot reject the other Provider export");
+            Check(f.Http.Count == 1, "invalid Gemini history cannot reject the other Provider export");
             using var doc = Body(f.Http.Last);
             var exported = doc.RootElement.GetProperty("providers")[2];
             Check(exported.GetProperty("provider").GetString() == "Gemini" && exported.GetProperty("reading").GetString() == "none" &&
-                exported.GetProperty("lastSuccessUtc").ValueKind == JsonValueKind.Null && exported.GetProperty("nextCheckUtc").ValueKind == JsonValueKind.Null &&
+                exported.GetProperty("lastSuccessUtc").ValueKind == JsonValueKind.Null &&
                 exported.GetProperty("rows").GetArrayLength() == 0 && !Encoding.UTF8.GetString(f.Http.Last.Body).Contains(historical, StringComparison.Ordinal),
-                "disabled Gemini suppresses stale/refreshing/invalid historical rows before validation and serialization");
+                "Gemini suppresses invalid historical rows even with an active web state");
             Check(ReferenceEquals(gemini.Reading, f.States.Single(s => s.Provider == QuotaProvider.Gemini).Reading) && double.IsNaN(gemini.Reading!.Windows[0].UsedPercent),
                 "Gemini export suppression never mutates the source snapshot");
         }
@@ -425,46 +428,119 @@ internal static class WindowsQuotaExportChecks
                     GeminiWeb = new(GeminiUsageOutcome.Ok) }
                 : s).ToArray();
             f.Service.Completed(f.States); await f.Service.WaitForIdleAsync();
-            Check(f.Http.Count == 1, "Gemini web activation does not change export delivery");
+            Check(f.Http.Count == 1, "a regular export carries the valid Gemini web result");
             using var doc = Body(f.Http.Last);
             var exported = doc.RootElement.GetProperty("providers")[2];
             Check(doc.RootElement.GetProperty("schemaVersion").GetInt32() == 2 &&
-                exported.GetProperty("provider").GetString() == "Gemini" && exported.GetProperty("reading").GetString() == "none" &&
-                exported.GetProperty("lastSuccessUtc").ValueKind == JsonValueKind.Null &&
-                exported.GetProperty("nextCheckUtc").ValueKind == JsonValueKind.Null &&
-                exported.GetProperty("rows").GetArrayLength() == 0 &&
-                !Encoding.UTF8.GetString(f.Http.Last.Body).Contains("gemini-web:", StringComparison.Ordinal),
-                "schema v2 suppresses active Gemini web readings and timestamps");
+                exported.GetProperty("provider").GetString() == "Gemini" && exported.GetProperty("reading").GetString() == "ok" &&
+                exported.GetProperty("webState").GetString() == "ok" &&
+                exported.GetProperty("lastSuccessUtc").GetDateTimeOffset() == now &&
+                exported.GetProperty("nextCheckUtc").GetDateTimeOffset() == now.AddMinutes(15),
+                "schema v2 supplies Gemini web state and the existing timestamps");
+            var rows = exported.GetProperty("rows");
+            Check(rows.GetArrayLength() == 2 && rows[0].GetProperty("id").GetString() == "gemini-web:five-hour" &&
+                rows[0].GetProperty("windowMinutes").GetInt32() == 300 &&
+                rows[1].GetProperty("id").GetString() == "gemini-web:weekly" &&
+                rows[1].GetProperty("windowMinutes").GetInt32() == 10080, "site v18 receives the ordered Gemini web rows and window lengths");
+            Check(!Encoding.UTF8.GetString(f.Http.Last.Body).Contains("SYNTHETIC-PRIVATE", StringComparison.Ordinal),
+                "active Gemini exports no cache or raw error text");
         }
 
-        foreach (var (expected, page) in new (GeminiUsageOutcome, GeminiUsagePageLoad)[]
+        using (var f = new Fixture())
         {
-            (GeminiUsageOutcome.Ok, new(GeminiUsagePage.Url, GeminiUsagePageTests.English)),
-            (GeminiUsageOutcome.FormatChanged, new(GeminiUsagePage.Url, null)),
-            (GeminiUsageOutcome.LoadFailed, GeminiUsagePageLoad.LoadFailed),
-            (GeminiUsageOutcome.LoginRequired, new("https://gemini.google.com/app", null))
-        })
-        {
-            using var f = new Fixture();
             await f.Service.Initialization;
-            using var monitor = new AccountQuotaMonitor(new Client(f.Time), utcNow: () => GeminiUsagePageTests.Now,
-                geminiWebReader: new GeminiReader(page), geminiWebTimeZone: TimeZoneInfo.Utc);
+            var reader = new GeminiReader(new(GeminiUsagePage.Url, GeminiUsagePageTests.English));
+            DateTimeOffset CurrentReadTime() => GeminiUsagePageTests.Now + (f.Time.GetUtcNow() - f.Time.Origin);
+            using var monitor = new AccountQuotaMonitor(new Client(f.Time), utcNow: CurrentReadTime,
+                geminiWebReader: reader, geminiWebTimeZone: TimeZoneInfo.Utc);
             int completions = 0;
+            int expectedSends = 0;
             using var bridge = new WindowsQuotaExportBridge(monitor, states =>
             {
                 completions++;
                 f.Service.Completed(states);
             });
+
+            async Task<JsonElement> ExpectGeminiAsync(string webState, string reading, int extra)
+            {
+                expectedSends += extra;
+                await f.Service.WaitForIdleAsync();
+                Check(completions == expectedSends && f.Http.Count == expectedSends, $"Gemini {webState} requests {extra} extra sends");
+                using var packet = Body(f.Http.Last);
+                var gemini = packet.RootElement.GetProperty("providers")[2];
+                Check(gemini.GetProperty("webState").GetString() == webState && gemini.GetProperty("reading").GetString() == reading,
+                    $"Gemini {webState} is included in the existing v2 envelope");
+                return gemini.Clone();
+            }
+
+            Task ReadAgainAsync()
+            {
+                monitor.RequestGeminiWebRefresh();
+                return monitor.RefreshGeminiWebIfDueAsync();
+            }
+
             await monitor.RefreshGeminiWebIfDueAsync();
             monitor.SetGeminiWebEnabled(true);
-            await monitor.RefreshGeminiWebIfDueAsync();
             await f.Service.WaitForIdleAsync();
-            Check(monitor.Snapshot().Single(s => s.Provider == QuotaProvider.Gemini).GeminiWeb?.Outcome == expected &&
-                completions == 0 && f.Http.Count == 0, $"Gemini {expected} does not complete a v2 export");
+            Check(completions == 0 && f.Http.Count == 0, "initial off and a pending first read produce no standalone send");
+            await monitor.RefreshGeminiWebIfDueAsync();
+            await ExpectGeminiAsync("ok", "ok", 1);
+
+            f.Time.Advance(TimeSpan.FromMinutes(1));
+            await ReadAgainAsync();
+            await f.Service.WaitForIdleAsync();
+            Check(completions == 1 && f.Http.Count == 1 &&
+                monitor.Snapshot().Single(s => s.Provider == QuotaProvider.Gemini).LastSuccessfulCheckUtc == CurrentReadTime(),
+                "a fresh timestamp with unchanged Gemini rows and state produces no extra send");
+
+            string changed = GeminiUsagePageTests.English.Replace("37% used", "38% used", StringComparison.Ordinal);
+            reader.Page = new(GeminiUsagePage.Url, changed);
+            await ReadAgainAsync();
+            var changedUsage = await ExpectGeminiAsync("ok", "ok", 1);
+            Check(changedUsage.GetProperty("rows")[0].GetProperty("usedPercent").GetDouble() == 38,
+                "the standalone snapshot contains the changed usage");
+
+            reader.Page = new(GeminiUsagePage.Url, changed.Replace("12:00 PM", "12:30 PM", StringComparison.Ordinal));
+            await ReadAgainAsync();
+            var changedReset = await ExpectGeminiAsync("ok", "ok", 1);
+            Check(changedReset.GetProperty("rows")[0].GetProperty("resetsAtUtc").GetDateTimeOffset() ==
+                changedUsage.GetProperty("rows")[0].GetProperty("resetsAtUtc").GetDateTimeOffset().AddMinutes(30),
+                "a reset timestamp change alone is sent");
+
+            foreach (var provider in new[] { QuotaProvider.Codex, QuotaProvider.Claude, QuotaProvider.Xai })
+            {
+                await monitor.RefreshOnceAsync(provider);
+                var attached = await ExpectGeminiAsync("ok", "ok", 1);
+                Check(attached.GetProperty("rows")[0].GetProperty("usedPercent").GetDouble() == 38 &&
+                    attached.GetProperty("lastSuccessUtc").GetDateTimeOffset() == CurrentReadTime(),
+                    $"{provider} sends once and includes the current Gemini reading");
+            }
+
+            reader.Page = new(GeminiUsagePage.Url, null);
+            await ReadAgainAsync();
+            var format = await ExpectGeminiAsync("formatChanged", "previous", 1);
+            Check(format.GetProperty("rows").GetArrayLength() == 2 &&
+                format.GetProperty("rows").EnumerateArray().All(r => r.GetProperty("isPrevious").GetBoolean()),
+                "format failure preserves only previous web rows");
+            await ReadAgainAsync();
+            await ExpectGeminiAsync("formatChanged", "previous", 0);
+
+            reader.Page = GeminiUsagePageLoad.LoadFailed;
+            await ReadAgainAsync();
+            var failed = await ExpectGeminiAsync("loadFailed", "previous", 1);
+            Check(failed.GetProperty("rows").GetArrayLength() == 2, "load failure can carry previous web rows");
+
+            reader.Page = new("https://gemini.google.com/app", null);
+            await ReadAgainAsync();
+            var login = await ExpectGeminiAsync("loginRequired", "none", 1);
+            Check(login.GetProperty("rows").GetArrayLength() == 0 && login.GetProperty("lastSuccessUtc").ValueKind == JsonValueKind.Null &&
+                login.GetProperty("nextCheckUtc").ValueKind == JsonValueKind.Null, "login-required clears previous rows and times");
+
             monitor.SetGeminiWebEnabled(false);
-            await monitor.RefreshGeminiWebIfDueAsync();
-            await f.Service.WaitForIdleAsync();
-            Check(completions == 0 && f.Http.Count == 0, "Gemini off and logout state transitions do not export");
+            var off = await ExpectGeminiAsync("off", "none", 1);
+            Check(off.GetProperty("rows").GetArrayLength() == 0, "off or logout never sends previous Gemini rows");
+            monitor.SetGeminiWebEnabled(false);
+            await ExpectGeminiAsync("off", "none", 0);
         }
 
         foreach (bool enabled in new[] { true, false })
