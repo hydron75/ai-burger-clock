@@ -136,7 +136,7 @@ internal static class MacGeminiWebSmoke
     internal static async Task<string> VerifyControllerAsync(NSMenu contextMenu, MacGeminiWebController appController)
     {
         // The app's own menu: the submenu is in the right-click menu with its three items, and a fresh run starts off.
-        NSMenuItem? item = contextMenu.Items.FirstOrDefault(entry => entry.Title == MacGeminiWebController.MenuTitle);
+        NSMenuItem? item = contextMenu.Items.FirstOrDefault(entry => entry.Title == GeminiWebText.MenuTitle);
         Check(item?.Submenu is { } appSubmenu && appSubmenu.Items.Select(entry => entry.Title).SequenceEqual(["로그인…", "끄기", "로그아웃"]),
             "the right-click menu has no 'Gemini 사용량' submenu with 로그인… / 끄기 / 로그아웃.");
         Check(!appController.Enabled && !appController.HasSession && appController.Items == (true, false, true),

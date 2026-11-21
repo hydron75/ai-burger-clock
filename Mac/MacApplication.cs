@@ -699,7 +699,7 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
                 !IsContextClick(Click(NSEventType.LeftMouseUp, NSEventModifierMask.ControlKeyMask)))
                 throw new InvalidOperationException("Left/right/control-click routing is wrong.");
             string[] menuTitles = contextMenu.Items.Select(item => item.IsSeparatorItem ? "-" : item.Title).ToArray();
-            if (!menuTitles.SequenceEqual(["Refresh", QuotaRecoveryText.MenuLabel, QuotaEarlyResetText.MenuLabel, MacGeminiWebController.MenuTitle, "로그인 항목 설정 열기…", "-", "종료"]) ||
+            if (!menuTitles.SequenceEqual(["Refresh", QuotaRecoveryText.MenuLabel, QuotaEarlyResetText.MenuLabel, GeminiWebText.MenuTitle, "로그인 항목 설정 열기…", "-", "종료"]) ||
                 contextMenu.Items[^1].KeyEquivalent != "q")
                 throw new InvalidOperationException("Right-click menu must be Refresh / 한도 회복 알림 / 한도 조기 초기화 알림 / Gemini 사용량 / 로그인 항목 설정 열기… / 종료 ⌘Q.");
 

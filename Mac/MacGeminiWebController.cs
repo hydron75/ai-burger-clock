@@ -22,11 +22,6 @@ internal interface IMacGeminiWebBackend
 // The reader is switched on only through a completed login, never by a setting alone.
 internal sealed class MacGeminiWebController
 {
-    internal const string MenuTitle = "Gemini 사용량";
-    internal const string LoginTitle = "로그인…";
-    internal const string OffTitle = "끄기";
-    internal const string LogoutTitle = "로그아웃";
-
     private readonly MacGeminiWebSettings settings;
     private readonly IMacGeminiWebBackend backend;
     private readonly Action<string, bool> feedback;
@@ -41,15 +36,15 @@ internal sealed class MacGeminiWebController
         this.settings = settings;
         this.backend = backend;
         this.feedback = feedback;
-        login = new NSMenuItem(LoginTitle, (_, _) => Login());
-        off = new NSMenuItem(OffTitle, (_, _) => Off());
-        logout = new NSMenuItem(LogoutTitle, (_, _) => _ = LogoutAsync());
+        login = new NSMenuItem(GeminiWebText.LoginLabel, (_, _) => Login());
+        off = new NSMenuItem(GeminiWebText.OffLabel, (_, _) => Off());
+        logout = new NSMenuItem(GeminiWebText.LogoutLabel, (_, _) => _ = LogoutAsync());
         updater = new(UpdateMenu);
-        var submenu = new NSMenu(MenuTitle) { AutoEnablesItems = false, Delegate = updater };
+        var submenu = new NSMenu(GeminiWebText.MenuTitle) { AutoEnablesItems = false, Delegate = updater };
         submenu.AddItem(login);
         submenu.AddItem(off);
         submenu.AddItem(logout);
-        MenuItem = new NSMenuItem(MenuTitle) { Submenu = submenu };
+        MenuItem = new NSMenuItem(GeminiWebText.MenuTitle) { Submenu = submenu };
         UpdateMenu();
     }
 
