@@ -18,6 +18,9 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
     private HttpClient? http;
     private StatusMonitor? statusMonitor;
     private AccountQuotaMonitor? quotaMonitor;
+    // Gemini app usage (0.9.6): hidden WKWebView reader, sign-in window and the menu-bar submenu.
+    private MacGeminiUsageReader? geminiReader;
+    private MacGeminiWebController? geminiWeb;
     private MacStatusPanel? panel;
     private MacStatisticsWindow? statisticsWindow;
     private MacNotifications? notifications;
@@ -68,6 +71,7 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
             (text, error) => panel?.SetFeedback(text, error),
             BeginInvokeOnMainThread, () => RefreshDisplay(TickReason.ProviderChanged), pendingWrites,
             notificationsDenied: () => notifications?.Denied == true);
+        CreateGeminiWeb();
         CreateContextMenu();
         statusItem = NSStatusBar.SystemStatusBar.CreateStatusItem(NSStatusItemLength.Square);
         if (statusItem.Button is { } button)
@@ -99,9 +103,23 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
         contextMenu.AddItem(quotaNotifications!.MenuItem);
         // Separate global setting, default OFF, right after the recovery item (Windows keeps the same order).
         contextMenu.AddItem(quotaNotifications.EarlyResetMenuItem);
+        // Gemini app usage: sign in / turn off / sign out. Off until the user signs in themselves.
+        contextMenu.AddItem(geminiWeb!.MenuItem);
         contextMenu.AddItem(new NSMenuItem("로그인 항목 설정 열기…", (_, _) => MacAutoStart.OpenSettings()) { Enabled = !smoke });
         contextMenu.AddItem(NSMenuItem.SeparatorItem);
         contextMenu.AddItem(new NSMenuItem("종료", "q", (_, _) => NSApplication.SharedApplication.Terminate(null)));
+    }
+
+    // The reader exists from the start (registered with the monitor); the setting says whether it is on. A smoke run keeps its
+    // setting file in the run's temporary folder and never creates a web view.
+    private void CreateGeminiWeb()
+    {
+        string directory = Path.GetDirectoryName(store.DatabasePath)!;
+        var settings = MacGeminiWebSettings.Load(directory);
+        geminiReader = new(action => BeginInvokeOnMainThread(action));
+        var login = new MacGeminiLoginWindow(action => BeginInvokeOnMainThread(action));
+        geminiWeb = new(settings, new MacGeminiWebBackend(() => quotaMonitor, store, geminiReader, login, lifetime.Token),
+            (text, error) => panel?.SetFeedback(text, error));
     }
 
     // Right-click and control-click open the short menu; a left click toggles the popover.
@@ -162,7 +180,7 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
             }
             http = ProviderStatusClient.CreateHttpClient();
             statusMonitor = new(new ProviderStatusClient(http, xaiDiagnostic: LogXaiDiagnostic), store, scheduleAt: Schedule);
-            quotaMonitor = new(new AccountQuotaClient(), store);
+            quotaMonitor = new(new AccountQuotaClient(), store, geminiWebReader: geminiReader, geminiWebEnabled: geminiWeb!.Enabled);
             statusMonitor.Changed += QueueDisplayRefresh;
             quotaMonitor.Changed += QueueDisplayRefresh;
             // Only verified live responses (Succeeded), never Changed: cache loads, refresh starts and
@@ -320,7 +338,13 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
         statisticsWindow.Show();
     }
 
-    private void RefreshAll() => RefreshAll(false);
+    // Manual Refresh (button and menu) is the only trigger that also reads the Gemini usage page; wake-up and network
+    // recovery go through RefreshAll(true) and never do.
+    private void RefreshAll()
+    {
+        RefreshAll(false);
+        if (!stopping && !smoke) quotaMonitor?.RequestGeminiWebRefresh();
+    }
 
     private void RefreshAll(bool queueWhileRefreshing)
     {
@@ -500,6 +524,7 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
             try { await initialization; } catch { }
             Task statisticsStop = statisticsWindow?.StopAsync() ?? Task.CompletedTask;
             if (statusMonitor is not null) await statusMonitor.StopAsync();
+            geminiWeb?.Shutdown();
             if (quotaMonitor is not null) await quotaMonitor.StopAsync();
             await statisticsStop;
             try { await Task.WhenAll(pendingWrites.ToArray()); } catch { }
@@ -674,9 +699,9 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
                 !IsContextClick(Click(NSEventType.LeftMouseUp, NSEventModifierMask.ControlKeyMask)))
                 throw new InvalidOperationException("Left/right/control-click routing is wrong.");
             string[] menuTitles = contextMenu.Items.Select(item => item.IsSeparatorItem ? "-" : item.Title).ToArray();
-            if (!menuTitles.SequenceEqual(["Refresh", QuotaRecoveryText.MenuLabel, QuotaEarlyResetText.MenuLabel, "로그인 항목 설정 열기…", "-", "종료"]) ||
+            if (!menuTitles.SequenceEqual(["Refresh", QuotaRecoveryText.MenuLabel, QuotaEarlyResetText.MenuLabel, GeminiWebText.MenuTitle, "로그인 항목 설정 열기…", "-", "종료"]) ||
                 contextMenu.Items[^1].KeyEquivalent != "q")
-                throw new InvalidOperationException("Right-click menu must be Refresh / 한도 회복 알림 / 한도 조기 초기화 알림 / 로그인 항목 설정 열기… / 종료 ⌘Q.");
+                throw new InvalidOperationException("Right-click menu must be Refresh / 한도 회복 알림 / 한도 조기 초기화 알림 / Gemini 사용량 / 로그인 항목 설정 열기… / 종료 ⌘Q.");
 
             // Checks that open windows are skipped (and counted) only while another app is full screen on the display
             // they would open on: that shows the menu bar over that app (MacScreenGuard, MACOS_PORT 39). Another
@@ -971,6 +996,10 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
             }
             // Gemini automatic query stop (#156): whatever the input, one fixed notice row, no bar, no time layer, no old value.
             string geminiOffResult = MacGeminiQuotaOffSmoke.Verify(panel, Schedule(now), healthy, quota, claudeQuota, xaiQuota, now);
+            // Gemini app usage reader (0.9.6): reading loop, menu and the five box states, all synthetic and without a web view.
+            string geminiWebReadingResult = await MacGeminiWebSmoke.VerifyReadingAsync();
+            string geminiWebMenuResult = await MacGeminiWebSmoke.VerifyControllerAsync(contextMenu!, geminiWeb!);
+            string geminiWebPanelResult = MacGeminiWebSmoke.VerifyPanel(panel, Schedule(now), healthy, quota, claudeQuota, xaiQuota, now);
             panel.Update(Schedule(now), healthy, quotas, false, now.AddMinutes(5), "");
             panel.Verify(Schedule(now), healthy, quotas);
             // xAI weekly credit box: four boxes, +1 bar, colors, previous/none states, VoiceOver, capped height.
@@ -1029,7 +1058,7 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
                 Console.WriteLine($"SKIP: {skippedScreenChecks.Count} screen checks not run because a window of {covering.Value.Owner} covers display {covering.Value.ScreenNumber}, " +
                     $"the display of the status item where ours would open (it would show the menu bar over it): {string.Join("; ", skippedScreenChecks)}. Run again with no full-screen app to check them.");
             string verdict = skippedScreenChecks.Count == 0 ? "PASS" : $"PASS with {skippedScreenChecks.Count} screen checks SKIPPED (not verified)";
-            Console.WriteLine($"{verdict}: bundle version, menu-tracking countdown timer, 20pt menu icon white/dark disc + color glyph light/dark 1x-2x pixels (glyph contrast min {iconContrast:0.0}:1), left/right/control-click routing, right-click menu, popover open/close/reopen, shared panel text/record menu/quota lines, {activationResult}, tone contrast >= 4.5:1 light+dark (min {weakest:0.0}:1), card text x = quota box text x ({layout.BoxTextX:0}pt; titles {layout.TitleX:0}pt), whole-card click/quota boxes read-only, shared quota title, usage bars (0% empty/100% full, provider colors >= 3:1 light+dark min {barWeakest:0.0}:1, muted when previous/elapsed, none without a value), time layer (tint-track/tint-used >= 1.5:1 min {tintWeakest:0.0}:1, marker >= 3:1 min {markerWeakest:0.0}:1 light+dark, dark tint-used >= 2.0:1 min {darkSeparationWeakest:0.0}:1, marker position/end points, hidden states, spoken row = shared reading text once), one shared Provider detail per quota box, four provider cards incl. xAI (same heading width, card size and spacing: {cardGeometry}; whole-card click only, detail without the usage link), four quota boxes (Gemini fixed notice only, xAI weekly credits), popover {layout.Size.Width:0}x{layout.Size.Height:0}pt (this screen usable {layout.UsableHeight:0}pt; 1280x800 {standard.Height:0}pt not cut off, quota area {standardQuota:0}pt scrolling, every control reachable; 1024x640 {small.Height:0}pt not cut off, quota area {smallQuota:0}pt, whole panel {smallScroll.Document:0}pt scrolling, every control reachable), 1,000-char note limit, temporary SQLite, four events/notes via shared factory, {displayResult}, {permissionResult}, {layoutKeyResult}, {notificationImageResult}, {recoveryResult}, {earlyResetResult}, {earlyResetControllerResult}, {decisionLogResult}, {lateCallbackResult}, {earlyResetUiResult}, {geminiOffResult}, {xaiQuotaResult}, {detailTipResult}, {quotaRowResult}, {diagnosticResult}, statistics (shared text, explanation fits, Mac empty-state hint), injected quota countdown; no account/network/settings changes.");
+            Console.WriteLine($"{verdict}: bundle version, menu-tracking countdown timer, 20pt menu icon white/dark disc + color glyph light/dark 1x-2x pixels (glyph contrast min {iconContrast:0.0}:1), left/right/control-click routing, right-click menu, popover open/close/reopen, shared panel text/record menu/quota lines, {activationResult}, tone contrast >= 4.5:1 light+dark (min {weakest:0.0}:1), card text x = quota box text x ({layout.BoxTextX:0}pt; titles {layout.TitleX:0}pt), whole-card click/quota boxes read-only, shared quota title, usage bars (0% empty/100% full, provider colors >= 3:1 light+dark min {barWeakest:0.0}:1, muted when previous/elapsed, none without a value), time layer (tint-track/tint-used >= 1.5:1 min {tintWeakest:0.0}:1, marker >= 3:1 min {markerWeakest:0.0}:1 light+dark, dark tint-used >= 2.0:1 min {darkSeparationWeakest:0.0}:1, marker position/end points, hidden states, spoken row = shared reading text once), one shared Provider detail per quota box, four provider cards incl. xAI (same heading width, card size and spacing: {cardGeometry}; whole-card click only, detail without the usage link), four quota boxes (Gemini fixed notice only while no reader is registered, xAI weekly credits), popover {layout.Size.Width:0}x{layout.Size.Height:0}pt (this screen usable {layout.UsableHeight:0}pt; 1280x800 {standard.Height:0}pt not cut off, quota area {standardQuota:0}pt scrolling, every control reachable; 1024x640 {small.Height:0}pt not cut off, quota area {smallQuota:0}pt, whole panel {smallScroll.Document:0}pt scrolling, every control reachable), 1,000-char note limit, temporary SQLite, four events/notes via shared factory, {displayResult}, {permissionResult}, {layoutKeyResult}, {notificationImageResult}, {recoveryResult}, {earlyResetResult}, {earlyResetControllerResult}, {decisionLogResult}, {lateCallbackResult}, {earlyResetUiResult}, {geminiOffResult}, {geminiWebReadingResult}, {geminiWebMenuResult}, {geminiWebPanelResult}, {xaiQuotaResult}, {detailTipResult}, {quotaRowResult}, {diagnosticResult}, statistics (shared text, explanation fits, Mac empty-state hint), injected quota countdown; no account/network/settings changes.");
             smokeAnchorWindow?.Close();
             ExitCode = 0;
         }
