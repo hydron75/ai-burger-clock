@@ -70,10 +70,10 @@ internal sealed class WindowsGeminiWebAccess(
         return new(!state.IsEnabled || state.Outcome == GeminiUsageOutcome.LoginRequired, state.IsEnabled, true);
     }
 
-    internal static void RequestRefresh(AccountQuotaMonitor? monitor, bool queueWhileRefreshing, bool fromStatusButton)
+    internal static void RequestRefresh(AccountQuotaMonitor? monitor, bool queueWhileRefreshing, bool refreshGeminiWeb)
     {
         monitor?.RequestRefresh(queueWhileRefreshing);
-        if (fromStatusButton) monitor?.RequestGeminiWebRefresh();
+        if (refreshGeminiWeb) monitor?.RequestGeminiWebRefresh();
     }
 
     internal async Task LoginAsync(CancellationToken cancellationToken)

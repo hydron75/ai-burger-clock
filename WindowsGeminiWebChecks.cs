@@ -145,13 +145,13 @@ internal static class WindowsGeminiWebChecks
             await monitor.RefreshGeminiWebIfDueAsync();
             Check(Gemini().GeminiWeb?.Outcome == GeminiUsageOutcome.Ok && session.Reads == 1, "fake reader publishes current rows");
 
-            WindowsGeminiWebAccess.RequestRefresh(monitor, queueWhileRefreshing: false, fromStatusButton: false);
-            WindowsGeminiWebAccess.RequestRefresh(monitor, queueWhileRefreshing: true, fromStatusButton: false);
+            WindowsGeminiWebAccess.RequestRefresh(monitor, queueWhileRefreshing: false, refreshGeminiWeb: false);
+            WindowsGeminiWebAccess.RequestRefresh(monitor, queueWhileRefreshing: true, refreshGeminiWeb: false);
             await monitor.RefreshGeminiWebIfDueAsync();
-            Check(session.Reads == 1, "tray and recovery requests do not wake Gemini");
-            WindowsGeminiWebAccess.RequestRefresh(monitor, queueWhileRefreshing: false, fromStatusButton: true);
+            Check(session.Reads == 1, "refreshes without Gemini, including queued recovery, do not wake Gemini");
+            WindowsGeminiWebAccess.RequestRefresh(monitor, queueWhileRefreshing: false, refreshGeminiWeb: true);
             await monitor.RefreshGeminiWebIfDueAsync();
-            Check(session.Reads == 2, "status Refresh wakes Gemini before the next scheduled read");
+            Check(session.Reads == 2, "manual refresh wakes Gemini before the next scheduled read");
 
             var legacy = new QuotaReading(QuotaProvider.Gemini, [new("synthetic-agy", "Synthetic legacy", 19, now.AddDays(1), 10080)]);
             await store.SaveQuotaAsync(new(1, legacy, now, []));

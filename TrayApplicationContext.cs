@@ -105,7 +105,7 @@ namespace AiBurgerClock
             statusTicker = new StatusTicker(WindowsProviderNames.Provider, warn: warningLog.Write);
             statusWindow = new StatusWindow();
             statusWindow.AutoStartChanged += OnWindowAutoStartChanged;
-            statusWindow.RefreshRequested += (_, _) => RefreshAll(fromStatusButton: true);
+            statusWindow.RefreshRequested += (_, _) => RefreshAll(refreshGeminiWeb: true);
             statusWindow.StatisticsRequested += (_, _) => ShowStatistics();
             statusWindow.RecordRequested += RecordMeasurement;
             statusWindow.StatusPageRequested += OpenStatusPage;
@@ -141,8 +141,8 @@ namespace AiBurgerClock
             menu.Items.Add(countdownMenuItem);
             menu.Items.Add(new ToolStripSeparator());
             menu.Items.Add(showItem);
-            var refreshItem = new ToolStripMenuItem("상태·한도 새로 고침") { ToolTipText = "공식 서비스 상태와 ChatGPT (Work/Codex)·Claude·xAI 계정 한도를 함께 갱신" };
-            refreshItem.Click += (_, _) => RefreshAll();
+            var refreshItem = new ToolStripMenuItem("상태·한도 새로 고침") { ToolTipText = "공식 서비스 상태와 ChatGPT (Work/Codex)·Claude·xAI 한도, 로그인한 Gemini 앱 사용량을 갱신합니다." };
+            refreshItem.Click += (_, _) => RefreshAll(refreshGeminiWeb: true);
             menu.Items.Add(refreshItem);
             var recordRoot = new ToolStripMenuItem("사용 경험 기록");
             foreach (var provider in Enum.GetValues<ProviderKind>())
@@ -198,7 +198,7 @@ namespace AiBurgerClock
                 quotaMonitor.Changed += OnProviderChanged;
                 quotaMonitor.Succeeded += OnQuotaSucceeded;
                 SystemEvents.PowerModeChanged += OnPowerModeChanged;
-                networkRefresh = new NetworkRefreshScheduler(() => RefreshAll(queueWhileRefreshing: true));
+                networkRefresh = new NetworkRefreshScheduler(RefreshAfterRecovery);
                 NetworkChange.NetworkAvailabilityChanged += OnNetworkAvailabilityChanged;
             }
             var exportCredentials = new WindowsQuotaExportCredentials();
@@ -382,7 +382,7 @@ namespace AiBurgerClock
         internal void OnPowerModeChanged(object? sender, PowerModeChangedEventArgs e)
         {
             if (e.Mode == PowerModes.Resume && !exiting && !disposed)
-                RefreshAll(queueWhileRefreshing: true);
+                RefreshAfterRecovery();
         }
 
         // Raised off the UI thread; the shared scheduler waits for DHCP/DNS and limits flapping adapters.
@@ -392,11 +392,13 @@ namespace AiBurgerClock
                 networkRefresh?.OnNetworkAvailable();
         }
 
-        private void RefreshAll(bool queueWhileRefreshing = false, bool fromStatusButton = false)
+        internal void RefreshAfterRecovery() => RefreshAll(queueWhileRefreshing: true);
+
+        private void RefreshAll(bool queueWhileRefreshing = false, bool refreshGeminiWeb = false)
         {
             if (exiting || disposed) return;
             monitor?.RequestRefresh(queueWhileRefreshing);
-            WindowsGeminiWebAccess.RequestRefresh(quotaMonitor, queueWhileRefreshing, fromStatusButton);
+            WindowsGeminiWebAccess.RequestRefresh(quotaMonitor, queueWhileRefreshing, refreshGeminiWeb);
         }
 
         private IReadOnlyList<ProviderStatus> CurrentProviders() => monitor?.Snapshot() ??

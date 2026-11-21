@@ -88,20 +88,26 @@ internal static class WindowsGeminiWebUiChecks
             await ShowStateAsync("ok", "5시간", "자동 15분", 2, [false, true, true]);
 
             int reads = session.Reads;
-            menu.Items.OfType<ToolStripMenuItem>().Single(item => item.Text == "상태·한도 새로 고침").PerformClick();
+            var trayRefresh = menu.Items.OfType<ToolStripMenuItem>().Single(item => item.Text == "상태·한도 새로 고침");
+            check(trayRefresh.ToolTipText?.Contains("로그인한 Gemini 앱 사용량", StringComparison.Ordinal) == true,
+                "Native tray refresh tooltip includes signed-in Gemini app usage");
+            session.ReadPage = () => new(GeminiUsagePage.Url, null);
+            trayRefresh.PerformClick();
+            await WaitAsync(() => Gemini().GeminiWeb?.Outcome == GeminiUsageOutcome.FormatChanged && !Gemini().IsRefreshing);
+            check(session.Reads == reads + 1, "Native tray refresh wakes Gemini exactly once");
+
             context.OnPowerModeChanged(null, new PowerModeChangedEventArgs(PowerModes.Resume));
             await monitor.RefreshGeminiWebIfDueAsync();
-            check(session.Reads == reads, "Native tray refresh and resume leave Gemini on its own schedule");
-
-            session.ReadPage = () => new(GeminiUsagePage.Url, null);
-            refresh.PerformClick();
-            await WaitAsync(() => Gemini().GeminiWeb?.Outcome == GeminiUsageOutcome.FormatChanged && !Gemini().IsRefreshing);
-            check(session.Reads == reads + 1, "The native status Refresh button alone wakes Gemini");
+            check(session.Reads == reads + 1, "Resume does not wake Gemini");
+            context.RefreshAfterRecovery(); // The callback passed to NetworkRefreshScheduler, with no NIC changes.
+            await monitor.RefreshGeminiWebIfDueAsync();
+            check(session.Reads == reads + 1, "The network scheduler's recovery callback does not wake Gemini");
             await ShowStateAsync("format-changed", "형식 변경 · 조회 불가", "형식 변경 · 조회 불가", 0, [false, true, true]);
 
             session.ReadPage = () => GeminiUsagePageLoad.LoadFailed;
             refresh.PerformClick();
             await WaitAsync(() => Gemini().GeminiWeb?.Outcome == GeminiUsageOutcome.LoadFailed && !Gemini().IsRefreshing);
+            check(session.Reads == reads + 2, "The native status Refresh button wakes Gemini exactly once");
             await ShowStateAsync("load-failed", "Gemini · 이전 조회값", "한도 조회 실패", 2, [false, true, true]);
 
             WithMenu(() => items[1].PerformClick());
