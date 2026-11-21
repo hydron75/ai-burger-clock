@@ -55,7 +55,6 @@ internal sealed class WindowsGeminiWebAccess(
     private WindowsGeminiWebSettings settings = initial;
     private bool busy;
 
-    internal const string MenuLabel = "Gemini 사용량";
     internal const string LogoutPendingText = "Gemini 로그아웃 정리를 완료하지 못했습니다. 다음 시작 때 다시 시도합니다.";
     internal bool LogoutPending => settings.LogoutPending;
 

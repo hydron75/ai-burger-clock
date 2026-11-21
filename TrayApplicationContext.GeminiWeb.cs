@@ -27,10 +27,10 @@ internal sealed partial class TrayApplicationContext
         var access = new WindowsGeminiWebAccess(quotas, store, geminiWebSession, settingsStore, settings);
         geminiWebAccess = access;
 
-        var root = new ToolStripMenuItem(WindowsGeminiWebAccess.MenuLabel);
-        var login = new ToolStripMenuItem("로그인…");
-        var off = new ToolStripMenuItem("끄기");
-        var logout = new ToolStripMenuItem("로그아웃");
+        var root = new ToolStripMenuItem(GeminiWebText.MenuTitle);
+        var login = new ToolStripMenuItem(GeminiWebText.LoginLabel);
+        var off = new ToolStripMenuItem(GeminiWebText.OffLabel);
+        var logout = new ToolStripMenuItem(GeminiWebText.LogoutLabel);
         root.DropDownItems.AddRange([login, off, logout]);
         menu.Items.Insert(menu.Items.IndexOf(mobileExportMenuItem), root);
 

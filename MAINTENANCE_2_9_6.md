@@ -50,4 +50,6 @@
 - 조회 중 입력 포커스가 이동하지 않았고 작업표시줄과 Alt+Tab에 조회 창이 표시되지 않았습니다.
 - 15분 자동 갱신을 확인했습니다. 2.9.6에서도 같은 조회 주기와 숨김 WebView2 조회 경로를 사용합니다.
 
-[#164](https://github.com/hydron75/ai-burger-clock/pull/164) 병합 후 같은 문구의 메뉴 상수 전환과 후보 소스·병합 HEAD의 차이를 기록합니다.
+## 배포 빌드와 병합 대상 HEAD
+
+[#164](https://github.com/hydron75/ai-burger-clock/pull/164)가 병합된 main을 반영했습니다. 배포 빌드 `15844784a24bc6ec56799c0eb66e166c618bfb0a`와 #165 병합 대상 HEAD 사이의 Windows 실행 코드 차이는 Gemini 트레이 메뉴 문구를 `GeminiWebText.MenuTitle`, `LoginLabel`, `OffLabel`, `LogoutLabel`로 옮긴 것뿐입니다. 네 문자열이 배포 빌드의 문구와 일치해 재배포는 생략했습니다.
