@@ -57,6 +57,7 @@ internal static class XaiStatusTests
         Check(RecommendationPolicy.Calculate(AgentState.FullThrottle, healthy.Status) == Recommendation.Go,
             "incident-free xAI is GO, not permanently gray");
         Check(healthy.LastSuccessfulCheckUtc == Now && healthy.AssessmentIssue.Length == 0, "normal receipt uses the injected clock");
+        CheckInformationNotices(Check);
         var november05Catalog = JsonNode.Parse(SummaryJson)!;
         var november05Component = november05Catalog["components"]!.AsArray().Single(item => (string?)item!["id"] == "review-agents")!;
         november05Component["id"] = "bugbot"; november05Component["name"] = "Bugbot";
@@ -134,11 +135,12 @@ internal static class XaiStatusTests
         foreach (var item in Catalog)
         {
             var status = Parse(summary: Summary(changed: item.Id, value: "info"));
-            Check(status.Status == OfficialStatus.Degraded && status.RelevantComponent.Length > 0, "each Cursor/Bot component contributes: " + item.Name);
+            Check(status.Status == OfficialStatus.Operational && status.XaiNotice is { Scope.Length: > 0 },
+                "each expected component can show an operational notice: " + item.Name);
         }
-        foreach (var (severity, expected) in new[] { ("info", OfficialStatus.Degraded), ("disruption", OfficialStatus.PartialOutage), ("outage", OfficialStatus.MajorOutage) })
+        foreach (var (severity, expected) in new[] { ("info", OfficialStatus.Operational), ("disruption", OfficialStatus.PartialOutage), ("outage", OfficialStatus.MajorOutage) })
             Check(Parse(Rss(Item(severity: severity))).Status == expected, "RSS severity mapping: " + severity);
-        foreach (string phase in new[] { "investigating", "identified", "monitoring", "ongoing" })
+        foreach (string phase in new[] { "investigating", "identified", "monitoring", "ongoing", "active" })
             Check(Parse(Rss(Item(state: phase))).Status == OfficialStatus.PartialOutage, "recognized open RSS phase: " + phase);
         foreach (string path in mappings.Select(item => item.Path).Append("future-product"))
             Check(Parse(Rss(Item(path, state: "resolved", severity: "outage"))).Status == OfficialStatus.Operational,
@@ -155,7 +157,8 @@ internal static class XaiStatusTests
         var worst = Parse(Rss(Item("grok-build", severity: "outage"), Item("grok-bot", id: "synthetic-second")),
             summary: Summary(changed: "cursor-cli", value: "info"));
         Check(worst.Status == OfficialStatus.MajorOutage && worst.RelevantComponent.Contains("Grok Build", StringComparison.Ordinal) &&
-            worst.RelevantComponent.Contains("Grok Bot", StringComparison.Ordinal) && worst.RelevantComponent.Contains("Cursor · CLI", StringComparison.Ordinal), "worst status with all product causes");
+            worst.RelevantComponent.Contains("Grok Bot", StringComparison.Ordinal) && worst.XaiNotice?.Scope == "Cursor · CLI",
+            "worst status with every outage scope and separate information notice");
         var titleOnly = Parse(history: History([Incident(components: [])]));
         Check(titleOnly.Status == OfficialStatus.Unknown && titleOnly.IncidentId.Length == 0 && titleOnly.UncertainIncidentId.Length > 0,
             "unscoped ongoing event is CHECK, not a fabricated all-product outage");
@@ -327,6 +330,7 @@ internal static class XaiStatusTests
         }
         finally { Directory.Delete(directory, recursive: true); }
         await CheckMissingIncidentStorageAsync(Check);
+        await CheckNoticeStorageAsync(Check);
         return count;
     }
 
@@ -380,6 +384,101 @@ internal static class XaiStatusTests
             "a throwing diagnostic callback is still called only once for an unchanged set and cannot change status");
     }
 
+    private static void CheckInformationNotices(Action<bool, string> check)
+    {
+        const string scope = "Cursor · Third-party models", id = "synthetic-notice";
+        const string noticeSlug = "third-party-models";
+        string summary = Summary(changed: noticeSlug, value: "info");
+        string rss = Rss(Item(noticeSlug, id, "monitoring", "info"));
+        string history = History(Incident(id, impact: "none", components: [noticeSlug]));
+
+        void CheckNotice(ProviderStatus status, string title, string source, bool hasIncident)
+        {
+            check(status.Status == OfficialStatus.Operational && status.AssessmentIssue.Length == 0,
+                source + " is an operational notice");
+            var card = StatusPanelModel.Card(status, AgentState.FullThrottle);
+            check(card.Recommendation == Recommendation.Go && card.Official.Contains("Official: 정상", StringComparison.Ordinal) &&
+                card.Reason.Contains("공지: " + title, StringComparison.Ordinal) && card.Reason.Contains(scope, StringComparison.Ordinal),
+                source + " keeps GO and displays the notice on the card");
+            check(card.Detail.Contains("공지: " + title, StringComparison.Ordinal) && card.Detail.Contains(scope, StringComparison.Ordinal) &&
+                card.Detail.Contains(source, StringComparison.Ordinal) && (!hasIncident || card.Detail.Contains("공지 사건 ID: " + id, StringComparison.Ordinal)),
+                source + " shows the notice, scope, source and any incident ID in detail");
+        }
+
+        CheckNotice(new XaiStatusFeed().Parse(EmptyRss, summary, IncidentsJson, Now), scope, XaiStatusFeed.SummaryUrl, false);
+        CheckNotice(new XaiStatusFeed().Parse(rss, SummaryJson, IncidentsJson, Now), "[Synthetic product] Investigating synthetic issue", XaiStatusFeed.RssUrl, true);
+        CheckNotice(new XaiStatusFeed().Parse(EmptyRss, SummaryJson, history, Now), "Synthetic issue", XaiStatusFeed.IncidentsUrl, true);
+
+        var tracker = new XaiStatusFeed();
+        string Active(string severity) => Rss(Item(noticeSlug, id, "ACTIVE", severity));
+        var activeInfo = tracker.Parse(Active("info"), summary, history, Now);
+        CheckNotice(activeInfo, "Synthetic issue", XaiStatusFeed.RssUrl, true);
+        check(activeInfo.Source.Contains(XaiStatusFeed.SummaryUrl, StringComparison.Ordinal) &&
+            activeInfo.Source.Contains(XaiStatusFeed.IncidentsUrl, StringComparison.Ordinal),
+            "a notice in three sources retains all fixed source URLs");
+        var otherProblem = new XaiStatusFeed().Parse(Rss(Item("grok-bot", "synthetic-outage", "ACTIVE", "disruption")),
+            summary, history, Now);
+        check(otherProblem.Status == OfficialStatus.PartialOutage && otherProblem.RelevantComponent == "Grok Bot",
+            "ACTIVE disruption wins over notices without assigning their scope to the outage");
+        check(StatusPanelModel.Card(otherProblem, AgentState.FullThrottle).Detail.Contains("공지: Synthetic issue", StringComparison.Ordinal),
+            "an unrelated notice stays visible in detail during a real outage");
+        var incomplete = new XaiStatusFeed().Parse(Active("info"), null, history, Now);
+        check(incomplete.Status == OfficialStatus.Unknown && incomplete.XaiNotice?.IncidentId == id &&
+            incomplete.AssessmentIssue.Contains("수신 실패", StringComparison.Ordinal), "a notice cannot clear CHECK when a required source failed");
+        var invalid = new XaiStatusFeed().Parse(Rss(Item(noticeSlug, id, "future_phase", "info")), SummaryJson, IncidentsJson, Now);
+        check(invalid.Status == OfficialStatus.Unknown && invalid.AssessmentIssue.Contains("RSS 진행 상태 형식 이상", StringComparison.Ordinal),
+            "an unknown RSS phase stays CHECK even with info severity");
+
+        var schedule = AgentSchedule.GetSnapshot(Now);
+        var ticker = new StatusTicker(strictInput: true);
+        var baseline = new XaiStatusFeed().Parse(EmptyRss, SummaryJson, IncidentsJson, Now);
+        ticker.Tick(schedule, [baseline], TickReason.Initial);
+        check(ticker.Tick(schedule, [activeInfo], TickReason.ProviderChanged).ProviderAlerts.Count == 0,
+            "an active info notice alone does not alert");
+        var upgraded = tracker.Parse(Active("disruption"), summary, history, Now.AddMinutes(5));
+        var alerts = ticker.Tick(schedule, [upgraded], TickReason.ProviderChanged).ProviderAlerts;
+        check(upgraded.Status == OfficialStatus.PartialOutage && alerts.Count == 1 &&
+            alerts[0].Recommendation == Recommendation.Stop && !alerts[0].Recovered &&
+            alerts[0].Body.Contains(scope, StringComparison.Ordinal) && upgraded.XaiNotice is null,
+            "escalating the same ACTIVE notice to disruption sends the existing STOP alert");
+        check(ticker.Tick(schedule, [upgraded], TickReason.Timer).ProviderAlerts.Count == 0,
+            "another poll of the same outage does not repeat the alert");
+        var majorTicker = new StatusTicker(strictInput: true);
+        majorTicker.Tick(schedule, [activeInfo], TickReason.Initial);
+        var major = tracker.Parse(Active("outage"), summary, history, Now.AddMinutes(10));
+        var majorAlert = majorTicker.Tick(schedule, [major], TickReason.ProviderChanged).ProviderAlerts;
+        check(major.Status == OfficialStatus.MajorOutage && majorAlert.Count == 1 && majorAlert[0].Recommendation == Recommendation.Stop,
+            "an ACTIVE notice escalating directly to outage also sends the existing STOP alert");
+    }
+
+    private static async Task CheckNoticeStorageAsync(Action<bool, string> check)
+    {
+        string directory = Directory.CreateTempSubdirectory("AiBurgerClock-xai-notice-").FullName;
+        try
+        {
+            var store = new UsageStore(Path.Combine(directory, "notice.db"));
+            var current = new XaiStatusFeed().Parse(EmptyRss, SummaryJson,
+                History(Incident("synthetic-notice", impact: "none", components: ["third-party-models"])), Now);
+            var schedule = AgentSchedule.GetSnapshot(Now);
+            await store.SaveProviderAsync(current, schedule, Recommendation.Go);
+            var cached = (await store.ReadLatestStatusesAsync()).Single();
+            check(cached.Status == OfficialStatus.Operational && cached.XaiNotice == current.XaiNotice &&
+                cached.Source == current.Source && cached.IncidentId.Length == 0,
+                "the bounded receipt cache preserves notice title, scope, ID and source independently of outages");
+            var stale = StatusMonitor.WithFreshness(cached, Now + StatusMonitor.StaleAfter);
+            check(stale.Status == OfficialStatus.Stale && stale.XaiNotice is null &&
+                !StatusPanelModel.Card(stale, schedule.State).Detail.Contains("공지 사건 ID", StringComparison.Ordinal),
+                "stale observations do not present their cached notice as current");
+
+            var oversized = current with { AssessmentIssue = new string('가', 1000), XaiNotice = new(new string('나', 500), "Grok Bot", "synthetic-notice") };
+            await store.SaveProviderAsync(oversized, schedule, Recommendation.Go);
+            var bounded = (await store.ReadLatestStatusesAsync()).Single();
+            check(bounded.XaiNotice is null && bounded.AssessmentIssue == oversized.AssessmentIssue,
+                "oversized optional notice data never removes the core receipt diagnostics");
+        }
+        finally { Directory.Delete(directory, recursive: true); }
+    }
+
     private static void CheckNativeJsonSchema(Action<bool, string> check)
     {
         ProviderStatus Read(string? summary = null, string? history = null, Action<string>? log = null) =>
@@ -387,7 +486,7 @@ internal static class XaiStatusTests
         JsonObject Event() => JsonSerializer.SerializeToNode(Incident(components: ["grok-bot"]))!.AsObject();
         string Events(JsonObject item) => History(item);
         string[] excluded = ["imagine", "api-eu-west-1", "admin-apis", "api-console", "api-docs", "single-sign-on", "x-ai"];
-        foreach (var (state, expected) in new[] { ("available", OfficialStatus.Operational), ("info", OfficialStatus.Degraded),
+        foreach (var (state, expected) in new[] { ("available", OfficialStatus.Operational), ("info", OfficialStatus.Operational),
             ("disruption", OfficialStatus.PartialOutage), ("outage", OfficialStatus.MajorOutage), ("no_data", OfficialStatus.Unknown) })
             foreach (var component in Catalog)
                 check(Read(Summary(changed: component.Id, value: state)).Status == expected,
@@ -439,13 +538,13 @@ internal static class XaiStatusTests
                 "RSS-only legacy slug appearing in summary is still diagnostic-only: " + legacy);
         }
 
-        foreach (var (impact, expected) in new[] { ("none", OfficialStatus.Degraded), ("minor", OfficialStatus.PartialOutage),
+        foreach (var (impact, expected) in new[] { ("none", OfficialStatus.Operational), ("minor", OfficialStatus.PartialOutage),
             ("major", OfficialStatus.PartialOutage), ("critical", OfficialStatus.MajorOutage) })
             foreach (string phase in new[] { "investigating", "monitoring", "resolved" })
                 check(Read(history: History(Incident(state: phase, impact: impact, components: ["grok-bot"]))).Status ==
                     (phase == "resolved" ? OfficialStatus.Operational : expected), "native incident impact / " + phase + " / " + impact);
 
-        foreach (string phase in new[] { "identified", "postmortem", "completed", "future-phase", "" })
+        foreach (string phase in new[] { "identified", "postmortem", "completed", "active", "future-phase", "" })
             check(Read(history: History(Incident(state: phase, components: ["grok-bot"]))).Status == OfficialStatus.Unknown,
                 "phase outside the page JSON enum is CHECK: " + phase);
         var wrongIdentifier = Event();

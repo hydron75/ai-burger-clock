@@ -469,6 +469,21 @@ internal sealed class UsageStore(string? databasePath = null)
             if (status.LastKnownStatusUtc is { } known)
                 writer.WriteString(nameof(ProviderStatus.LastKnownStatusUtc), Utc(known));
             else writer.WriteNull(nameof(ProviderStatus.LastKnownStatusUtc));
+            if (status.XaiNotice is { } notice)
+            {
+                int noticeBytes = JsonEncodedText.Encode(notice.Title).EncodedUtf8Bytes.Length +
+                    JsonEncodedText.Encode(notice.Scope).EncodedUtf8Bytes.Length +
+                    JsonEncodedText.Encode(notice.IncidentId).EncodedUtf8Bytes.Length;
+                // Omit an oversized optional notice without losing the existing receipt diagnostics.
+                if (writer.BytesCommitted + writer.BytesPending + noticeBytes <= MaximumProviderDiagnosticsBytes - 64)
+                {
+                    writer.WriteStartObject(nameof(ProviderStatus.XaiNotice));
+                    writer.WriteString(nameof(XaiStatusNotice.Title), notice.Title);
+                    writer.WriteString(nameof(XaiStatusNotice.Scope), notice.Scope);
+                    writer.WriteString(nameof(XaiStatusNotice.IncidentId), notice.IncidentId);
+                    writer.WriteEndObject();
+                }
+            }
             writer.WriteEndObject();
         }
         using var command = connection.CreateCommand();
@@ -522,7 +537,8 @@ internal sealed class UsageStore(string? databasePath = null)
                         AssessmentIssue = issue,
                         UncertainIncidentId = incidentId,
                         UncertainIncidentTitle = incidentTitle,
-                        LastKnownStatusUtc = known
+                        LastKnownStatusUtc = known,
+                        XaiNotice = status.Provider == ProviderKind.Xai ? ReadXaiNotice(root) : null
                     };
                 }
             }
@@ -530,6 +546,13 @@ internal sealed class UsageStore(string? databasePath = null)
         }
         return LegacyProviderDiagnostics(status);
     }
+
+    private static XaiStatusNotice? ReadXaiNotice(JsonElement root) =>
+        root.TryGetProperty(nameof(ProviderStatus.XaiNotice), out var notice) && notice.ValueKind == JsonValueKind.Object &&
+        DiagnosticString(notice, nameof(XaiStatusNotice.Title), out string title) && title.Length <= 500 &&
+        DiagnosticString(notice, nameof(XaiStatusNotice.Scope), out string scope) && scope.Length is > 0 and <= 500 &&
+        DiagnosticString(notice, nameof(XaiStatusNotice.IncidentId), out string ids) && ids.Length <= 500
+            ? new(title, scope, ids) : null;
 
     private static ProviderStatus LegacyProviderDiagnostics(ProviderStatus status) =>
         (status.Status is OfficialStatus.Unknown or OfficialStatus.Stale) &&

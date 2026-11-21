@@ -5,6 +5,10 @@ internal enum OfficialStatus { Operational, Degraded, PartialOutage, MajorOutage
 internal enum Recommendation { Go, Hold, Stop, Check, BurgerTime, BurgerServiceIssue, BurgerCheck }
 internal enum UsageEventType { Success, Slow, Error, Interrupted }
 internal sealed record XaiMissingIncident(string Id, DateTimeOffset MissingSinceUtc);
+internal sealed record XaiStatusNotice(string Title, string Scope, string IncidentId)
+{
+    public string Text => Title.Length == 0 ? "공지: " + Scope : $"공지: {Title} · {Scope}";
+}
 
 internal sealed record ProviderStatus(
     ProviderKind Provider,
@@ -25,6 +29,7 @@ internal sealed record ProviderStatus(
     public string UncertainIncidentId { get; init; } = "";
     public string UncertainIncidentTitle { get; init; } = "";
     public DateTimeOffset? LastKnownStatusUtc { get; init; }
+    public XaiStatusNotice? XaiNotice { get; init; }
     // Historical tracking only, separate from the current visible incident and its failures.
     public string PendingXaiIncidentIds { get; init; } = "";
     public IReadOnlyList<XaiMissingIncident> XaiMissingIncidents { get; init; } = Array.Empty<XaiMissingIncident>();

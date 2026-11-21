@@ -79,17 +79,17 @@ internal sealed class XaiStatusFeed(Action<string>? diagnostic = null)
     private static readonly Regex Header = new(@"^Status:\s*([A-Za-z_]+)\s+Severity:\s*([A-Za-z_]+)\b",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.NonBacktracking);
 
-    private sealed record Problem(OfficialStatus Status, string Service, string Id, string Title);
+    private sealed record Finding(OfficialStatus Status, string Service, string Id, string Title);
     private sealed class Reading
     {
-        internal readonly List<Problem> Problems = [];
+        internal readonly List<Finding> Findings = [];
         internal readonly HashSet<string> Issues = new(StringComparer.Ordinal);
         internal readonly Dictionary<string, string> Uncertain = new(StringComparer.Ordinal);
         internal readonly Dictionary<string, string> Active = new(StringComparer.Ordinal);
         internal readonly HashSet<string> Resolved = new(StringComparer.Ordinal);
         internal readonly HashSet<string> Seen = new(StringComparer.Ordinal);
         internal readonly HashSet<string> ComponentIds = new(StringComparer.Ordinal);
-        internal readonly Dictionary<string, OfficialStatus> ComponentStates = new(StringComparer.Ordinal);
+        internal readonly Dictionary<string, string> ComponentStates = new(StringComparer.Ordinal);
         internal readonly HashSet<string> IgnoredComponents = new(StringComparer.Ordinal);
     }
 
@@ -151,19 +151,21 @@ internal sealed class XaiStatusFeed(Action<string>? diagnostic = null)
             else unresolved[current.Key] = current.Value;
         }
         if (incompleteTracking) reading.Issues.Add("미해결 사건 추적 범위를 확인할 수 없음");
-        if (reading.Problems.Count > 0) recoveryUnconfirmed = false;
+        var problems = reading.Findings.Where(item => item.Status != OfficialStatus.Operational)
+            .Distinct().OrderByDescending(item => item.Status).ThenBy(item => item.Service, StringComparer.Ordinal).ToArray();
+        if (problems.Length > 0) recoveryUnconfirmed = false;
         string pending = string.Join(",", unresolved.Keys.Order(StringComparer.Ordinal));
         if (pending.Length > 2048 || incompleteTracking) pending = "?";
 
         string issue = Clean(string.Join(" · ", reading.Issues), 1000);
         // Only confirmed statuses enter this severity ordering; Unknown is never a fabricated outage.
-        var problems = reading.Problems.Distinct().OrderByDescending(item => item.Status).ThenBy(item => item.Service, StringComparer.Ordinal).ToArray();
         string scope = Clean(string.Join(", ", problems.Select(item => item.Service).Distinct()), 500);
         string ids = Clean(string.Join(",", problems.Select(item => item.Id).Where(id => id.Length > 0).Distinct().Order(StringComparer.Ordinal)), 500);
         string titles = Clean(string.Join(" | ", problems.Select(item => item.Title).Where(title => title.Length > 0).Distinct()), 500);
+        var notice = BuildNotice(reading, problems);
         OfficialStatus status = problems.Length > 0 ? problems[0].Status : issue.Length > 0 ? OfficialStatus.Unknown : OfficialStatus.Operational;
         string reason = problems.Length > 0 ? scope + " · " + RecommendationPolicy.OfficialLabel(status)
-            : issue.Length > 0 ? issue : HealthyReason;
+            : issue.Length > 0 ? issue : notice?.Text ?? HealthyReason;
         return new(ProviderKind.Xai, status, now, now, Clean(reason, 180), scope, ids, titles,
             string.Join(" + ", new[] { (RssUrl, rss), (SummaryUrl, summary), (IncidentsUrl, incidents) }
                 .Select(item => item.Item1 + (item.Item2 is null ? " [수신 실패]" : " [응답 수신]"))))
@@ -173,6 +175,7 @@ internal sealed class XaiStatusFeed(Action<string>? diagnostic = null)
                 .Select(item => new XaiMissingIncident(item.Key, item.Value)).ToArray(),
             XaiIncidentExpiryNote = expiryNote,
             XaiRecoveryUnconfirmed = recoveryUnconfirmed,
+            XaiNotice = notice,
             AssessmentIssue = issue,
             UncertainIncidentId = Clean(string.Join(",", reading.Uncertain.Keys.Order(StringComparer.Ordinal)), 500),
             UncertainIncidentTitle = Clean(string.Join(" | ", reading.Uncertain.Values.Distinct()), 500)
@@ -185,6 +188,21 @@ internal sealed class XaiStatusFeed(Action<string>? diagnostic = null)
             catch (Exception error) when (error is JsonException or XmlException or InvalidDataException)
             { reading.Issues.Add(label + " 응답 형식 이상"); return false; }
         }
+    }
+
+    private static XaiStatusNotice? BuildNotice(Reading reading, Finding[] problems)
+    {
+        var problemIds = problems.Where(item => item.Id.Length > 0).Select(item => item.Id).ToHashSet(StringComparer.Ordinal);
+        var problemServices = problems.Select(item => item.Service).ToHashSet(StringComparer.Ordinal);
+        var notices = reading.Findings.Where(item => item.Status == OfficialStatus.Operational &&
+            (item.Id.Length == 0 ? !problemServices.Contains(item.Service) : !problemIds.Contains(item.Id))).ToArray();
+        if (notices.Length == 0) return null;
+        // RSS titles can be product-prefixed. For an ID in both sources, use the later JSON name.
+        string titles = Clean(string.Join(" | ", notices.Where(item => item.Title.Length > 0)
+            .GroupBy(item => item.Id).Select(group => group.Last().Title).Distinct()), 500);
+        string scope = Clean(string.Join(", ", notices.Select(item => item.Service).Distinct().Order(StringComparer.Ordinal)), 500);
+        string ids = Clean(string.Join(",", notices.Select(item => item.Id).Where(id => id.Length > 0).Distinct().Order(StringComparer.Ordinal)), 500);
+        return new(titles, scope, ids);
     }
 
     private static void ReadRss(string text, Reading reading)
@@ -227,11 +245,11 @@ internal sealed class XaiStatusFeed(Action<string>? diagnostic = null)
                 continue;
             }
             if (state == "resolved") { reading.Resolved.Add(id); continue; }
-            if (state is not ("investigating" or "identified" or "monitoring" or "ongoing"))
+            if (state is not ("investigating" or "identified" or "monitoring" or "ongoing" or "active"))
             { Uncertain(reading, id, title, "RSS 진행 상태 형식 이상"); continue; }
             var status = severity switch
             {
-                "info" => OfficialStatus.Degraded,
+                "info" => OfficialStatus.Operational,
                 "disruption" => OfficialStatus.PartialOutage,
                 "outage" => OfficialStatus.MajorOutage,
                 _ => OfficialStatus.Unknown
@@ -264,18 +282,17 @@ internal sealed class XaiStatusFeed(Action<string>? diagnostic = null)
                 reading.ComponentIds.Add(id);
                 var status = value switch
                 {
-                    "available" => OfficialStatus.Operational,
-                    "info" => OfficialStatus.Degraded,
+                    "available" or "info" => OfficialStatus.Operational,
                     "disruption" => OfficialStatus.PartialOutage,
                     "outage" => OfficialStatus.MajorOutage,
                     _ => OfficialStatus.Unknown
                 };
-                if (reading.ComponentStates.TryGetValue(id, out var previous) && previous != status)
+                if (reading.ComponentStates.TryGetValue(id, out string? previous) && previous != value)
                     reading.Issues.Add("동일 xAI 구성 요소 상태가 상충");
-                reading.ComponentStates[id] = status;
+                reading.ComponentStates[id] = value;
                 if (status == OfficialStatus.Unknown)
                     reading.Issues.Add(value == "no_data" ? "xAI 구성 요소 데이터 없음" : "xAI 구성 요소 상태 형식 이상");
-                else if (status != OfficialStatus.Operational) reading.Problems.Add(new(status, service, "", ""));
+                else if (value != "available") reading.Findings.Add(new(status, service, "", ""));
             }
             return; // summary.incidents is outside the page's summary schema.
         }
@@ -308,7 +325,7 @@ internal sealed class XaiStatusFeed(Action<string>? diagnostic = null)
                     throw new InvalidDataException();
             var status = Text(item, "impact") switch
             {
-                "none" => OfficialStatus.Degraded,
+                "none" => OfficialStatus.Operational,
                 "minor" or "major" => OfficialStatus.PartialOutage,
                 "critical" => OfficialStatus.MajorOutage,
                 _ => OfficialStatus.Unknown
@@ -332,7 +349,7 @@ internal sealed class XaiStatusFeed(Action<string>? diagnostic = null)
     private static void Add(Reading reading, OfficialStatus status, string service, string id, string title)
     {
         if (status == OfficialStatus.Unknown) { Uncertain(reading, id, title, "진행 사건 심각도 형식 이상"); return; }
-        reading.Problems.Add(new(status, service, id, title));
+        reading.Findings.Add(new(status, service, id, title));
         reading.Active[id] = title;
     }
 
