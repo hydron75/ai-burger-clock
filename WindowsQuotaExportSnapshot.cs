@@ -8,7 +8,8 @@ namespace AiBurgerClock;
 internal sealed record WindowsQuotaExportRow(string Id, string Label, double UsedPercent,
     DateTimeOffset? ResetsAtUtc, int? WindowMinutes, bool IsPrevious);
 internal sealed record WindowsQuotaExportProvider(string Provider, string Reading,
-    DateTimeOffset? LastSuccessUtc, DateTimeOffset? NextCheckUtc, WindowsQuotaExportRow[] Rows);
+    DateTimeOffset? LastSuccessUtc, DateTimeOffset? NextCheckUtc, WindowsQuotaExportRow[] Rows,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? WebState = null);
 internal sealed record WindowsQuotaExportEnvelope(string Schema, int SchemaVersion, string Type,
     string SourceId, long Seq, string AppVersion, DateTimeOffset GeneratedAtUtc,
     int HeartbeatSeconds, WindowsQuotaExportProvider[] Providers);
@@ -39,17 +40,14 @@ internal static class WindowsQuotaExportSnapshot
         var providers = Enum.GetValues<QuotaProvider>().Select(provider =>
         {
             var state = states.Single(s => s.Provider == provider);
-            if (!QuotaNames.IsQueryEnabled(provider))
-                return new WindowsQuotaExportProvider(provider.ToString(), "none", null, null, []);
+            if (provider == QuotaProvider.Gemini) return Gemini(state, generatedAtUtc);
             bool none = state.Reading is null;
             if (!none && (state.LastSuccessfulCheckUtc is null || state.Reading!.Windows.Count is < 1 or > 64 ||
                 state.Reading.Windows.Select(w => w.Id).Distinct(StringComparer.Ordinal).Count() != state.Reading.Windows.Count ||
                 state.Reading.Windows.Any(w => !Text(w.Id, 512) || !Text(w.Label, 80) || !double.IsFinite(w.UsedPercent) ||
                     w.UsedPercent is < 0 or > 100 || w.WindowMinutes is <= 0 or > 5_256_000)))
                 throw new InvalidDataException("Invalid quota export rows.");
-            var rows = state.Reading?.Windows.Select(window => new WindowsQuotaExportRow(
-                window.Id, window.Label, window.UsedPercent, window.ResetsAtUtc?.ToUniversalTime(),
-                window.WindowMinutes, state.IsPrevious || window.ResetsAtUtc <= generatedAtUtc)).ToArray() ?? [];
+            var rows = Rows(state.Reading, state.IsPrevious, generatedAtUtc);
             return new WindowsQuotaExportProvider(provider.ToString(), none ? "none" : state.IsPrevious ? "previous" : "ok",
                 none ? null : state.LastSuccessfulCheckUtc?.ToUniversalTime(), state.NextCheckUtc?.ToUniversalTime(), rows);
         }).ToArray();
@@ -59,6 +57,32 @@ internal static class WindowsQuotaExportSnapshot
         if (body.Length > MaximumBytes) throw new InvalidDataException("Quota export exceeds its size limit.");
         return body;
     }
+
+    internal static WindowsQuotaExportProvider Gemini(QuotaState state, DateTimeOffset? generatedAtUtc = null)
+    {
+        string? webState = state.GeminiWeb switch
+        {
+            { IsEnabled: false } => "off",
+            { Outcome: GeminiUsageOutcome.LoginRequired } => "loginRequired",
+            { Outcome: GeminiUsageOutcome.FormatChanged } => "formatChanged",
+            { Outcome: GeminiUsageOutcome.LoadFailed } => "loadFailed",
+            { Outcome: GeminiUsageOutcome.Ok } => "ok",
+            _ => null
+        };
+        bool exposesReading = webState is "ok" or "formatChanged" or "loadFailed";
+        bool hasRows = exposesReading && state.LastSuccessfulCheckUtc is not null &&
+            GeminiUsagePage.IsWebReading(state.Reading);
+        bool previous = state.IsPrevious || webState is "formatChanged" or "loadFailed";
+        return new(nameof(QuotaProvider.Gemini), hasRows ? previous ? "previous" : "ok" : "none",
+            hasRows ? state.LastSuccessfulCheckUtc?.ToUniversalTime() : null,
+            exposesReading ? state.NextCheckUtc?.ToUniversalTime() : null,
+            hasRows ? Rows(state.Reading, previous, generatedAtUtc) : [], webState);
+    }
+
+    private static WindowsQuotaExportRow[] Rows(QuotaReading? reading, bool previous, DateTimeOffset? generatedAtUtc) =>
+        reading?.Windows.Select(window => new WindowsQuotaExportRow(
+            window.Id, window.Label, window.UsedPercent, window.ResetsAtUtc?.ToUniversalTime(),
+            window.WindowMinutes, previous || window.ResetsAtUtc <= generatedAtUtc)).ToArray() ?? [];
 }
 
 // A monitor invokes Changed synchronously at refresh start and at completion.
@@ -70,12 +94,14 @@ internal sealed class WindowsQuotaExportBridge : IDisposable
     private readonly AccountQuotaMonitor monitor;
     private readonly Action<IReadOnlyList<QuotaState>> completed;
     private readonly HashSet<QuotaProvider> started = new();
+    private WindowsQuotaExportProvider lastGemini;
     private bool disposed;
 
     internal WindowsQuotaExportBridge(AccountQuotaMonitor monitor, Action<IReadOnlyList<QuotaState>> completed)
     {
         this.monitor = monitor;
         this.completed = completed;
+        lastGemini = WindowsQuotaExportSnapshot.Gemini(monitor.Snapshot().Single(s => s.Provider == QuotaProvider.Gemini));
         monitor.Changed += OnChanged;
     }
 
@@ -85,15 +111,25 @@ internal sealed class WindowsQuotaExportBridge : IDisposable
         {
             if (disposed) return;
             var states = monitor.Snapshot();
+            var geminiState = states.Single(s => s.Provider == QuotaProvider.Gemini);
+            var gemini = WindowsQuotaExportSnapshot.Gemini(geminiState);
+            // A pending read or a new polling timestamp alone does not trigger a send.
+            bool geminiChanged = !geminiState.IsRefreshing && gemini.WebState is not null &&
+                (gemini.WebState != lastGemini.WebState || gemini.Reading != lastGemini.Reading ||
+                 !gemini.Rows.SequenceEqual(lastGemini.Rows));
+            bool otherCompleted = false;
             foreach (var state in states)
             {
-                // While export v2 emits Gemini as reading=none, its web reads
-                // and UI transitions do not schedule a snapshot for transport.
                 if (state.Provider == QuotaProvider.Gemini) continue;
                 if (state.IsRefreshing) started.Add(state.Provider);
                 else if (started.Remove(state.Provider) && state.CheckedAtUtc is not null && state.NextCheckUtc is not null)
+                {
+                    otherCompleted = true;
                     completed(states); // Includes failed reads; excludes cache load, start and cancellation without a result.
+                }
             }
+            if (geminiChanged || otherCompleted) lastGemini = gemini;
+            if (geminiChanged && !otherCompleted) completed(states);
         }
     }
 

@@ -1,5 +1,21 @@
 # Windows 모바일 사이트 한도 송신기
 
+## Windows 2.9.7 후보와 사이트 v18
+
+스키마 v2의 네 Provider 순서와 기존 전송 주기를 사용합니다. 선택 필드 `webState`는 Gemini에만 추가합니다. 상태가 아직 확정되지 않은 경우 사이트에 수신 대기를 표시합니다.
+
+| `webState` | Gemini 송신 내용 |
+|---|---|
+| `off`, `loginRequired` | `reading=none`과 빈 행 |
+| `formatChanged`, `loadFailed` | 검증된 직전 웹 한도만 `reading=previous`로 보냄. 직전 한도가 없으면 빈 행 |
+| `ok` | 검증된 웹 한도와 성공·다음 조회 시각 |
+
+웹 한도는 `gemini-web:five-hour`과 `gemini-web:weekly` 순서로 각각 300분과 10,080분입니다. 두 행의 ID·이름·기간·정수 사용률·UTC 초기화 시각을 공용 `GeminiUsagePage.IsWebReading`으로 검사합니다. 미등록 상태와 Antigravity 캐시의 행은 제외합니다.
+
+- Gemini 단독 전송은 확정된 상태나 두 행의 값이 이전 스냅샷과 달라졌을 때만 예약합니다. 조회 시작과 성공·다음 조회 시각만 바뀐 경우에는 별도 요청을 예약하지 않습니다.
+- 다른 Provider 조회 완료와 15분 하트비트 스냅샷에는 Gemini 상태를 함께 실어 보냅니다. 같은 콜백에서 다른 Provider 완료와 Gemini 변화가 함께 보이면 그 완료 스냅샷에 포함합니다.
+- 사이트 v18을 먼저 배포했습니다. 사이트 v17은 알 수 없는 선택 필드를 저장에서 제외하며 기존 스키마 v2 요청을 수신합니다. [후보·검사·외부 배포](MAINTENANCE_2_9_7.md)
+
 ## 2026-11-16 Gemini 조회 중단
 
 schemaVersion=2와 Provider 4개는 유지한다. Gemini는 입력에 이전 값이 있어도 `reading: none`, `lastSuccessUtc: null`, `nextCheckUtc: null`, `rows: []`로 보낸다. 시작/캐시 로드는 자동 전송을 만들지 않으며 다른 세 Provider의 조회 완료와 15분 하트비트는 그대로다. 사이트는 구형 v1/v2의 Gemini 값도 고정 조회 안 함 안내로 표시한다. 계정 값이나 오류 원문을 새 필드에 넣지 않는다. [근거와 캐시 보존 방안](GEMINI_ANTIGRAVITY_QUOTAS.md).
