@@ -74,6 +74,7 @@ internal sealed class StatusMonitor : IDisposable
                 RelevantComponent = "",
                 IncidentId = "",
                 IncidentTitle = "",
+                XaiNotice = null,
                 Reason = "공식 응답 수신 성공 후 15분 이상 경과" +
                     (state.CheckedAtUtc == state.LastSuccessfulCheckUtc ? "" : " · " + state.Reason)
             };
@@ -198,6 +199,7 @@ internal sealed class StatusMonitor : IDisposable
             RelevantComponent = "",
             IncidentId = "",
             IncidentTitle = "",
+            XaiNotice = null,
             AssessmentIssue = "",
             UncertainIncidentId = "",
             UncertainIncidentTitle = "",

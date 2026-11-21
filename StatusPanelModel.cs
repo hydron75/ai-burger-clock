@@ -60,6 +60,9 @@ internal static class StatusPanelModel
         var recommendation = RecommendationPolicy.Calculate(schedule, status.Status);
         string success = status.LastSuccessfulCheckUtc is { } time ? AgentSchedule.ToKst(time).ToString("MM-dd HH:mm:ss") + " KST" : "없음";
         string attempted = status.CheckedAtUtc == DateTimeOffset.MinValue ? "없음" : AgentSchedule.ToKst(status.CheckedAtUtc).ToString("MM-dd HH:mm:ss") + " KST";
+        string reason = status.Reason;
+        if (status.XaiNotice is { } notice)
+            reason = status.Status == OfficialStatus.Operational ? notice.Text : reason + " · " + notice.Text;
         return new(
             status.Provider,
             recommendation,
@@ -67,7 +70,7 @@ internal static class StatusPanelModel
             Tone(recommendation),
             "Official: " + RecommendationPolicy.OfficialLabel(status.Status) + " · 마지막 확인 " +
                 (status.LastSuccessfulCheckUtc is { } checkedAt ? AgentSchedule.ToKst(checkedAt).ToString("MM-dd HH:mm") + " KST" : "없음"),
-            status.Reason,
+            reason,
             Detail(status, attempted, success));
     }
 
@@ -86,7 +89,8 @@ internal static class StatusPanelModel
         var lines = new List<string>
         {
             "클릭: 공식 상태 페이지 열기 · 우클릭: 사용 경험 기록",
-            "현재 판정: " + status.Reason,
+            "현재 판정: " + (status.Status == OfficialStatus.Operational && status.XaiNotice is not null
+                ? RecommendationPolicy.OfficialLabel(status.Status) : status.Reason),
             "대상: " + ProviderScope(status.Provider),
             "",
             "조회 상태",
@@ -114,12 +118,19 @@ internal static class StatusPanelModel
         lines.Add("");
         lines.Add("사건");
         Optional("관련: ", status.RelevantComponent);
-        if (new[] { status.IncidentTitle, status.IncidentId, status.UncertainIncidentTitle, status.UncertainIncidentId }.All(string.IsNullOrWhiteSpace))
+        if (status.XaiNotice is null &&
+            new[] { status.IncidentTitle, status.IncidentId, status.UncertainIncidentTitle, status.UncertainIncidentId }.All(string.IsNullOrWhiteSpace))
             lines.Add("진행 중 사건: 없음");
         Optional("확인된 사건: ", status.IncidentTitle);
         Optional("확인된 사건 ID: ", status.IncidentId);
         Optional("범위 미확인 사건: ", status.UncertainIncidentTitle);
         Optional("범위 미확인 사건 ID: ", status.UncertainIncidentId);
+        if (status.XaiNotice is { } notice)
+        {
+            lines.Add("공지: " + (notice.Title.Length == 0 ? notice.Scope : notice.Title));
+            if (notice.Title.Length > 0) Optional("공지 관련: ", notice.Scope);
+            Optional("공지 사건 ID: ", notice.IncidentId);
+        }
         if (status.Provider == ProviderKind.Xai && status.XaiIncidentExpiryNote.Length > 0)
             lines.Add("과거 사건 해제: " + status.XaiIncidentExpiryNote);
         lines.Add("");

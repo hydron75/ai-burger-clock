@@ -1,5 +1,22 @@
 # xAI 공식 상태 통합
 
+## 정보 공지와 RSS ACTIVE 처리 (2026-11-21)
+
+2026-11-21 19시대 KST에 확인한 공개 사건 `ps_c953d2fd3da8691b`의 제목은 **Degraded Gemini 4 Carbon**이다. `incidents.json`은 `status=investigating`, `impact=none`, 제품 `third-party-models`를 표시했고, `summary.json`은 이 구성 요소에 `status=info`, 전체에 `indicator=none`과 `All systems operational`을 표시했다. RSS는 `Status: ACTIVE / Severity: info`와 `info`, `active` 카테고리를 반환했다. 공식 페이지의 파란 정보 아이콘과 그룹의 Operational 표시에 맞춰, 작업 장애 등급과 정보 공지를 구분한다.
+
+| summary 구성 요소 | RSS severity | incidents impact | 앱 판정 |
+|---|---|---|---|
+| `available` | — | — | 정상 |
+| `info` | `info` | `none` | 정상 · 공지 |
+| `disruption` | `disruption` | `minor`, `major` | 일부 장애 |
+| `outage` | `outage` | `critical` | 주요 장애 |
+| `no_data` 또는 알 수 없는 값 | 알 수 없는 값 | 알 수 없는 값 | 해당 응답의 확인 불가 또는 형식 이상 CHECK |
+
+- RSS 진행 단계는 `investigating`, `identified`, `monitoring`, `ongoing`, `active`다. 설명의 Status와 category를 계속 대조하고, 알 수 없는 진행 단계는 형식 이상으로 처리한다. JSON 단계의 허용 목록은 그대로다.
+- 카드의 공식 상태에는 정상, 사유 줄과 상세에는 `공지: <사건명>`과 관련 범위가 나온다. 구성 요소 정보만 있으면 공지에 범위를 표시한다. 상세의 사건 ID와 RSS·summary·incidents 출처를 보존한다. 같은 ID에 확인된 장애가 있으면 그 장애를 우선하고, 별개 공지는 상세에서 계속 볼 수 있다.
+- 정보 공지 자체는 장애·HOLD 알림을 만들지 않는다. 공지가 실제 장애로 격상되면 기존 권고 변경과 알림 규칙을 적용한다. 진행/해결 상충, 미해결 사건 소실, 수신·범위·형식 미확인은 기존 검사를 따른다.
+- 모바일 v2는 `type=quota` 한도만 전송한다. 사이트의 xAI 상태 카드는 별도로 같은 공개 출처를 읽으므로 이 판정을 표시하려면 사이트의 독립 파서·표시에도 같은 보정이 필요하다.
+
 **2026-11-14 현재:** #150/#151은 main `fe84da2`에 병합됐습니다. 사이트 버전 16은 같은 기준으로 배포해 xAI 정상·새 상세 출처를 확인했고, Windows는 2.9.3 후보를 준비합니다. 운영 EXE 교체·실행은 사용자의 외부 배포 전까지 하지 않습니다. [후보·검사·receipt](MAINTENANCE_2_9_3.md). 아래 Draft·미배포 표기는 당시 준비 기록으로 보존합니다.
 
 ## 네이티브 공개 JSON 전환 (2026-11-14 Draft · 미배포)
@@ -65,10 +82,10 @@ Windows의 신규 summary slug 진단은 기존 `logs/status-ticker.log`에 남�
 | [3j_53yv1rzqcj.js](https://status.x.ai/_next/static/chunks/3j_53yv1rzqcj.js) | `no_data`를 페이지 내부의 empty/No data로 바꾸는 처리 |
 
 - summary: `status.indicator`·`status.description`은 문자열이며 indicator enum은 없습니다. 전역 indicator로 대상 밖 장애를 작업 장애에 포함하지 않습니다. `components[]`는 비어 있지 않은 id/name과 상태 enum입니다. 응답의 추가 `incidents` 필드는 스키마 밖이므로 무시합니다.
-- 구성 요소 상태: `available` → 정상, `info` → 성능 저하, `disruption` → 일부 장애, `outage` → 주요 장애, `no_data` → 확인 불가 CHECK. 대상 구성 요소의 그 외 값은 형식 이상 CHECK입니다.
+- 구성 요소 상태 어휘는 `available`, `info`, `disruption`, `outage`, `no_data`입니다. 현재 앱 판정은 위 2026-11-21 매핑을 따릅니다. 대상 구성 요소의 그 외 값은 형식 이상 CHECK입니다.
 - incidents: id/name/status/impact, created_at/updated_at/resolved_at, incident_updates, components 배열을 검사합니다. `resolved_at`은 null을 허용합니다. 날짜는 페이지 스키마의 UTC ISO datetime이며 앱의 JSON 날짜 파서로 검사합니다.
-- JSON 단계 enum은 investigating/monitoring/resolved뿐입니다. 호환 형식의 identified/postmortem/completed를 새 JSON의 유효 단계로 추정하지 않습니다. RSS의 기존 단계 인식은 그대로입니다.
-- impact는 `critical` → outage, `major`·`minor` → disruption, `none` → info입니다. 따라서 새 JSON의 **minor도 일부 장애**이며 RSS·페이지 JS의 같은 심각도에 맞춥니다.
+- JSON 단계 enum은 investigating/monitoring/resolved뿐입니다. 호환 형식의 identified/postmortem/completed를 새 JSON의 유효 단계로 추정하지 않습니다. RSS 단계 어휘는 위 2026-11-21 절에 적었습니다.
+- 페이지 JS에서 impact `critical`은 outage, `major`·`minor`는 disruption, `none`은 info에 대응합니다. 앱은 **minor도 일부 장애**로 처리하고, info는 위 정보 공지 정책을 따릅니다.
 - 사건 제품은 `{slug,name}`입니다. update는 id/status/body/created_at을 검사하되 과거 본문으로 현재 상태를 판정하지 않습니다. `affected_components`는 관측 JSON에는 있지만 페이지 스키마/참조 코드에는 없으므로 무시합니다. 현재 사건의 `components[].slug`를 사용합니다.
 - 진행 중 사건의 빈 제품 배열은 범위를 확인할 수 없으므로 앱은 기존 기준대로 CHECK입니다. 페이지가 빈 배열 사건을 목록에서 제외하는 동작과 구분합니다. 알 수 없는 추가 필드는 무시합니다.
 
