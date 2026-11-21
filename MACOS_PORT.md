@@ -3215,7 +3215,7 @@ Shared.Tests **291,495건 PASS**, `bash Mac/build.sh` 옵션 없음 경고 0 / �
 
 ## 84. 0.9.7 정리 (xAI 공지 판정 포함)
 
-2026-11-21. Mac 0.9.6 / build 33 → **0.9.7 / build 34**. 앱 코드 변경 없이 공통 원본의 xAI 정보 공지·RSS ACTIVE 단계 처리(PR #167)를 번들에 싣는다. 배포는 하지 않았다("배포 진행" 지시 대기).
+2026-11-21. Mac 0.9.6 / build 33 → **0.9.7 / build 34**. 앱 코드 변경 없이 공통 원본의 xAI 정보 공지·RSS ACTIVE 단계 처리(PR #167)를 번들에 싣는다. 배포는 아래 "저장소 경로 빌드와 실행"에 기록했다.
 
 ### 버전 필드
 `Version` 0.9.7, `AssemblyVersion` 0.9.7.0, `FileVersion` 0.9.7.0, `ApplicationVersion` 34(`CFBundleVersion`). `Info.plist`에는 적지 않는다.
@@ -3232,10 +3232,24 @@ xAI의 정보 공지(summary·RSS `info`, incidents `impact=none`)를 정상 공
 ### 배포 전 검증 (임시 사본, 저장소 경로 아님)
 Shared.Tests **291,619건 PASS**, `bash Mac/build.sh` 옵션 없음 경고 0 / 오류 0, 번들 버전 0.9.7 / 34, native `--smoke-test` 1회 종료 코드 0·FAIL 0·SKIP 0. 임시 사본은 `lsregister -u` 후 삭제했고 LaunchServices 등록 수는 1이다.
 
-### 배포 뒤 사용자 확인 항목 (배포 후 기록)
+### 저장소 경로 빌드와 실행 (Claude Code 수행, 2026-11-21, 메인 "배포 진행" 지시)
+PR #168 병합 뒤 main `416ba7b153c9bb6934db02070d4396aa982b0286`, 작업 트리 깨끗한 상태에서 AGENTS.md "Mac 배포" 절 순서로 진행했다.
+
+| 항목 | 결과 |
+|---|---|
+| 시작 전 | 0.9.6 앱 실행 중(PID 39895). `--quit-running`이 종료를 요청했고 앱이 정상 종료됨 |
+| 빌드 | `bash Mac/build.sh --quit-running`, Shared.Tests 291,619 PASS, 경고 0 / 오류 0 |
+| 번들 | `CFBundleShortVersionString` **0.9.7**, `CFBundleVersion` **34**, `codesign --verify --deep --strict` 통과 |
+| 실행 | `open`으로 실행. 프로세스 **1개**(PID 77213), 자식 프로세스 0 |
+| SHA-256 실행 파일 | `6d85fc377bb0d6fa5984d66a3820379c535f4e9923d46eb3207f7590cbdf9cfd` |
+| SHA-256 앱 DLL | `bd0286dee9aba0547c6e5bd8cd91bf7e140ecc22a9aa23c3e1be0ba2109ad72a` (`Contents/MonoBundle/AI Burger Clock.dll`) |
+| LaunchServices 등록 수 | **1** |
+
+### 배포 뒤 사용자 확인 항목 (결과는 사용자 확인 뒤 기록)
 - xAI 카드: 공지가 진행 중이면 정상 표시이면서 둘째 줄에 `공지: …`.
 - 카드 상세: 공지 제목·관련·사건 ID.
 - 공지가 없는 평소에는 카드가 기존과 같다.
+- Gemini 박스가 재로그인 없이 조회를 이어 가는가(0.9.6 → 0.9.7 교체 뒤 로그인 유지).
 
 ### 수행하지 않은 검증
 - 실제 xAI 공지가 올라온 상태의 앱 화면(합성 입력과 공용 검사로만 확인). 배포 뒤 사용자 확인으로 따로 적는다.
