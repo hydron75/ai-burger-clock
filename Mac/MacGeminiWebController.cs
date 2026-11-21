@@ -86,14 +86,10 @@ internal sealed class MacGeminiWebController
 
     internal void OnLoginSucceeded()
     {
-        if (!settings.Save(enabled: true, hasSession: true))
-        {
-            feedback("Gemini 사용량 설정을 저장하지 못했습니다. 다시 로그인하세요.", true);
-            UpdateMenu();
-            return;
-        }
+        bool saved = settings.Save(enabled: true, hasSession: true);
         backend.SetEnabled(true);
-        feedback("Gemini 사용량 조회를 켰습니다.", false);
+        feedback(saved ? "Gemini 사용량 조회를 켰습니다."
+            : "Gemini 사용량 조회를 켰지만 설정을 저장하지 못했습니다. 다음 실행 때 다시 로그인해야 할 수 있습니다.", !saved);
         UpdateMenu();
     }
 
@@ -115,28 +111,42 @@ internal sealed class MacGeminiWebController
         try
         {
             backend.SetEnabled(false);
-            settings.Save(enabled: false, hasSession: settings.HasSession);
+            bool offSaved = settings.Save(enabled: false, hasSession: settings.HasSession);
             backend.CloseLogin();
-            await backend.DeleteCacheAsync();
-            await backend.WaitReadsAsync();
-            bool removed = await backend.RemoveDataStoreAsync();
-            if (removed)
+            // Every step runs even if an earlier one failed: a database error must not keep the login session on disk.
+            bool cacheDeleted = await Succeeded(backend.DeleteCacheAsync);
+            await Succeeded(backend.WaitReadsAsync);
+            bool storeRemoved = false;
+            try { storeRemoved = await backend.RemoveDataStoreAsync(); }
+            catch (Exception) { /* reported below */ }
+            if (storeRemoved && cacheDeleted)
             {
                 bool saved = settings.Save(enabled: false, hasSession: false);
                 feedback(saved ? "Gemini 로그아웃: 저장된 로그인 정보와 한도 기록을 삭제했습니다."
                     : "Gemini 로그인 정보는 삭제했지만 설정을 저장하지 못했습니다.", !saved);
             }
-            else feedback("Gemini 로그인 정보 삭제를 확인하지 못했습니다. 로그아웃을 다시 실행하세요.", true);
-        }
-        catch (Exception)
-        {
-            feedback("Gemini 로그아웃을 마치지 못했습니다. 로그아웃을 다시 실행하세요.", true);
+            else
+            {
+                if (!offSaved) feedback("Gemini 설정을 저장하지 못했습니다.", true);
+                feedback(storeRemoved ? "Gemini 한도 기록 삭제를 확인하지 못했습니다. 로그아웃을 다시 실행하세요."
+                    : "Gemini 로그인 정보 삭제를 확인하지 못했습니다. 로그아웃을 다시 실행하세요.", true);
+            }
         }
         finally
         {
             busy = false;
             UpdateMenu();
         }
+    }
+
+    private static async Task<bool> Succeeded(Func<Task> step)
+    {
+        try
+        {
+            await step();
+            return true;
+        }
+        catch (Exception) { return false; }
     }
 }
 

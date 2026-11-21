@@ -89,6 +89,7 @@ internal sealed class MacGeminiUsageReader(Action<Action> runOnMainThread) : IGe
     {
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(MacGeminiPageReading.TotalTimeoutSeconds));
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeout.Token);
+        linked.Token.ThrowIfCancellationRequested(); // already cancelled: no window, no request
         NSObject activity = NSProcessInfo.ProcessInfo.BeginActivity(NSActivityOptions.InitiatedAllowingIdleSystemSleep,
             "Gemini usage page read");
         Session? session = null;
@@ -98,7 +99,7 @@ internal sealed class MacGeminiUsageReader(Action<Action> runOnMainThread) : IGe
             Session.Result navigation = await session.LoadAsync(url, linked.Token);
             if (navigation.Left is { } destination) return new(destination, null);
             if (!navigation.Finished) return GeminiUsagePageLoad.LoadFailed;
-            return await MacGeminiPageReading.ReadAsync(_ => session.EvaluateAsync(script), Task.Delay, linked.Token);
+            return await MacGeminiPageReading.ReadAsync(token => session.EvaluateAsync(script, token), Task.Delay, linked.Token);
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
@@ -166,6 +167,7 @@ internal sealed class MacGeminiUsageReader(Action<Action> runOnMainThread) : IGe
         private readonly WKWebView web;
         private readonly MacGeminiNavigationDelegate navigation = new(stayOnGemini: true);
         private readonly MacGeminiUiDelegate ui = new();
+        private string? blockedDestination;
         private readonly TaskCompletionSource<Result> loaded = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
         internal Session()
@@ -185,19 +187,37 @@ internal sealed class MacGeminiUsageReader(Action<Action> runOnMainThread) : IGe
                 loaded.TrySetResult(new(true, null));
             };
             navigation.Failed = () => loaded.TrySetResult(new(false, null));
-            navigation.Left = destination => loaded.TrySetResult(new(false, destination));
+            navigation.Left = destination =>
+            {
+                blockedDestination = destination;
+                loaded.TrySetResult(new(false, destination));
+            };
         }
 
         internal async Task<Result> LoadAsync(string url, CancellationToken cancellationToken)
         {
             using CancellationTokenRegistration registration = cancellationToken.Register(() => loaded.TrySetCanceled(cancellationToken));
+            cancellationToken.ThrowIfCancellationRequested();
             web.LoadRequest(new NSUrlRequest(new NSUrl(url)));
             return await loaded.Task;
         }
 
-        internal async Task<string?> EvaluateAsync(string script)
+        // A move away from gemini.google.com that was blocked after the page had finished loading (a script redirect)
+        // still ends the read as "somewhere else": the page itself stays on the usage address because the move was refused.
+        internal async Task<string?> EvaluateAsync(string script, CancellationToken cancellationToken)
         {
-            try { return (await web.EvaluateJavaScriptAsync(script) as NSString)?.ToString(); }
+            if (blockedDestination is { } destination)
+                return "{\"url\":\"" + destination.Replace("\\", "\\\\").Replace("\"", "\\\"") + "\",\"text\":null}";
+            // EvaluateJavaScript cannot be cancelled: stop waiting for it when the read is cancelled or times out.
+            Task<NSObject?> evaluation = web.EvaluateJavaScriptAsync(script)!;
+            var cancelled = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            using CancellationTokenRegistration registration = cancellationToken.Register(() => cancelled.TrySetResult());
+            if (await Task.WhenAny(evaluation, cancelled.Task) != evaluation)
+            {
+                _ = evaluation.ContinueWith(task => _ = task.Exception, TaskContinuationOptions.OnlyOnFaulted);
+                cancellationToken.ThrowIfCancellationRequested();
+            }
+            try { return (await evaluation as NSString)?.ToString(); }
             catch (NSErrorException) { return null; }
         }
 

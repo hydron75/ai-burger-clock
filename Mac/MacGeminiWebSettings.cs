@@ -39,10 +39,14 @@ internal sealed class MacGeminiWebSettings
         return new(path, enabled && session, session);
     }
 
-    // Writes through a temporary file so a crash never leaves half a setting. False when it could not be saved.
+    // Writes through a temporary file so a crash never leaves half a setting. False when it could not be saved (the in-memory
+    // values are still the requested ones, so the menu and the running reader agree).
     internal bool Save(bool enabled, bool hasSession)
     {
         enabled &= hasSession; // On without a session cannot happen.
+        // The running state follows the request even when the file cannot be written (the caller reports that).
+        Enabled = enabled;
+        HasSession = hasSession;
         string temporary = path + ".tmp";
         try
         {
@@ -51,8 +55,6 @@ internal sealed class MacGeminiWebSettings
         }
         catch (IOException) { return false; }
         catch (UnauthorizedAccessException) { return false; }
-        Enabled = enabled;
-        HasSession = hasSession;
         return true;
     }
 }
