@@ -2,6 +2,16 @@
 
 **현재 반영 상태(2026-11-16):** #156/#157이 main `5fbfc6c`에 병합됐고 사이트 버전 17에 배포했다. Gemini 안내·다른 세 Provider 표시 정상은 아이폰 사용자 확인이다. Windows는 2.9.4 후보 준비 단계이며 운영 2.9.3에는 아직 차단이 없어 새 배포 전까지 앱 종료를 유지한다. [후보·외부 배포](MAINTENANCE_2_9_4.md). 아래 단계별 기록은 당시 검증으로 보존한다.
 
+## 2026-11-21 결정 — Gemini 앱 웹 사용량 공용 준비
+
+- 주로 사용하는 **Gemini 데스크톱 앱**의 5시간·주간 한도를 Gemini 앱 웹 사용량 페이지에서 읽는 경로를 준비합니다. Antigravity 구독 한도의 `agy` 자동 조회 중단은 유지합니다. [Gemini 앱 웹 사용량 페이지](https://gemini.google.com/usage?hl=en) · [Gemini 앱 한도 도움말](https://support.google.com/gemini/answer/16275805?hl=en) · [Antigravity FAQ](https://antigravity.google/docs/faq.md)
+- Google 서비스 약관의 자동 접근 관련 조항은 머신 판독 가능 지침을 위반하는 자동 접근을 금지합니다. 이 결정에 사용한 robots.txt 관찰에서 차단 경로는 `/app/`·`/chat/`이었고, `/usage` 차단 규칙은 확인되지 않았습니다. 생성형 AI 추가 약관에서 자동 접근에 관한 문구는 확인되지 않았습니다. Gemini 앱 전용 고지는 미확인입니다. [Google 서비스 약관](https://policies.google.com/terms?hl=en) · [Gemini robots.txt](https://gemini.google.com/robots.txt) · [생성형 AI 추가 약관](https://policies.google.com/terms/generative-ai?hl=en)
+- Antigravity의 제3자 래핑에 관한 10월 초 Google 표식 포럼 답변은 서로 달랐습니다. 읽기 전용 조회의 예외와 정책 시행일은 미확인입니다. [10월 8일 답변(KST)](https://discuss.ai.google.dev/t/can-a-local-ai-coordinator-launch-the-official-antigravity-cli-with-subscription-sign-in/186246/2) · [10월 9일 답변(KST)](https://discuss.ai.google.dev/t/is-google-ai-pro-antigravity-cli-automation-with-codex-permitted/187241/2)
+- Windows WebView2와 macOS WKWebView 수동 시험에서 본인 로그인, 세션 유지, 창을 드러내지 않은 상태의 읽기, 일반 브라우저 표시값과의 일치를 확인했습니다(macOS 결과는 사용자 보고). Windows의 숨김 동작은 호스트 창 최소화로 확인했습니다. 사용률과 리셋은 사용량 영역의 표시 텍스트에 있었으며 숫자용 progressbar·ARIA 수치 속성은 확인되지 않았습니다. 영문 보기의 두 구역은 각 필드의 순서가 달랐습니다. Windows에서는 로그인하지 않은 시험 프로필을 `/usage`로 열었을 때 `/app`으로 이동했습니다.
+- 공용 코드는 영문 URL과 사용량 영역의 표시 텍스트만 가져오는 스크립트를 정의합니다. 후속 호스트는 사용자 본인 로그인 후에만 켜고 끄기·로그아웃을 제공합니다. 조회마다 숨긴 WebView를 만들고 정리하며 쿠키·토큰 읽기와 내부 API 호출을 사용하지 않습니다. 리더 등록과 활성 설정이 모두 있어야 웹 조회를 시작합니다. 자동 주기와 일반 실패 후 재조회는 15분이며, 로그인 필요가 확인되면 자동 조회를 멈춥니다. 호스트의 로그인 완료 신호 또는 수동 Refresh로 재개합니다.
+- 새 창 ID는 `gemini-web:five-hour`와 `gemini-web:weekly`입니다. 검증된 값만 기존 DB의 별도 `AccountQuota.v1.GeminiWeb` 키에 저장합니다. 옛 `agy` 캐시는 보존하며 읽기·삭제·변환 대상에서 제외합니다. 실패 진단은 규칙 코드와 파싱한 유효 줄 수로 제한합니다. Gemini 회복·조기 초기화·대기 알림 차단과 모바일 송신 v2의 `reading=none`은 유지합니다.
+- 이 단계에는 실제 웹 리더와 설정 UI가 포함되지 않습니다. Windows·Mac의 리더 미등록 상태는 현재의 `조회 안 함` 표시와 같습니다.
+
 ## 2026-11-16 결정: 앱 자동 조회 중단
 
 - [공식 FAQ](https://antigravity.google/docs/faq.md)의 제3자 소프트웨어 및 headless mode 항목을 확인했다. 소비자 요금제에서 제3자 앱이 agy를 감싸 실행하는 방식은 지원되지 않는다고 명시한다. 따라서 버전 확인·명령 생성·프로세스 실행·응답 프로토콜 경로를 삭제한다. 시작·예약·Refresh·절전 복귀·네트워크 복구에서도 Gemini 한도 클라이언트를 호출하지 않는다. 설정으로 다시 켜는 기능은 없다.

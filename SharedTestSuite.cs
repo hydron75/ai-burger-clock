@@ -37,6 +37,8 @@ internal static class SharedTestSuite
             Report("quota early-reset decision diagnostic history (synthetic)", await QuotaEarlyResetDiagnosticTests.RunAsync(directory));
             Report("quota scheduling reasons/reset coalescing (synthetic)", await QuotaSchedulingTests.RunAsync(directory));
             Report("Gemini quota disabled/process/cache/alerts (synthetic)", await GeminiQuotaClientTests.RunAsync());
+            Report("Gemini app usage page parser (synthetic)", GeminiUsagePageTests.Run());
+            Report("Gemini app web quota/cache/scheduling (synthetic)", await GeminiWebQuotaTests.RunAsync(directory));
             Report("Grok weekly credits/ACP/scheduling/alerts/cache (synthetic)", await GrokQuotaTests.RunAsync(directory));
             Report("quota monitor/restart/cancellation (fake CLI)", await AccountQuotaMonitorTests.RunAsync());
             Report("weekly early-reset cache/decision integration (synthetic)", await WeeklyEarlyResetMonitorTests.RunAsync(directory));

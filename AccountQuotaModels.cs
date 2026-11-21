@@ -5,7 +5,8 @@ internal enum QuotaProvider { Codex, Claude, Gemini, Xai }
 
 internal static class QuotaNames
 {
-    // Fixed policy, not a user setting. Keep the enum/cache/wire identity for compatibility.
+    // Default CLI route and quota alert/export eligibility. Gemini web activation
+    // is separate and deliberately does not change the enum or wire identity.
     public static bool IsQueryEnabled(QuotaProvider provider) => provider != QuotaProvider.Gemini;
     public const string GeminiUnavailableText = "조회 안 함 · Antigravity 정책에 따라 자동 조회하지 않음";
 

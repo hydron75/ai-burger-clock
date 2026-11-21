@@ -73,11 +73,26 @@ internal static class QuotaPanelModel
 
     public static QuotaSectionText Section(QuotaState state, DateTimeOffset now, QuotaEarlyResetAlert? recentEarlyReset = null)
     {
-        if (!QuotaNames.IsQueryEnabled(state.Provider))
+        var web = state.Provider == QuotaProvider.Gemini ? state.GeminiWeb : null;
+        if (web is null && !QuotaNames.IsQueryEnabled(state.Provider))
         {
             string detail = GeminiUnavailableDetail;
             return new(state.Provider, new(ProviderNames.Quota(state.Provider), PanelTone.Normal, detail), null,
                 [new(QuotaNames.GeminiUnavailableText, PanelTone.Muted, detail)], new("", PanelTone.Muted, detail));
+        }
+        if (web is not null)
+        {
+            string error = web.Outcome switch
+            {
+                GeminiUsageOutcome.LoginRequired => "로그인 필요 · Gemini 앱 사용량",
+                GeminiUsageOutcome.FormatChanged => "형식 변경 · 조회 불가",
+                GeminiUsageOutcome.LoadFailed => "한도 조회 실패 · 네트워크와 로그인을 확인하세요.",
+                _ => ""
+            };
+            bool showReading = web.Outcome is not (GeminiUsageOutcome.LoginRequired or GeminiUsageOutcome.FormatChanged) &&
+                GeminiUsagePage.IsWebReading(state.Reading);
+            state = state with { Reading = showReading ? state.Reading : null, Error = error };
+            recentEarlyReset = null;
         }
         bool previous = state.IsPrevious;
         bool codex = state.Provider == QuotaProvider.Codex;
@@ -96,7 +111,8 @@ internal static class QuotaPanelModel
             state.CacheError.Length > 0 ? PanelTone.Danger : PanelTone.Muted, note);
 
         QuotaLine[] rows = state.Reading is null
-            ? [new(state.Error.Length > 0 ? state.Error : "한도 조회 대기 · 공식 CLI 로그인 필요", PanelTone.Muted, note)]
+            ? [new(state.Error.Length > 0 ? state.Error : web is not null ? "한도 조회 대기 · Gemini 앱 사용량" :
+                "한도 조회 대기 · 공식 CLI 로그인 필요", PanelTone.Muted, note)]
             : state.Reading.Windows.Select((window, index) =>
             {
                 bool elapsed = window.ResetsAtUtc is { } reset && reset <= now;
@@ -119,6 +135,7 @@ internal static class QuotaPanelModel
         {
             QuotaProvider.Codex => CodexScopeDetail,
             QuotaProvider.Claude => ClaudeScopeDetail,
+            QuotaProvider.Gemini => "gemini.google.com/usage에서 읽은 Gemini 앱 한도입니다. Antigravity 한도와 별개입니다.",
             QuotaProvider.Xai => XaiScopeDetail,
             _ => throw new ArgumentOutOfRangeException(nameof(state))
         };
@@ -161,13 +178,21 @@ internal static class QuotaPanelModel
         if (!string.IsNullOrWhiteSpace(state.CacheError)) lines.Add(state.CacheError);
         lines.Add("");
         lines.Add("조회 주기");
-        lines.Add(state.Provider == QuotaProvider.Xai
-            ? "기본 1시간 · 사용 90% 초과~100% 미만은 1시간 · 사용 100%는 15분 · 리셋 전후 15분은 10분 · 실패 시 15분부터 재시도"
-            : "기본 1시간 · 사용 90% 초과~100% 미만은 1시간 · 사용 100%는 15분 · 리셋 전후 15분은 5분 · 실패 시 15분부터 재시도");
-        lines.Add("참고: " + (state.Provider == QuotaProvider.Xai
-            ? "xAI 예약 조회는 최소 10분입니다. 시작·Refresh·복귀·네트워크 조회에는 적용하지 않습니다."
-            : "—"));
-        lines.Add("공식 CLI 응답 수신 시각이며 서버 데이터 생성 시각을 보장하지 않습니다.");
+        lines.Add(state.Provider switch
+        {
+            QuotaProvider.Gemini => $"자동 {GeminiUsagePage.PollMinutes}분 · 수동 Refresh · 실패 시 {GeminiUsagePage.PollMinutes}분 뒤 다시 조회",
+            QuotaProvider.Xai => "기본 1시간 · 사용 90% 초과~100% 미만은 1시간 · 사용 100%는 15분 · 리셋 전후 15분은 10분 · 실패 시 15분부터 재시도",
+            _ => "기본 1시간 · 사용 90% 초과~100% 미만은 1시간 · 사용 100%는 15분 · 리셋 전후 15분은 5분 · 실패 시 15분부터 재시도"
+        });
+        lines.Add("참고: " + (state.Provider switch
+        {
+            QuotaProvider.Gemini => "사용량 페이지 자체 갱신에 수 분이 걸릴 수 있습니다. 세션이 만료되면 로그인 필요로 표시하고 자동 조회를 멈춥니다.",
+            QuotaProvider.Xai => "xAI 예약 조회는 최소 10분입니다. 시작·Refresh·복귀·네트워크 조회에는 적용하지 않습니다.",
+            _ => "—"
+        }));
+        lines.Add(state.Provider == QuotaProvider.Gemini
+            ? "사용량 페이지를 읽은 시각이며 서버 데이터 생성 시각을 보장하지 않습니다."
+            : "공식 CLI 응답 수신 시각이며 서버 데이터 생성 시각을 보장하지 않습니다.");
         return string.Join('\n', lines);
     }
 }

@@ -409,6 +409,31 @@ internal static class WindowsQuotaExportChecks
         using (var f = new Fixture())
         {
             await f.Service.Initialization;
+            var now = f.Time.GetUtcNow();
+            var web = GeminiUsagePage.Parse(new(GeminiUsagePage.Url, GeminiUsagePageTests.English),
+                GeminiUsagePageTests.Now, TimeZoneInfo.Utc);
+            Check(web.Outcome == GeminiUsageOutcome.Ok && GeminiUsagePage.IsWebReading(web.Reading),
+                "Gemini export fixture contains validated web rows");
+            f.States = f.States.Select(s => s.Provider == QuotaProvider.Gemini
+                ? s with { Reading = web.Reading, LastSuccessfulCheckUtc = now, NextCheckUtc = now.AddMinutes(15),
+                    GeminiWeb = new(GeminiUsageOutcome.Ok) }
+                : s).ToArray();
+            f.Service.Completed(f.States); await f.Service.WaitForIdleAsync();
+            Check(f.Http.Count == 1, "Gemini web activation does not change export delivery");
+            using var doc = Body(f.Http.Last);
+            var exported = doc.RootElement.GetProperty("providers")[2];
+            Check(doc.RootElement.GetProperty("schemaVersion").GetInt32() == 2 &&
+                exported.GetProperty("provider").GetString() == "Gemini" && exported.GetProperty("reading").GetString() == "none" &&
+                exported.GetProperty("lastSuccessUtc").ValueKind == JsonValueKind.Null &&
+                exported.GetProperty("nextCheckUtc").ValueKind == JsonValueKind.Null &&
+                exported.GetProperty("rows").GetArrayLength() == 0 &&
+                !Encoding.UTF8.GetString(f.Http.Last.Body).Contains("gemini-web:", StringComparison.Ordinal),
+                "schema v2 suppresses active Gemini web readings and timestamps");
+        }
+
+        using (var f = new Fixture())
+        {
+            await f.Service.Initialization;
             byte[] before = File.ReadAllBytes(f.SettingsPath);
             using (File.Open(f.SettingsPath, FileMode.Open, FileAccess.Read, FileShare.Read))
             {

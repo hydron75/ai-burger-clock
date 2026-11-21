@@ -5,14 +5,14 @@ namespace AiBurgerClock;
 internal sealed record QuotaState(QuotaProvider Provider, QuotaReading? Reading = null,
     DateTimeOffset? CheckedAtUtc = null, DateTimeOffset? LastSuccessfulCheckUtc = null,
     DateTimeOffset? NextCheckUtc = null, bool IsRefreshing = false, bool IsPrevious = false,
-    string Error = "", string CacheError = "", long ContinuityId = 0);
+    string Error = "", string CacheError = "", long ContinuityId = 0, GeminiWebQuotaState? GeminiWeb = null);
 
 // Only normalized quota numbers/timestamps are cached, never CLI output or credentials.
 internal sealed record QuotaCache(int Version, QuotaReading Reading, DateTimeOffset SuccessfulAtUtc,
     IReadOnlyList<DateTimeOffset> ResetAnchors,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] int ResetAnchorPolicyVersion = 0);
 
-internal sealed class AccountQuotaMonitor : IDisposable
+internal sealed partial class AccountQuotaMonitor : IDisposable
 {
     private readonly IAccountQuotaClient client;
     private readonly UsageStore? store;
@@ -44,13 +44,18 @@ internal sealed class AccountQuotaMonitor : IDisposable
     public event Action<QuotaObservation>? Succeeded;
 
     public AccountQuotaMonitor(IAccountQuotaClient client, UsageStore? store = null, Func<DateTimeOffset>? utcNow = null,
-        QuotaPollingDiagnosticLog? diagnosticLog = null, QuotaEarlyResetDiagnosticLog? earlyResetDiagnosticLog = null)
+        QuotaPollingDiagnosticLog? diagnosticLog = null, QuotaEarlyResetDiagnosticLog? earlyResetDiagnosticLog = null,
+        IGeminiUsagePageReader? geminiWebReader = null, bool geminiWebEnabled = false, TimeZoneInfo? geminiWebTimeZone = null)
     {
         this.client = client;
         this.store = store;
         this.utcNow = utcNow ?? (() => DateTimeOffset.UtcNow);
         pollingLog = diagnosticLog ?? CreatePollingLog(store);
         earlyResetLog = earlyResetDiagnosticLog ?? CreateEarlyResetLog(store);
+        this.geminiWebReader = geminiWebReader;
+        this.geminiWebTimeZone = geminiWebTimeZone;
+        if (geminiWebReader is not null && geminiWebEnabled)
+            states[QuotaProvider.Gemini] = NewGeminiWebState(enabled: true);
     }
 
     // Hosts finish the existing per-query row after dispatching to their UI thread.
@@ -80,7 +85,8 @@ internal sealed class AccountQuotaMonitor : IDisposable
         {
             if (disposed) return;
             runner ??= Task.WhenAll(Enum.GetValues<QuotaProvider>().Where(QuotaNames.IsQueryEnabled)
-                .Select(p => Task.Run(() => RunAsync(p))));
+                .Select(p => Task.Run(() => RunAsync(p)))
+                .Concat(geminiWebReader is null ? [] : [Task.Run(RunGeminiWebAsync)]));
         }
     }
 
@@ -341,7 +347,15 @@ internal sealed class AccountQuotaMonitor : IDisposable
     public async Task StopAsync()
     {
         Task? running;
-        lock (sync) { if (disposed) return; lifetime.Cancel(); running = runner; }
+        Task? cancellation = null;
+        lock (sync)
+        {
+            if (disposed) return;
+            if (geminiWebReader is null) lifetime.Cancel();
+            else cancellation = CancelGeminiWebLifetimeAsync();
+            running = runner;
+        }
+        if (cancellation is not null) await cancellation.ConfigureAwait(false);
         if (running is not null) await running.ConfigureAwait(false);
         foreach (var gate in gates.Values) { await gate.WaitAsync().ConfigureAwait(false); gate.Release(); }
     }
@@ -352,7 +366,8 @@ internal sealed class AccountQuotaMonitor : IDisposable
         {
             if (disposed) return;
             disposed = true;
-            lifetime.Cancel();
+            if (geminiWebReader is null) lifetime.Cancel();
+            else _ = CancelGeminiWebLifetimeAsync();
             // Non-awaited forced shutdown may still have a callback using these primitives.
             // Normal ExitApplication awaits StopAsync; no wait handles are allocated here.
         }

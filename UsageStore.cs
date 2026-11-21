@@ -15,6 +15,7 @@ internal sealed class UsageStore(string? databasePath = null)
     internal const int MaximumProviderDiagnosticsBytes = 8 * 1024;
     private const int MaximumXaiTrackingBytes = 32 * 1024;
     private const int MaximumQuotaCacheCharacters = 512 * 1024;
+    private const string GeminiWebQuotaCacheKey = "AccountQuota.v1.GeminiWeb";
     private readonly SemaphoreSlim gate = new(1, 1);
     private Exception? schemaInitializationFailure;
     public string DatabasePath { get; } = databasePath ?? Path.Combine(AppPaths.DataDirectory, "burgerclock.db");
@@ -24,31 +25,51 @@ internal sealed class UsageStore(string? databasePath = null)
 
     // One bounded cache entry per provider; no measurement/history schema changes.
     internal Task SaveQuotaAsync(QuotaCache cache, CancellationToken cancellationToken = default) =>
+        WriteQuotaCacheAsync("AccountQuota.v1." + cache.Reading.Provider, cache, cancellationToken);
+
+    internal Task SaveGeminiWebQuotaAsync(QuotaCache cache, CancellationToken cancellationToken = default) =>
+        WriteQuotaCacheAsync(GeminiWebQuotaCacheKey, cache, cancellationToken);
+
+    private Task WriteQuotaCacheAsync(string key, QuotaCache cache, CancellationToken cancellationToken) =>
         ExecuteAsync(connection =>
         {
             ValidateQuotaCache(cache, cache.Reading.Provider);
+            if (key == GeminiWebQuotaCacheKey) ValidateGeminiWebQuotaCache(cache);
             string json = JsonSerializer.Serialize(cache, QuotaJsonContext.Default.QuotaCache);
             if (json.Length > MaximumQuotaCacheCharacters) throw new InvalidDataException("Invalid quota cache size.");
             using var command = connection.CreateCommand();
             command.CommandText = "INSERT INTO AppMetadata(Key,Value) VALUES($key,$value) ON CONFLICT(Key) DO UPDATE SET Value=excluded.Value;";
-            command.Parameters.AddWithValue("$key", "AccountQuota.v1." + cache.Reading.Provider);
+            command.Parameters.AddWithValue("$key", key);
             command.Parameters.AddWithValue("$value", json);
             command.ExecuteNonQuery();
             return true;
         }, cancellationToken);
 
     internal Task<QuotaCache?> ReadQuotaAsync(QuotaProvider provider, CancellationToken cancellationToken = default) =>
+        ReadQuotaCacheAsync("AccountQuota.v1." + provider, provider, cancellationToken);
+
+    internal Task<QuotaCache?> ReadGeminiWebQuotaAsync(CancellationToken cancellationToken = default) =>
+        ReadQuotaCacheAsync(GeminiWebQuotaCacheKey, QuotaProvider.Gemini, cancellationToken);
+
+    private Task<QuotaCache?> ReadQuotaCacheAsync(string key, QuotaProvider provider, CancellationToken cancellationToken) =>
         ExecuteAsync<QuotaCache?>(connection =>
         {
             using var command = connection.CreateCommand();
             command.CommandText = "SELECT Value FROM AppMetadata WHERE Key=$key;";
-            command.Parameters.AddWithValue("$key", "AccountQuota.v1." + provider);
+            command.Parameters.AddWithValue("$key", key);
             if (command.ExecuteScalar() is not string json) return null;
             if (json.Length > MaximumQuotaCacheCharacters) throw new InvalidDataException("Invalid quota cache size.");
             var cache = JsonSerializer.Deserialize(json, QuotaJsonContext.Default.QuotaCache) ?? throw new InvalidDataException("Invalid quota cache.");
             ValidateQuotaCache(cache, provider);
+            if (key == GeminiWebQuotaCacheKey) ValidateGeminiWebQuotaCache(cache);
             return cache;
         }, cancellationToken);
+
+    private static void ValidateGeminiWebQuotaCache(QuotaCache cache)
+    {
+        if (!GeminiUsagePage.IsWebReading(cache.Reading) || cache.ResetAnchors.Count != 0 || cache.ResetAnchorPolicyVersion != 0)
+            throw new InvalidDataException("Invalid Gemini web quota cache.");
+    }
 
     internal static void ValidateQuotaCache(QuotaCache cache, QuotaProvider provider)
     {
