@@ -19,6 +19,7 @@ internal static class SmokeTest
         var balloonRequests = new List<(string Title, string Body, ToolTipIcon Icon, int Timeout)>();
         var quotaRequests = new List<QuotaNotificationAlert>();
         var toastRequests = new List<WindowsNotificationRequest>();
+        var geminiSession = new WindowsGeminiWebChecks.FakeSession();
         TrayApplicationContext? activeContext = null;
         long notificationClock = 0;
         using var context = new TrayApplicationContext(true, () => now, usageStore: testStore, statusHttpClient: statusHttp,
@@ -30,7 +31,7 @@ internal static class SmokeTest
                 toastRequests.Add(request);
                 balloonRequests.Add((request.Title, request.Body, request.Icon, request.BalloonTimeout));
                 activeContext?.CompleteNotification(request);
-            });
+            }, geminiSession: geminiSession);
         activeContext = context;
         using var diagnostics = new SmokeDiagnostics(context, activity);
         using var timer = new Timer { Interval = 1500 };
@@ -131,6 +132,8 @@ internal static class SmokeTest
                         await QuotaEarlyResetUiChecks.RunAsync();
                         diagnostics.Phase = "quota.mobile-export";
                         await WindowsQuotaExportUiChecks.RunAsync(reportDirectory);
+                        diagnostics.Phase = "quota.gemini-web";
+                        await WindowsGeminiWebUiChecks.RunAsync(context, geminiSession, () => now, reportDirectory, Check);
                         if (verifyAutoStart)
                             VerifyAutoStart(context, reportDirectory);
                         Check(balloonRequests.Count > 2 && balloonRequests.Any(request => request.Timeout == 4000) &&
