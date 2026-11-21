@@ -58,6 +58,14 @@ internal static class MacGeminiWebSmoke
         Check(missing.Attempts == 21 && missing.Delays.Count == 20 && missing.Delays.Aggregate(TimeSpan.Zero, (sum, span) => sum + span) == TimeSpan.FromSeconds(5) &&
               GeminiUsagePage.Parse(missing.Load, now, TimeZoneInfo.Utc) is { Outcome: GeminiUsageOutcome.FormatChanged },
               "a missing element was not retried for exactly 5 s and reported as a format change.");
+        // A snapshot that has the headings but not yet the weekly value is read again, not accepted as it is.
+        const string PartialText = "Usage limits\nSYNTHETIC PLAN\n\nCurrent usage\ninfo\n40% used\nResets at 3:00 PM\nWeekly limit";
+        var partial = await Run(attempt => Page(UsageUrl, attempt < 2 ? PartialText : UsageText));
+        Check(partial.Attempts == 3 && partial.Delays.Count == 2 && GeminiUsagePage.Parse(partial.Load, now, TimeZoneInfo.Utc).Outcome == GeminiUsageOutcome.Ok,
+            "a partly filled page was accepted before the weekly values appeared.");
+        var partialOnly = await Run(_ => Page(UsageUrl, PartialText));
+        Check(partialOnly.Attempts == 21 && GeminiUsagePage.Parse(partialOnly.Load, now, TimeZoneInfo.Utc).Outcome == GeminiUsageOutcome.FormatChanged,
+            "a page that stays partly filled was not a format change after 5 s.");
         var incomplete = await Run(_ => Page(UsageUrl, "Usage limits\nSYNTHETIC PLAN"));
         Check(incomplete.Attempts == 21 && GeminiUsagePage.Parse(incomplete.Load, now, TimeZoneInfo.Utc).Outcome == GeminiUsageOutcome.FormatChanged,
             "a usage page without the two sections was not retried and reported as a format change.");

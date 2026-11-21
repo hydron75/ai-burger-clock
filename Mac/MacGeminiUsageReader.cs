@@ -29,7 +29,7 @@ internal static class MacGeminiPageReading
             // An answer that cannot be read (the page is in the middle of a move) does not replace the last page seen.
             if (current.FinalUrl is null) continue;
             page = current;
-            if (IsUsagePageWithSections(current)) return current;
+            if (IsComplete(current)) return current;
         }
         return page ?? GeminiUsagePageLoad.LoadFailed;
     }
@@ -57,12 +57,20 @@ internal static class MacGeminiPageReading
         Uri.TryCreate(url, UriKind.Absolute, out Uri? parsed) && parsed.Scheme == Uri.UriSchemeHttps &&
         parsed.Host == MacGeminiWebKit.Host && parsed.AbsolutePath == "/usage";
 
-    // Done only when the usage page shows both sections. Any other page (a usage page without them, or another address)
-    // is retried until the 5 s are up and then returned as it is: the parser calls the first a format change and the
-    // second sign-in needed.
-    private static bool IsUsagePageWithSections(GeminiUsagePageLoad load) =>
-        IsUsagePage(load.FinalUrl) && load.Text is { } text && text.Contains("Weekly limit", StringComparison.Ordinal) &&
-        text.Contains("% used", StringComparison.Ordinal);
+    // Done only when the usage page shows both sections with their values and reset times: the 5-hour part before the
+    // "Weekly limit" heading and the weekly part after it each need "% used" and "Resets". A page that is still filling
+    // in (a heading with nothing under it yet) is read again. Anything else (an incomplete usage page, or another address)
+    // is retried until the 5 s are up and then returned as it is; the shared parser then calls the first a format change
+    // and the second sign-in needed. Time does not matter here, so the check needs no clock.
+    private static bool IsComplete(GeminiUsagePageLoad load)
+    {
+        if (!IsUsagePage(load.FinalUrl) || load.Text is not { } text) return false;
+        int weekly = text.IndexOf("Weekly limit", StringComparison.Ordinal);
+        if (weekly < 0) return false;
+        static bool Filled(string part) =>
+            part.Contains("% used", StringComparison.Ordinal) && part.Contains("Resets", StringComparison.Ordinal);
+        return Filled(text[..weekly]) && Filled(text[weekly..]);
+    }
 }
 
 // IGeminiUsagePageReader for the Mac host. Every read builds one hidden window with one WKWebView on the app's own
