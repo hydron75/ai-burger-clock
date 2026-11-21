@@ -91,6 +91,12 @@ internal static class WindowsQuotaExportChecks
         }
     }
 
+    private sealed class GeminiReader(GeminiUsagePageLoad load) : IGeminiUsagePageReader
+    {
+        public Task<GeminiUsagePageLoad> LoadAsync(string url, string script, CancellationToken cancellationToken) =>
+            Task.FromResult(load);
+    }
+
     private sealed class UnreadContent : HttpContent
     {
         internal int Reads;
@@ -429,6 +435,52 @@ internal static class WindowsQuotaExportChecks
                 exported.GetProperty("rows").GetArrayLength() == 0 &&
                 !Encoding.UTF8.GetString(f.Http.Last.Body).Contains("gemini-web:", StringComparison.Ordinal),
                 "schema v2 suppresses active Gemini web readings and timestamps");
+        }
+
+        foreach (var (expected, page) in new (GeminiUsageOutcome, GeminiUsagePageLoad)[]
+        {
+            (GeminiUsageOutcome.Ok, new(GeminiUsagePage.Url, GeminiUsagePageTests.English)),
+            (GeminiUsageOutcome.FormatChanged, new(GeminiUsagePage.Url, null)),
+            (GeminiUsageOutcome.LoadFailed, GeminiUsagePageLoad.LoadFailed),
+            (GeminiUsageOutcome.LoginRequired, new("https://gemini.google.com/app", null))
+        })
+        {
+            using var f = new Fixture();
+            await f.Service.Initialization;
+            using var monitor = new AccountQuotaMonitor(new Client(f.Time), utcNow: () => GeminiUsagePageTests.Now,
+                geminiWebReader: new GeminiReader(page), geminiWebTimeZone: TimeZoneInfo.Utc);
+            int completions = 0;
+            using var bridge = new WindowsQuotaExportBridge(monitor, states =>
+            {
+                completions++;
+                f.Service.Completed(states);
+            });
+            await monitor.RefreshGeminiWebIfDueAsync();
+            monitor.SetGeminiWebEnabled(true);
+            await monitor.RefreshGeminiWebIfDueAsync();
+            await f.Service.WaitForIdleAsync();
+            Check(monitor.Snapshot().Single(s => s.Provider == QuotaProvider.Gemini).GeminiWeb?.Outcome == expected &&
+                completions == 0 && f.Http.Count == 0, $"Gemini {expected} does not complete a v2 export");
+            monitor.SetGeminiWebEnabled(false);
+            await monitor.RefreshGeminiWebIfDueAsync();
+            await f.Service.WaitForIdleAsync();
+            Check(completions == 0 && f.Http.Count == 0, "Gemini off and logout state transitions do not export");
+        }
+
+        foreach (bool enabled in new[] { true, false })
+        {
+            using var f = new Fixture(enabled);
+            await f.Service.Initialization;
+            using var monitor = new AccountQuotaMonitor(new Client(f.Time), utcNow: f.Time.GetUtcNow);
+            using var bridge = new WindowsQuotaExportBridge(monitor, f.Service.Completed);
+            foreach (var provider in new[] { QuotaProvider.Codex, QuotaProvider.Claude, QuotaProvider.Xai })
+            {
+                int before = f.Http.Count;
+                await monitor.RefreshOnceAsync(provider);
+                await f.Service.WaitForIdleAsync();
+                Check(f.Http.Count == before + (enabled ? 1 : 0),
+                    $"{provider} completion keeps the existing HTTP count when export is {(enabled ? "on" : "off")}");
+            }
         }
 
         using (var f = new Fixture())

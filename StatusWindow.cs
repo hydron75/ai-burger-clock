@@ -253,6 +253,8 @@ internal sealed class StatusWindow : Form
     internal AccountQuotaView QuotaView => quotaView;
     internal StatusDetailController StatusDetails => statusDetails;
     internal Button QuotaButton => quotaButton;
+    internal void UseGeminiWebQuota() => details.SetToolTip(quotaButton,
+        "ChatGPT (Work/Codex) · Claude · xAI (Grok 주간 크레딧) 계정 한도와 로그인한 Gemini 앱 사용량을 표시합니다. 공식 서비스 상태는 별도로 표시합니다.");
     internal void UpdateQuotas(IReadOnlyList<QuotaState> quotas, DateTimeOffset now,
         IReadOnlyDictionary<QuotaProvider, QuotaEarlyResetAlert>? recentEarlyResets = null)
     {

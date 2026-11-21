@@ -548,8 +548,8 @@ internal static class UIRegressionChecks
                     "Combined quota/note save keeps all four Provider boxes visible and status cards hidden");
                 var gemini = quotaView.Controls.OfType<Panel>().Single(panel => panel.Name == "GeminiQuotaBox");
                 Check(!gemini.Controls.OfType<QuotaBalanceBar>().Any() &&
-                    gemini.Controls.OfType<Label>().Any(label => label.Text == QuotaNames.GeminiUnavailableText),
-                    "Combined quota/note save preserves Gemini policy notice without balance bars");
+                    gemini.Controls.OfType<Label>().Any(label => label.Text == "꺼짐 · 로그인하면 Gemini 앱 사용량 조회"),
+                    "Combined quota/note save preserves the Gemini web off notice without balance bars");
                 Check(feedback.Text == expectedFeedback && feedback.ForeColor == Color.DimGray,
                     "Combined quota/note save shows the truncation feedback in quota mode");
                 SaveFormImage(context.StatusWindow, "account-quotas-note-truncated.png", reportDirectory);
