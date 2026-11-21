@@ -105,7 +105,22 @@ internal static class WindowsGeminiWebUiChecks
             await ShowStateAsync("format-changed", "형식 변경 · 조회 불가", "형식 변경 · 조회 불가", 0, [false, true, true]);
 
             session.ReadPage = () => GeminiUsagePageLoad.LoadFailed;
-            refresh.PerformClick();
+            context.ShowWindow();
+            await SmokeUiProbe.SettleAsync(window);
+            int statusClicks = 0;
+            void CountClick(object? sender, EventArgs args) => statusClicks++;
+            refresh.Click += CountClick;
+            try
+            {
+                window.WithoutAutoHide(() =>
+                {
+                    refresh.Select();
+                    refresh.PerformClick();
+                    return true;
+                });
+            }
+            finally { refresh.Click -= CountClick; }
+            check(statusClicks == 1, "The reopened status window delivers one native Refresh click");
             await WaitAsync(() => Gemini().GeminiWeb?.Outcome == GeminiUsageOutcome.LoadFailed && !Gemini().IsRefreshing);
             check(session.Reads == reads + 2, "The native status Refresh button wakes Gemini exactly once");
             await ShowStateAsync("load-failed", "Gemini · 이전 조회값", "한도 조회 실패", 2, [false, true, true]);
