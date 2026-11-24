@@ -8,10 +8,11 @@ namespace AiBurgerClock;
 
 // What a notification is about. Only the look of the banner depends on it: the text, the conditions and the spacing
 // of the notifications come from the shared code and the hosts and are not touched here.
-internal enum MacNotificationKind { ScheduleFull, ScheduleBurger, ProviderRecovered, ProviderIssue, Holiday, Quota }
+internal enum MacNotificationKind { ScheduleFull, ScheduleBurger, ProviderRecovered, ProviderIssue, Holiday, Quota, ClaudeAuthExpiry }
 
 // The Windows balloon levels (TrayApplicationContext): Info for FULL THROTTLE, recovery/normalization, the holiday
-// setting and quota alerts; Warning for the other transitions and the other recommendation changes.
+// setting and quota alerts; Warning for the other transitions, the other recommendation changes and the Claude CLI
+// login expiry warning (the Windows balloon for it is a Warning too).
 internal enum MacNotificationLevel { Info, Warning }
 
 internal readonly record struct MacNotificationStyle(MacNotificationLevel Level, string Thread, bool StatusIcon);
@@ -29,6 +30,7 @@ internal static class MacNotificationLook
         MacNotificationKind.ScheduleBurger or MacNotificationKind.ProviderIssue =>
             new(MacNotificationLevel.Warning, StatusThread, true),
         MacNotificationKind.Quota => new(MacNotificationLevel.Info, QuotaThread, false),
+        MacNotificationKind.ClaudeAuthExpiry => new(MacNotificationLevel.Warning, QuotaThread, false),
         _ => throw new ArgumentOutOfRangeException(nameof(kind))
     };
 

@@ -281,6 +281,9 @@ internal sealed class MacQuotaNotifications
     // An existing notification was just requested: quota alerts wait behind it.
     internal void DeferAfterExisting() => notBefore = Math.Max(notBefore, milliseconds() + DeferMilliseconds);
 
+    // No alert was requested in the last DeferMilliseconds: the Claude CLI login warning (MacClaudeAuthWarning) waits for this too.
+    internal bool CanShowNow => milliseconds() >= notBefore;
+
     internal void ShowPending()
     {
         if (Volatile.Read(ref current) is null || isStopping()) return;

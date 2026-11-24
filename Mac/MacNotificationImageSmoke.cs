@@ -56,7 +56,8 @@ internal static class MacNotificationImageSmoke
             (MacNotificationKind.ProviderIssue, new(AgentState.FullThrottle, TrayAttention.Orange)),
             (MacNotificationKind.ProviderIssue, new(AgentState.FullThrottle, TrayAttention.Red)),
             (MacNotificationKind.Holiday, new(AgentState.FullThrottle, TrayAttention.Green)),
-            (MacNotificationKind.Quota, null)
+            (MacNotificationKind.Quota, null),
+            (MacNotificationKind.ClaudeAuthExpiry, null)
         ];
         foreach (var (kind, appearance) in samples)
         foreach (bool dark in new[] { false, true })
@@ -77,7 +78,8 @@ internal static class MacNotificationImageSmoke
             (MacNotificationKind.ProviderRecovered, MacNotificationLevel.Info, "aiburgerclock.status", true),
             (MacNotificationKind.ProviderIssue, MacNotificationLevel.Warning, "aiburgerclock.status", true),
             (MacNotificationKind.Holiday, MacNotificationLevel.Info, "aiburgerclock.status", true),
-            (MacNotificationKind.Quota, MacNotificationLevel.Info, "aiburgerclock.quota", false)
+            (MacNotificationKind.Quota, MacNotificationLevel.Info, "aiburgerclock.quota", false),
+            (MacNotificationKind.ClaudeAuthExpiry, MacNotificationLevel.Warning, "aiburgerclock.quota", false)
         ];
         Check(expected.Length == Enum.GetValues<MacNotificationKind>().Length, "a notification kind has no expected style.");
         foreach (var (kind, level, thread, statusIcon) in expected)
@@ -156,6 +158,13 @@ internal static class MacNotificationImageSmoke
             CheckBadge(quota, MacNotificationLevel.Info, "Quota");
             double contrast = MacControls.Contrast(quotaAccent, () => quotaDisc, NSAppearance.GetAppearance(NSAppearance.NameAqua)!);
             Check(contrast >= 4.5, $"quota blue contrast {contrast:0.00}:1 on the {(dark ? "dark" : "light")} disc is below 4.5:1.");
+            // The Claude CLI login warning uses the same quota picture with the Warning badge (like its Windows balloon).
+            using NSBitmapImageRep authExpiry = Decode(MacNotificationKind.ClaudeAuthExpiry, null, dark);
+            count++;
+            CheckFrame(authExpiry, "ClaudeAuthExpiry/" + (dark ? "dark" : "light"));
+            Check(MacStatusIcon.Near(At(authExpiry, 4, 10), quotaDisc, 0.03) && HasColor(authExpiry, 6, 5, 14, 15, quotaAccent, 0.05),
+                "the Claude login warning picture is not the quota disc and arrow.");
+            CheckBadge(authExpiry, MacNotificationLevel.Warning, "ClaudeAuthExpiry");
             foreach (TrayAttention attention in Enum.GetValues<TrayAttention>())
             {
                 var status = MacStatusIcon.Colors(attention, dark).Glyph.UsingColorSpace(NSColorSpace.SRGBColorSpace)!;
