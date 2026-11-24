@@ -99,6 +99,9 @@ internal sealed partial class AccountQuotaMonitor : IDisposable
         lock (sync)
         {
             if (disposed || lifetime.IsCancellationRequested) return;
+            // Both hosts queue quota refreshes on resume/network recovery and use
+            // the default for the manual Refresh command.
+            if (!queueWhileRefreshing) QueueClaudeAuthCheck(ClaudeAuthRequest.Immediate);
             foreach (var provider in states.Keys)
                 if (QuotaNames.IsQueryEnabled(provider) && (queueWhileRefreshing || !states[provider].IsRefreshing) && wakes[provider].CurrentCount == 0)
                     wakes[provider].Release();
@@ -291,8 +294,8 @@ internal sealed partial class AccountQuotaMonitor : IDisposable
             finally
             {
                 gates[provider].Release();
-                if (provider == QuotaProvider.Claude && readStarted && !publishSuccess && !linked.IsCancellationRequested)
-                    RequestClaudeAuthAfterFailure();
+                if (provider == QuotaProvider.Claude && readStarted && !linked.IsCancellationRequested)
+                    RequestClaudeAuthAfterQuota(publishSuccess ? observation : null);
                 RaiseChanged();
             }
         }

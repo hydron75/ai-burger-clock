@@ -12,9 +12,10 @@ internal static class WindowsClaudeAuthUiChecks
             var store = new UsageStore(Path.Combine(directory, "synthetic.db"));
             using var status = new HttpClient(new TestStatusHttpHandler());
             var requests = new List<WindowsNotificationRequest>();
+            var client = new FakeClient(now, expiry);
             long notificationMs = 0;
             using var context = new TrayApplicationContext(true, () => now, usageStore: store, statusHttpClient: status,
-                accountQuotaClient: new FakeClient(now, expiry), notificationMilliseconds: () => notificationMs,
+                accountQuotaClient: client, notificationMilliseconds: () => notificationMs,
                 notificationSink: requests.Add, geminiSession: new WindowsGeminiWebChecks.FakeSession());
             var quotas = context.QuotaMonitor!;
             try
@@ -41,6 +42,12 @@ internal static class WindowsClaudeAuthUiChecks
                     "Claude warning submits one account-free message through the fake transport");
                 check(await store.ReadClaudeAuthWarningAsync() == (true, expiry), "the sent cycle is persisted across process restart");
 
+                ToolStripMenuItem refresh = context.TrayIcon.ContextMenuStrip.Items.OfType<ToolStripMenuItem>()
+                    .Single(item => item.Text == "상태·한도 새로 고침");
+                refresh.PerformClick();
+                await MonitorTests.WaitUntilAsync(() => client.AuthCalls == 2);
+                check(client.AuthCalls == 2, "the native tray Refresh rechecks Claude login within 15 minutes");
+
                 now = expiry;
                 context.RefreshStatus(false);
                 var expiredBox = context.StatusWindow.QuotaView.Controls["ClaudeQuotaBox"]!;
@@ -55,9 +62,14 @@ internal static class WindowsClaudeAuthUiChecks
     private sealed class FakeClient(DateTimeOffset now, DateTimeOffset expiry) : IAccountQuotaClient, IClaudeAuthClient
     {
         private readonly TestAccountQuotaClient quotas = new(() => now);
+        private int authCalls;
+        internal int AuthCalls => Volatile.Read(ref authCalls);
         public Task<QuotaReading> ReadAsync(QuotaProvider provider, CancellationToken cancellationToken) =>
             quotas.ReadAsync(provider, cancellationToken);
-        public Task<ClaudeAuthStatus> ReadClaudeAuthAsync(CancellationToken cancellationToken) =>
-            Task.FromResult(new ClaudeAuthStatus(ClaudeAuthOutcome.SignedIn, "claude.ai", expiry));
+        public Task<ClaudeAuthStatus> ReadClaudeAuthAsync(CancellationToken cancellationToken)
+        {
+            Interlocked.Increment(ref authCalls);
+            return Task.FromResult(new ClaudeAuthStatus(ClaudeAuthOutcome.SignedIn, "claude.ai", expiry));
+        }
     }
 }

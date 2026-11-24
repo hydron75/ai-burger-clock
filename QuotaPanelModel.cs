@@ -101,7 +101,8 @@ internal static class QuotaPanelModel
             recentEarlyReset = null;
         }
         var auth = state.Provider == QuotaProvider.Claude ? state.ClaudeAuth : null;
-        bool loginRequired = auth?.RequiresLogin(now) == true;
+        bool loginRequired = auth is not null && auth.RequiresLogin(now) &&
+            (state.LastSuccessfulCheckUtc is not { } successAfterAuth || auth.CheckedAtUtc >= successAfterAuth);
         if (loginRequired)
             state = state with { Error = ClaudeAuthCheck.LoginRequiredText, IsPrevious = true };
         bool previous = state.IsPrevious;

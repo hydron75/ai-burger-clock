@@ -120,6 +120,59 @@ internal static class ClaudeAuthTests
             Check(fake.AuthCalls == 2, "a Claude failure wakes the checker once and the next failure is throttled");
         }
 
+        foreach (var staleAuth in new[]
+        {
+            ClaudeAuthStatus.Parse(1, ""),
+            ClaudeAuthStatus.Unknown,
+            status with { LoginExpiresAtUtc = now }
+        })
+        {
+            var recoveryClock = new Clock(now);
+            var recoveryClient = new FakeClient { AuthStatus = staleAuth, FailClaude = true };
+            using var monitor = new AccountQuotaMonitor(recoveryClient, utcNow: recoveryClock.Read);
+            monitor.Start();
+            await MonitorTests.WaitUntilAsync(() => monitor.LatestClaudeAuth?.Status == staleAuth &&
+                monitor.Snapshot().Any(row => row.Provider == QuotaProvider.Claude && row.CheckedAtUtc is not null && !row.IsRefreshing));
+            var releaseAuth = new TaskCompletionSource<ClaudeAuthStatus>(TaskCreationOptions.RunContinuationsAsynchronously);
+            recoveryClient.SetNextAuthResult(releaseAuth);
+            recoveryClock.Set(now.AddMinutes(1));
+            recoveryClient.FailClaude = false;
+            // Use the automatic path so the successful quota read is the only
+            // trigger that can bypass the minimum interval in this step.
+            monitor.RequestRefresh(queueWhileRefreshing: true);
+            await MonitorTests.WaitUntilAsync(() => recoveryClient.AuthCalls == 2);
+            var awaitingAuth = monitor.Snapshot().Single(row => row.Provider == QuotaProvider.Claude);
+            var current = QuotaPanelModel.Section(awaitingAuth, recoveryClock.Read());
+            Check(awaitingAuth.ClaudeAuth?.Status == staleAuth &&
+                awaitingAuth.LastSuccessfulCheckUtc == recoveryClock.Read(),
+                "first quota success bypasses the failure throttle while auth is still being rechecked");
+            Check(current.Scope is null && current.Rows.Single().Tone == PanelTone.Good &&
+                !current.Heading.Text.Contains("이전 조회값", StringComparison.Ordinal) &&
+                !current.Detail.Contains(ClaudeAuthCheck.LoginRequiredText, StringComparison.Ordinal),
+                "the new quota is current and no login prompt remains while rechecking stale auth");
+            // An extra successful read before the recheck completes shares that recheck.
+            await monitor.RefreshOnceAsync(QuotaProvider.Claude);
+            recoveryClient.AuthStatus = status;
+            releaseAuth.SetResult(status);
+            await MonitorTests.WaitUntilAsync(() => monitor.LatestClaudeAuth?.Status == status);
+            Check(QuotaPanelModel.Section(monitor.Snapshot().Single(row => row.Provider == QuotaProvider.Claude),
+                recoveryClock.Read()).Scope?.Text == ClaudeAuthCheck.ExpiringText,
+                "the verified login replaces the stale status and exposes its own expiry");
+            recoveryClock.Set(now.AddMinutes(2));
+            monitor.RequestRefresh();
+            await MonitorTests.WaitUntilAsync(() => monitor.LatestClaudeAuth?.CheckedAtUtc == recoveryClock.Read());
+            await monitor.StopAsync().WaitAsync(TimeSpan.FromSeconds(5));
+            Check(recoveryClient.AuthCalls == 3, "manual Refresh rechecks recent valid auth once");
+        }
+
+        var equallyRecent = previous with
+        {
+            ClaudeAuth = signedOut.ClaudeAuth,
+            LastSuccessfulCheckUtc = signedOut.ClaudeAuth!.CheckedAtUtc
+        };
+        Check(QuotaPanelModel.Section(equallyRecent, now).Scope?.Text == ClaudeAuthCheck.LoginRequiredText,
+            "an equally recent signed-out check is not ignored");
+
         var store = new UsageStore(Path.Combine(directory, "claude-auth.db"));
         Check(await store.ReadClaudeAuthWarningAsync() == (false, null), "the opt-in is off by default");
         await store.SetClaudeAuthWarningEnabledAsync(true);
@@ -141,16 +194,21 @@ internal static class ClaudeAuthTests
     private sealed class FakeClient : IAccountQuotaClient, IClaudeAuthClient
     {
         private int authCalls;
+        private TaskCompletionSource<ClaudeAuthStatus>? nextAuthResult;
         internal bool FailClaude { get; set; }
+        internal ClaudeAuthStatus AuthStatus { get; set; } = ClaudeAuthStatus.Parse(0, AuthJson);
         internal int AuthCalls => Volatile.Read(ref authCalls);
+        internal void SetNextAuthResult(TaskCompletionSource<ClaudeAuthStatus> pending) =>
+            Interlocked.Exchange(ref nextAuthResult, pending);
         public Task<QuotaReading> ReadAsync(QuotaProvider provider, CancellationToken cancellationToken) =>
             provider == QuotaProvider.Claude && !FailClaude
                 ? Task.FromResult(new QuotaReading(provider, [new("session", "5시간", 20, null, 300)]))
                 : Task.FromException<QuotaReading>(new InvalidDataException("Synthetic quota failure"));
         public Task<ClaudeAuthStatus> ReadClaudeAuthAsync(CancellationToken cancellationToken)
         {
+            var pending = Interlocked.Exchange(ref nextAuthResult, null);
             Interlocked.Increment(ref authCalls);
-            return Task.FromResult(ClaudeAuthStatus.Parse(0, AuthJson));
+            return pending?.Task.WaitAsync(cancellationToken) ?? Task.FromResult(AuthStatus);
         }
     }
 }
