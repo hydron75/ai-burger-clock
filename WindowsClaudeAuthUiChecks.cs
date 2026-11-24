@@ -42,10 +42,19 @@ internal static class WindowsClaudeAuthUiChecks
                     "Claude warning submits one account-free message through the fake transport");
                 check(await store.ReadClaudeAuthWarningAsync() == (true, expiry), "the sent cycle is persisted across process restart");
 
+                await MonitorTests.WaitUntilAsync(() => quotas.Snapshot().Any(row => row.Provider == QuotaProvider.Claude &&
+                    row.LastSuccessfulCheckUtc is not null && !row.IsRefreshing));
+                var refreshedQuota = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                quotas.Succeeded += observation =>
+                {
+                    if (observation.Provider == QuotaProvider.Claude) refreshedQuota.TrySetResult();
+                };
                 ToolStripMenuItem refresh = context.TrayIcon.ContextMenuStrip.Items.OfType<ToolStripMenuItem>()
                     .Single(item => item.Text == "상태·한도 새로 고침");
                 refresh.PerformClick();
                 await MonitorTests.WaitUntilAsync(() => client.AuthCalls == 2);
+                // Finish the simultaneous quota read before moving the fixture clock to expiry.
+                await refreshedQuota.Task.WaitAsync(TimeSpan.FromSeconds(5));
                 check(client.AuthCalls == 2, "the native tray Refresh rechecks Claude login within 15 minutes");
 
                 now = expiry;
