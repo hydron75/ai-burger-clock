@@ -1,4 +1,4 @@
-# Windows 2.9.8 후보 준비
+# Windows 2.9.8 배포 기록
 
 ## 변경
 
@@ -36,10 +36,17 @@
 
 공식 생성기에 이전 2.9.7의 `candidate.json`을 사용했습니다. 생성한 receipt를 후보 버전·해시와 대조하고 System32에서 배포 도구와 같은 Git 저장소 지정 방식으로 두 커밋을 읽었습니다. 이후 커밋은 후보 검사 결과를 이 문서에 기록합니다. 로그는 후보 폴더의 `publish.txt`, `shared-tests.txt`, `candidate-self-test.txt`, `verification/`에 보관합니다.
 
-배포 시 외부 도구가 실제 백업 폴더와 복원 지점을 만듭니다. Mac은 #172에서 별도로 검증했고 #171 최종 HEAD의 Mac 확인을 기다립니다.
+배포 시 외부 도구가 백업 폴더와 복원 지점을 만듭니다. Mac 검증 이력은 [MACOS_PORT.md](MACOS_PORT.md)에 있습니다.
 
-## 외부 배포와 사용자 확인
+## 외부 배포 절차
 
 1. 배포 승인 후 AI Burger Clock을 트레이에서 정상 종료하고 Codex 밖 MSI PowerShell 7에서 이 후보의 receipt로 `deploy-windows.ps1`을 실행합니다. 정상 결과는 `Succeeded=True`, 전 단계 `Passed`, `FileVersion=2.9.8.0`입니다. 배포 도구가 기존 EXE·DB·소스를 백업하고, 교체 이후 검사나 실행 요청이 실패하면 이전 EXE를 복원합니다. [외부 실행과 복원](WINDOWS_DEPLOYMENT.md)
 2. 새 앱의 트레이와 상태·한도 화면을 엽니다. Claude 상세에서 로그인 상태와 마지막 확인을 보고 Refresh가 이를 갱신하는지 확인합니다. 인증 상태와 사용량의 실제 값은 남기지 않습니다.
-3. 운영 배포와 실제 Windows 알림 표시 및 최종 HEAD의 Mac 검증은 확인 결과를 받은 뒤 기록합니다.
+
+## Windows 배포와 사용자 확인
+
+2026-11-24 KST에 사용자가 Windows 2.9.8 배포 완료와 아래 항목을 확인했습니다.
+
+- Claude 한도 박스 상세에 **Claude CLI 로그인 상태**와 로그인 종료 상한이 정상 표시됐습니다.
+- 트레이에서 **Claude CLI 로그인 만료 알림**을 켰습니다.
+- 실제 Windows 알림 표시는 후속 관찰 항목입니다. 종료 상한 7일 전 구간에 진입할 때 확인할 예정입니다.
