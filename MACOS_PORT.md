@@ -3301,7 +3301,7 @@ PR #168 병합 뒤 main `416ba7b153c9bb6934db02070d4396aa982b0286`, 작업 트�
 
 ## 86. 0.9.8 정리 (Claude CLI 로그인 만료 예고 포함)
 
-2026-11-24. Mac 0.9.7 / build 34 → **0.9.8 / build 35**. 공통 원본의 Claude CLI 로그인 종료 상한 표시(PR #171, Windows 2.9.8)와 그 Mac 알림 연결(PR #172, 85절)을 번들에 싣는 버전 올림이다. 이 PR은 버전 필드와 이 기록만 바꾼다. **배포는 하지 않았고**, 메인의 "배포 진행" 지시를 기다린다.
+2026-11-24. Mac 0.9.7 / build 34 → **0.9.8 / build 35**. 공통 원본의 Claude CLI 로그인 종료 상한 표시(PR #171, Windows 2.9.8)와 그 Mac 알림 연결(PR #172, 85절)을 번들에 싣는 버전 올림이다. 이 PR은 버전 필드와 이 기록만 바꾼다. 배포는 아래 "저장소 경로 빌드와 실행"에 기록했다.
 
 ### 버전 필드
 `Version` 0.9.8, `AssemblyVersion` 0.9.8.0, `FileVersion` 0.9.8.0, `ApplicationVersion` 35(`CFBundleVersion`). `Info.plist`에는 적지 않는다.
@@ -3320,6 +3320,31 @@ PR #168 병합 뒤 main `416ba7b153c9bb6934db02070d4396aa982b0286`, 작업 트�
 ### 배포 전 검증 (임시 사본, 저장소 경로 아님, 버전 변경 커밋 `265b836`)
 Shared.Tests **291,675건 PASS**, `bash Mac/build.sh` 옵션 없음 경고 0 / 오류 0, 번들 `CFBundleShortVersionString` 0.9.8 / `CFBundleVersion` 35, native `--smoke-test` 1회 종료 코드 0·FAIL 0·SKIP 0. 임시 사본은 `lsregister -u` 후 삭제했고 LaunchServices 등록 수는 1이다.
 
+### 저장소 경로 빌드와 실행 (Claude Code 수행, 2026-11-24, 메인 "배포 진행" 지시)
+PR #173 병합 뒤 main `a82902e116dfb58355f06343f24e141c215f55a7`, 작업 트리 깨끗한 상태에서 AGENTS.md "Mac 배포" 절 순서로 진행했다.
+
+| 항목 | 결과 |
+|---|---|
+| 시작 전 | 0.9.7 앱 실행 중(PID 77213). `--quit-running`이 종료를 요청했고 앱이 정상 종료됨 |
+| 빌드 | `bash Mac/build.sh --quit-running`, Shared.Tests 291,675 PASS, 경고 0 / 오류 0 |
+| 번들 | `CFBundleShortVersionString` **0.9.8**, `CFBundleVersion` **35**, `codesign --verify --deep --strict` 통과 |
+| 실행 | `open`으로 실행. 프로세스 **1개**(PID 85613), 자식 프로세스 0 |
+| SHA-256 실행 파일 | `8c4049f69a9521aaeacb50d9ebbec0b97a13010194d5a4e6352d3127a66ecf51` |
+| SHA-256 앱 DLL | `85857cfbe4a309f22adf2934d85e4ff6f19649992bed5ed106d6753c77ccb6a1` (`Contents/MonoBundle/AI Burger Clock.dll`) |
+| LaunchServices 등록 수 | **1** |
+
+### 사용자 확인 (2026-11-24, 배포된 0.9.8 / build 35 실제 화면)
+사용자가 직접 확인해 알려 왔다(Claude Code가 화면을 본 것이 아님). 실제 로그인 만료 시각·계정 값은 적지 않는다.
+
+| 항목 | 결과 |
+|---|---|
+| Claude 박스 상세의 `Claude CLI 로그인 상태` 절 표시 | 정상 |
+| 메뉴 `Claude CLI 로그인 만료 알림` 켜기 | 정상(켬) |
+| 박스의 `로그인 만료 임박` 경고 | 확인 결과 미보고 — 관찰 항목 |
+| 알림 배너 1회(실제 macOS 배너) | 확인 결과 미보고 — 관찰 항목 |
+
+메뉴 항목이 처음에 꺼져 있었는지(기본 꺼짐)는 이번 보고에 따로 적히지 않았다. 기본 꺼짐은 native smoke(합성 시계·가짜 전달)로만 확인했다.
+
 ### 아직 하지 않은 것
-- 저장소 경로 빌드·실행(배포): 메인의 "배포 진행" 지시 뒤에 AGENTS.md "Mac 배포" 절 순서로 진행하고 이 절에 이어 쓴다. 현재 실행 중인 앱은 0.9.7 / build 34(Claude 로그인 경고 없음)다.
-- 실제 macOS 알림 배너·알림 센터 보관, 실제 7일 진입 첫 알림, 앱 안의 실제 6시간 인증 조회와 로그아웃·만료 상태의 실제 화면은 사용자 확인으로 남는다(85절 "수행하지 않은 검증" 그대로).
+- **관찰 항목:** 실제 7일 진입(`로그인 만료 임박` 박스 경고와 알림 배너 1회)은 실제 로그인이 7일 이내로 들어올 때 비로소 나타난다. 그때 사용자가 보고하면 이 절에 이어 쓴다.
+- 실제 알림 센터 보관, 앱 안의 실제 6시간 인증 조회와 로그아웃·만료 상태의 실제 화면은 확인하지 못했다(85절 "수행하지 않은 검증" 그대로).
