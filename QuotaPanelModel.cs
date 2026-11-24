@@ -100,6 +100,10 @@ internal static class QuotaPanelModel
             state = state with { Reading = showReading ? state.Reading : null, Error = error };
             recentEarlyReset = null;
         }
+        var auth = state.Provider == QuotaProvider.Claude ? state.ClaudeAuth : null;
+        bool loginRequired = auth?.RequiresLogin(now) == true;
+        if (loginRequired)
+            state = state with { Error = ClaudeAuthCheck.LoginRequiredText, IsPrevious = true };
         bool previous = state.IsPrevious;
         bool codex = state.Provider == QuotaProvider.Codex;
         string name = ProviderNames.Quota(state.Provider);
@@ -112,13 +116,15 @@ internal static class QuotaPanelModel
         var heading = new QuotaLine(
             name + (state.IsRefreshing ? " · 확인 중" : previous && state.Reading is not null ? " · 이전 조회값" : ""),
             PanelTone.Normal, note);
-        var scope = codex ? new QuotaLine(CodexScope, PanelTone.Muted, note) : null;
+        QuotaLine? scope = codex ? new(CodexScope, PanelTone.Muted, note) :
+            loginRequired && state.Reading is not null ? new(ClaudeAuthCheck.LoginRequiredText, PanelTone.Danger, note) :
+            auth?.WarningExpiry(now) is not null ? new(ClaudeAuthCheck.ExpiringText, PanelTone.Caution, note) : null;
         var metadata = new QuotaLine($"성공 {succeeded} · 다음 {next}",
             state.CacheError.Length > 0 ? PanelTone.Danger : PanelTone.Muted, note);
 
         QuotaLine[] rows = state.Reading is null
             ? [new(state.Error.Length > 0 ? state.Error : web is not null ? "한도 조회 대기 · Gemini 앱 사용량" :
-                "한도 조회 대기 · 공식 CLI 로그인 필요", PanelTone.Muted, note)]
+                "한도 조회 대기 · 공식 CLI 로그인 필요", loginRequired ? PanelTone.Danger : PanelTone.Muted, note)]
             : state.Reading.Windows.Select((window, index) =>
             {
                 bool elapsed = window.ResetsAtUtc is { } reset && reset <= now;
@@ -182,6 +188,22 @@ internal static class QuotaPanelModel
         lines.Add("최근 시도: " + Stamp(state.CheckedAtUtc, "MM-dd HH:mm:ss"));
         if (!string.IsNullOrWhiteSpace(state.Error)) lines.Add(state.Error);
         if (!string.IsNullOrWhiteSpace(state.CacheError)) lines.Add(state.CacheError);
+        if (state.Provider == QuotaProvider.Claude && state.ClaudeAuth is { } auth)
+        {
+            lines.Add("");
+            lines.Add("Claude CLI 로그인 상태");
+            var status = auth.Status;
+            if (status.Outcome == ClaudeAuthOutcome.Unknown) lines.Add(ClaudeAuthCheck.UnknownText);
+            else if (status.Outcome == ClaudeAuthOutcome.SignedIn)
+            {
+                if (status.AuthMethod != "claude.ai")
+                    lines.Add($"구독 로그인이 아님(인증 방식: {status.AuthMethod})");
+                lines.Add(status.LoginExpiresAtUtc is { } expiry
+                    ? $"로그인 종료: 늦어도 {Stamp(expiry, "MM-dd HH:mm")} KST(더 일찍 끝날 수 있음)"
+                    : "종료 시점 미제공");
+            }
+            lines.Add("로그인 상태 마지막 확인: " + Stamp(auth.CheckedAtUtc, "MM-dd HH:mm") + " KST");
+        }
         lines.Add("");
         lines.Add("조회 주기");
         lines.Add(state.Provider switch

@@ -126,6 +126,8 @@ internal static class SmokeTest
                         diagnostics.Phase = "quota";
                         await AccountQuotaUiChecks.RunAsync(context, quotaClient, () => now, value => now = value, reportDirectory, diagnostics);
                         GrokQuotaUiChecks.Run(Check, reportDirectory);
+                        diagnostics.Phase = "quota.claude-auth";
+                        await WindowsClaudeAuthUiChecks.RunAsync(Check);
                         diagnostics.Phase = "quota.recovery-notifications";
                         await QuotaRecoveryUiChecks.RunAsync();
                         diagnostics.Phase = "quota.early-reset-notifications";

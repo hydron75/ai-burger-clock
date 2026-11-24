@@ -23,19 +23,13 @@ internal sealed partial class AccountQuotaClient(
     {
         cancellationToken.ThrowIfCancellationRequested();
         if (!QuotaNames.IsQueryEnabled(provider)) throw new NotSupportedException(QuotaNames.GeminiUnavailableText);
-        string executable = provider switch
-        {
-            QuotaProvider.Codex => codexExecutable ?? FindExecutable(provider),
-            QuotaProvider.Claude => claudeExecutable ?? FindExecutable(provider),
-            QuotaProvider.Xai => grokExecutable ?? FindExecutable(provider),
-            _ => throw new ArgumentOutOfRangeException(nameof(provider))
-        };
+        string executable = GetExecutable(provider);
         // Absolute paths and ArgumentList avoid shell interpretation and CWD lookup.
         // Keep Windows' .exe requirement; Unix CLI executables normally have no extension.
         if (!CanExecute(executable))
             throw new FileNotFoundException("공식 CLI 실행 파일을 찾을 수 없습니다. CLI 설치와 로그인을 확인하세요.");
 
-        string directory = workingDirectory ?? Path.Combine(AppPaths.DataDirectory, "quota-cli");
+        string directory = WorkingDirectory;
         Directory.CreateDirectory(directory);
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         deadline.CancelAfter(commandTimeout ?? (provider == QuotaProvider.Xai ? GrokTimeout : TimeSpan.FromSeconds(30)));
@@ -95,39 +89,53 @@ internal sealed partial class AccountQuotaClient(
         finally
         {
             deadline.Cancel();
-            if (started)
-            {
-                try { process.StandardInput.Close(); }
-                catch (IOException) { }
-                catch (ObjectDisposedException) { }
-                // app-server stays alive after its reply. Own only this invocation and its children.
-                try { if (!process.HasExited) process.Kill(entireProcessTree: true); }
-                catch (InvalidOperationException) { }
-                catch (Win32Exception) { }
-                using var stopDeadline = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-                try { await process.WaitForExitAsync(stopDeadline.Token).ConfigureAwait(false); }
-                catch (OperationCanceledException) { }
-                catch (InvalidOperationException) { }
-            }
+            if (started) await StopCliProcessAsync(process).ConfigureAwait(false);
             await ObserveStoppedAsync(stdout).ConfigureAwait(false);
             await ObserveStoppedAsync(stderr).ConfigureAwait(false);
         }
     }
 
+    private string GetExecutable(QuotaProvider provider) => provider switch
+    {
+        QuotaProvider.Codex => codexExecutable ?? FindExecutable(provider),
+        QuotaProvider.Claude => claudeExecutable ?? FindExecutable(provider),
+        QuotaProvider.Xai => grokExecutable ?? FindExecutable(provider),
+        _ => throw new ArgumentOutOfRangeException(nameof(provider))
+    };
+
+    private string WorkingDirectory => workingDirectory ?? Path.Combine(AppPaths.DataDirectory, "quota-cli");
+
+    private static async Task StopCliProcessAsync(Process process)
+    {
+        try { process.StandardInput.Close(); }
+        catch (IOException) { }
+        catch (ObjectDisposedException) { }
+        // app-server stays alive after its reply. Own only this invocation and its children.
+        try { if (!process.HasExited) process.Kill(entireProcessTree: true); }
+        catch (InvalidOperationException) { }
+        catch (Win32Exception) { }
+        using var stopDeadline = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        try { await process.WaitForExitAsync(stopDeadline.Token).ConfigureAwait(false); }
+        catch (OperationCanceledException) { }
+        catch (InvalidOperationException) { }
+    }
+
+    private static ProcessStartInfo CreateProcessStartInfo(string executable, string directory) => new(executable)
+    {
+        UseShellExecute = false,
+        CreateNoWindow = true,
+        RedirectStandardInput = true,
+        RedirectStandardOutput = true,
+        RedirectStandardError = true,
+        StandardOutputEncoding = Encoding.UTF8,
+        StandardErrorEncoding = Encoding.UTF8,
+        WorkingDirectory = directory
+    };
+
     internal static ProcessStartInfo CreateStartInfo(QuotaProvider provider, string executable, string directory)
     {
         if (!QuotaNames.IsQueryEnabled(provider)) throw new NotSupportedException(QuotaNames.GeminiUnavailableText);
-        var start = new ProcessStartInfo(executable)
-        {
-            UseShellExecute = false,
-            CreateNoWindow = true,
-            RedirectStandardInput = true,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            StandardOutputEncoding = Encoding.UTF8,
-            StandardErrorEncoding = Encoding.UTF8,
-            WorkingDirectory = directory
-        };
+        var start = CreateProcessStartInfo(executable, directory);
         if (provider == QuotaProvider.Codex)
         {
             start.ArgumentList.Add("app-server");
@@ -161,6 +169,12 @@ internal sealed partial class AccountQuotaClient(
             start.Environment["RUST_LOG"] = "off";
         }
         else throw new ArgumentOutOfRangeException(nameof(provider));
+        PrepareMacPath(start, provider);
+        return start;
+    }
+
+    private static void PrepareMacPath(ProcessStartInfo start, QuotaProvider provider)
+    {
         if (OperatingSystem.IsMacOS())
         {
             // npm-installed official commands may use /usr/bin/env node. Supply known
@@ -171,7 +185,6 @@ internal sealed partial class AccountQuotaClient(
                 .Select(path => Path.GetDirectoryName(path)!).Concat(["/usr/bin", "/bin", "/usr/sbin", "/sbin"]);
             start.Environment["PATH"] = string.Join(Path.PathSeparator, directories.Distinct(StringComparer.Ordinal));
         }
-        return start;
     }
 
     private static bool CanExecute(string executable)

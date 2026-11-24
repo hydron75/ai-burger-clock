@@ -15,10 +15,13 @@
     <Compile Include="$(MSBuildThisFileDirectory)../QuotaEarlyResetDiagnostics.cs" Link="Shared/QuotaEarlyResetDiagnostics.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)../AccountQuotaModels.cs" Link="Shared/AccountQuotaModels.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)../AccountQuotaClient.cs" Link="Shared/AccountQuotaClient.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)../AccountQuotaClient.ClaudeAuth.cs" Link="Shared/AccountQuotaClient.ClaudeAuth.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)../ClaudeAuthStatus.cs" Link="Shared/ClaudeAuthStatus.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)../GrokQuotaProtocol.cs" Link="Shared/GrokQuotaProtocol.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)../AccountQuotaParsers.cs" Link="Shared/AccountQuotaParsers.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)../AccountQuotaPolicy.cs" Link="Shared/AccountQuotaPolicy.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)../AccountQuotaMonitor.cs" Link="Shared/AccountQuotaMonitor.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)../AccountQuotaMonitor.ClaudeAuth.cs" Link="Shared/AccountQuotaMonitor.ClaudeAuth.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)../GeminiUsagePage.cs" Link="Shared/GeminiUsagePage.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)../GeminiWebQuotaMonitor.cs" Link="Shared/GeminiWebQuotaMonitor.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)../GeminiWebText.cs" Link="Shared/GeminiWebText.cs" />

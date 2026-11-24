@@ -160,6 +160,9 @@ internal static class WindowsQuotaExportChecks
         {
             await f.Service.Initialization;
             Check(f.Http.Count == 0, "enabled startup itself sends nothing");
+            f.States = f.States.Select(state => state.Provider == QuotaProvider.Claude
+                ? state with { ClaudeAuth = new(new(ClaudeAuthOutcome.SignedIn, "claude.ai", f.Time.GetUtcNow().AddDays(6)), f.Time.GetUtcNow()) }
+                : state).ToArray();
             f.Service.Completed(f.States); await f.Service.WaitForIdleAsync();
             Check(f.Http.Count == 1 && f.Service.Status.LastSuccessUtc == f.Time.GetUtcNow(), "successful completed read is sent");
             using var doc = Body(f.Http.Last); var root = doc.RootElement;
@@ -188,7 +191,8 @@ internal static class WindowsQuotaExportChecks
                 Check(provider.GetProperty("rows")[0].EnumerateObject().Select(p => p.Name).SequenceEqual(new[] { "id", "label", "usedPercent", "resetsAtUtc", "windowMinutes", "isPrevious" }), "row allowlist");
             }
             string json = Encoding.UTF8.GetString(f.Http.Last.Body);
-            foreach (string forbidden in new[] { Credentials.SyntheticToken, "SYNTHETIC-PRIVATE", "continuityId", "accountId", "email", "plan", "error", "cliOutput", "token" })
+            foreach (string forbidden in new[] { Credentials.SyntheticToken, "SYNTHETIC-PRIVATE", "continuityId", "accountId", "email", "plan", "error", "cliOutput", "token",
+                "claudeAuth", "authMethod", "claude.ai", "loginExpiresAt" })
                 Check(!json.Contains(forbidden, StringComparison.OrdinalIgnoreCase), "forbidden field/value absent");
             Check(f.Http.Last.Uri.AbsolutePath == "/api/quota" && f.Http.Last.Uri.Scheme == "https", "fixed API suffix");
             long first = Seq(f.Http.Last);

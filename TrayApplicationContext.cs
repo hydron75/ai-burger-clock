@@ -158,6 +158,8 @@ namespace AiBurgerClock
             menu.Items.Add(statisticsItem);
             menu.Items.Add(quotaRecoveryMenuItem);
             menu.Items.Add(quotaEarlyResetMenuItem);
+            menu.Items.Add(claudeAuthWarningMenuItem);
+            claudeAuthWarningMenuItem.Click += async (_, _) => await ToggleClaudeAuthWarningAsync();
             menu.Items.Add(autoStartMenuItem);
             menu.Items.Add(holidayMenuItem);
             menu.Items.Add(mobileExportMenuItem);
@@ -257,6 +259,8 @@ namespace AiBurgerClock
             if (exiting || disposed) return;
             quotaEarlyResetSettingsReady = true;
             RefreshQuotaEarlyResetMenu();
+            await LoadClaudeAuthWarningAsync();
+            if (exiting || disposed) return;
             holidaySettingsReady = true;
             RefreshHolidayControls();
             RefreshStatus(false); // Initial policy load is not a service recovery or a time transition.
@@ -334,6 +338,7 @@ namespace AiBurgerClock
             if (reason == TickReason.Initial) pendingProviderAlerts.Clear();
             UpdateProviderDisplay(result);
             ShowPendingQuotaNotification();
+            TryShowClaudeAuthWarning();
             return result;
         }
 
