@@ -3257,3 +3257,44 @@ PR #168 병합 뒤 main `416ba7b153c9bb6934db02070d4396aa982b0286`, 작업 트�
 ### 수행하지 않은 검증
 - 공지가 없는 평소의 xAI 카드와 공지 해제 뒤 표시는 이번 확인에 포함되지 않았다(합성 입력과 공용 검사로만 확인).
 - 실제 장애로 격상된 xAI 공지의 앱 화면은 보지 못했다(합성 입력으로만 확인).
+
+## 85. Claude CLI 로그인 만료 예고의 Mac 확인과 알림 연결 (PR #171 위)
+
+2026-11-24. 공통 원본 변경 PR #171(`46361ec`, Windows 2.9.8 후보)의 Mac 쪽 확인과 알림 연결이다. 버전은 올리지 않았다(0.9.7 그대로). 이 PR(Mac 파일만)은 #171의 브랜치(`codex/claude-login-expiry`)를 base로 한다. [AGENTS.md "종속 PR 병합 순서"](AGENTS.md)대로 이 PR을 #171 브랜치에 먼저 병합한 뒤 그 HEAD를 Windows·Mac에서 확인하고 #171을 main에 병합한다.
+
+### 공통 확인 (#171 `46361ec`, 임시 사본, 저장소 경로 아님)
+| 항목 | 결과 |
+|---|---|
+| Shared.Tests | main(`6cc48d0`) 291,619 → **291,675건 PASS**(+56). 신규 `Claude CLI auth status/polling/expiry/privacy (synthetic)` 56건 포함 |
+| `bash Mac/build.sh` 옵션 없음 | 경고 0 / 오류 0 |
+| native `--smoke-test` 1회 | 종료 코드 0, FAIL 0, SKIP 0 |
+
+### 실제 `claude auth status` JSON 구조 (키 이름·형식만, 값은 기록하지 않음)
+`DISABLE_AUTOUPDATER=1`로 이 Mac의 실제 CLI를 한 번 실행해 키 이름과 값의 형식만 확인했다(종료 코드 0). 공통 파서가 읽는 세 키가 Windows 보고와 같은 구조다.
+- `loggedIn`: 불리언
+- `authMethod`: 문자열(공통 파서 허용 목록에 속함)
+- `loginExpiresAt`: 문자열, 형식 `YYYY-MM-DDThh:mm:ss.fffZ`(`Z`로 끝나는 UTC, 공통 파서가 요구하는 시간대 표기와 일치)
+- 그 밖에 파서가 읽지 않는 키가 11개 더 있다. 값은 기록하지 않는다.
+- 로그아웃 상태(종료 코드 1)와 구독 외 인증은 계정을 건드리는 시험이라 실행하지 않았고, 공통 검사의 합성 입력으로만 확인한다.
+- Mac에서는 `AccountQuotaClient`가 `PrepareMacPath`로 PATH를 채워 Claude CLI를 실행한다(공통 코드). 앱 안의 실제 6시간 조회는 smoke에서 돌리지 않는다.
+
+### Mac 연결 (Mac 파일만, 공통 원본·Windows 파일은 바꾸지 않음)
+공통의 판정(`ClaudeAuthCheck.WarningExpiry`)·문구·설정 키(`UsageStore`의 `ReadClaudeAuthWarningAsync` 등)를 그대로 쓰고, Mac은 메뉴·알림 전달·설정 저장 흐름만 맡는다(Windows `TrayApplicationContext.ClaudeAuth.cs`와 같은 계약).
+- **메뉴:** 오른쪽 클릭 메뉴의 `Claude CLI 로그인 만료 알림`(공통 `ClaudeAuthCheck.MenuLabel`). 한도 조기 초기화 알림 바로 다음, Gemini 사용량 앞. **기본 꺼짐**, 툴팁은 Windows와 같은 문구. 저장은 공통 DB의 같은 키라 켜기 상태가 DB에 남는다.
+- **알림:** 켜져 있고 최신 인증 확인에서 종료 상한이 7일 이내로 **들어오면 그 상한에 대해 1회**(`claude.ai` 구독 로그인만). 같은 상한은 다시 알리지 않고, 다음 로그인으로 상한이 늘어 다시 7일 이내가 되면 새로 알린다. 마지막으로 알린 상한을 DB에 두어 앱 재시작에도 반복하지 않는다. 로그아웃·미확인·비구독 인증·이미 지난 상한·7일 밖은 알리지 않는다.
+- **순서:** 다른 알림(시간표·서비스 상태·한도)이 방금 나갔으면 그 뒤로 미룬다(`MacQuotaNotifications.CanShowNow`, 6.5초). 이 알림이 나가면 뒤의 한도 알림도 6.5초 미룬다. Windows가 한도 알림 대기 시간을 따르는 것과 같다.
+- **알림 모양:** 새 `MacNotificationKind.ClaudeAuthExpiry` = 한도 알림 그림(파란 원)·한도 스레드에 **Warning 배지**(Windows 풍선이 Warning 아이콘인 것과 맞춤). 제목·본문은 공통 `AlertTitle`·`ExpiringText`.
+- **실패 안내:** 설정 읽기·저장, 알림 이력 저장, 알림 전달 실패를 피드백 한 줄로 알린다. 이 네 문구는 공통 상수가 없어 Windows 문구와 같게 `MacClaudeAuthWarning`에 적었다(공통 상수화 여부는 메인 결정).
+- **팝오버:** 변경 없음. Claude 박스의 `Claude CLI 로그인 상태` 절·7일 전 경고 줄·로그인 필요 표시는 공통 `QuotaPanelModel`이 만들고 Mac이 그대로 그린다.
+- 새 파일: `Mac/MacClaudeAuthWarning.cs`, `Mac/MacClaudeAuthSmoke.cs`. 고친 파일: `MacApplication.cs`(생성·메뉴·읽기·표시 시점), `MacQuotaNotifications.cs`(`CanShowNow` 한 줄), `MacNotificationImages.cs`(알림 종류), `MacNotificationImageSmoke.cs`(기대 표).
+
+### 검증 (임시 사본, 저장소 경로 아님, 위 Mac 파일 포함 HEAD)
+- Shared.Tests **291,675건 PASS**, `bash Mac/build.sh` 경고 0 / 오류 0, native `--smoke-test` 1회 종료 코드 0·FAIL 0.
+- **박스·팁·팝오버(합성 날짜):** 종료까지 멀다 / 7일 이내 / 정확히 7일 / 7일 1초 초과 / 상한 지남(이전 값 유지) / 로그아웃(이전 값 유지) / 로그아웃(값 없음) / 더 새로운 한도 성공 / 비구독 인증 / 미확인 열 가지 상태에서 Mac 박스의 제목·메모 줄·행·팁이 공통 모델과 같고, 7일 이내는 `로그인 만료 임박 · 터미널에서 claude auth login`(주의 톤), 로그인 필요는 `Claude CLI 로그인 필요 · 터미널에서 claude auth login`(위험 톤, 이전 조회값 표시), 팁은 `Claude CLI 로그인 상태` 절(종료 상한 KST·더 일찍 끝날 수 있음 / 종료 시점 미제공 / 구독 로그인이 아님 / 로그인 상태 확인 불가 / 마지막 확인)을 담는다. 값이 있는 막대 수는 상태에 따라 바뀌지 않는다. 팁은 320pt에 전부 들어간다(가장 큰 팁 468pt). 경고 줄이 있는 팝오버가 1280x800·1024x640 화면에 잘리지 않는다.
+- **메뉴·동작(가짜 시계·전달):** 메뉴 항목이 조기 초기화 알림 바로 뒤에 있고 기본 꺼짐·Windows 툴팁, 읽기 전에는 무반응, 꺼짐이면 무알림, 7일 1초 밖은 무알림·정확히 7일부터 1회(공통 문구), 같은 상한 재알림 없음, 다른 알림 뒤로 대기, 더 늦은 상한은 새 알림, 로그아웃·미확인·비구독·지난 상한·상한 없음·10일 남음은 무알림, 종료 중·꺼짐은 무알림, 저장 중에는 항목 잠금·저장 실패는 이전 상태 유지, 전달·이력·읽기 실패는 한 번만 보고, 재시작 뒤 설정과 알린 상한 복원(같은 상한은 조용, 더 늦은 상한은 알림), 공통 `UsageStore` 실제 키로 왕복.
+- 알림 그림 100장(기존 98 + Warning 배지 2) 통과. 모든 입력은 합성이며 실제 계정·실제 알림 요청은 없다.
+
+### 수행하지 않은 검증
+- 실제 macOS 알림 배너와 알림 센터 보관(smoke는 요청을 만들지 않는다). 실제 7일 이내 로그인에서의 첫 알림은 사용자 확인으로 남는다.
+- 앱 안의 실제 `claude auth status` 6시간 조회와 로그아웃·만료 상태의 실제 화면(계정을 건드리는 시험이라 하지 않았다).
+- Mac이 켜진 채 수일 지난 뒤의 상한 접근, 잠자기 복귀 직후의 첫 인증 확인.
