@@ -26,6 +26,7 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
     private MacNotifications? notifications;
     // Quota recovery notification (#59 shared engine); created with the panel, see DidFinishLaunching.
     private MacQuotaNotifications? quotaNotifications;
+    private MacClaudeAuthWarning? claudeAuthWarning;
     private NSStatusItem? statusItem;
     private NSScreen? smokeScreen; // smoke only: the display its window checks use (MacScreenGuard.Choose)
     private NSWindow? smokeAnchorWindow; // smoke only: stands in for the status item when its display is covered by a full-screen app
@@ -71,6 +72,12 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
             (text, error) => panel?.SetFeedback(text, error),
             BeginInvokeOnMainThread, () => RefreshDisplay(TickReason.ProviderChanged), pendingWrites,
             notificationsDenied: () => notifications?.Denied == true);
+        // Claude CLI login-expiry warning: global, default OFF, same shared label/keys/texts as Windows.
+        claudeAuthWarning = new(() => stopping, () => store.ReadClaudeAuthWarningAsync(lifetime.Token),
+            enabled => store.SetClaudeAuthWarningEnabledAsync(enabled), expiry => store.RememberClaudeAuthWarningAsync(expiry),
+            () => quotaMonitor?.LatestClaudeAuth, () => quotaNotifications!.CanShowNow,
+            (title, body) => notifications?.Show(title, body, MacNotificationKind.ClaudeAuthExpiry, null),
+            () => quotaNotifications!.DeferAfterExisting(), (text, error) => panel?.SetFeedback(text, error), pendingWrites);
         CreateGeminiWeb();
         CreateContextMenu();
         statusItem = NSStatusBar.SystemStatusBar.CreateStatusItem(NSStatusItemLength.Square);
@@ -103,6 +110,8 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
         contextMenu.AddItem(quotaNotifications!.MenuItem);
         // Separate global setting, default OFF, right after the recovery item (Windows keeps the same order).
         contextMenu.AddItem(quotaNotifications.EarlyResetMenuItem);
+        // Third alert setting, default OFF, right after the two quota items (Windows keeps the same order).
+        contextMenu.AddItem(claudeAuthWarning!.MenuItem);
         // Gemini app usage: sign in / turn off / sign out. Off until the user signs in themselves.
         contextMenu.AddItem(geminiWeb!.MenuItem);
         contextMenu.AddItem(new NSMenuItem("로그인 항목 설정 열기…", (_, _) => MacAutoStart.OpenSettings()) { Enabled = !smoke });
@@ -167,6 +176,7 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
             await quotaNotifications.LoadAsync(() => store.GetQuotaRecoveryNotificationsEnabledAsync(lifetime.Token));
             await quotaNotifications.LoadEarlyResetAsync(() => store.GetQuotaEarlyResetNotificationsEnabledAsync(lifetime.Token));
         }
+        if (claudeAuthWarning is not null) await claudeAuthWarning.LoadAsync();
         try
         {
             if (stopping) return;
@@ -264,6 +274,8 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
             Notify(alert.Title, alert.Body, MacNotificationLook.ForProviderAlert(alert));
         // Existing schedule/service alerts are requested first; a quota recovery alert never precedes them.
         quotaNotifications?.ShowPending();
+        // After every other alert of this pass, like the quota alerts: it waits behind them.
+        claudeAuthWarning?.TryShow();
         if (statusItem?.Button is { } button)
         {
             if (result.AppearanceChanged || button.Image is null)
@@ -699,9 +711,9 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
                 !IsContextClick(Click(NSEventType.LeftMouseUp, NSEventModifierMask.ControlKeyMask)))
                 throw new InvalidOperationException("Left/right/control-click routing is wrong.");
             string[] menuTitles = contextMenu.Items.Select(item => item.IsSeparatorItem ? "-" : item.Title).ToArray();
-            if (!menuTitles.SequenceEqual(["Refresh", QuotaRecoveryText.MenuLabel, QuotaEarlyResetText.MenuLabel, GeminiWebText.MenuTitle, "로그인 항목 설정 열기…", "-", "종료"]) ||
+            if (!menuTitles.SequenceEqual(["Refresh", QuotaRecoveryText.MenuLabel, QuotaEarlyResetText.MenuLabel, ClaudeAuthCheck.MenuLabel, GeminiWebText.MenuTitle, "로그인 항목 설정 열기…", "-", "종료"]) ||
                 contextMenu.Items[^1].KeyEquivalent != "q")
-                throw new InvalidOperationException("Right-click menu must be Refresh / 한도 회복 알림 / 한도 조기 초기화 알림 / Gemini 사용량 / 로그인 항목 설정 열기… / 종료 ⌘Q.");
+                throw new InvalidOperationException("Right-click menu must be Refresh / 한도 회복 알림 / 한도 조기 초기화 알림 / Claude CLI 로그인 만료 알림 / Gemini 사용량 / 로그인 항목 설정 열기… / 종료 ⌘Q.");
 
             // Checks that open windows are skipped (and counted) only while another app is full screen on the display
             // they would open on: that shows the menu bar over that app (MacScreenGuard, MACOS_PORT 39). Another
@@ -1000,6 +1012,8 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
             string geminiWebReadingResult = await MacGeminiWebSmoke.VerifyReadingAsync();
             string geminiWebMenuResult = await MacGeminiWebSmoke.VerifyControllerAsync(contextMenu!, geminiWeb!);
             string geminiWebPanelResult = MacGeminiWebSmoke.VerifyPanel(panel, Schedule(now), healthy, quota, claudeQuota, xaiQuota, now);
+            // Claude CLI login state (#171): the Claude box note line, tip and popover in the shared wording, synthetic dates only.
+            string claudeAuthPanelResult = MacClaudeAuthSmoke.VerifyPanel(panel, Schedule(now), healthy, quota, claudeQuota, geminiQuota, xaiQuota, now);
             panel.Update(Schedule(now), healthy, quotas, false, now.AddMinutes(5), "");
             panel.Verify(Schedule(now), healthy, quotas);
             // xAI weekly credit box: four boxes, +1 bar, colors, previous/none states, VoiceOver, capped height.
@@ -1033,6 +1047,7 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
                 contextMenu, BeginInvokeOnMainThread, lifetime.Token);
             string decisionLogResult = await MacEarlyResetSmoke.VerifyDecisionLogAsync(BeginInvokeOnMainThread, lifetime.Token);
             string lateCallbackResult = await MacEarlyResetSmoke.VerifyLateCallbackAsync(BeginInvokeOnMainThread, lifetime.Token);
+            string claudeAuthWarningResult = await MacClaudeAuthSmoke.VerifyWarningAsync(store, claudeAuthWarning!, contextMenu!, quotaNotifications!, lifetime.Token);
             if (covering is null) ShowStatistics();
             else statisticsWindow ??= new(store, smoke); // created, not ordered in: the content checks below still run
             await statisticsWindow!.RefreshAsync();
@@ -1058,7 +1073,7 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
                 Console.WriteLine($"SKIP: {skippedScreenChecks.Count} screen checks not run because a window of {covering.Value.Owner} covers display {covering.Value.ScreenNumber}, " +
                     $"the display of the status item where ours would open (it would show the menu bar over it): {string.Join("; ", skippedScreenChecks)}. Run again with no full-screen app to check them.");
             string verdict = skippedScreenChecks.Count == 0 ? "PASS" : $"PASS with {skippedScreenChecks.Count} screen checks SKIPPED (not verified)";
-            Console.WriteLine($"{verdict}: bundle version, menu-tracking countdown timer, 20pt menu icon white/dark disc + color glyph light/dark 1x-2x pixels (glyph contrast min {iconContrast:0.0}:1), left/right/control-click routing, right-click menu, popover open/close/reopen, shared panel text/record menu/quota lines, {activationResult}, tone contrast >= 4.5:1 light+dark (min {weakest:0.0}:1), card text x = quota box text x ({layout.BoxTextX:0}pt; titles {layout.TitleX:0}pt), whole-card click/quota boxes read-only, shared quota title, usage bars (0% empty/100% full, provider colors >= 3:1 light+dark min {barWeakest:0.0}:1, muted when previous/elapsed, none without a value), time layer (tint-track/tint-used >= 1.5:1 min {tintWeakest:0.0}:1, marker >= 3:1 min {markerWeakest:0.0}:1 light+dark, dark tint-used >= 2.0:1 min {darkSeparationWeakest:0.0}:1, marker position/end points, hidden states, spoken row = shared reading text once), one shared Provider detail per quota box, four provider cards incl. xAI (same heading width, card size and spacing: {cardGeometry}; whole-card click only, detail without the usage link), four quota boxes (Gemini fixed notice only while no reader is registered, xAI weekly credits), popover {layout.Size.Width:0}x{layout.Size.Height:0}pt (this screen usable {layout.UsableHeight:0}pt; 1280x800 {standard.Height:0}pt not cut off, quota area {standardQuota:0}pt scrolling, every control reachable; 1024x640 {small.Height:0}pt not cut off, quota area {smallQuota:0}pt, whole panel {smallScroll.Document:0}pt scrolling, every control reachable), 1,000-char note limit, temporary SQLite, four events/notes via shared factory, {displayResult}, {permissionResult}, {layoutKeyResult}, {notificationImageResult}, {recoveryResult}, {earlyResetResult}, {earlyResetControllerResult}, {decisionLogResult}, {lateCallbackResult}, {earlyResetUiResult}, {geminiOffResult}, {geminiWebReadingResult}, {geminiWebMenuResult}, {geminiWebPanelResult}, {xaiQuotaResult}, {detailTipResult}, {quotaRowResult}, {diagnosticResult}, statistics (shared text, explanation fits, Mac empty-state hint), injected quota countdown; no account/network/settings changes.");
+            Console.WriteLine($"{verdict}: bundle version, menu-tracking countdown timer, 20pt menu icon white/dark disc + color glyph light/dark 1x-2x pixels (glyph contrast min {iconContrast:0.0}:1), left/right/control-click routing, right-click menu, popover open/close/reopen, shared panel text/record menu/quota lines, {activationResult}, tone contrast >= 4.5:1 light+dark (min {weakest:0.0}:1), card text x = quota box text x ({layout.BoxTextX:0}pt; titles {layout.TitleX:0}pt), whole-card click/quota boxes read-only, shared quota title, usage bars (0% empty/100% full, provider colors >= 3:1 light+dark min {barWeakest:0.0}:1, muted when previous/elapsed, none without a value), time layer (tint-track/tint-used >= 1.5:1 min {tintWeakest:0.0}:1, marker >= 3:1 min {markerWeakest:0.0}:1 light+dark, dark tint-used >= 2.0:1 min {darkSeparationWeakest:0.0}:1, marker position/end points, hidden states, spoken row = shared reading text once), one shared Provider detail per quota box, four provider cards incl. xAI (same heading width, card size and spacing: {cardGeometry}; whole-card click only, detail without the usage link), four quota boxes (Gemini fixed notice only while no reader is registered, xAI weekly credits), popover {layout.Size.Width:0}x{layout.Size.Height:0}pt (this screen usable {layout.UsableHeight:0}pt; 1280x800 {standard.Height:0}pt not cut off, quota area {standardQuota:0}pt scrolling, every control reachable; 1024x640 {small.Height:0}pt not cut off, quota area {smallQuota:0}pt, whole panel {smallScroll.Document:0}pt scrolling, every control reachable), 1,000-char note limit, temporary SQLite, four events/notes via shared factory, {displayResult}, {permissionResult}, {layoutKeyResult}, {notificationImageResult}, {recoveryResult}, {earlyResetResult}, {earlyResetControllerResult}, {decisionLogResult}, {lateCallbackResult}, {earlyResetUiResult}, {geminiOffResult}, {geminiWebReadingResult}, {geminiWebMenuResult}, {geminiWebPanelResult}, {claudeAuthPanelResult}, {claudeAuthWarningResult}, {xaiQuotaResult}, {detailTipResult}, {quotaRowResult}, {diagnosticResult}, statistics (shared text, explanation fits, Mac empty-state hint), injected quota countdown; no account/network/settings changes.");
             smokeAnchorWindow?.Close();
             ExitCode = 0;
         }

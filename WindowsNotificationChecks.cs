@@ -57,6 +57,11 @@ internal static class WindowsNotificationChecks
             Check(quota.Group == "quota" && quota.Header == "한도" && quota.Icon == ToolTipIcon.Info && quota.Tag != anotherQuota.Tag,
                 "quota notifications preserve individual retention and existing image-free composition");
             requests.Add(quota);
+            var claudeAuth = new WindowsNotificationRequest(WindowsQuotaNotificationKind.ClaudeAuthExpiry, WindowsNotificationProvider.Claude,
+                title, body);
+            Check(claudeAuth.Group == "quota" && claudeAuth.Header == "한도" && claudeAuth.Tag == "claude-auth" &&
+                claudeAuth.Icon == ToolTipIcon.Warning, "Claude auth warning uses its own notification-center slot in the quota group");
+            requests.Add(claudeAuth);
             Check(requests.Select(request => request.Id).Distinct().Count() == requests.Count, "every dispatch has an immutable distinct completion identity");
             Check(requests.Where(request => !request.IsQuota).Select(request => request.Tag).Distinct().Count() == 11,
                 "status notifications have two schedule, eight Provider and one holiday slot");

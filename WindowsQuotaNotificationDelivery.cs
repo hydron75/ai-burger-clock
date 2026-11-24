@@ -24,7 +24,7 @@ internal sealed class WindowsToastBlockedException(WindowsToastBlockReason reaso
 internal enum WindowsQuotaNotificationKind
 {
     Recovery, EarlyReset, Combined, ScheduleFull, ScheduleBurger,
-    ProviderIssue, ProviderRecovered, HolidayOn, HolidayOff
+    ProviderIssue, ProviderRecovered, HolidayOn, HolidayOff, ClaudeAuthExpiry
 }
 internal enum WindowsQuotaNotificationTransport { Toast, Balloon }
 internal enum WindowsQuotaNotificationResult { Submitted, Failed, Blocked }
@@ -288,6 +288,7 @@ internal sealed class WindowsQuotaNotificationDeliveryLog
                 WindowsQuotaNotificationKind.HolidayOn or WindowsQuotaNotificationKind.HolidayOff => entry.Provider == WindowsNotificationProvider.None,
             WindowsQuotaNotificationKind.Recovery or WindowsQuotaNotificationKind.EarlyReset or WindowsQuotaNotificationKind.Combined =>
                 entry.Provider is WindowsNotificationProvider.OpenAI or WindowsNotificationProvider.Claude or WindowsNotificationProvider.Gemini or WindowsNotificationProvider.Xai,
+            WindowsQuotaNotificationKind.ClaudeAuthExpiry => entry.Provider == WindowsNotificationProvider.Claude,
             _ => entry.Provider != WindowsNotificationProvider.None
         }) &&
         Enum.IsDefined(entry.Result) && Enum.IsDefined(entry.Reason) && (entry.Result switch

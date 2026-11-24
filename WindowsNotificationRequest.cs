@@ -9,10 +9,12 @@ internal sealed record WindowsNotificationRequest(WindowsQuotaNotificationKind K
     private static long nextId;
     internal long Id { get; } = Interlocked.Increment(ref nextId);
     internal string Tag { get; } = TagFor(Kind, Provider);
-    internal bool IsQuota => Kind is WindowsQuotaNotificationKind.Recovery or WindowsQuotaNotificationKind.EarlyReset or WindowsQuotaNotificationKind.Combined;
+    internal bool IsQuota => Kind is WindowsQuotaNotificationKind.Recovery or WindowsQuotaNotificationKind.EarlyReset
+        or WindowsQuotaNotificationKind.Combined or WindowsQuotaNotificationKind.ClaudeAuthExpiry;
     internal string Group => IsQuota ? "quota" : "status";
     internal string Header => IsQuota ? "한도" : "시간표·상태";
     internal ToolTipIcon Icon => Kind is WindowsQuotaNotificationKind.ScheduleBurger or WindowsQuotaNotificationKind.ProviderIssue
+        or WindowsQuotaNotificationKind.ClaudeAuthExpiry
         ? ToolTipIcon.Warning : ToolTipIcon.Info;
     internal int BalloonTimeout => Kind is WindowsQuotaNotificationKind.HolidayOn or WindowsQuotaNotificationKind.HolidayOff ? 4000 : 6000;
 
@@ -43,6 +45,7 @@ internal sealed record WindowsNotificationRequest(WindowsQuotaNotificationKind K
         WindowsQuotaNotificationKind.ScheduleFull => "sched-full",
         WindowsQuotaNotificationKind.ScheduleBurger => "sched-burger",
         WindowsQuotaNotificationKind.HolidayOn or WindowsQuotaNotificationKind.HolidayOff => "holiday",
+        WindowsQuotaNotificationKind.ClaudeAuthExpiry => "claude-auth",
         WindowsQuotaNotificationKind.ProviderIssue or WindowsQuotaNotificationKind.ProviderRecovered =>
             "svc-" + provider.ToString().ToLowerInvariant() + (kind == WindowsQuotaNotificationKind.ProviderIssue ? "-issue" : "-recovered"),
         _ => throw new ArgumentOutOfRangeException(nameof(kind))

@@ -16,6 +16,8 @@ internal sealed class UsageStore(string? databasePath = null)
     private const int MaximumXaiTrackingBytes = 32 * 1024;
     private const int MaximumQuotaCacheCharacters = 512 * 1024;
     private const string GeminiWebQuotaCacheKey = "AccountQuota.v1.GeminiWeb";
+    private const string ClaudeAuthWarningEnabledKey = "ClaudeAuthExpiryNotificationsEnabled";
+    private const string ClaudeAuthWarnedExpiryKey = "ClaudeAuthWarnedExpiryUtc";
     private readonly SemaphoreSlim gate = new(1, 1);
     private Exception? schemaInitializationFailure;
     public string DatabasePath { get; } = databasePath ?? Path.Combine(AppPaths.DataDirectory, "burgerclock.db");
@@ -183,6 +185,43 @@ internal sealed class UsageStore(string? databasePath = null)
             command.CommandText = "INSERT INTO AppMetadata(Key,Value) VALUES($key,$value) ON CONFLICT(Key) DO UPDATE SET Value=excluded.Value;";
             command.Parameters.AddWithValue("$key", QuotaEarlyResetText.SettingKey);
             command.Parameters.AddWithValue("$value", enabled ? "1" : "0");
+            command.ExecuteNonQuery();
+            return true;
+        }, cancellationToken);
+
+    internal Task<(bool Enabled, DateTimeOffset? WarnedExpiry)> ReadClaudeAuthWarningAsync(CancellationToken cancellationToken = default) =>
+        ExecuteAsync(connection =>
+        {
+            using var command = connection.CreateCommand();
+            command.CommandText = "SELECT Key,Value FROM AppMetadata WHERE Key IN ($enabled,$expired);";
+            command.Parameters.AddWithValue("$enabled", ClaudeAuthWarningEnabledKey);
+            command.Parameters.AddWithValue("$expired", ClaudeAuthWarnedExpiryKey);
+            using var reader = command.ExecuteReader();
+            bool enabled = false;
+            DateTimeOffset? warnedExpiry = null;
+            while (reader.Read())
+            {
+                string value = reader.GetString(1);
+                if (reader.GetString(0) == ClaudeAuthWarningEnabledKey) enabled = value == "1";
+                else if (DiagnosticUtc(value, out var expiry)) warnedExpiry = expiry;
+            }
+            return (enabled, warnedExpiry);
+        }, cancellationToken);
+
+    internal Task SetClaudeAuthWarningEnabledAsync(bool enabled, CancellationToken cancellationToken = default) =>
+        WriteClaudeAuthWarningAsync(ClaudeAuthWarningEnabledKey, enabled ? "1" : "0", cancellationToken);
+
+    internal Task RememberClaudeAuthWarningAsync(DateTimeOffset expiry, CancellationToken cancellationToken = default) =>
+        WriteClaudeAuthWarningAsync(ClaudeAuthWarnedExpiryKey, Utc(expiry), cancellationToken);
+
+    private Task WriteClaudeAuthWarningAsync(string key, string value, CancellationToken cancellationToken) =>
+        ExecuteAsync(connection =>
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            using var command = connection.CreateCommand();
+            command.CommandText = "INSERT INTO AppMetadata(Key,Value) VALUES($key,$value) ON CONFLICT(Key) DO UPDATE SET Value=excluded.Value;";
+            command.Parameters.AddWithValue("$key", key);
+            command.Parameters.AddWithValue("$value", value);
             command.ExecuteNonQuery();
             return true;
         }, cancellationToken);

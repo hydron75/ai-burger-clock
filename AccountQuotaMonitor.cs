@@ -5,7 +5,8 @@ namespace AiBurgerClock;
 internal sealed record QuotaState(QuotaProvider Provider, QuotaReading? Reading = null,
     DateTimeOffset? CheckedAtUtc = null, DateTimeOffset? LastSuccessfulCheckUtc = null,
     DateTimeOffset? NextCheckUtc = null, bool IsRefreshing = false, bool IsPrevious = false,
-    string Error = "", string CacheError = "", long ContinuityId = 0, GeminiWebQuotaState? GeminiWeb = null);
+    string Error = "", string CacheError = "", long ContinuityId = 0, GeminiWebQuotaState? GeminiWeb = null,
+    ClaudeAuthCheck? ClaudeAuth = null);
 
 // Only normalized quota numbers/timestamps are cached, never CLI output or credentials.
 internal sealed record QuotaCache(int Version, QuotaReading Reading, DateTimeOffset SuccessfulAtUtc,
@@ -48,6 +49,7 @@ internal sealed partial class AccountQuotaMonitor : IDisposable
         IGeminiUsagePageReader? geminiWebReader = null, bool geminiWebEnabled = false, TimeZoneInfo? geminiWebTimeZone = null)
     {
         this.client = client;
+        claudeAuthClient = client as IClaudeAuthClient;
         this.store = store;
         this.utcNow = utcNow ?? (() => DateTimeOffset.UtcNow);
         pollingLog = diagnosticLog ?? CreatePollingLog(store);
@@ -74,7 +76,8 @@ internal sealed partial class AccountQuotaMonitor : IDisposable
             return states.Values.OrderBy(s => s.Provider).Select(s => s with
             {
                 IsPrevious = s.IsPrevious || (s.NextCheckUtc is { } next && now > next.AddMinutes(5)) ||
-                    (s.LastSuccessfulCheckUtc is { } success && now < success.AddMinutes(-5))
+                    (s.LastSuccessfulCheckUtc is { } success && now < success.AddMinutes(-5)),
+                ClaudeAuth = s.Provider == QuotaProvider.Claude ? LatestClaudeAuth : null
             }).ToArray();
         }
     }
@@ -86,7 +89,8 @@ internal sealed partial class AccountQuotaMonitor : IDisposable
             if (disposed) return;
             runner ??= Task.WhenAll(Enum.GetValues<QuotaProvider>().Where(QuotaNames.IsQueryEnabled)
                 .Select(p => Task.Run(() => RunAsync(p)))
-                .Concat(geminiWebReader is null ? [] : [Task.Run(RunGeminiWebAsync)]));
+                .Concat(geminiWebReader is null ? [] : [Task.Run(RunGeminiWebAsync)])
+                .Concat(claudeAuthClient is null ? [] : [Task.Run(RunClaudeAuthAsync)]));
         }
     }
 
@@ -95,6 +99,9 @@ internal sealed partial class AccountQuotaMonitor : IDisposable
         lock (sync)
         {
             if (disposed || lifetime.IsCancellationRequested) return;
+            // Both hosts queue quota refreshes on resume/network recovery and use
+            // the default for the manual Refresh command.
+            if (!queueWhileRefreshing) QueueClaudeAuthCheck(ClaudeAuthRequest.Immediate);
             foreach (var provider in states.Keys)
                 if (QuotaNames.IsQueryEnabled(provider) && (queueWhileRefreshing || !states[provider].IsRefreshing) && wakes[provider].CurrentCount == 0)
                     wakes[provider].Release();
@@ -287,6 +294,8 @@ internal sealed partial class AccountQuotaMonitor : IDisposable
             finally
             {
                 gates[provider].Release();
+                if (provider == QuotaProvider.Claude && readStarted && !linked.IsCancellationRequested)
+                    RequestClaudeAuthAfterQuota(publishSuccess ? observation : null);
                 RaiseChanged();
             }
         }

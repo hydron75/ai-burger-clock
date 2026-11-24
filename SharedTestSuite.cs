@@ -41,6 +41,7 @@ internal static class SharedTestSuite
             Report("Gemini app web quota/cache/scheduling (synthetic)", await GeminiWebQuotaTests.RunAsync(directory));
             Report("Grok weekly credits/ACP/scheduling/alerts/cache (synthetic)", await GrokQuotaTests.RunAsync(directory));
             Report("quota monitor/restart/cancellation (fake CLI)", await AccountQuotaMonitorTests.RunAsync());
+            Report("Claude CLI auth status/polling/expiry/privacy (synthetic)", await ClaudeAuthTests.RunAsync(directory));
             Report("weekly early-reset cache/decision integration (synthetic)", await WeeklyEarlyResetMonitorTests.RunAsync(directory));
             Report("quota CLI setup/protocol/cancellation (POSIX fixtures)", await SharedQuotaProtocolTests.RunAsync());
             Report("paths/IANA/formatting/CLI candidates", PortablePlatformTests.Run());

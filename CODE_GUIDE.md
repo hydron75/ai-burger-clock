@@ -1,6 +1,8 @@
 # 소스코드, 쉬운 말로 읽기
 
-**Windows 2.9.7 후보 기준**으로 `WindowsQuotaExportSnapshot.cs`가 Gemini 웹 한도와 선택 상태를 스키마 v2에 포함합니다. 같은 파일의 `WindowsQuotaExportBridge`는 값 또는 확정된 상태의 변화로 단독 송신을 예약합니다. 합성 HTTP 검사는 `WindowsQuotaExportChecks.cs`에서 실행합니다. #167의 xAI 판정은 `XaiStatusFeed.cs`와 `StatusPanelModel.cs`에 있습니다. [최신 후보 기록](MAINTENANCE_2_9_7.md)
+**Windows 2.9.8 후보 기준**으로 `AccountQuotaClient.ClaudeAuth.cs`와 `AccountQuotaMonitor.ClaudeAuth.cs`가 Claude CLI 로그인을 확인합니다. `ClaudeAuthStatus.cs`와 `QuotaPanelModel.cs`가 만료 판정과 문구를 담당하며, Windows와 Mac의 알림 연결은 각각 `TrayApplicationContext.ClaudeAuth.cs`와 `Mac/MacClaudeAuthWarning.cs`에서 처리합니다. [최신 후보 기록](MAINTENANCE_2_9_8.md)
+
+**Windows 2.9.7 후보 기준**으로 `WindowsQuotaExportSnapshot.cs`가 Gemini 웹 한도와 선택 상태를 스키마 v2에 포함합니다. 같은 파일의 `WindowsQuotaExportBridge`는 값 또는 확정된 상태의 변화로 단독 송신을 예약합니다. 합성 HTTP 검사는 `WindowsQuotaExportChecks.cs`에서 실행합니다. #167의 xAI 판정은 `XaiStatusFeed.cs`와 `StatusPanelModel.cs`에 있습니다. [2.9.7 후보 기록](MAINTENANCE_2_9_7.md)
 
 **Windows 2.9.4 후보 기준:** main `5fbfc6c`의 #155 및 #156/#157을 포함합니다. Windows 버전 세 필드와 문서만 변경하며 공통/Windows C#·Mac·패키지·배포 스크립트는 바꾸지 않습니다. 사이트 버전 17 선행 배포·아이폰 사용자 확인, 후보·receipt·외부 명령은 [2.9.4 기록](MAINTENANCE_2_9_4.md)을 봅니다. 이전 검증·파일 수 기록은 유지합니다.
 
