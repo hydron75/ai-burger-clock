@@ -1,6 +1,8 @@
 # 소스코드, 쉬운 말로 읽기
 
-**Windows 2.9.8 후보 기준**으로 `AccountQuotaClient.ClaudeAuth.cs`와 `AccountQuotaMonitor.ClaudeAuth.cs`가 Claude CLI 로그인을 확인합니다. `ClaudeAuthStatus.cs`와 `QuotaPanelModel.cs`가 만료 판정과 문구를 담당하며, Windows와 Mac의 알림 연결은 각각 `TrayApplicationContext.ClaudeAuth.cs`와 `Mac/MacClaudeAuthWarning.cs`에서 처리합니다. [최신 후보 기록](MAINTENANCE_2_9_8.md)
+**Windows 2.9.9 후보 기준**으로 `AccountQuotaClient.cs`와 `GeminiUsagePage.cs`가 조회 실패를 분류하고, `QuotaPanelModel.cs`가 문구와 톤을 만듭니다. `QuotaFailure.cs`의 고정 진단 코드는 상세와 `--check-quotas`의 실패 출력에 표시합니다. [최신 후보 기록](MAINTENANCE_2_9_9.md)
+
+**Windows 2.9.8 기준**으로 `AccountQuotaClient.ClaudeAuth.cs`와 `AccountQuotaMonitor.ClaudeAuth.cs`가 Claude CLI 로그인을 확인합니다. `ClaudeAuthStatus.cs`와 `QuotaPanelModel.cs`가 만료 판정과 문구를 담당하며, Windows와 Mac의 알림 연결은 각각 `TrayApplicationContext.ClaudeAuth.cs`와 `Mac/MacClaudeAuthWarning.cs`에서 처리합니다. [2.9.8 기록](MAINTENANCE_2_9_8.md)
 
 **Windows 2.9.7 후보 기준**으로 `WindowsQuotaExportSnapshot.cs`가 Gemini 웹 한도와 선택 상태를 스키마 v2에 포함합니다. 같은 파일의 `WindowsQuotaExportBridge`는 값 또는 확정된 상태의 변화로 단독 송신을 예약합니다. 합성 HTTP 검사는 `WindowsQuotaExportChecks.cs`에서 실행합니다. #167의 xAI 판정은 `XaiStatusFeed.cs`와 `StatusPanelModel.cs`에 있습니다. [2.9.7 후보 기록](MAINTENANCE_2_9_7.md)
 
@@ -519,7 +521,7 @@ Windows 내부 승인 형식은 알려진 경우만 해석합니다. 낯선 값�
 | [QuotaToolTipUiChecks.cs](QuotaToolTipUiChecks.cs) | 실제 WinForms에서 상세 모양·배치·DPI·스크롤·10초 만료·재등장 방지·창 재열기 검사. 합성 fixture 수명 진단과 수동 닫힘 보호 |
 | [StatusToolTipUiChecks.cs](StatusToolTipUiChecks.cs) | 상태 상세 16건의 실제 고정 폭·클릭/기록·스크롤·수명/이탈/숨김/Dispose 검사와 공용 단어 단위 줄바꿈 8건 |
 | [SmokeUiProbe.cs](SmokeUiProbe.cs) | Windows 검사 전용: 비활성화 독립 host 배치·메시지 큐 sentinel·부모 범위 target·정리 전 창/스크롤/DPI/모니터 진단과 외부 창 메타데이터 allowlist. 제목·본문을 읽지 않음 |
-| [LiveQuotaProbe.cs](LiveQuotaProbe.cs) | 공식 CLI 실제 계정 조회 결과 중 한도 정보만 출력 |
+| [LiveQuotaProbe.cs](LiveQuotaProbe.cs) | 사용자 요청 시 공식 CLI 한도 조회 결과를 출력. 실패는 분류·고정 코드 또는 예외 형식 이름만 표시 |
 | [PortablePlatformTests.cs](PortablePlatformTests.cs) | 데이터 경로·IANA 시간대 경계·표시 형식·Mac CLI 경로 후보 검사 |
 
 검사의 고정 날짜와 가짜 장애는 정답을 비교하기 위한 문제지입니다. 실제 시간표나 공식 상태를 그 값으로 고정하지 않습니다.
