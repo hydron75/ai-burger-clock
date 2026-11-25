@@ -3375,3 +3375,32 @@ Shared.Tests **291,812건 PASS**, `bash Mac/build.sh` 경고 0 / 오류 0, nativ
 
 ### 남은 호환 코드
 공통의 `QuotaState.Error` 초기화와 `GeminiUsageDiagnostic`의 두 인자 생성자는 Mac smoke의 합성 입력을 위해 남아 있다(#179). Mac 쪽 입력을 `QuotaFailure`로 옮기면 지울 수 있다.
+
+## 88. 0.9.9 정리 (한도 조회 실패 분류 포함)
+
+2026-11-25. Mac 0.9.8 / build 35 → **0.9.9 / build 36**. 공통 원본의 한도 조회 실패 분류(PR #179, Windows 2.9.9)를 번들에 싣는 버전 올림이다. 이 PR은 버전 필드와 이 기록만 바꾼다. **배포는 하지 않았고**, 메인의 "배포 진행" 지시를 기다린다.
+
+### 버전 필드
+`Version` 0.9.9, `AssemblyVersion` 0.9.9.0, `FileVersion` 0.9.9.0, `ApplicationVersion` 36(`CFBundleVersion`). `Info.plist`에는 적지 않는다.
+
+### 기준
+| 항목 | 값 |
+|---|---|
+| 기준 main(PR #179 병합, #180 포함) | `8ba0623f3aff198d7bc49bf1f9520f093759da41` |
+| 버전 변경 커밋(앱 소스) | `911b8d7f04c81a2ede5b4124421152e25544d597`(브랜치 `claude/mac-0-9-9`, 이 절의 기록 커밋은 문서만 바꿈) |
+
+#179 최종 HEAD `37730768138d2aab84977feb905eed5d1ffcdb24`의 Mac 확인: Shared.Tests 291,812 PASS, `bash Mac/build.sh` 경고 0 / 오류 0, native `--smoke-test` 1회 종료 코드 0·FAIL 0·SKIP 0(임시 사본).
+
+### 이번 번들에 실리는 공통 변경
+한도 조회 실패를 7종으로 나눠 공통 `QuotaPanelModel`이 문구와 톤을 정한다. Mac 앱 코드는 바꾸지 않았고 그대로 그린다.
+- CLI 첫 조회 전 줄이 `한도 조회 대기`로 바뀐다(`공식 CLI 로그인 필요` 제거).
+- 실패 줄이 원인별 문구로 나온다(설치 없음, 작업 폴더 권한, 시간 초과, 연결·읽기 실패, 명령 거부, 형식 변경, 로그인 필요).
+- Gemini 웹의 로그인 필요가 경고색(Danger)으로 보인다.
+- 상세에 `진단 코드: …` 한 줄이 추가된다(고정 코드만, 원문·경로·계정 값 없음).
+
+### 배포 전 검증 (임시 사본, 저장소 경로 아님, 버전 변경 커밋 `911b8d7`)
+Shared.Tests **291,812건 PASS**, `bash Mac/build.sh` 옵션 없음 경고 0 / 오류 0, 번들 `CFBundleShortVersionString` 0.9.9 / `CFBundleVersion` 36, native `--smoke-test` 1회 종료 코드 0·FAIL 0·SKIP 0. 임시 사본은 `lsregister -u` 후 삭제했고 LaunchServices 등록 수는 1이다.
+
+### 아직 하지 않은 것
+- 저장소 경로 빌드·실행(배포): 메인의 "배포 진행" 지시 뒤에 AGENTS.md "Mac 배포" 절 순서로 진행하고 이 절에 이어 쓴다. 현재 실행 중인 앱은 0.9.8 / build 35다.
+- 실제 CLI·Gemini 웹의 실패 상태 화면은 보지 못했다(합성 입력으로만 확인).
