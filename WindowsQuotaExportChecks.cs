@@ -202,10 +202,13 @@ internal static class WindowsQuotaExportChecks
             Check(previous.RootElement.GetProperty("providers").EnumerateArray().All(p => p.GetProperty("reading").GetString() ==
                 (p.GetProperty("provider").GetString() == "Gemini" ? "none" : "previous")), "failed enabled Provider read keeps previous readings while Gemini remains none");
             Check(Seq(f.Http.Last) == first + 1, "new snapshot reserves a greater sequence");
-            f.States = Enum.GetValues<QuotaProvider>().Select(p => new QuotaState(p, Error: Credentials.SyntheticToken)).ToArray();
+            f.States = Enum.GetValues<QuotaProvider>().Select(p => new QuotaState(p, Error: Credentials.SyntheticToken,
+                Failure: new(QuotaFailureKind.FormatChanged, "parser.synthetic-private"))).ToArray();
             f.Service.Completed(f.States); await f.Service.WaitForIdleAsync();
             using var none = Body(f.Http.Last);
             Check(none.RootElement.GetProperty("providers").EnumerateArray().All(p => p.GetProperty("reading").GetString() == "none" && p.GetProperty("rows").GetArrayLength() == 0 && p.GetProperty("lastSuccessUtc").ValueKind == JsonValueKind.Null), "failure without history has none, not invented zeros");
+            Check(!Encoding.UTF8.GetString(f.Http.Last.Body).Contains("parser.synthetic-private", StringComparison.Ordinal),
+                "quota failure codes remain local to the panel detail");
             int before = f.Http.Count;
             f.Time.Advance(TimeSpan.FromMinutes(15) - TimeSpan.FromMilliseconds(1)); f.Service.Tick(); await f.Service.WaitForIdleAsync();
             Check(f.Http.Count == before, "heartbeat not early");

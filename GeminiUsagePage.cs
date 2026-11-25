@@ -28,9 +28,16 @@ internal enum GeminiUsageFailureRule
     InvalidReset, DuplicateReset, MissingReset, ResetOutsideWindow
 }
 
-internal sealed record GeminiUsageDiagnostic(GeminiUsageFailureRule Rule, int LineCount);
+internal sealed record GeminiUsageDiagnostic(GeminiUsageFailureRule Rule)
+{
+    // The Mac smoke fixtures still construct the older two-argument shape.
+    internal GeminiUsageDiagnostic(GeminiUsageFailureRule rule, int _) : this(rule) { }
+}
 internal sealed record GeminiUsageResult(GeminiUsageOutcome Outcome, QuotaReading? Reading = null,
-    GeminiUsageDiagnostic? Diagnostic = null);
+    GeminiUsageDiagnostic? Diagnostic = null)
+{
+    internal QuotaFailure? Failure => GeminiUsagePage.ClassifyFailure(Outcome, Diagnostic);
+}
 internal sealed record GeminiWebQuotaState(GeminiUsageOutcome? Outcome = null, GeminiUsageDiagnostic? Diagnostic = null,
     bool IsEnabled = true);
 
@@ -51,11 +58,19 @@ internal static partial class GeminiUsagePage
     private const string WeeklyLimit = "Weekly limit";
     private const string ResetPrefix = "Resets";
 
+    internal static QuotaFailure? ClassifyFailure(GeminiUsageOutcome? outcome, GeminiUsageDiagnostic? diagnostic) => outcome switch
+    {
+        GeminiUsageOutcome.LoginRequired => new(QuotaFailureKind.LoginRequired, "gemini.destination"),
+        GeminiUsageOutcome.LoadFailed => new(QuotaFailureKind.Unreachable, "gemini.load"),
+        GeminiUsageOutcome.FormatChanged => new(QuotaFailureKind.FormatChanged, diagnostic is { } reason
+            ? "gemini." + System.Text.Json.JsonNamingPolicy.KebabCaseLower.ConvertName(reason.Rule.ToString()) : "gemini.format"),
+        _ => null
+    };
+
     public static GeminiUsageResult Parse(GeminiUsagePageLoad load, DateTimeOffset now, TimeZoneInfo timeZone)
     {
-        int lineCount = 0;
         GeminiUsageResult Fail(GeminiUsageOutcome outcome, GeminiUsageFailureRule rule) =>
-            new(outcome, Diagnostic: new(rule, lineCount));
+            new(outcome, Diagnostic: new(rule));
         GeminiUsageResult Changed(GeminiUsageFailureRule rule) => Fail(GeminiUsageOutcome.FormatChanged, rule);
 
         if (load.FinalUrl is null)
@@ -67,7 +82,6 @@ internal static partial class GeminiUsagePage
         if (load.Text is null) return Changed(GeminiUsageFailureRule.MissingElement);
 
         string[] lines = load.Text.Split('\n', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
-        lineCount = lines.Length;
         var fiveHour = new Fields();
         var weekly = new Fields();
         Fields? current = null;

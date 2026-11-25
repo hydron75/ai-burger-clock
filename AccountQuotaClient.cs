@@ -23,14 +23,18 @@ internal sealed partial class AccountQuotaClient(
     {
         cancellationToken.ThrowIfCancellationRequested();
         if (!QuotaNames.IsQueryEnabled(provider)) throw new NotSupportedException(QuotaNames.GeminiUnavailableText);
-        string executable = GetExecutable(provider);
+        string executable;
+        try { executable = GetExecutable(provider); }
+        catch (FileNotFoundException) { throw new QuotaReadException(QuotaFailureKind.NotInstalled, "cli.not-found"); }
         // Absolute paths and ArgumentList avoid shell interpretation and CWD lookup.
         // Keep Windows' .exe requirement; Unix CLI executables normally have no extension.
         if (!CanExecute(executable))
-            throw new FileNotFoundException("공식 CLI 실행 파일을 찾을 수 없습니다. CLI 설치와 로그인을 확인하세요.");
+            throw new QuotaReadException(QuotaFailureKind.NotInstalled, "cli.not-executable");
 
         string directory = WorkingDirectory;
-        Directory.CreateDirectory(directory);
+        try { Directory.CreateDirectory(directory); }
+        catch (UnauthorizedAccessException) { throw new QuotaReadException(QuotaFailureKind.NotPermitted, "cli.workdir-denied"); }
+        catch (IOException) { throw new QuotaReadException(QuotaFailureKind.Unreachable, "cli.start-failed"); }
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         deadline.CancelAfter(commandTimeout ?? (provider == QuotaProvider.Xai ? GrokTimeout : TimeSpan.FromSeconds(30)));
         using var process = new Process { StartInfo = CreateStartInfo(provider, executable, directory) };
@@ -39,7 +43,7 @@ internal sealed partial class AccountQuotaClient(
         bool started = false;
         try
         {
-            if (!process.Start()) throw new InvalidOperationException("공식 CLI를 시작하지 못했습니다.");
+            if (!process.Start()) throw new QuotaReadException(QuotaFailureKind.Unreachable, "cli.start-failed");
             started = true;
             stderr = DrainErrorAsync(process.StandardError, deadline.Token);
             if (provider == QuotaProvider.Claude)
@@ -67,24 +71,27 @@ internal sealed partial class AccountQuotaClient(
             {
                 await process.WaitForExitAsync(deadline.Token).ConfigureAwait(false);
                 await stderr.ConfigureAwait(false);
-                if (process.ExitCode != 0) throw new InvalidDataException("공식 CLI 한도 조회가 실패했습니다.");
             }
+            if (process.HasExited && process.ExitCode != 0) throw new QuotaReadException(QuotaFailureKind.Rejected, "cli.exit-nonzero");
             cancellationToken.ThrowIfCancellationRequested();
             return reading;
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
-            throw new TimeoutException("한도 조회 시간이 초과되었습니다. 다음 조회 또는 Refresh에서 다시 확인합니다.");
+            throw new QuotaReadException(QuotaFailureKind.Timeout, "timeout");
         }
-        catch (Win32Exception)
+        catch (QuotaReadException) when (started && process.HasExited && process.ExitCode != 0)
+        {
+            throw new QuotaReadException(QuotaFailureKind.Rejected, "cli.exit-nonzero");
+        }
+        catch (Exception error) when (error is Win32Exception or InvalidOperationException or UnauthorizedAccessException)
         {
             // Native exceptions can include user paths. Do not send them to UI/logs.
-            throw new InvalidOperationException("공식 CLI를 실행할 수 없습니다. 설치 상태를 확인하세요.");
+            throw new QuotaReadException(QuotaFailureKind.Unreachable, started ? "cli.read-failed" : "cli.start-failed");
         }
-        catch (InvalidDataException) { throw; }
         catch (IOException)
         {
-            throw new InvalidOperationException("공식 CLI 응답을 읽지 못했습니다.");
+            throw new QuotaReadException(QuotaFailureKind.Unreachable, started ? "cli.read-failed" : "cli.start-failed");
         }
         finally
         {
@@ -93,6 +100,27 @@ internal sealed partial class AccountQuotaClient(
             await ObserveStoppedAsync(stdout).ConfigureAwait(false);
             await ObserveStoppedAsync(stderr).ConfigureAwait(false);
         }
+    }
+
+    // Compatibility for injected clients and the monitor's outer deadline.
+    // Official command stages report the more specific classified exception.
+    internal static QuotaFailure FailureFromRead(Exception error) => error switch
+    {
+        QuotaReadException read => read.Failure,
+        OperationCanceledException or TimeoutException => new(QuotaFailureKind.Timeout, "timeout"),
+        FileNotFoundException => new(QuotaFailureKind.NotInstalled, "cli.not-found"),
+        UnauthorizedAccessException => new(QuotaFailureKind.NotPermitted, "cli.workdir-denied"),
+        InvalidDataException => new(QuotaFailureKind.FormatChanged, "parser.reading"),
+        _ => new(QuotaFailureKind.Unreachable, "cli.read-failed")
+    };
+
+    internal static QuotaReading ValidateReading(QuotaReading candidate, QuotaProvider provider, DateTimeOffset now)
+    {
+        // Own the accepted windows before delivering them to observers.
+        var snapshot = candidate with { Windows = Array.AsReadOnly(candidate.Windows.ToArray()) };
+        try { UsageStore.ValidateQuotaCache(new(1, snapshot, now.ToUniversalTime(), []), provider); }
+        catch (InvalidDataException) { throw new QuotaReadException(QuotaFailureKind.FormatChanged, "validate.reading"); }
+        return snapshot;
     }
 
     private string GetExecutable(QuotaProvider provider) => provider switch
@@ -204,6 +232,7 @@ internal sealed partial class AccountQuotaClient(
     internal static async Task<QuotaReading> ReadClaudeProtocolAsync(TextReader output, CancellationToken token)
     {
         string? report = null;
+        bool nullLimits = false;
         bool localOnlySuccess = false;
         await foreach (string line in ReadLinesAsync(output, token).ConfigureAwait(false))
         {
@@ -212,10 +241,14 @@ internal sealed partial class AccountQuotaClient(
             string? type = String(root, "type");
             if (type == "assistant" && root.TryGetProperty("usage_report", out var usage) &&
                 usage.ValueKind == JsonValueKind.Object)
+            {
                 report = line;
+                nullLimits = usage.TryGetProperty("rate_limits", out var limits) && limits.ValueKind == JsonValueKind.Object &&
+                    limits.TryGetProperty("limits", out var rows) && rows.ValueKind == JsonValueKind.Null;
+            }
             if (type == "result")
             {
-                if (localOnlySuccess) throw new InvalidDataException("Claude CLI가 중복된 결과를 반환했습니다.");
+                if (localOnlySuccess) throw new QuotaReadException(QuotaFailureKind.FormatChanged, "claude.duplicate-result");
                 localOnlySuccess = String(root, "local_command") == "usage" &&
                     String(root, "subtype") == "success" &&
                     root.TryGetProperty("is_error", out var error) && error.ValueKind == JsonValueKind.False &&
@@ -226,12 +259,12 @@ internal sealed partial class AccountQuotaClient(
                     (!root.TryGetProperty("modelUsage", out var models) ||
                         models.ValueKind == JsonValueKind.Object && !models.EnumerateObject().Any());
                 if (!localOnlySuccess)
-                    throw new InvalidDataException("Claude의 모델 호출 없는 /usage 결과를 확인하지 못했습니다.");
+                    throw new QuotaReadException(QuotaFailureKind.Rejected, "claude.result-not-local");
             }
         }
-        if (!localOnlySuccess || report is null)
-            throw new InvalidDataException("Claude CLI에서 구조화된 구독 한도를 받지 못했습니다.");
-        return AccountQuotaParsers.ParseClaude(report);
+        if (!localOnlySuccess) throw new QuotaReadException(QuotaFailureKind.Rejected, "claude.result-not-local");
+        if (report is null || nullLimits) throw new QuotaReadException(QuotaFailureKind.Rejected, "claude.no-usage-report");
+        return ParseReading(AccountQuotaParsers.ParseClaude, report, "parser.claude");
     }
 
     internal static async Task<QuotaReading> ReadCodexProtocolAsync(TextReader output, TextWriter input, CancellationToken token)
@@ -247,18 +280,25 @@ internal sealed partial class AccountQuotaClient(
             if (!root.TryGetProperty("id", out var id) || id.ValueKind != JsonValueKind.Number ||
                 !id.TryGetInt32(out int number)) continue;
             if (number != (initialized ? 2 : 1)) continue;
-            if (root.TryGetProperty("error", out _) || !root.TryGetProperty("result", out var result) ||
-                result.ValueKind != JsonValueKind.Object)
-                throw new InvalidDataException("Codex가 한도 조회를 완료하지 못했습니다. 공식 CLI의 로그인 상태를 확인하세요.");
+            if (root.TryGetProperty("error", out _))
+                throw new QuotaReadException(QuotaFailureKind.Rejected, "codex.rpc-error");
+            if (!root.TryGetProperty("result", out var result) || result.ValueKind != JsonValueKind.Object)
+                throw new QuotaReadException(QuotaFailureKind.FormatChanged, "parser.codex.result");
             if (!initialized)
             {
                 initialized = true;
                 await SendLineAsync(input, "{\"method\":\"initialized\"}", token).ConfigureAwait(false);
                 await SendLineAsync(input, "{\"id\":2,\"method\":\"account/rateLimits/read\",\"params\":{}}", token).ConfigureAwait(false);
             }
-            else return AccountQuotaParsers.ParseCodex(result.GetRawText());
+            else return ParseReading(AccountQuotaParsers.ParseCodex, result.GetRawText(), "parser.codex");
         }
-        throw new InvalidDataException("Codex CLI에서 구독 한도 응답을 받지 못했습니다.");
+        throw new QuotaReadException(QuotaFailureKind.FormatChanged, "parser.codex.missing-response");
+    }
+
+    private static QuotaReading ParseReading(Func<string, QuotaReading> parse, string json, string code)
+    {
+        try { return parse(json); }
+        catch (InvalidDataException) { throw new QuotaReadException(QuotaFailureKind.FormatChanged, code); }
     }
 
     private static async Task SendLineAsync(TextWriter writer, string line, CancellationToken token)
@@ -276,7 +316,7 @@ internal sealed partial class AccountQuotaClient(
             document.Dispose();
         }
         catch (JsonException) { }
-        throw new InvalidDataException("공식 CLI 응답 형식을 확인하지 못했습니다.");
+        throw new QuotaReadException(QuotaFailureKind.FormatChanged, "cli.bad-line");
     }
 
     private static string? String(JsonElement value, string name) =>
@@ -300,7 +340,7 @@ internal sealed partial class AccountQuotaClient(
             int read = await reader.ReadAsync(buffer.AsMemory(), token).ConfigureAwait(false);
             if (read == 0) break;
             total += read;
-            if (total > MaximumOutputCharacters) throw new InvalidDataException("공식 CLI 응답이 크기 제한을 초과했습니다.");
+            if (total > MaximumOutputCharacters) throw new QuotaReadException(QuotaFailureKind.FormatChanged, "cli.too-large");
             for (int i = 0; i < read; i++)
             {
                 if (buffer[i] == '\n')
@@ -312,7 +352,7 @@ internal sealed partial class AccountQuotaClient(
                 else
                 {
                     if (pending.Length >= MaximumLineCharacters)
-                        throw new InvalidDataException("공식 CLI 응답 행이 크기 제한을 초과했습니다.");
+                        throw new QuotaReadException(QuotaFailureKind.FormatChanged, "cli.too-large");
                     pending.Append(buffer[i]);
                 }
             }
@@ -329,7 +369,7 @@ internal sealed partial class AccountQuotaClient(
         while ((read = await reader.ReadAsync(buffer.AsMemory(), token).ConfigureAwait(false)) != 0)
         {
             total += read;
-            if (total > MaximumOutputCharacters) throw new InvalidDataException("공식 CLI 진단 출력이 크기 제한을 초과했습니다.");
+            if (total > MaximumOutputCharacters) throw new QuotaReadException(QuotaFailureKind.FormatChanged, "cli.too-large");
         }
         // Intentionally do not retain or log stderr: it can contain private paths or account details.
     }

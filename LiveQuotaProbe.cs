@@ -21,7 +21,10 @@ internal static class LiveQuotaProbe
             catch (Exception error)
             {
                 failures++;
-                Console.WriteLine($"UNAVAILABLE {QuotaNames.For(provider)}: {error.GetType().Name}");
+                string reason = error is QuotaReadException readError
+                    ? $"{readError.Failure.Kind} ({readError.Failure.Code})"
+                    : error.GetType().Name;
+                Console.WriteLine($"UNAVAILABLE {QuotaNames.For(provider)}: {reason}");
             }
         }
         Console.WriteLine("Only installed official CLI quota commands were requested. No reset credits were used.");

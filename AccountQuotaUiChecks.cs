@@ -521,7 +521,7 @@ internal static class AccountQuotaUiChecks
         Check(QuotaLabels().Single(l => l.Text.StartsWith("성공 ", StringComparison.Ordinal)).ForeColor == Color.Firebrick,
             "Shared cache-error metadata keeps the Windows Danger color");
         context.StatusWindow.UpdateQuotas([new QuotaState(QuotaProvider.Claude)], clock());
-        Check(QuotaLabels().Single(l => l.Text == "한도 조회 대기 · 공식 CLI 로그인 필요").ForeColor == Color.DimGray,
+        Check(QuotaLabels().Single(l => l.Text == "한도 조회 대기").ForeColor == Color.DimGray,
             "Shared pre-reading placeholder keeps its text and Windows muted color");
 
         context.StatusWindow.UpdateQuotas([new QuotaState(QuotaProvider.Gemini)], clock());

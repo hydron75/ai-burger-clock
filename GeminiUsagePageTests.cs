@@ -27,8 +27,7 @@ internal static class GeminiUsagePageTests
         {
             var result = Parse(text);
             Check(result.Outcome == GeminiUsageOutcome.FormatChanged && result.Reading is null &&
-                  result.Diagnostic == new GeminiUsageDiagnostic(expected,
-                      text?.Split('\n', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries).Length ?? 0),
+                  result.Diagnostic == new GeminiUsageDiagnostic(expected),
                 expected.ToString());
         }
 

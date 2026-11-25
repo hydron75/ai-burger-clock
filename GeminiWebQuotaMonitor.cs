@@ -156,6 +156,7 @@ internal sealed partial class AccountQuotaMonitor
                 states[Gemini] = old with
                 {
                     GeminiWeb = new(result.Outcome, result.Diagnostic),
+                    Failure = result.Failure,
                     Reading = reading,
                     IsPrevious = reading is not null && result.Reading is null,
                     CheckedAtUtc = now,

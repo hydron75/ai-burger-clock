@@ -30,8 +30,9 @@ internal sealed partial class AccountQuotaClient
             if (!root.TryGetProperty("id", out var id) || id.ValueKind != JsonValueKind.Number
                 || !id.TryGetInt32(out int number) || number != expected)
                 throw GrokInvalid();
-            if (root.TryGetProperty("error", out _) || !root.TryGetProperty("result", out var result)
-                || result.ValueKind != JsonValueKind.Object) throw GrokInvalid();
+            if (root.TryGetProperty("error", out _))
+                throw new QuotaReadException(QuotaFailureKind.Rejected, "grok.rpc-error");
+            if (!root.TryGetProperty("result", out var result) || result.ValueKind != JsonValueKind.Object) throw GrokInvalid();
             if (expected == 1)
             {
                 if (!result.TryGetProperty("protocolVersion", out var version)
@@ -41,12 +42,11 @@ internal sealed partial class AccountQuotaClient
             }
             else if (expected == 2)
                 await SendLineAsync(input, billing, token).ConfigureAwait(false);
-            else return AccountQuotaParsers.ParseGrok(result.GetRawText());
+            else return ParseReading(AccountQuotaParsers.ParseGrok, result.GetRawText(), "parser.grok");
             expected++;
         }
         throw GrokInvalid();
     }
 
-    private static InvalidDataException GrokInvalid() =>
-        new("Grok CLI 한도 조회를 완료하지 못했습니다. 공식 CLI의 로그인 상태와 지원 여부를 확인하세요.");
+    private static QuotaReadException GrokInvalid() => new(QuotaFailureKind.FormatChanged, "parser.grok.protocol");
 }

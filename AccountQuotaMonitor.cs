@@ -6,7 +6,18 @@ internal sealed record QuotaState(QuotaProvider Provider, QuotaReading? Reading 
     DateTimeOffset? CheckedAtUtc = null, DateTimeOffset? LastSuccessfulCheckUtc = null,
     DateTimeOffset? NextCheckUtc = null, bool IsRefreshing = false, bool IsPrevious = false,
     string Error = "", string CacheError = "", long ContinuityId = 0, GeminiWebQuotaState? GeminiWeb = null,
-    ClaudeAuthCheck? ClaudeAuth = null);
+    ClaudeAuthCheck? ClaudeAuth = null, QuotaFailure? Failure = null)
+{
+    // Keep the old initializer for native smoke fixtures until P2. Production
+    // states get their compatibility text from a classified failure.
+    private readonly string legacyError = Error;
+    internal QuotaFailure? ReportedFailure => Failure ?? GeminiUsagePage.ClassifyFailure(GeminiWeb?.Outcome, GeminiWeb?.Diagnostic);
+    public string Error
+    {
+        get => ReportedFailure is { } failure ? QuotaPanelModel.FailureMessage(Provider, failure.Kind) : legacyError;
+        init => legacyError = value;
+    }
+}
 
 // Only normalized quota numbers/timestamps are cached, never CLI output or credentials.
 internal sealed record QuotaCache(int Version, QuotaReading Reading, DateTimeOffset SuccessfulAtUtc,
@@ -172,7 +183,7 @@ internal sealed partial class AccountQuotaMonitor : IDisposable
             lock (sync) states[provider] = states[provider] with { IsRefreshing = true, NextCheckUtc = null };
             RaiseChanged();
             QuotaReading? reading = null;
-            string error = "";
+            QuotaFailure? failure = null;
             try
             {
                 using var timeout = CancellationTokenSource.CreateLinkedTokenSource(linked.Token);
@@ -181,25 +192,13 @@ internal sealed partial class AccountQuotaMonitor : IDisposable
                 readStarted = true;
                 var candidate = await client.ReadAsync(provider, timeout.Token).ConfigureAwait(false);
                 timeout.Token.ThrowIfCancellationRequested();
-                // Own the accepted windows: a client must not be able to mutate a
-                // delivered observation or the monitor snapshot after returning.
-                var snapshot = candidate with { Windows = Array.AsReadOnly(candidate.Windows.ToArray()) };
-                UsageStore.ValidateQuotaCache(new(1, snapshot, utcNow().ToUniversalTime(), []), provider);
-                reading = snapshot;
+                reading = AccountQuotaClient.ValidateReading(candidate, provider, utcNow());
             }
             catch (OperationCanceledException) when (linked.IsCancellationRequested) { throw; }
             catch (Exception ex)
             {
                 reading = null; // Invalid responses must never replace the last verified reading.
-                error = ex switch
-                {
-                    OperationCanceledException or TimeoutException => "한도 조회 시간 초과",
-                    FileNotFoundException => "공식 CLI를 찾지 못했습니다. 설치 경로를 확인하세요.",
-                    NotSupportedException when provider == QuotaProvider.Gemini => "agy CLI 1.3.1 이상이 필요합니다(2.0 미만 안정 버전).",
-                    UnauthorizedAccessException => "공식 CLI 실행 권한을 확인하세요.",
-                    InvalidDataException => "한도 응답 없음 · CLI 로그인과 사용량 화면을 확인하세요.",
-                    _ => "한도 조회 실패 · 네트워크와 CLI 로그인을 확인하세요."
-                };
+                failure = AccountQuotaClient.FailureFromRead(ex);
             }
             var now = utcNow().ToUniversalTime();
             QuotaCache? cache = null;
@@ -223,7 +222,7 @@ internal sealed partial class AccountQuotaMonitor : IDisposable
                 states[provider] = old with
                 {
                     Reading = known, CheckedAtUtc = now, LastSuccessfulCheckUtc = reading is not null ? now : old.LastSuccessfulCheckUtc,
-                    NextCheckUtc = plan.NextCheckUtc, IsPrevious = reading is null, Error = error
+                    NextCheckUtc = plan.NextCheckUtc, IsPrevious = reading is null, Failure = failure
                 };
                 diagnostic = new(provider.ToString(), attemptedAtUtc, now, plan.NextCheckUtc, plan.Reason.ToString(),
                     plan.SelectedResetUtc, reading is not null, failures[provider], anchors[provider].Length);

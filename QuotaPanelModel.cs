@@ -8,7 +8,7 @@ namespace AiBurgerClock;
 // Real quota rows split their existing text into NameText and ValueText for host-owned layout.
 // ReadingText keeps the unsqueezed Text and optional comparison together for accessibility.
 // These fields do not restore names already normalized by a parser or change Text/Detail.
-// Detail remains the unchanged, whole-Provider tooltip and must not be parsed by either host.
+// Detail is the whole-Provider tooltip; neither host parses it.
 internal sealed record QuotaLine(string Text, PanelTone Tone, string Detail, string WindowId = "", double? UsedPercent = null,
     double? ElapsedPercent = null, string? ComparisonText = null, string? NameText = null, string? ValueText = null,
     string? ReadingText = null);
@@ -39,6 +39,25 @@ internal static class QuotaPanelModel
     private const string GeminiWebOffDetail = "Gemini 한도 · 꺼짐\n" + GeminiWebScopeDetail + "\n" +
         "Gemini에 로그인하면 웹 사용량 조회가 켜집니다.";
     public const string XaiScopeDetail = "Grok CLI의 ACP _x.ai/billing 응답으로 받은 주간 크레딧 한도입니다.";
+
+    internal static string FailureMessage(QuotaProvider provider, QuotaFailureKind kind) => kind switch
+    {
+        QuotaFailureKind.LoginRequired => provider switch
+        {
+            QuotaProvider.Gemini => "로그인 필요 · Gemini 앱 사용량",
+            QuotaProvider.Claude => ClaudeAuthCheck.LoginRequiredText,
+            _ => $"{QuotaNames.For(provider)} CLI 로그인 필요"
+        },
+        QuotaFailureKind.NotInstalled => "공식 CLI를 찾지 못했습니다. 설치 경로를 확인하세요.",
+        QuotaFailureKind.NotPermitted => "앱 작업 폴더 권한을 확인하세요.",
+        QuotaFailureKind.Timeout => "한도 조회 시간 초과",
+        QuotaFailureKind.Unreachable => provider == QuotaProvider.Gemini
+            ? "한도 조회 실패 · 네트워크와 로그인을 확인하세요."
+            : "한도 조회 실패 · 네트워크와 CLI 상태를 확인하세요.",
+        QuotaFailureKind.Rejected => "한도 조회 거부 · CLI 로그인과 버전을 확인하세요.",
+        QuotaFailureKind.FormatChanged => "형식 변경 · 조회 불가",
+        _ => throw new ArgumentOutOfRangeException(nameof(kind))
+    };
 
     // A previous value, or one whose reset time has passed, is never shown as current.
     public static PanelTone Tone(QuotaWindow window, bool previous, DateTimeOffset now)
@@ -88,31 +107,23 @@ internal static class QuotaPanelModel
         }
         if (web is not null)
         {
-            string error = web.Outcome switch
-            {
-                GeminiUsageOutcome.LoginRequired => "로그인 필요 · Gemini 앱 사용량",
-                GeminiUsageOutcome.FormatChanged => "형식 변경 · 조회 불가",
-                GeminiUsageOutcome.LoadFailed => "한도 조회 실패 · 네트워크와 로그인을 확인하세요.",
-                _ => ""
-            };
             bool showReading = web.Outcome is not (GeminiUsageOutcome.LoginRequired or GeminiUsageOutcome.FormatChanged) &&
                 GeminiUsagePage.IsWebReading(state.Reading);
-            state = state with { Reading = showReading ? state.Reading : null, Error = error };
+            state = state with { Reading = showReading ? state.Reading : null };
             recentEarlyReset = null;
         }
         var auth = state.Provider == QuotaProvider.Claude ? state.ClaudeAuth : null;
         bool loginRequired = auth is not null && auth.RequiresLogin(now) &&
             (state.LastSuccessfulCheckUtc is not { } successAfterAuth || auth.CheckedAtUtc >= successAfterAuth);
-        if (loginRequired)
-            state = state with { Error = ClaudeAuthCheck.LoginRequiredText, IsPrevious = true };
-        bool previous = state.IsPrevious;
+        string error = loginRequired ? ClaudeAuthCheck.LoginRequiredText : state.Error;
+        bool previous = state.IsPrevious || loginRequired;
         bool codex = state.Provider == QuotaProvider.Codex;
         string name = ProviderNames.Quota(state.Provider);
         var succeeded = state.LastSuccessfulCheckUtc is { } success ? AgentSchedule.ToKst(success).ToString("MM-dd HH:mm") : "—";
         var next = state.NextCheckUtc is { } due ? AgentSchedule.ToKst(due).ToString("MM-dd HH:mm") : "—";
         QuotaPace[] paces = state.Reading?.Windows.Select(window =>
             QuotaPacing.Calculate(window, state.LastSuccessfulCheckUtc, previous, now)).ToArray() ?? [];
-        string note = ProviderDetail(state, now, paces, recentEarlyReset);
+        string note = ProviderDetail(state, now, paces, recentEarlyReset, error);
 
         var heading = new QuotaLine(
             name + (state.IsRefreshing ? " · 확인 중" : previous && state.Reading is not null ? " · 이전 조회값" : ""),
@@ -124,8 +135,8 @@ internal static class QuotaPanelModel
             state.CacheError.Length > 0 ? PanelTone.Danger : PanelTone.Muted, note);
 
         QuotaLine[] rows = state.Reading is null
-            ? [new(state.Error.Length > 0 ? state.Error : web is not null ? "한도 조회 대기 · Gemini 앱 사용량" :
-                "한도 조회 대기 · 공식 CLI 로그인 필요", loginRequired ? PanelTone.Danger : PanelTone.Muted, note)]
+            ? [new(error.Length > 0 ? error : web is not null ? "한도 조회 대기 · Gemini 앱 사용량" : "한도 조회 대기",
+                loginRequired || state.ReportedFailure?.Kind == QuotaFailureKind.LoginRequired ? PanelTone.Danger : PanelTone.Muted, note)]
             : state.Reading.Windows.Select((window, index) =>
             {
                 bool elapsed = window.ResetsAtUtc is { } reset && reset <= now;
@@ -142,7 +153,7 @@ internal static class QuotaPanelModel
     }
 
     private static string ProviderDetail(QuotaState state, DateTimeOffset now, IReadOnlyList<QuotaPace> paces,
-        QuotaEarlyResetAlert? recentEarlyReset)
+        QuotaEarlyResetAlert? recentEarlyReset, string error)
     {
         string scope = state.Provider switch
         {
@@ -187,7 +198,8 @@ internal static class QuotaPanelModel
         lines.Add("마지막 성공: " + Stamp(state.LastSuccessfulCheckUtc, "MM-dd HH:mm"));
         lines.Add("다음 조회: " + Stamp(state.NextCheckUtc, "MM-dd HH:mm"));
         lines.Add("최근 시도: " + Stamp(state.CheckedAtUtc, "MM-dd HH:mm:ss"));
-        if (!string.IsNullOrWhiteSpace(state.Error)) lines.Add(state.Error);
+        if (!string.IsNullOrWhiteSpace(error)) lines.Add(error);
+        if (state.ReportedFailure is { } failure) lines.Add("진단 코드: " + failure.Code);
         if (!string.IsNullOrWhiteSpace(state.CacheError)) lines.Add(state.CacheError);
         if (state.Provider == QuotaProvider.Claude && state.ClaudeAuth is { } auth)
         {

@@ -14,6 +14,7 @@
     <Compile Include="$(MSBuildThisFileDirectory)../QuotaPollingDiagnostics.cs" Link="Shared/QuotaPollingDiagnostics.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)../QuotaEarlyResetDiagnostics.cs" Link="Shared/QuotaEarlyResetDiagnostics.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)../AccountQuotaModels.cs" Link="Shared/AccountQuotaModels.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)../QuotaFailure.cs" Link="Shared/QuotaFailure.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)../AccountQuotaClient.cs" Link="Shared/AccountQuotaClient.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)../AccountQuotaClient.ClaudeAuth.cs" Link="Shared/AccountQuotaClient.ClaudeAuth.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)../ClaudeAuthStatus.cs" Link="Shared/ClaudeAuthStatus.cs" />

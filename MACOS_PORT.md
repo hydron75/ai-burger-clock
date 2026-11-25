@@ -3348,3 +3348,30 @@ PR #173 병합 뒤 main `a82902e116dfb58355f06343f24e141c215f55a7`, 작업 트�
 ### 아직 하지 않은 것
 - **관찰 항목:** 실제 7일 진입(`로그인 만료 임박` 박스 경고와 알림 배너 1회)은 실제 로그인이 7일 이내로 들어올 때 비로소 나타난다. 그때 사용자가 보고하면 이 절에 이어 쓴다.
 - 실제 알림 센터 보관, 앱 안의 실제 6시간 인증 조회와 로그아웃·만료 상태의 실제 화면은 확인하지 못했다(85절 "수행하지 않은 검증" 그대로).
+
+## 87. 한도 조회 실패 분류(P1, PR #179)의 Mac 확인
+
+2026-11-25. 공통 원본 변경 PR #179(`4eec2d6048087f43de37d4e607fe42740c509eb8`)의 Mac 쪽 확인과 smoke 기대값 갱신이다. 버전은 올리지 않았다(0.9.8 그대로). 이 PR(Mac 파일·이 기록)은 #179의 브랜치를 base로 한다.
+
+### 공통 확인 (#179 `4eec2d6`, 임시 사본, 저장소 경로 아님)
+| 항목 | 결과 |
+|---|---|
+| Shared.Tests | main 291,767 → **291,812건 PASS**(+45). 그중 `quota typed failures and shared presentation (synthetic)` 42건. SKIP 없음 |
+| `bash Mac/build.sh` 옵션 없음 | 경고 0 / 오류 0 |
+| native `--smoke-test` 1회(Mac 파일 변경 없이) | 종료 코드 0, FAIL 0, SKIP 0 |
+
+### Mac smoke 갱신
+Mac 앱 코드는 바꾸지 않았다. 문구와 톤은 공통 `QuotaPanelModel`이 만들고 Mac이 그대로 그린다. 바뀐 것은 [MacGeminiWebSmoke.cs](Mac/MacGeminiWebSmoke.cs) 하나다.
+- Gemini 웹의 로그인 필요·형식 변경·조회 실패(이전 값 없음) 줄의 기대 문구를 글자 그대로 적지 않고 공통 `QuotaPanelModel.FailureMessage`와 비교한다.
+- 한 줄 안내의 톤을 확인한다: 로그인 필요는 `Danger`, 꺼짐·형식 변경·조회 실패는 `Muted`.
+- CLI 대기 줄 `한도 조회 대기`는 공통 상수가 없어 기존의 앞부분 비교를 그대로 둔다.
+
+### 검증 (임시 사본, 커밋 `b848630`)
+Shared.Tests **291,812건 PASS**, `bash Mac/build.sh` 경고 0 / 오류 0, native `--smoke-test` 1회 종료 코드 0·FAIL 0·SKIP 0. 임시 사본은 `lsregister -u` 후 삭제했고 LaunchServices 등록 수는 1이다. 실행 중인 0.9.8 앱은 건드리지 않았다.
+
+### 수행하지 않은 검증
+- 실제 CLI·Gemini 웹의 실패 상태 화면(계정·네트워크를 건드리는 시험이라 하지 않았다). 실패 분류 자체는 공통 검사의 합성 입력으로만 확인한다.
+- 상세의 `진단 코드:` 줄은 따로 확인하지 않았다. smoke는 Mac의 상세 팁이 공통 상세와 같은지와 폭에 모두 들어가는지만 본다.
+
+### 남은 호환 코드
+공통의 `QuotaState.Error` 초기화와 `GeminiUsageDiagnostic`의 두 인자 생성자는 Mac smoke의 합성 입력을 위해 남아 있다(#179). Mac 쪽 입력을 `QuotaFailure`로 옮기면 지울 수 있다.

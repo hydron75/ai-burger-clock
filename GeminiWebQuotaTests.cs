@@ -96,7 +96,7 @@ internal static class GeminiWebQuotaTests
         now = now.AddTicks(1);
         await monitor.RefreshGeminiWebIfDueAsync();
         var failed = GeminiState(monitor);
-        Check(reader.Calls == 2 && failed.GeminiWeb == new GeminiWebQuotaState(GeminiUsageOutcome.LoadFailed, new(GeminiUsageFailureRule.PageLoad, 0))
+        Check(reader.Calls == 2 && failed.GeminiWeb == new GeminiWebQuotaState(GeminiUsageOutcome.LoadFailed, new(GeminiUsageFailureRule.PageLoad))
             && failed.IsPrevious && failed.NextCheckUtc == now.AddMinutes(15), "deadline is inclusive; load failure keeps the previous web cache and retries in fifteen minutes");
         Check(!QuotaPanelModel.Section(failed, now).Detail.Contains("SYNTHETIC-PRIVATE", StringComparison.Ordinal),
             "host exceptions are never copied into presentation");
