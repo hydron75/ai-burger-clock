@@ -2,7 +2,8 @@
 
 - **상태:** 설계 확정(2026-11-25, 메인). 독립 검토(opus) 지적 2건 차단·11건 중요·6건 경미를 반영했다. 단계별 PR은 6절 순서로 진행한다.
 - **진행:** P0 특성 검사 #177. P0에서 확인한 실제 동작에 맞춰 3.3-4의 송신 항목 2개를 정정했다.
-- **범위:** 계정 한도 조회(`AccountQuota*`, Gemini 웹, Claude 로그인 확인)와 그 표시·알림·송신 연결.
+- **추가(2026-11-26):** Antigravity 웹 조회원(4.7, 단계 P2.5)과 결정 기록. 페이지 probe 결과를 근거로 적었다.
+- **범위:** 계정 한도 조회(`AccountQuota*`, Gemini 웹, Antigravity 웹, Claude 로그인 확인)와 그 표시·알림·송신 연결.
 - **범위 밖:** 공식 서비스 상태(`StatusMonitor`, xAI 피드)와 사이트 파서 통합(9절).
 
 ## 1. 왜 바꾸는가
@@ -207,14 +208,15 @@ internal sealed record QuotaSourceTraits(
     bool StickyManualRefresh,        // 진행 중 수동 요청을 남김(웹)
     bool RefreshOnRecovery,          // 절전 복귀·네트워크 복구 때 조회(CLI)
     QuotaPresentationPolicy Presentation,
-    QuotaExportMode Export);         // Completion / OnChange
+    QuotaExportMode Export);         // Completion / OnChange / None(Antigravity, P4 전까지)
 
 internal sealed record QuotaPresentationPolicy(
     IReadOnlySet<QuotaFailureKind> HideReadingInPanel,       // 웹: {LoginRequired, FormatChanged}, CLI: {}
     IReadOnlySet<QuotaFailureKind> HideReadingInExport,      // 웹: {LoginRequired}, CLI: {}
     bool ClearSuccessOnLoginRequired,                        // 웹: 참
     Func<QuotaReading, bool>? AcceptForDisplay,              // 웹: IsWebReading
-    bool ShowEarlyResetDetail);                              // 웹: 거짓
+    bool ShowEarlyResetDetail,                               // 웹: 거짓
+    bool ApproximateReset = false);                          // Antigravity: 참(상대 시간에서 계산한 예상 시각, P2.5)
 
 internal interface IQuotaCacheAdapter                        // 조회원별 캐시 읽기·쓰기·삭제·복원 규칙
 {
@@ -320,6 +322,102 @@ internal sealed record QuotaState(QuotaProvider Provider, QuotaReading? Reading 
   - `OnChange`: Gemini가 `webState`, reading, 행이 바뀔 때만 보내고, null이면 보내지 않는다.
   - 3.3-4의 겹침·기준 갱신·취소 규칙은 그대로다.
 
+### 4.7 Antigravity 웹 조회원 (P2.5)
+
+Gemini 앱과 Antigravity는 한도가 따로다. 2026-11-26 사용자가 Gemini 박스에 Antigravity "Gemini Models" 묶음의 5시간·주간 한도를 함께 자동 표시하기로 정했다(5절 결정 기록). P2의 조회원 구조 위에 조회원 하나를 더하는 방식으로 만든다.
+
+**근거: 페이지 probe (2026-11-26, 제품 코드 변경 없음, 계정 값 미기록)**
+
+- 대상: `https://antigravity.google.com/remote?settingsOpen=true&settingsScreen=Models`. URL만으로 Models 설정 화면이 열린다.
+- 로그인: 새 전용 프로필에서 `gemini.google.com`에 한 번 로그인하면, 같은 프로필로 추가 로그인 없이 열린다(Windows·Mac). 최종 위치는 `antigravity.google.com/remote`다.
+- 로컬 호스트: Antigravity 데스크톱 앱과 `agy`가 없어도 Models 화면이 열린다(Windows).
+- 렌더링: 페이지가 받은 뒤 브라우저 안에서 그리는 화면이다. 문서 가시성이 `hidden`이면 30초 동안 값이 나타나지 않았다.
+
+| OS | 방식 | `visibilityState` | 값 2줄 | 사용자 눈 |
+|---|---|---|---|---|
+| Windows | 보이는 창 | visible | 약 4.2초 | 보임 |
+| Windows | V1 2.9.6 숨김 창 | hidden | 30초 미관찰 | 안 보임 |
+| Windows | **V2 숨김 호스트 + 컨트롤러 `IsVisible = true`** | visible | 3.7초 | 안 보임 |
+| Windows | V3 화면 밖 창 / V4 V3 + occlusion 끄기 인수 | hidden | 30초 미관찰 | 안 보임 |
+| Mac | 보이는 창 | visible | 4.0초 | 보임 |
+| Mac | M1 현재 Gemini reader(`orderOut`) / M2 화면 밖 창 | hidden | 30초 미관찰 | 안 보임 |
+| Mac | M3a 화면 안 1×1 창 | visible | 3.5초 | 안 보임 |
+| Mac | **M3b `alphaValue` 0 창** | visible | 3.5초, 앱 비활성 상태 4.0초 | 안 보임 |
+
+- 문구 형식(숫자는 #): 텍스트 순서는 라벨 → 설명 문장 → 남은 비율이다.
+
+```
+Gemini Models
+Weekly Limit Remaining
+You have used some of your weekly limit, it will fully refresh in # days, ## hours.
+##%
+Five Hour Limit Remaining
+You have used some of your #-hour limit, it will fully refresh in # hours, ## minutes.
+##%
+```
+
+- 다른 묶음: "Claude and GPT models" 등. 읽지 않는다.
+
+**식별자와 캐시**
+
+- `QuotaProvider.Antigravity`를 열거형 끝에 추가한다(3.3-8, 기존 숫자 값 유지). 이름은 `Antigravity`다.
+- `QuotaNames.HasCliRoute(Antigravity)`는 거짓이다. `MacCliPaths`의 후보도 비어 있다.
+- 한도 ID: `antigravity-web:five-hour`, `antigravity-web:weekly`. 라벨은 공통 상수로 두고, Gemini 앱 줄과 구분되게 짓는다.
+- 캐시: 웹 어댑터로 `AccountQuota.v1.AntigravityWeb`에 기준점 0개, 정책 버전 0으로 쓴다. 복원 규칙은 Gemini 웹과 같다(처음부터 켜져 있을 때만).
+
+**조회원과 리더**
+
+- `AntigravityWebQuotaSource`: `IAntigravityUsagePageReader`와 `AntigravityUsagePage.Parse`(공통)를 감싼다. 모니터의 시각과 시간대를 받는다.
+- **세션:** Gemini 웹과 같은 프로필·데이터 저장소를 쓴다(Windows WebView2 사용자 데이터 폴더, Mac `WKWebsiteDataStore`). 별도 로그인 창은 없다. 로그인은 기존 Gemini 로그인 메뉴로 한다.
+- **Windows 리더:** 2.9.6의 숨김 호스트 창을 쓰고, 이 조회의 컨트롤러에만 `CoreWebView2Controller.IsVisible = true`를 지정한다. 브라우저 인수는 바꾸지 않는다(같은 프로필의 환경 옵션 일치 문제). 로그인 창과 Gemini 앱 읽기는 지금 방식 그대로다.
+- **Mac 리더:** 읽는 동안만 투명 창을 띄운다. `alphaValue` 0, `statusBar` 레벨, `ignoresMouseEvents`, `canJoinAllSpaces`·`fullScreenAuxiliary`·`transient`·`ignoresCycle`, 활성화 없음이다. 읽기가 끝나면 바로 해제한다. Gemini 앱 리더는 바꾸지 않는다.
+- **대기:** 탐색 완료 뒤 250ms마다 본문 텍스트를 읽어, 아래 "읽을 영역"이 갖춰지면 바로 끝낸다. 탐색 완료 뒤 최대 20초, 호스트 전체 제한 30초다. probe에서는 4초 안팎이었다.
+- **읽지 않고 미루는 경우:** Windows 세션 잠금, Mac 화면 잠금·디스플레이 잠자기 때는 페이지를 열지 않는다. 상태를 바꾸지 않고 15분 뒤 다시 기한을 확인한다. 화면을 보지 않는 동안 1시간 주기가 늦어져도 손해가 없고, 이 상태의 렌더링 여부는 확인하지 않았기 때문이다.
+- **가시성 의존 대응:** 숨긴 창에서 보이는 상태로 판정되는 동작은 문서에 없는, 실측으로 확인한 동작이다. WebView2 런타임이나 macOS가 바뀌면 깨질 수 있다. 그래서 대기 끝에 `document.visibilityState`가 `hidden`이면 `Unreachable`/`antigravity.not-visible`로, 보이는 상태인데 읽을 영역이 없으면 `Unreachable`/`antigravity.not-rendered`로 분류한다. 둘 다 이전 값을 흐리게 남기고 진단 코드로 원인이 보인다.
+
+**파서 (`AntigravityUsagePage.Parse`, 공통)**
+
+- **읽을 영역:** "Gemini Models" 제목이 한 번만 있고, 그 묶음 안에 `Weekly Limit Remaining`과 `Five Hour Limit Remaining`이 각각 한 번만 있는 영역이다. 다른 묶음의 텍스트는 보지 않는다.
+- **남은 비율:** 라벨 다음에 처음 나오는 `^\d{1,3}%$` 줄이다. 0–100 정수만 받는다. `UsedPercent = 100 − 남은 비율`이다.
+- **초기화:** 라벨과 비율 사이의 문장에서 `fully refresh in` 뒤의 기간만 읽는다. 문장의 다른 표현은 보지 않는다. 단위는 `day(s)`, `hour(s)`, `minute(s)`이고, 성분은 1–2개다. 초기화 시각은 `조회 시각 + 기간`이며, 박스에는 "약"을 붙여 예상 시각으로 보인다(`QuotaPresentationPolicy.ApproximateReset`). 표시 정밀도보다 정확한 척하지 않기 위해서다.
+- **기간 문장이 없을 때:** 남은 비율이 100이면 초기화 시각 없음으로 받는다. 그 밖에는 형식 변경이다. 100%일 때의 실제 문구는 미확인이다(8절).
+- **실패 분류:** 로그인 화면 이동은 `LoginRequired`/`antigravity.destination`, 탐색 실패는 `Unreachable`/`antigravity.load`, 규칙 위반은 `FormatChanged`/`antigravity.{규칙}`이다. 영어가 아닌 표시 언어도 형식 변경으로 둔다.
+- **개인정보:** 페이지 원문, 이메일, 요금제 문구는 저장·로그·표시하지 않는다. 진단에는 규칙 코드만 남긴다.
+
+**조회 특성 (`QuotaSourceTraits`)**
+
+| 항목 | 값 | 이유 |
+|---|---|---|
+| `Schedule` | `FixedSchedule(1시간, stopOnLoginRequired: true)` | 약관 위험을 줄이려고 Gemini 웹(15분)보다 드물게 읽는다 |
+| `Timeout` | null(호스트 30초) | 웹 조회원 공통 |
+| `EmitsObservations` | 거짓 | 회복·조기 초기화·대기 알림 대상이 아니다 |
+| `DueCheckBeforeRead` | 참 | 웹 조회원 공통 |
+| `StickyManualRefresh` | 참 | 수동 Refresh 때 `RequestSourceRefresh(Antigravity)`를 함께 부른다 |
+| `RefreshOnRecovery` | 거짓 | 복귀 때 따로 읽지 않는다 |
+| `Presentation` | Gemini 웹과 같음 + `ApproximateReset` 참 | 로그인 필요·형식 변경이면 값 숨김 |
+| `Export` | 없음(P4 전까지 송신 제외) | 사이트를 먼저 바꿔야 한다(6.2 P4) |
+
+**켜기·끄기와 로그아웃**
+
+- 설정 키를 따로 두고 **기본값은 꺼짐**이다. 사용자가 직접 켜야 조회를 시작한다.
+- 메뉴 문구는 공통 상수(`AntigravityWebText.MenuLabel`)로 두고, Windows 트레이와 Mac 메뉴바 메뉴에 각자 항목을 만든다(AGENTS 트레이·메뉴바 메뉴 규칙).
+- Gemini 웹이 꺼져 있으면 Antigravity는 켤 수 없다(메뉴 비활성, 이유 문구 표시). 켜져 있던 중에 Gemini 웹을 끄면 Antigravity도 끈다. 같은 세션을 쓰기 때문이다.
+- Gemini 로그아웃은 두 조회원을 모두 끄고 두 캐시를 지운 뒤 프로필을 지운다. 3.3-5의 순서를 두 조회원에 그대로 적용한다.
+
+**표시**
+
+- Antigravity가 켜져 있으면 Gemini 박스에 네 줄을 보인다. 순서는 Gemini 앱 5시간, Gemini 앱 주간, Antigravity 5시간, Antigravity 주간이다. 꺼져 있으면 지금과 같은 두 줄이다.
+- 상태 줄(조회 대기, 실패 문구, 다음 조회)은 두 부분에 각각 붙는다. 박스 머리 톤은 두 부분 중 높은 쪽이다.
+- 실패 문구는 4.1 표의 Gemini 웹 열과 같은 틀이고, 뒤의 출처 설명만 "Antigravity 사용량"으로 바뀐다. 문구는 공통에만 둔다.
+- 박스 구성은 `QuotaPanelModel`에서 `Gemini` 박스가 `Antigravity` 조회원 상태를 함께 받는 방식으로 만든다. 박스 수와 배치는 그대로다.
+- 이 변경은 `QuotaPanelModel`을 고치므로 PR 본문에 "모바일 사이트 반영 필요"를 적는다. 단, 송신에 Antigravity가 들어가는 P4 전까지 사이트가 할 일은 없다는 점도 함께 적는다.
+
+**구현 확인 항목 (PR 통과 기준에 더함)**
+
+- 공통: 파서 검사(정상, 단수형, 1성분 기간, 100% 기간 없음, 라벨 중복·누락, 비율 범위 밖, 다른 묶음 텍스트 섞임, 비영어), 조회원 특성, 로그아웃 순서, Gemini 웹 끄기 연동, 송신 제외.
+- Windows: 실제 조회에서 창·작업 표시줄·Alt+Tab 비노출, 세션 잠금 때 미룸.
+- Mac: 실제 조회에서 창·Dock·Mission Control 비노출, **전체 화면 앱 사용 중 메뉴바가 내려오거나 고정되지 않음(MACOS_PORT 39절, 1회만)**, 화면 잠금 때 미룸. smoke는 Antigravity 리더를 띄우지 않는다.
+
 ## 5. 설계 결정 기록
 
 - **`QuotaProvider` 열거형은 유지한다.** 캐시·송신 식별자이고, Provider당 조회원은 하나면 충분하다. 경로가 바뀌면(agy → 웹) 조회원을 바꾼다.
@@ -328,6 +426,9 @@ internal sealed record QuotaState(QuotaProvider Provider, QuotaReading? Reading 
 - **플러그인 구조는 쓰지 않는다.** Provider는 손으로 등록하는 4개이고, 탐색 구조는 이득보다 검사 부담이 크다.
 - **문구는 공통에만 둔다.** 클라이언트 예외 메시지에 섞인 문구는 P1에서 없앤다.
 - **웹과 CLI의 표시 차이는 정책 객체로 표현한다.** 불리언 하나로는 박스·송신·성공 시각 처리의 차이를 담을 수 없다(검토 지적).
+- **Antigravity 한도를 자동으로 읽는다(2026-11-26, 사용자 결정).** Antigravity 약관 §6은 제3자 소프트웨어로 서비스에 접근하는 것을 위반으로 보고, Antigravity·Gemini CLI 계정 정지를 언급한다. 사용자는 이 위험을 알고 받아들였다. 위험을 줄이는 장치는 1시간 주기, 별도 켜기와 기본 꺼짐, Models 설정 화면 읽기만(클릭·원격 세션 조작·내부 API·쿠키·토큰 사용 없음), UA 변경 없음이다(4.7).
+- **Antigravity는 Gemini와 다른 조회원이다.** 로그인·실패·켜기·캐시가 따로 움직이기 때문이다(예: Gemini 앱은 정상인데 Antigravity 형식만 바뀜). 표시는 Gemini 박스 하나로 합친다. "Provider당 조회원 하나" 원칙을 지키려고 열거형 끝에 `Antigravity`를 추가한다.
+- **숨김 읽기는 가시성 판정에 기댄다.** 문서에 없는 동작이라 깨질 수 있음을 알고 택했다. 깨지면 진단 코드로 바로 드러나게 한다(4.7 가시성 의존 대응).
 
 ## 6. 단계별 PR
 
@@ -346,8 +447,9 @@ internal sealed record QuotaState(QuotaProvider Provider, QuotaReading? Reading 
 | P0 | **검사 하네스와 특성 검사.** 모니터 생성, 조회 구동, 시계 제어, 스냅샷→표시 문구, 송신 바이트를 다루는 얇은 하네스를 만든다. 3절의 모든 항목을 이 하네스와 `QuotaPanelModel`·송신 출력만으로 검사한다. 제품 코드 변경 없음 | 없음 | 없음 |
 | P1 | **실패 분류.** `QuotaFailure`와 4.1 분류표, `QuotaState.Failure`, 문구를 공통 모델로 이동, "결과 없음" 문구 수정, agy 분기 삭제. 로그인 필요 표시는 기존 Claude 확인 결과에 따르는 규칙을 그대로 쓴다(`QuotaState.ClaudeAuth` 유지) | 실패 문구가 원인별로 구분됨 | Windows·Mac |
 | P2 | **조회원 인터페이스와 공통 루프.** `IQuotaSource`, 어댑터, 주기 정책, `SetMode`, `RequestSourceRefresh`, `ClearCacheAsync`, 호환 팩토리, `IsQueryEnabled` 대체, Gemini 전용 루프·상태 필드 제거, 호스트의 Gemini 메뉴 연결 변경, 기존 검사·smoke의 호출부 이전(건수 증감 기록). **Claude 로그인 확인 루프와 `LatestClaudeAuth`, `QuotaState.ClaudeAuth`는 그대로 둔다** | 없음(P0 검사 그대로 통과) | Windows·Mac(회귀만 관찰) |
+| P2.5 | **Antigravity 웹 조회원(4.7).** P2가 운영에서 3일 이상 회귀 없이 돈 뒤 시작한다. 공통 파서·조회원·표시, 두 호스트의 리더·메뉴·로그아웃 연동. 송신 제외. P3와 순서는 준비된 쪽이 먼저지만, 같은 배포에 묶지 않는다 | 켜면 Gemini 박스가 네 줄 | Windows·Mac |
 | P3 | **로그인 상태 일반화.** P2가 운영에서 3일 이상 회귀 없이 돈 뒤 시작한다. `QuotaAuth`, `IQuotaAuthProbe`, Claude 확인 이전, `LatestAuth`, 호스트 알림의 API 변경, Gemini 웹 로그인 상태 연결, Codex·Grok 공식 상태 명령 조사(있을 때만 추가), 박스 상세 "로그인 상태" 절 공통화 | Gemini와 조사 결과에 따라 Codex·xAI에도 로그인 상태 표시 | Windows·Mac |
-| P4 | **송신 일반화.** `Traits.Export` 기반 송신, (선택) v2에 실패 종류 선택 필드 추가. 사이트가 허용 목록 밖 필드를 지우므로 **사이트를 먼저 배포하고 앱을 그다음 배포한다** | 사이트에 로그인 필요 표시(선택 시) | 사이트 → Windows |
+| P4 | **송신 일반화.** `Traits.Export` 기반 송신, Antigravity 줄 송신, (선택) v2에 실패 종류 선택 필드 추가. 사이트가 허용 목록 밖 필드를 지우므로 **사이트를 먼저 배포하고 앱을 그다음 배포한다** | 사이트에 로그인 필요 표시(선택 시) | 사이트 → Windows |
 
 - **통과 기준:**
   - P0 검사가 통과 기준이다.
@@ -364,6 +466,8 @@ internal sealed record QuotaState(QuotaProvider Provider, QuotaReading? Reading 
 - **로그아웃과 저장 경쟁:** 진행 중 저장과 캐시 삭제가 겹치는 경우를 P0에 넣는다.
 - **검사 호출부 대량 수정:** 기존 검사와 smoke가 모니터 API를 직접 부른다(`RefreshOnceAsync` 189곳, `RefreshGeminiWebIfDueAsync` 27곳, `SetGeminiWebEnabled` 17곳, `LatestClaudeAuth` 12곳, `IsQueryEnabled` 35곳). 호환 팩토리와 계산 속성으로 P2 안에서 단계적으로 옮기고, 건수 증감을 PR에 적는다.
 - **호스트 동시 수정:** P2와 P3는 공통과 두 호스트가 함께 바뀐다. 순서는 Windows 공통 PR → Mac 호스트 PR을 그 브랜치에 병합 → 합친 HEAD를 두 OS에서 확인 → main 병합이다.
+- **Antigravity 계정 위험:** 약관 §6 위반으로 계정이 제한될 수 있다(5절). 기본 꺼짐과 1시간 주기로 줄이며, 문제가 생기면 사용자가 메뉴에서 바로 끌 수 있다. 같은 Google 세션을 쓰므로 Antigravity 페이지 로드가 Gemini 웹 세션에 영향을 주는지 운영에서 관찰한다.
+- **Mac 투명 창과 메뉴바:** M3b 창은 `fullScreenAuxiliary`·`canJoinAllSpaces`를 쓴다. 전체 화면 앱 위에서 MACOS_PORT 39절 증상과 겹칠 수 있어 구현 확인 항목에 넣었다. 증상이 나오면 전체 화면 앱이 앞에 있을 때는 읽지 않고 미루는 규칙을 더한다.
 - **문구 변화에 따른 smoke 기대값:** P1에서 문구가 바뀌면 Windows와 Mac smoke 기대값을 함께 바꾼다. 비교는 공통 상수로만 한다.
 
 ## 8. 미확인·조사 항목
@@ -371,6 +475,9 @@ internal sealed record QuotaState(QuotaProvider Provider, QuotaReading? Reading 
 - Codex CLI와 Grok CLI의 공식 로그인 상태 명령, 그리고 출력 형식(P3 조사).
 - Claude CLI가 로그인 만료 상태에서 `-p /usage`에 내는 응답 형태. 다음 실제 만료 때 형식만(값 없이) 기록한다. 이를 근거로 `claude.no-usage-report` 등을 `LoginRequired`로 바로 분류할 수 있는지 판단한다.
 - Gemini 웹 세션의 실제 유지 기간(관찰 중).
+- Antigravity Models 화면의 남은 비율 100%·0% 문구, 단수형(`1 day`, `1 hour`), 영어 외 표시 언어. 실제로 나타나면 형식만(값 없이) 기록한다.
+- Mac 전체 화면 앱 사용 중 M3b 창의 메뉴바 영향과 Mission Control 표시(구현 확인 항목).
+- Windows 세션 잠금·Mac 화면 잠금 중의 렌더링 여부. 설계는 이때 읽지 않으므로 확인하지 않아도 된다.
 
 ## 9. 이 문서의 범위 밖
 
