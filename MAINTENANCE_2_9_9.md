@@ -9,7 +9,32 @@
 
 ## 후보 검사와 신원
 
-병합 HEAD와 단일 EXE 후보의 검사와 receipt 확인 결과를 기록합니다.
+| 검사 | #180 병합 HEAD | 2.9.9 후보 |
+|---|---|---|
+| .NET SDK | `10.0.404` | `10.0.404` |
+| Windows 빌드 | Release 경고 0·오류 0 | Portable publish 경고 0·오류 0 |
+| Shared.Tests | 291,812건 통과 | 291,812건 통과 |
+| Windows self-test | 293,082건 통과 | 단일 EXE 293,082건 통과 |
+| 고정 after 슬롯 smoke | 1회 1,214건 통과 · 합성 PNG 75개 | 단일 EXE 1회 1,214건 통과 · 합성 PNG 75개 |
+
+모든 실행의 종료 코드는 0입니다. Windows의 기존 symlink fixture 1건은 임시 파일시스템 제약으로 건너뛰었습니다. 각 빌드의 smoke는 한 번씩 실행했으므로 같은 빌드를 반복 실행할 때의 트레이 기록 증가는 평가하지 않았습니다. #180의 Mac 공통 검사와 native smoke는 [Mac 기록](MACOS_PORT.md#87-한도-조회-실패-분류p1-pr-179의-mac-확인)에 있으며 최종 PR HEAD의 Mac 확인은 대기 중입니다.
+
+## Git 기준점과 백업
+
+| 항목 | 값 |
+|---|---|
+| PR #179의 main 기준점 | `cd8a819bd4ae552a4db165440f502b6d3edc34f0` |
+| #180 병합 HEAD | `92de0be1691096557b296dcdfbd87ec246113d34` |
+| Windows 2.9.9 후보 소스 | `502a4a63e5d0388f25441aa896be8830032e331f` |
+| 이전 2.9.8 EXE 소스 | `7bd5fa1e0a248b8f51fcc68a153b474cb3cfc48a` |
+| 후보 EXE | `artifacts/release-2.9.9-preparation-20261125/candidate/AI Burger Clock.exe` |
+| FileVersion | `2.9.9.0` |
+| ProductVersion | `2.9.9+502a4a63e5d0388f25441aa896be8830032e331f` |
+| 크기 | `31315341` bytes |
+| SHA-256 | `36D0FA9BB71BCA946E7BBC881D89015FB1FDC43ED0A58D7939F9291ACC2B93DD` |
+| Receipt | `artifacts/release-2.9.9-preparation-20261125/deployment-receipt.json` |
+
+공식 receipt 생성기에 직전 배포의 `artifacts/release-2.9.8-preparation-20261124/candidate.json`을 사용했습니다. 후보 파일과 receipt, 고정 슬롯 manifest의 해시를 대조했습니다. System32에서 배포 스크립트와 같은 Git 저장소 지정으로 두 소스 커밋을 읽었습니다. 후보를 빌드한 뒤 이 기록만 별도 커밋으로 추가했습니다. 검증 기록은 후보 준비 폴더의 `publish.txt`, `shared-tests.txt`, `candidate-self-test.txt`, `verification/`에 있습니다.
 
 ## 외부 배포와 복원
 
