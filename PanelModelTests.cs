@@ -334,7 +334,7 @@ internal static class PanelModelTests
         var waiting = QuotaPanelModel.Section(new QuotaState(QuotaProvider.Codex), now);
         same(waiting.Heading.Text, "ChatGPT", "no reading heading");
         check(waiting.Rows.Count == 1 && waiting.Rows[0].WindowId == "" && waiting.Rows[0].Tone == PanelTone.Muted, "placeholder row");
-        same(waiting.Rows[0].Text, "한도 조회 대기 · 공식 CLI 로그인 필요", "placeholder text");
+        same(waiting.Rows[0].Text, "한도 조회 대기", "placeholder text");
         same(waiting.Metadata.Text, "성공 — · 다음 —", "metadata before any check");
         var failed = QuotaPanelModel.Section(new QuotaState(QuotaProvider.Claude, IsPrevious: true, Error: "공식 CLI를 찾지 못했습니다."), now);
         same(failed.Heading.Text, "Claude", "previous without a reading has no suffix");

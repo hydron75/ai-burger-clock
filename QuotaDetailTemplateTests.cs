@@ -28,9 +28,16 @@ internal static class QuotaDetailTemplateTests
                 key + " has the same section titles once and in order");
             Check(section.Rows.All(row => row.Detail == section.Detail) && section.Metadata.Detail == section.Detail &&
                 (section.Scope is null || section.Scope.Detail == section.Detail), key + " all targets share one detail");
+            var rows = section.Rows.Select(row => row with { Detail = "" }).ToArray();
+            if (state.Provider != QuotaProvider.Gemini && scenario == "none")
+            {
+                Check(rows.Single().Text == "한도 조회 대기", key + " waits without inferring login status");
+                // Allow the P1 copy change while still comparing every other field to the baseline.
+                rows[0] = rows[0] with { Text = "한도 조회 대기 · 공식 CLI 로그인 필요" };
+            }
             var unchanged = new { Heading = section.Heading with { Detail = "" },
                 Scope = section.Scope is {} scope ? scope with { Detail = "" } : null,
-                Rows = section.Rows.Select(row => row with { Detail = "" }), Metadata = section.Metadata with { Detail = "" } };
+                Rows = rows, Metadata = section.Metadata with { Detail = "" } };
             string hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(unchanged))));
             if (state.Provider == QuotaProvider.Gemini)
                 Check(section.Heading with { Detail = "" } == new QuotaLine("Gemini", PanelTone.Normal, "") &&

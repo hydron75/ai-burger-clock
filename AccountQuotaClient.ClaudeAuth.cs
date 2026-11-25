@@ -37,7 +37,7 @@ internal sealed partial class AccountQuotaClient : IClaudeAuthClient
             return ClaudeAuthStatus.Parse(process.ExitCode, await stdout.ConfigureAwait(false));
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested) { return ClaudeAuthStatus.Unknown; }
-        catch (Exception error) when (error is IOException or InvalidDataException or UnauthorizedAccessException or Win32Exception or InvalidOperationException)
+        catch (Exception error) when (error is QuotaReadException or IOException or InvalidDataException or UnauthorizedAccessException or Win32Exception or InvalidOperationException)
         {
             // Process errors may include CLI paths or account details.
             return ClaudeAuthStatus.Unknown;

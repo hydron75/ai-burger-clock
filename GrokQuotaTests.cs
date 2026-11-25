@@ -94,7 +94,7 @@ internal static class GrokQuotaTests
         {
             using var sent = new StringWriter();
             try { await AccountQuotaClient.ReadGrokProtocolAsync(new StringReader(test.Text), sent, CancellationToken.None); Check(false, "protocol must fail"); }
-            catch (InvalidDataException error) { Check(!error.Message.Contains("SYNTHETIC-PRIVATE", StringComparison.Ordinal), "error payload never reaches UI"); }
+            catch (QuotaReadException error) { Check(!error.Message.Contains("SYNTHETIC-PRIVATE", StringComparison.Ordinal), "error payload never reaches UI"); }
             Check(sent.ToString().Split('\n', StringSplitOptions.RemoveEmptyEntries).Length == test.Requests, "failure stops without retries/login/model fallback");
         }
         using (var cancel = new CancellationTokenSource(TimeSpan.FromMilliseconds(20)))

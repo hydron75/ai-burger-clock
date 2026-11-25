@@ -6,7 +6,7 @@ namespace AiBurgerClock;
 internal static class SharedQuotaProtocolTests
 {
     private const string ClaudeReport = """{"type":"assistant","usage_report":{"rate_limits":{"limits":[{"kind":"session","percent":12,"resets_at":"2026-09-30T05:00:00Z"},{"kind":"weekly_all","percent":45,"resets_at":"2026-10-01T05:00:00Z"}]}}}""";
-    private const string ClaudeResult = """{"type":"result","subtype":"success","is_error":false,"local_command":"usage","num_turns":0,"total_cost_usd":0,"usage":{"input_tokens":0,"output_tokens":0,"cache_read_input_tokens":0,"cache_creation_input_tokens":0},"modelUsage":{}}""";
+    internal const string ClaudeResult = """{"type":"result","subtype":"success","is_error":false,"local_command":"usage","num_turns":0,"total_cost_usd":0,"usage":{"input_tokens":0,"output_tokens":0,"cache_read_input_tokens":0,"cache_creation_input_tokens":0},"modelUsage":{}}""";
     private const string CodexResult = """{"rateLimits":{"primary":{"usedPercent":15,"windowDurationMins":300,"resetsAt":1790744400},"secondary":{"usedPercent":25,"windowDurationMins":10080,"resetsAt":1791003600}}}""";
 
     public static async Task<int> RunAsync()
@@ -21,7 +21,7 @@ internal static class SharedQuotaProtocolTests
         {
             bool rejected = false;
             try { await call(); }
-            catch (InvalidDataException) { rejected = true; }
+            catch (QuotaReadException) { rejected = true; }
             Check(rejected, message);
         }
         Task<QuotaReading> Claude(string text) => AccountQuotaClient.ReadClaudeProtocolAsync(new StringReader(text), CancellationToken.None);
@@ -90,7 +90,7 @@ internal static class SharedQuotaProtocolTests
             await Codex("{\"id\":1,\"error\":{\"message\":\"secret-token\"}}");
             Check(false, "RPC error expected");
         }
-        catch (InvalidDataException error)
+        catch (QuotaReadException error)
         {
             Check(!error.Message.Contains("secret-token"), "raw errors never propagated");
         }
