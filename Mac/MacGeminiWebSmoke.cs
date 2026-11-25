@@ -268,13 +268,15 @@ internal static class MacGeminiWebSmoke
             new(QuotaProvider.Gemini, shown, CheckedAtUtc: utc.AddMinutes(-2), LastSuccessfulCheckUtc: shown is null ? null : utc.AddMinutes(-2),
                 NextCheckUtc: utc.AddMinutes(13), IsPrevious: previous, ContinuityId: 1, GeminiWeb: web);
 
+        static string Failed(QuotaFailureKind kind) => QuotaPanelModel.FailureMessage(QuotaProvider.Gemini, kind);
+
         (string Name, QuotaState State, string? Row, int Bars)[] scenes =
         [
             ("off", new QuotaState(QuotaProvider.Gemini, ContinuityId: 1, GeminiWeb: new(IsEnabled: false)), "꺼짐 · 로그인하면 Gemini 앱 사용량 조회", 0),
-            ("sign-in needed", Web(new(GeminiUsageOutcome.LoginRequired, new(GeminiUsageFailureRule.Destination, 0))), "로그인 필요 · Gemini 앱 사용량", 0),
+            ("sign-in needed", Web(new(GeminiUsageOutcome.LoginRequired, new(GeminiUsageFailureRule.Destination, 0))), Failed(QuotaFailureKind.LoginRequired), 0),
             ("normal", Web(new(GeminiUsageOutcome.Ok), reading), null, 2),
-            ("format changed", Web(new(GeminiUsageOutcome.FormatChanged, new(GeminiUsageFailureRule.MissingSection, 4)), reading, previous: true), "형식 변경 · 조회 불가", 0),
-            ("load failed, no earlier reading", Web(new(GeminiUsageOutcome.LoadFailed, new(GeminiUsageFailureRule.PageLoad, 0))), "한도 조회 실패 · 네트워크와 로그인을 확인하세요.", 0),
+            ("format changed", Web(new(GeminiUsageOutcome.FormatChanged, new(GeminiUsageFailureRule.MissingSection, 4)), reading, previous: true), Failed(QuotaFailureKind.FormatChanged), 0),
+            ("load failed, no earlier reading", Web(new(GeminiUsageOutcome.LoadFailed, new(GeminiUsageFailureRule.PageLoad, 0))), Failed(QuotaFailureKind.Unreachable), 0),
             ("load failed, earlier reading kept", Web(new(GeminiUsageOutcome.LoadFailed, new(GeminiUsageFailureRule.PageLoad, 0)), reading, previous: true), null, 2)
         ];
 
@@ -302,6 +304,9 @@ internal static class MacGeminiWebSmoke
                 Check(section.Rows.Count == 1 && panel.QuotaRowText(QuotaProvider.Gemini, section.Rows[0].WindowId) == expectedRow,
                     where + $"the row is '{panel.QuotaRowText(QuotaProvider.Gemini, section.Rows[0].WindowId)}', expected '{expectedRow}'.");
                 Check(panel.QuotaRowTextFits(QuotaProvider.Gemini, section.Rows[0].WindowId), where + "the notice is cut off instead of shown whole.");
+                // Only a sign-in that is needed is a warning; the other notices stay muted.
+                PanelTone tone = name == "sign-in needed" ? PanelTone.Danger : PanelTone.Muted;
+                Check(section.Rows[0].Tone == tone, where + $"the notice tone is {section.Rows[0].Tone}, expected {tone}.");
             }
             else
             {
