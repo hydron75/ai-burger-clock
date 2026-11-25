@@ -3378,7 +3378,7 @@ Shared.Tests **291,812건 PASS**, `bash Mac/build.sh` 경고 0 / 오류 0, nativ
 
 ## 88. 0.9.9 정리 (한도 조회 실패 분류 포함)
 
-2026-11-25. Mac 0.9.8 / build 35 → **0.9.9 / build 36**. 공통 원본의 한도 조회 실패 분류(PR #179, Windows 2.9.9)를 번들에 싣는 버전 올림이다. 이 PR은 버전 필드와 이 기록만 바꾼다. **배포는 하지 않았고**, 메인의 "배포 진행" 지시를 기다린다.
+2026-11-25. Mac 0.9.8 / build 35 → **0.9.9 / build 36**. 공통 원본의 한도 조회 실패 분류(PR #179, Windows 2.9.9)를 번들에 싣는 버전 올림이다. 이 PR은 버전 필드와 이 기록만 바꾼다. 배포는 아래 "저장소 경로 빌드와 실행"에 기록했다.
 
 ### 버전 필드
 `Version` 0.9.9, `AssemblyVersion` 0.9.9.0, `FileVersion` 0.9.9.0, `ApplicationVersion` 36(`CFBundleVersion`). `Info.plist`에는 적지 않는다.
@@ -3401,6 +3401,26 @@ Shared.Tests **291,812건 PASS**, `bash Mac/build.sh` 경고 0 / 오류 0, nativ
 ### 배포 전 검증 (임시 사본, 저장소 경로 아님, 버전 변경 커밋 `911b8d7`)
 Shared.Tests **291,812건 PASS**, `bash Mac/build.sh` 옵션 없음 경고 0 / 오류 0, 번들 `CFBundleShortVersionString` 0.9.9 / `CFBundleVersion` 36, native `--smoke-test` 1회 종료 코드 0·FAIL 0·SKIP 0. 임시 사본은 `lsregister -u` 후 삭제했고 LaunchServices 등록 수는 1이다.
 
+### 저장소 경로 빌드와 실행 (Claude Code 수행, 2026-11-25, 메인 "배포 진행" 지시)
+PR #181 병합 뒤 main `9ed4331bdbc11f722f5eaec704c4a7ce6a84cc27`, 작업 트리 깨끗한 상태에서 AGENTS.md "Mac 배포" 절 순서로 진행했다.
+
+| 항목 | 결과 |
+|---|---|
+| 시작 전 | 0.9.8 앱 실행 중(PID 85613). `--quit-running`이 종료를 요청했고 앱이 정상 종료됨 |
+| 빌드 | `bash Mac/build.sh --quit-running`, Shared.Tests 291,812 PASS, 경고 0 / 오류 0 |
+| 번들 | `CFBundleShortVersionString` **0.9.9**, `CFBundleVersion` **36**, `codesign --verify --deep --strict` 통과 |
+| 실행 | `open`으로 실행. 프로세스 **1개**(PID 24475), 자식 프로세스 0 |
+| SHA-256 실행 파일 | `c8ffae33cca4e3f896aae2a55dbaecbec04d455de3212bcbc97563456571b4b1` |
+| SHA-256 앱 DLL | `6de82472df4cff4f07673988eae3dc170dcdfc3c46ce08cbe6b66e5fc0954aa9` (`Contents/MonoBundle/AI Burger Clock.dll`) |
+| LaunchServices 등록 수 | **1** |
+
+### 사용자 확인 (2026-11-25, 배포된 0.9.9 / build 36 실제 화면)
+사용자가 직접 확인해 알려 왔다(Claude Code가 화면을 본 것이 아님). 실제 계정 값은 적지 않는다.
+
+| 항목 | 결과 |
+|---|---|
+| 네 한도 박스 표시(평소대로) | 정상 |
+| 각 박스의 상세 표시(평소대로) | 정상 |
+
 ### 아직 하지 않은 것
-- 저장소 경로 빌드·실행(배포): 메인의 "배포 진행" 지시 뒤에 AGENTS.md "Mac 배포" 절 순서로 진행하고 이 절에 이어 쓴다. 현재 실행 중인 앱은 0.9.8 / build 35다.
-- 실제 CLI·Gemini 웹의 실패 상태 화면은 보지 못했다(합성 입력으로만 확인).
+- **관찰 항목:** 실제 조회 실패가 생길 때의 원인별 문구와 상세의 `진단 코드:` 줄. 실패가 실제로 일어나야 보이므로, 사용자가 보고하면 이 절에 이어 쓴다. 지금까지는 합성 입력으로만 확인했다.
