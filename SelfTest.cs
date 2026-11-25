@@ -35,7 +35,9 @@ internal static class SelfTest
             Console.WriteLine($"PASS Windows mobile quota export: {quotaExport:N0} assertions (fake HTTP/vault, temporary settings; zero site calls)");
             int gemini = await WindowsGeminiWebChecks.RunAsync().ConfigureAwait(false);
             Console.WriteLine($"PASS Windows Gemini web settings, refresh and logout: {gemini:N0} assertions (fake reader, temporary files)");
-            Console.WriteLine($"PASS ALL: {autoStart + shared + tray + quotaClient + warningLog + quotaNotifications + quotaToast + quotaLayout + detailWrapping + smokePrivacy + notifications + quotaExport + gemini:N0} assertions");
+            int quotaP0 = await WindowsQuotaP0Checks.RunAsync().ConfigureAwait(false);
+            Console.WriteLine($"PASS Windows quota sources P0 characterization: {quotaP0:N0} assertions (synthetic packets, no site calls)");
+            Console.WriteLine($"PASS ALL: {autoStart + shared + tray + quotaClient + warningLog + quotaNotifications + quotaToast + quotaLayout + detailWrapping + smokePrivacy + notifications + quotaExport + gemini + quotaP0:N0} assertions");
             return 0;
         }
         catch (Exception error)
