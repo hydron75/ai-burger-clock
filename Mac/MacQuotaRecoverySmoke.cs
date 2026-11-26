@@ -209,7 +209,7 @@ internal static class MacQuotaRecoverySmoke
         off.Existing();
         Send(off, Obs(QuotaProvider.Claude, 40));
         Check(off.Recovery.PendingCount == 1, "recovery was not queued for the failed-query check");
-        off.States[QuotaProvider.Claude] = off.States[QuotaProvider.Claude] with { IsPrevious = true, Error = "합성 실패" };
+        off.States[QuotaProvider.Claude] = off.States[QuotaProvider.Claude] with { IsPrevious = true, Failure = new(QuotaFailureKind.Unreachable, "synthetic") };
         off.Tick(MacQuotaNotifications.DeferMilliseconds);
         Check(off.Shown.Count == 3 && off.Recovery.PendingCount == 0, "a failed later query must drop the queued alert");
 
@@ -308,9 +308,9 @@ internal static class MacQuotaRecoverySmoke
             client.Script(100, 35);
             // Block the main thread for both responses: the callback must only enqueue and return, and
             // the two observations must still arrive one by one (not merged into the last one).
-            Task first = monitor.RefreshOnceAsync(QuotaProvider.Claude, cancellationToken);
+            Task first = monitor.RefreshSourceIfDueAsync(QuotaProvider.Claude, cancellationToken);
             Check(first.Wait(TimeSpan.FromSeconds(5)), "the success callback blocked while the main thread was busy");
-            Task second = monitor.RefreshOnceAsync(QuotaProvider.Claude, cancellationToken);
+            Task second = monitor.RefreshSourceIfDueAsync(QuotaProvider.Claude, cancellationToken);
             Check(second.Wait(TimeSpan.FromSeconds(5)), "the second success callback blocked while the main thread was busy");
             Check(live.Shown.Count == 0 && live.Refreshes == 0, "nothing may run on the main thread while it was blocked");
             Pump(live);
@@ -320,8 +320,8 @@ internal static class MacQuotaRecoverySmoke
             // Unsubscribed: later responses are ignored without touching the UI.
             live.Recovery.Detach();
             client.Script(100, 20);
-            await monitor.RefreshOnceAsync(QuotaProvider.Claude, cancellationToken);
-            await monitor.RefreshOnceAsync(QuotaProvider.Claude, cancellationToken);
+            await monitor.RefreshSourceIfDueAsync(QuotaProvider.Claude, cancellationToken);
+            await monitor.RefreshSourceIfDueAsync(QuotaProvider.Claude, cancellationToken);
             Pump(live);
             Check(live.Shown.Count == 1 && live.Refreshes == 2 && live.Recovery.PendingCount == 0,
                 "a detached controller must ignore later responses");
@@ -476,7 +476,7 @@ internal static class MacQuotaRecoverySmoke
         }
         int shown = h.Shown.Count;
         Queue();
-        h.States[P] = h.States[P] with { IsPrevious = true, Error = "합성 실패" };      // a failed later query
+        h.States[P] = h.States[P] with { IsPrevious = true, Failure = new(QuotaFailureKind.Unreachable, "synthetic") };      // a failed later query
         h.Tick(MacQuotaNotifications.DeferMilliseconds);
         Check(h.Shown.Count == shown && h.Recovery.PendingCount == 0, "a failed later query must drop the queued banner");
         Queue();

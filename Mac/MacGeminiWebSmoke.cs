@@ -8,7 +8,8 @@ namespace AiBurgerClock;
 // real settings file is not touched; the actual WKWebView sign-in and hidden read are checked by the user by hand.
 //   1. the page-reading loop (250 ms retries for 5 s, redirects, URL cut, 30 s limit) driven with scripted answers,
 //   2. the settings file, the menu items and what each item does (recording fake backend),
-//   3. the Gemini box, its tip and the popover in the five states off / sign-in needed / normal / format changed / load failed.
+//   3. the Gemini box, its tip and the popover in the five states off / sign-in needed / normal / format changed / load failed,
+//   4. the real backend with a monitor that is never started and a temporary database: source mode and cache delete.
 internal static class MacGeminiWebSmoke
 {
     private static void Check(bool condition, string message)
@@ -255,6 +256,72 @@ internal static class MacGeminiWebSmoke
                "sign-in window closed without login = no change; login = on + saved; 끄기 keeps login; logout = off -> cache -> web views -> data store, failure and exception keep retry, repeat finishes; shutdown closes sign-in)";
     }
 
+    private sealed class NoClient : IAccountQuotaClient
+    {
+        public Task<QuotaReading> ReadAsync(QuotaProvider provider, CancellationToken cancellationToken) =>
+            throw new InvalidOperationException("synthetic: no query is expected");
+    }
+
+    internal static async Task<string> VerifyBackendAsync(CancellationToken cancellationToken)
+    {
+        string directory = Path.Combine(Path.GetTempPath(), "gemini-web-backend-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        try
+        {
+            var store = new UsageStore(Path.Combine(directory, "burgerclock.db"));
+            var cache = QuotaCacheAdapter.ForGeminiWeb(store);
+            // Neither is asked to open anything: the reader would throw on its first main-thread dispatch.
+            var reader = new MacGeminiUsageReader(_ => throw new InvalidOperationException("synthetic: no read is expected"));
+            var login = new MacGeminiLoginWindow(_ => { });
+            DateTimeOffset utc = DateTimeOffset.UtcNow;
+            QuotaReading reading = new(QuotaProvider.Gemini,
+            [
+                new(GeminiUsagePage.FiveHourId, "5시간", 40, utc.AddHours(2), 300),
+                new(GeminiUsagePage.WeeklyId, "주간", 12, utc.AddDays(5), 10080)
+            ]);
+            Task Save() => cache.WriteAsync(reading, utc, [], cancellationToken);
+            async Task<bool> Saved() => await cache.ReadAsync(cancellationToken) is not null;
+            static QuotaSourceMode Mode(AccountQuotaMonitor monitor) =>
+                monitor.Snapshot().Single(state => state.Provider == QuotaProvider.Gemini).Mode;
+
+            using (var monitor = new AccountQuotaMonitor(new NoClient(), store, geminiWebReader: reader, geminiWebEnabled: true))
+            {
+                var backend = new MacGeminiWebBackend(() => monitor, store, reader, login, cancellationToken);
+                await Save();
+                Check(Mode(monitor) == QuotaSourceMode.Active && await Saved(), "the backend fixture did not start on with a saved reading.");
+                backend.SetEnabled(false);
+                Check(Mode(monitor) == QuotaSourceMode.Off && await Saved(), "'off' did not switch the source off and keep the reading.");
+                await backend.DeleteCacheAsync();
+                Check(!await Saved(), "logout's delete left the saved reading with a running monitor.");
+                backend.SetEnabled(true);
+                Check(Mode(monitor) == QuotaSourceMode.Active, "sign-in did not switch the source on.");
+            }
+
+            // Started with the setting off: logout switches it off again first, which is what allows the delete.
+            using (var monitor = new AccountQuotaMonitor(new NoClient(), store, geminiWebReader: reader, geminiWebEnabled: false))
+            {
+                var backend = new MacGeminiWebBackend(() => monitor, store, reader, login, cancellationToken);
+                await Save();
+                backend.SetEnabled(false);
+                await backend.DeleteCacheAsync();
+                Check(Mode(monitor) == QuotaSourceMode.Off && !await Saved(), "logout's delete failed for a monitor that started off.");
+            }
+
+            // No monitor yet (start-up not finished): the saved reading is still deleted.
+            var early = new MacGeminiWebBackend(() => null, store, reader, login, cancellationToken);
+            await Save();
+            early.SetEnabled(false);
+            await early.DeleteCacheAsync();
+            Check(!await Saved(), "logout's delete left the saved reading without a monitor.");
+        }
+        finally
+        {
+            try { Directory.Delete(directory, recursive: true); }
+            catch (IOException) { }
+        }
+        return "Gemini backend (real monitor and temporary DB: off keeps the saved reading, sign-in switches on, logout's delete works with a monitor that started on or off and without one)";
+    }
+
     internal static string VerifyPanel(MacStatusPanel panel, ScheduleSnapshot schedule, IReadOnlyList<ProviderStatus> providers,
         QuotaState codex, QuotaState claude, QuotaState xai, DateTimeOffset now)
     {
@@ -264,20 +331,25 @@ internal static class MacGeminiWebSmoke
             new(GeminiUsagePage.FiveHourId, "5시간", 40, utc.AddHours(2), 300),
             new(GeminiUsagePage.WeeklyId, "주간", 12, utc.AddDays(5), 10080)
         ]);
-        QuotaState Web(GeminiWebQuotaState web, QuotaReading? shown = null, bool previous = false) =>
+        QuotaState Web(QuotaFailure? failure = null, QuotaReading? shown = null, bool previous = false) =>
             new(QuotaProvider.Gemini, shown, CheckedAtUtc: utc.AddMinutes(-2), LastSuccessfulCheckUtc: shown is null ? null : utc.AddMinutes(-2),
-                NextCheckUtc: utc.AddMinutes(13), IsPrevious: previous, ContinuityId: 1, GeminiWeb: web);
+                NextCheckUtc: utc.AddMinutes(13), IsPrevious: previous, ContinuityId: 1, Failure: failure,
+                Presentation: QuotaPresentationPolicy.GeminiWeb, HasResultSinceModeChange: true);
+
+        static QuotaFailure Parsed(GeminiUsageOutcome outcome, GeminiUsageFailureRule rule) =>
+            GeminiUsagePage.ClassifyFailure(outcome, new(rule))!;
 
         static string Failed(QuotaFailureKind kind) => QuotaPanelModel.FailureMessage(QuotaProvider.Gemini, kind);
 
         (string Name, QuotaState State, string? Row, int Bars)[] scenes =
         [
-            ("off", new QuotaState(QuotaProvider.Gemini, ContinuityId: 1, GeminiWeb: new(IsEnabled: false)), "꺼짐 · 로그인하면 Gemini 앱 사용량 조회", 0),
-            ("sign-in needed", Web(new(GeminiUsageOutcome.LoginRequired, new(GeminiUsageFailureRule.Destination, 0))), Failed(QuotaFailureKind.LoginRequired), 0),
-            ("normal", Web(new(GeminiUsageOutcome.Ok), reading), null, 2),
-            ("format changed", Web(new(GeminiUsageOutcome.FormatChanged, new(GeminiUsageFailureRule.MissingSection, 4)), reading, previous: true), Failed(QuotaFailureKind.FormatChanged), 0),
-            ("load failed, no earlier reading", Web(new(GeminiUsageOutcome.LoadFailed, new(GeminiUsageFailureRule.PageLoad, 0))), Failed(QuotaFailureKind.Unreachable), 0),
-            ("load failed, earlier reading kept", Web(new(GeminiUsageOutcome.LoadFailed, new(GeminiUsageFailureRule.PageLoad, 0)), reading, previous: true), null, 2)
+            ("off", new QuotaState(QuotaProvider.Gemini, ContinuityId: 1, Mode: QuotaSourceMode.Off, Presentation: QuotaPresentationPolicy.GeminiWeb),
+                "꺼짐 · 로그인하면 Gemini 앱 사용량 조회", 0),
+            ("sign-in needed", Web(Parsed(GeminiUsageOutcome.LoginRequired, GeminiUsageFailureRule.Destination)), Failed(QuotaFailureKind.LoginRequired), 0),
+            ("normal", Web(shown: reading), null, 2),
+            ("format changed", Web(Parsed(GeminiUsageOutcome.FormatChanged, GeminiUsageFailureRule.MissingSection), reading, previous: true), Failed(QuotaFailureKind.FormatChanged), 0),
+            ("load failed, no earlier reading", Web(Parsed(GeminiUsageOutcome.LoadFailed, GeminiUsageFailureRule.PageLoad)), Failed(QuotaFailureKind.Unreachable), 0),
+            ("load failed, earlier reading kept", Web(Parsed(GeminiUsageOutcome.LoadFailed, GeminiUsageFailureRule.PageLoad), reading, previous: true), null, 2)
         ];
 
         MacStatusPanel.Layout Show(params QuotaState[] states)

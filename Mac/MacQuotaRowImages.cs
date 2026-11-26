@@ -62,7 +62,7 @@ internal static class MacQuotaRowImages
         [
             ("current", MacXaiQuotaSmoke.Reading(now, 37)),
             ("previous", MacXaiQuotaSmoke.Reading(now, 37, previous: true)),
-            ("none", new QuotaState(QuotaProvider.Xai, null, Error: "조회 실패 예시"))
+            ("none", new QuotaState(QuotaProvider.Xai, null, Failure: new(QuotaFailureKind.Unreachable, "synthetic")))
         ];
         foreach (bool dark in new[] { false, true })
         {
