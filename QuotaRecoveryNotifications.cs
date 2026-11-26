@@ -67,9 +67,9 @@ internal sealed class QuotaRecoveryNotifications
 
     public void Reset() => baselines.Clear();
 
-    public QuotaRecoveryAlert? Observe(QuotaObservation observation, bool enabled)
+    public QuotaRecoveryAlert? Observe(QuotaObservation observation, bool enabled, bool eligible = true)
     {
-        if (observation is null || !QuotaNames.IsQueryEnabled(observation.Provider)) return null;
+        if (observation is null || !eligible) return null;
         if (!Valid(observation)) return null;
         baselines.TryGetValue(observation.Provider, out Baseline? previous);
         if (previous is not null && observation.Sequence <= previous.Sequence) return null;

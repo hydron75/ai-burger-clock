@@ -8,7 +8,7 @@ internal static class MacCliPaths
     internal static IReadOnlyList<string> Candidates(QuotaProvider provider, IEnumerable<string> pathEntries,
         string homeDirectory, string currentDirectory)
     {
-        if (!QuotaNames.IsQueryEnabled(provider)) return [];
+        if (!QuotaNames.HasCliRoute(provider)) return [];
         string name = provider switch
         {
             QuotaProvider.Codex => "codex",

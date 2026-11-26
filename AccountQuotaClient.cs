@@ -22,7 +22,7 @@ internal sealed partial class AccountQuotaClient(
     public async Task<QuotaReading> ReadAsync(QuotaProvider provider, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        if (!QuotaNames.IsQueryEnabled(provider)) throw new NotSupportedException(QuotaNames.GeminiUnavailableText);
+        if (!QuotaNames.HasCliRoute(provider)) throw new NotSupportedException(QuotaNames.GeminiUnavailableText);
         string executable;
         try { executable = GetExecutable(provider); }
         catch (FileNotFoundException) { throw new QuotaReadException(QuotaFailureKind.NotInstalled, "cli.not-found"); }
@@ -114,15 +114,6 @@ internal sealed partial class AccountQuotaClient(
         _ => new(QuotaFailureKind.Unreachable, "cli.read-failed")
     };
 
-    internal static QuotaReading ValidateReading(QuotaReading candidate, QuotaProvider provider, DateTimeOffset now)
-    {
-        // Own the accepted windows before delivering them to observers.
-        var snapshot = candidate with { Windows = Array.AsReadOnly(candidate.Windows.ToArray()) };
-        try { UsageStore.ValidateQuotaCache(new(1, snapshot, now.ToUniversalTime(), []), provider); }
-        catch (InvalidDataException) { throw new QuotaReadException(QuotaFailureKind.FormatChanged, "validate.reading"); }
-        return snapshot;
-    }
-
     private string GetExecutable(QuotaProvider provider) => provider switch
     {
         QuotaProvider.Codex => codexExecutable ?? FindExecutable(provider),
@@ -162,7 +153,7 @@ internal sealed partial class AccountQuotaClient(
 
     internal static ProcessStartInfo CreateStartInfo(QuotaProvider provider, string executable, string directory)
     {
-        if (!QuotaNames.IsQueryEnabled(provider)) throw new NotSupportedException(QuotaNames.GeminiUnavailableText);
+        if (!QuotaNames.HasCliRoute(provider)) throw new NotSupportedException(QuotaNames.GeminiUnavailableText);
         var start = CreateProcessStartInfo(executable, directory);
         if (provider == QuotaProvider.Codex)
         {
@@ -383,7 +374,7 @@ internal sealed partial class AccountQuotaClient(
 
     internal static string FindExecutable(QuotaProvider provider)
     {
-        if (!QuotaNames.IsQueryEnabled(provider)) throw new NotSupportedException(QuotaNames.GeminiUnavailableText);
+        if (!QuotaNames.HasCliRoute(provider)) throw new NotSupportedException(QuotaNames.GeminiUnavailableText);
         if (OperatingSystem.IsMacOS())
         {
             var paths = MacCliPaths.Candidates(provider,

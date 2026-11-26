@@ -69,7 +69,7 @@ internal static class MacPollingDiagnosticSmoke
             async Task<Entry> Poll(QuotaProvider provider, Func<QuotaProvider, DateTimeOffset, QuotaReading?> script)
             {
                 client.Script = script;
-                await monitor.RefreshOnceAsync(provider, cancellationToken);
+                await monitor.RefreshSourceIfDueAsync(provider, cancellationToken);
                 Check(File.Exists(logPath), "no diagnostic file was written");
                 return Read(logPath).Entries[^1];
             }
@@ -88,7 +88,7 @@ internal static class MacPollingDiagnosticSmoke
             // Gemini: an explicit refresh never reaches the client and writes no polling entry (the shared monitor excludes it).
             int callsBefore = client.Calls, entriesBefore = Read(logPath).Entries.Count;
             client.Script = (p, now) => R(p, new QuotaWindow("gemini-5h", "5시간", 20, now.AddHours(5), 300));
-            await monitor.RefreshOnceAsync(QuotaProvider.Gemini, cancellationToken);
+            await monitor.RefreshSourceIfDueAsync(QuotaProvider.Gemini, cancellationToken);
             Check(client.Calls == callsBefore && Read(logPath).Entries.Count == entriesBefore && Read(logPath).Entries.All(item => item.Provider != "Gemini"),
                 "a Gemini refresh reached the client or wrote a polling entry.");
 
@@ -197,7 +197,8 @@ internal static class MacPollingDiagnosticSmoke
             // queried Providers; Gemini's detail is the fixed "no automatic query" text instead.
             QuotaState Sample(QuotaProvider provider, string id) => new(provider,
                 new(provider, [new QuotaWindow(id, "주간", 10, client.Clock.AddDays(3), 10080)]),
-                LastSuccessfulCheckUtc: client.Clock, NextCheckUtc: client.Clock.AddHours(1));
+                LastSuccessfulCheckUtc: client.Clock, NextCheckUtc: client.Clock.AddHours(1),
+                Mode: provider == QuotaProvider.Gemini ? QuotaSourceMode.Unavailable : QuotaSourceMode.Active);
             var details = QuotaPanelModel.Sections([Sample(QuotaProvider.Codex, "codex-weekly"), Sample(QuotaProvider.Claude, "weekly_all"),
                 Sample(QuotaProvider.Gemini, "gemini-weekly"), Sample(QuotaProvider.Xai, AccountQuotaParsers.GrokWeeklyWindowId)], client.Clock);
             Check(details.Count == 4, "expected one Provider detail per quota box.");

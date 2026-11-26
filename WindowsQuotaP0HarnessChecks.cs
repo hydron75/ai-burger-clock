@@ -32,7 +32,7 @@ internal sealed partial class QuotaP0Harness
             settings = new(Path.Combine(Path.GetDirectoryName(store.DatabasePath)!, "p0-settings.json"));
             var initial = new WindowsGeminiWebSettings(Enabled: !pending, LogoutPending: pending);
             settings.Save(initial);
-            access = new(monitor, store, new LogoutSession(deleteProfile), settings, initial);
+            access = new(monitor, new LogoutSession(deleteProfile), settings, initial);
         }
 
         internal bool Pending => settings.Load().LogoutPending;

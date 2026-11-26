@@ -33,7 +33,7 @@ internal static class MacDetailTipSmoke
 
     // The standard quota boxes with one overlong error line each in the first and the last box.
     internal static QuotaState[] Quotas(QuotaState codex, QuotaState claude, QuotaState gemini, QuotaState xai) =>
-        [codex with { Error = "조회 실패 합성 예시 " + LongToken + new string('c', 200) }, claude, gemini, xai];
+        [codex with { CacheError = "조회 실패 합성 예시 " + LongToken + new string('c', 200) }, claude, gemini, xai];
 
     // A Claude box with the most windows the parser accepts (64, synthetic names) and an overlong error: a detail taller than
     // any screen. (It was a Gemini box until the Gemini query was stopped in #156; the Gemini detail is now a short fixed text.)
@@ -41,7 +41,7 @@ internal static class MacDetailTipSmoke
     {
         Reading = new(QuotaProvider.Claude, Enumerable.Range(0, 64)
             .Select(i => new QuotaWindow($"synthetic-model-{i}", $"합성 모델 {i + 1}", (i * 7) % 100, now.AddHours(i + 1), 300)).ToList()),
-        Error = "조회 실패 합성 예시 " + LongToken + new string('d', 300)
+        CacheError = "조회 실패 합성 예시 " + LongToken + new string('d', 300)
     };
 
     private static void CheckText(string owner, string text)

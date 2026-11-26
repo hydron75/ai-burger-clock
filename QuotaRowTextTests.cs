@@ -34,7 +34,8 @@ internal static class QuotaRowTextTests
                 new("synthetic-missing", "합성 기간 미제공", 0, null)
             ];
             var reading = new QuotaReading(provider, windows);
-            var state = new QuotaState(provider, reading, now, now, now.AddHours(1));
+            var state = new QuotaState(provider, reading, now, now, now.AddHours(1),
+                Mode: provider == QuotaProvider.Gemini ? QuotaSourceMode.Unavailable : QuotaSourceMode.Active);
             var section = QuotaPanelModel.Section(state, now.AddMinutes(17));
             if (provider == QuotaProvider.Gemini)
             {
@@ -80,7 +81,7 @@ internal static class QuotaRowTextTests
             Unsplit(section.Metadata, provider + " metadata is not a split quota row");
             if (section.Scope is { } scope) Unsplit(scope, provider + " scope is not a split quota row");
 
-            var previous = QuotaPanelModel.Section(state with { IsPrevious = true, Error = "합성 조회 실패" }, now);
+            var previous = QuotaPanelModel.Section(state with { IsPrevious = true, Failure = new(QuotaFailureKind.Unreachable, "synthetic.row") }, now);
             Check(previous.Rows.All(row => row.ValueText!.Contains("사용 (이전)", StringComparison.Ordinal) &&
                 row.Text == row.NameText + "  " + row.ValueText && row.ReadingText == row.Text),
                 provider + " previous value keeps existing wording with no stale comparison");
@@ -89,7 +90,7 @@ internal static class QuotaRowTextTests
             var inFlight = QuotaPanelModel.Section(state with { IsRefreshing = true }, now.AddMinutes(17));
             Check(inFlight.Rows.SequenceEqual(section.Rows.Select(row => row with { Detail = inFlight.Detail })),
                 provider + " an in-flight request retains the existing row contract");
-            foreach (var emptyState in new[] { new QuotaState(provider), new QuotaState(provider, Error: "합성 실패") })
+            foreach (var emptyState in new[] { new QuotaState(provider), new QuotaState(provider, Failure: new(QuotaFailureKind.Unreachable, "synthetic.row")) })
             {
                 var empty = QuotaPanelModel.Section(emptyState, now);
                 Unsplit(empty.Rows.Single(), provider + " placeholder keeps legacy text-only layout");

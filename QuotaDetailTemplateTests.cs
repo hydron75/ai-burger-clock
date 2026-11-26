@@ -113,7 +113,7 @@ internal static class QuotaDetailTemplateTests
             조회 상태
             마지막 성공: {{(missing ? "—" : "03-04 09:00")}}
             다음 조회: {{(missing ? "—" : "03-04 10:00")}}
-            최근 시도: {{(missing ? "—" : "03-04 09:00:00")}}{{(scenario == "error" ? "\n합성 조회 오류\n합성 캐시 오류" : "")}}
+            최근 시도: {{(missing ? "—" : "03-04 09:00:00")}}{{(scenario == "error" ? "\n한도 조회 실패 · 네트워크와 CLI 상태를 확인하세요.\n진단 코드: synthetic.read\n합성 캐시 오류" : "")}}
 
             조회 주기
             기본 1시간 · 사용 90% 초과~100% 미만은 1시간 · 사용 100%는 15분 · 리셋 전후 15분은 {{resetMinutes}}분 · 실패 시 15분부터 재시도

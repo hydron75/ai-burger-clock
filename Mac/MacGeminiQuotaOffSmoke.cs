@@ -41,7 +41,8 @@ internal static class MacGeminiQuotaOffSmoke
         QuotaState Reading(QuotaWindow[] windows, bool previous = false, string error = "", string cacheError = "", bool refreshing = false) =>
             new(QuotaProvider.Gemini, new(QuotaProvider.Gemini, windows), LastSuccessfulCheckUtc: now.AddMinutes(-3),
                 NextCheckUtc: now.AddHours(1), CheckedAtUtc: now.AddMinutes(-3), IsPrevious: previous, IsRefreshing: refreshing,
-                Error: error, CacheError: cacheError);
+                Failure: error.Length > 0 ? new(QuotaFailureKind.Unreachable, error) : null, CacheError: cacheError,
+                Mode: QuotaSourceMode.Unavailable);
         (string Name, QuotaState State)[] scenes =
         [
             ("current old values", Reading(ordinary)),
@@ -49,9 +50,11 @@ internal static class MacGeminiQuotaOffSmoke
             ("64 old windows with an error", Reading(tall, error: "조회 실패 합성 예시 " + new string('x', 200))),
             ("refresh in progress", Reading(ordinary, refreshing: true)),
             ("cache error", Reading(ordinary, cacheError: "캐시 오류 합성 예시")),
-            ("failed query", new QuotaState(QuotaProvider.Gemini, null, Error: "조회 실패 합성 예시")),
-            ("waiting for the first query", new QuotaState(QuotaProvider.Gemini)),
-            ("no windows", new QuotaState(QuotaProvider.Gemini, new(QuotaProvider.Gemini, []), LastSuccessfulCheckUtc: now))
+            ("failed query", new QuotaState(QuotaProvider.Gemini, null,
+                Failure: new(QuotaFailureKind.Unreachable, "조회 실패 합성 예시"), Mode: QuotaSourceMode.Unavailable)),
+            ("waiting for the first query", new QuotaState(QuotaProvider.Gemini, Mode: QuotaSourceMode.Unavailable)),
+            ("no windows", new QuotaState(QuotaProvider.Gemini, new(QuotaProvider.Gemini, []), LastSuccessfulCheckUtc: now,
+                Mode: QuotaSourceMode.Unavailable))
         ];
 
         MacStatusPanel.Layout Show(params QuotaState[] states)

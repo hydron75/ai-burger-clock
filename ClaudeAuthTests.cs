@@ -51,7 +51,7 @@ internal static class ClaudeAuthTests
 
         var now = Expiry.AddDays(-7);
         var auth = new ClaudeAuthCheck(status, now);
-        var state = new QuotaState(QuotaProvider.Claude, Error: "한도 응답 없음", ClaudeAuth: auth);
+        var state = new QuotaState(QuotaProvider.Claude, Failure: new(QuotaFailureKind.Rejected, "claude.no-usage-report"), ClaudeAuth: auth);
         var normal = QuotaPanelModel.Section(state, now.AddTicks(-1));
         Check(normal.Scope is null, "outside the warning window the card has no warning");
         Check(normal.Detail.Contains("로그인 종료: 늦어도 01-01 01:00 KST(더 일찍 끝날 수 있음)", StringComparison.Ordinal) &&
@@ -78,7 +78,7 @@ internal static class ClaudeAuthTests
         Check(missing.Scope is null && missing.Detail.Contains("종료 시점 미제공", StringComparison.Ordinal), "null expiry never warns");
         var unknown = QuotaPanelModel.Section(state with { ClaudeAuth = auth with { Status = ClaudeAuthStatus.Unknown } }, now);
         Check(unknown.Scope is null && unknown.Detail.Contains(ClaudeAuthCheck.UnknownText, StringComparison.Ordinal) &&
-            unknown.Rows.Single().Text == state.Error, "unknown auth has its own detail and leaves the quota diagnosis intact");
+            unknown.Rows.Single().Text == QuotaPanelModel.FailureMessage(QuotaProvider.Claude, QuotaFailureKind.Rejected), "unknown auth has its own detail and leaves the quota diagnosis intact");
         foreach (string kind in new[] { "api_key", "api_key_helper", "oauth_token", "third_party" })
         {
             var nonSubscription = ClaudeAuthStatus.Parse(0, AuthJson.Replace("claude.ai", kind, StringComparison.Ordinal));
@@ -110,12 +110,12 @@ internal static class ClaudeAuthTests
             Check(fake.AuthCalls == 1 && monitor.Snapshot().Single(row => row.Provider == QuotaProvider.Claude).ClaudeAuth is not null,
                 "startup checks auth once and publishes only to Claude");
             clock.Set(now.AddMinutes(15));
-            await monitor.RefreshOnceAsync(QuotaProvider.Codex);
+            await monitor.RefreshSourceIfDueAsync(QuotaProvider.Codex);
             Check(fake.AuthCalls == 1, "another provider's failure does not wake the checker");
             fake.FailClaude = true;
-            await monitor.RefreshOnceAsync(QuotaProvider.Claude);
+            await monitor.RefreshSourceIfDueAsync(QuotaProvider.Claude);
             await MonitorTests.WaitUntilAsync(() => fake.AuthCalls == 2 && monitor.LatestClaudeAuth?.CheckedAtUtc == clock.Read(), 5000);
-            await monitor.RefreshOnceAsync(QuotaProvider.Claude);
+            await monitor.RefreshSourceIfDueAsync(QuotaProvider.Claude);
             await monitor.StopAsync().WaitAsync(TimeSpan.FromSeconds(5));
             Check(fake.AuthCalls == 2, "a Claude failure wakes the checker once and the next failure is throttled");
         }
@@ -151,7 +151,7 @@ internal static class ClaudeAuthTests
                 !current.Detail.Contains(ClaudeAuthCheck.LoginRequiredText, StringComparison.Ordinal),
                 "the new quota is current and no login prompt remains while rechecking stale auth");
             // An extra successful read before the recheck completes shares that recheck.
-            await monitor.RefreshOnceAsync(QuotaProvider.Claude);
+            await monitor.RefreshSourceIfDueAsync(QuotaProvider.Claude);
             recoveryClient.AuthStatus = status;
             releaseAuth.SetResult(status);
             await MonitorTests.WaitUntilAsync(() => monitor.LatestClaudeAuth?.Status == status);

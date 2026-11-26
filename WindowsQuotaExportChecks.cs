@@ -77,7 +77,7 @@ internal static class WindowsQuotaExportChecks
     internal static IReadOnlyList<QuotaState> Readings(DateTimeOffset now, double used = 37.5) =>
         Enum.GetValues<QuotaProvider>().Select(provider => new QuotaState(provider,
             new(provider, [new("synthetic-weekly", "주간 합성 모델 👩🏽‍💻", used, now.AddDays(2), 10080)]),
-            now, now, now.AddHours(1), Error: "SYNTHETIC-PRIVATE-ERROR", CacheError: "SYNTHETIC-PRIVATE-CACHE", ContinuityId: 1234)).ToArray();
+            now, now, now.AddHours(1), Failure: new(QuotaFailureKind.Unreachable, "SYNTHETIC-PRIVATE-ERROR"), CacheError: "SYNTHETIC-PRIVATE-CACHE", ContinuityId: 1234)).ToArray();
 
     private sealed class Client(Clock clock) : IAccountQuotaClient
     {
@@ -202,8 +202,8 @@ internal static class WindowsQuotaExportChecks
             Check(previous.RootElement.GetProperty("providers").EnumerateArray().All(p => p.GetProperty("reading").GetString() ==
                 (p.GetProperty("provider").GetString() == "Gemini" ? "none" : "previous")), "failed enabled Provider read keeps previous readings while Gemini remains none");
             Check(Seq(f.Http.Last) == first + 1, "new snapshot reserves a greater sequence");
-            f.States = Enum.GetValues<QuotaProvider>().Select(p => new QuotaState(p, Error: Credentials.SyntheticToken,
-                Failure: new(QuotaFailureKind.FormatChanged, "parser.synthetic-private"))).ToArray();
+            f.States = Enum.GetValues<QuotaProvider>().Select(p => new QuotaState(p,
+                CacheError: Credentials.SyntheticToken, Failure: new(QuotaFailureKind.FormatChanged, "parser.synthetic-private"))).ToArray();
             f.Service.Completed(f.States); await f.Service.WaitForIdleAsync();
             using var none = Body(f.Http.Last);
             Check(none.RootElement.GetProperty("providers").EnumerateArray().All(p => p.GetProperty("reading").GetString() == "none" && p.GetProperty("rows").GetArrayLength() == 0 && p.GetProperty("lastSuccessUtc").ValueKind == JsonValueKind.Null), "failure without history has none, not invented zeros");
@@ -278,8 +278,8 @@ internal static class WindowsQuotaExportChecks
             for (int round = 0; round < 40; round++)
             {
                 client.Fail = round % 2 == 1;
-                await Task.WhenAll(Enum.GetValues<QuotaProvider>().Select(p => monitor.RefreshOnceAsync(p))).WaitAsync(TimeSpan.FromSeconds(3));
-                Check(completions == (round + 1) * Enum.GetValues<QuotaProvider>().Count(QuotaNames.IsQueryEnabled), "parallel completion round has no missed or duplicate enabled Provider success/failure");
+                await Task.WhenAll(Enum.GetValues<QuotaProvider>().Select(p => monitor.RefreshSourceIfDueAsync(p))).WaitAsync(TimeSpan.FromSeconds(3));
+                Check(completions == (round + 1) * Enum.GetValues<QuotaProvider>().Count(QuotaNames.HasCliRoute), "parallel completion round has no missed or duplicate enabled Provider success/failure");
             }
             Check(f.Http.Count <= 1, "slow sender never holds Provider callbacks");
             blocked.TrySetResult(new HttpResponseMessage(HttpStatusCode.OK)); await f.Service.WaitForIdleAsync();
@@ -299,14 +299,14 @@ internal static class WindowsQuotaExportChecks
             try
             {
                 monitor.Start();
-                await Wait(() => monitor.Snapshot().Where(s => QuotaNames.IsQueryEnabled(s.Provider)).All(s => s.IsRefreshing && s.Reading is not null));
+                await Wait(() => monitor.Snapshot().Where(s => QuotaNames.HasCliRoute(s.Provider)).All(s => s.IsRefreshing && s.Reading is not null));
                 Check(monitor.Snapshot().Single(s => s.Provider == QuotaProvider.Gemini) is { IsRefreshing: false, Reading: null, NextCheckUtc: null },
                     "startup ignores historical Gemini cache and starts no Gemini query");
                 Check(completions == 0 && f.Http.Count == 0 && f.Vault.Reads == 0, "startup/cache/start events do not export");
                 client.Gate.SetResult();
-                await Wait(() => Volatile.Read(ref completions) == Enum.GetValues<QuotaProvider>().Count(QuotaNames.IsQueryEnabled));
+                await Wait(() => Volatile.Read(ref completions) == Enum.GetValues<QuotaProvider>().Count(QuotaNames.HasCliRoute));
                 await f.Service.WaitForIdleAsync();
-                Check(completions == Enum.GetValues<QuotaProvider>().Count(QuotaNames.IsQueryEnabled) && f.Http.Count > 0, "only completed live enabled Provider startup reads export");
+                Check(completions == Enum.GetValues<QuotaProvider>().Count(QuotaNames.HasCliRoute) && f.Http.Count > 0, "only completed live enabled Provider startup reads export");
             }
             finally { await monitor.StopAsync(); Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools(); }
         }
@@ -407,7 +407,8 @@ internal static class WindowsQuotaExportChecks
                 Reading = new(QuotaProvider.Gemini, [new(historical, new string('x', 81), double.NaN, f.Time.GetUtcNow().AddDays(2), -1)]),
                 IsPrevious = true,
                 IsRefreshing = true,
-                GeminiWeb = new(GeminiUsageOutcome.Ok)
+                Failure = null,
+                HasResultSinceModeChange = true
             };
             f.States = f.States.Select(s => s.Provider == QuotaProvider.Gemini ? gemini : s).ToArray();
             f.Service.Completed(f.States); await f.Service.WaitForIdleAsync();
@@ -432,7 +433,7 @@ internal static class WindowsQuotaExportChecks
                 "Gemini export fixture contains validated web rows");
             f.States = f.States.Select(s => s.Provider == QuotaProvider.Gemini
                 ? s with { Reading = web.Reading, LastSuccessfulCheckUtc = now, NextCheckUtc = now.AddMinutes(15),
-                    GeminiWeb = new(GeminiUsageOutcome.Ok) }
+                    Failure = null, HasResultSinceModeChange = true }
                 : s).ToArray();
             f.Service.Completed(f.States); await f.Service.WaitForIdleAsync();
             Check(f.Http.Count == 1, "a regular export carries the valid Gemini web result");
@@ -482,15 +483,15 @@ internal static class WindowsQuotaExportChecks
 
             Task ReadAgainAsync()
             {
-                monitor.RequestGeminiWebRefresh();
-                return monitor.RefreshGeminiWebIfDueAsync();
+                monitor.RequestSourceRefresh(QuotaProvider.Gemini);
+                return monitor.RefreshSourceIfDueAsync(QuotaProvider.Gemini);
             }
 
-            await monitor.RefreshGeminiWebIfDueAsync();
-            monitor.SetGeminiWebEnabled(true);
+            await monitor.RefreshSourceIfDueAsync(QuotaProvider.Gemini);
+            monitor.SetMode(QuotaProvider.Gemini, QuotaSourceMode.Active);
             await f.Service.WaitForIdleAsync();
             Check(completions == 0 && f.Http.Count == 0, "initial off and a pending first read produce no standalone send");
-            await monitor.RefreshGeminiWebIfDueAsync();
+            await monitor.RefreshSourceIfDueAsync(QuotaProvider.Gemini);
             await ExpectGeminiAsync("ok", "ok", 1);
 
             f.Time.Advance(TimeSpan.FromMinutes(1));
@@ -516,7 +517,7 @@ internal static class WindowsQuotaExportChecks
 
             foreach (var provider in new[] { QuotaProvider.Codex, QuotaProvider.Claude, QuotaProvider.Xai })
             {
-                await monitor.RefreshOnceAsync(provider);
+                await monitor.RefreshSourceIfDueAsync(provider);
                 var attached = await ExpectGeminiAsync("ok", "ok", 1);
                 Check(attached.GetProperty("rows")[0].GetProperty("usedPercent").GetDouble() == 38 &&
                     attached.GetProperty("lastSuccessUtc").GetDateTimeOffset() == CurrentReadTime(),
@@ -543,10 +544,10 @@ internal static class WindowsQuotaExportChecks
             Check(login.GetProperty("rows").GetArrayLength() == 0 && login.GetProperty("lastSuccessUtc").ValueKind == JsonValueKind.Null &&
                 login.GetProperty("nextCheckUtc").ValueKind == JsonValueKind.Null, "login-required clears previous rows and times");
 
-            monitor.SetGeminiWebEnabled(false);
+            monitor.SetMode(QuotaProvider.Gemini, QuotaSourceMode.Off);
             var off = await ExpectGeminiAsync("off", "none", 1);
             Check(off.GetProperty("rows").GetArrayLength() == 0, "off or logout never sends previous Gemini rows");
-            monitor.SetGeminiWebEnabled(false);
+            monitor.SetMode(QuotaProvider.Gemini, QuotaSourceMode.Off);
             await ExpectGeminiAsync("off", "none", 0);
         }
 
@@ -559,7 +560,7 @@ internal static class WindowsQuotaExportChecks
             foreach (var provider in new[] { QuotaProvider.Codex, QuotaProvider.Claude, QuotaProvider.Xai })
             {
                 int before = f.Http.Count;
-                await monitor.RefreshOnceAsync(provider);
+                await monitor.RefreshSourceIfDueAsync(provider);
                 await f.Service.WaitForIdleAsync();
                 Check(f.Http.Count == before + (enabled ? 1 : 0),
                     $"{provider} completion keeps the existing HTTP count when export is {(enabled ? "on" : "off")}");

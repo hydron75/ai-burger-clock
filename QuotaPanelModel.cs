@@ -96,26 +96,25 @@ internal static class QuotaPanelModel
 
     public static QuotaSectionText Section(QuotaState state, DateTimeOffset now, QuotaEarlyResetAlert? recentEarlyReset = null)
     {
-        var web = state.Provider == QuotaProvider.Gemini ? state.GeminiWeb : null;
-        bool webOff = web is { IsEnabled: false };
-        if (webOff || (web is null && !QuotaNames.IsQueryEnabled(state.Provider)))
+        if (state.Mode is QuotaSourceMode.Off or QuotaSourceMode.Unavailable)
         {
+            bool webOff = state.Mode == QuotaSourceMode.Off;
             string detail = webOff ? GeminiWebOffDetail : GeminiUnavailableDetail;
             string notice = webOff ? GeminiWebOffText : QuotaNames.GeminiUnavailableText;
             return new(state.Provider, new(ProviderNames.Quota(state.Provider), PanelTone.Normal, detail), null,
                 [new(notice, PanelTone.Muted, detail)], new("", PanelTone.Muted, detail));
         }
-        if (web is not null)
-        {
-            bool showReading = web.Outcome is not (GeminiUsageOutcome.LoginRequired or GeminiUsageOutcome.FormatChanged) &&
-                GeminiUsagePage.IsWebReading(state.Reading);
-            state = state with { Reading = showReading ? state.Reading : null };
-            recentEarlyReset = null;
-        }
+        var presentation = state.Presentation ?? QuotaPresentationPolicy.Cli;
+        var failure = state.Failure;
+        bool hideReading = failure is not null && presentation.HideReadingInPanel.Contains(failure.Kind);
+        if (hideReading || (state.Reading is { } candidate && presentation.AcceptForDisplay?.Invoke(candidate) == false))
+            state = state with { Reading = null };
+        if (!presentation.ShowEarlyResetDetail) recentEarlyReset = null;
         var auth = state.Provider == QuotaProvider.Claude ? state.ClaudeAuth : null;
         bool loginRequired = auth is not null && auth.RequiresLogin(now) &&
             (state.LastSuccessfulCheckUtc is not { } successAfterAuth || auth.CheckedAtUtc >= successAfterAuth);
-        string error = loginRequired ? ClaudeAuthCheck.LoginRequiredText : state.Error;
+        string error = loginRequired ? ClaudeAuthCheck.LoginRequiredText :
+            failure is null ? "" : FailureMessage(state.Provider, failure.Kind);
         bool previous = state.IsPrevious || loginRequired;
         bool codex = state.Provider == QuotaProvider.Codex;
         string name = ProviderNames.Quota(state.Provider);
@@ -135,8 +134,8 @@ internal static class QuotaPanelModel
             state.CacheError.Length > 0 ? PanelTone.Danger : PanelTone.Muted, note);
 
         QuotaLine[] rows = state.Reading is null
-            ? [new(error.Length > 0 ? error : web is not null ? "한도 조회 대기 · Gemini 앱 사용량" : "한도 조회 대기",
-                loginRequired || state.ReportedFailure?.Kind == QuotaFailureKind.LoginRequired ? PanelTone.Danger : PanelTone.Muted, note)]
+            ? [new(error.Length > 0 ? error : state.Provider == QuotaProvider.Gemini ? "한도 조회 대기 · Gemini 앱 사용량" : "한도 조회 대기",
+                loginRequired || failure?.Kind == QuotaFailureKind.LoginRequired ? PanelTone.Danger : PanelTone.Muted, note)]
             : state.Reading.Windows.Select((window, index) =>
             {
                 bool elapsed = window.ResetsAtUtc is { } reset && reset <= now;
@@ -199,7 +198,7 @@ internal static class QuotaPanelModel
         lines.Add("다음 조회: " + Stamp(state.NextCheckUtc, "MM-dd HH:mm"));
         lines.Add("최근 시도: " + Stamp(state.CheckedAtUtc, "MM-dd HH:mm:ss"));
         if (!string.IsNullOrWhiteSpace(error)) lines.Add(error);
-        if (state.ReportedFailure is { } failure) lines.Add("진단 코드: " + failure.Code);
+        if (state.Failure is { } failure) lines.Add("진단 코드: " + failure.Code);
         if (!string.IsNullOrWhiteSpace(state.CacheError)) lines.Add(state.CacheError);
         if (state.Provider == QuotaProvider.Claude && state.ClaudeAuth is { } auth)
         {

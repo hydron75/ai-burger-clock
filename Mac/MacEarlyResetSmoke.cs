@@ -120,7 +120,7 @@ internal static class MacEarlyResetSmoke
         {
             clock += TimeSpan.FromMinutes(minutes);
             script.Enqueue(next);
-            await monitor.RefreshOnceAsync(QuotaProvider.Claude, cancellationToken);
+            await monitor.RefreshSourceIfDueAsync(QuotaProvider.Claude, cancellationToken);
         }
         await Poll(now => Reading(60, now.AddDays(3)));
         await Poll(now => Reading(5, now.AddDays(7).AddMinutes(-1)));
@@ -205,7 +205,7 @@ internal static class MacEarlyResetSmoke
             {
                 clock += TimeSpan.FromMinutes(30);
                 script.Enqueue(next);
-                await monitor.RefreshOnceAsync(QuotaProvider.Claude, cancellationToken);
+                await monitor.RefreshSourceIfDueAsync(QuotaProvider.Claude, cancellationToken);
                 DateTime deadline = DateTime.UtcNow.AddSeconds(3);
                 do NSRunLoop.Main.RunUntil(NSRunLoopMode.Default, NSDate.FromTimeIntervalSinceNow(0.01));
                 while (!controller.Idle && DateTime.UtcNow < deadline);
@@ -315,7 +315,7 @@ internal static class MacEarlyResetSmoke
             {
                 advance();
                 script.Enqueue(reading);
-                Task poll = Task.Run(() => monitor.RefreshOnceAsync(QuotaProvider.Claude, cancellationToken));
+                Task poll = Task.Run(() => monitor.RefreshSourceIfDueAsync(QuotaProvider.Claude, cancellationToken));
                 await reached.Task.WaitAsync(TimeSpan.FromSeconds(10), cancellationToken);
                 return poll;
             }
@@ -355,7 +355,7 @@ internal static class MacEarlyResetSmoke
             Check(!File.Exists(newOne.Log), "the late callback of the old monitor must not write into the new monitor's log");
             newOne.Advance();
             newOne.Script.Enqueue(now => Weekly(5, now.AddDays(7).AddMinutes(-1)));
-            await newOne.Monitor.RefreshOnceAsync(QuotaProvider.Claude, cancellationToken);
+            await newOne.Monitor.RefreshSourceIfDueAsync(QuotaProvider.Claude, cancellationToken);
             Settle();
             Check(Reasons(newOne.Log).SequenceEqual(["Excluded/NoPreviousSuccess"]) && shown.Count == 0,
                 "the new subscription must start fresh: the old response was neither compared nor alerted: " + string.Join(",", Reasons(newOne.Log)));
@@ -375,7 +375,7 @@ internal static class MacEarlyResetSmoke
             Check(Reasons(same.Log).SequenceEqual(["Excluded/HostUnavailable"]), "the old subscription's response must be closed as HostUnavailable");
             same.Advance();
             same.Script.Enqueue(now => Weekly(5, now.AddDays(7).AddMinutes(-1)));
-            await same.Monitor.RefreshOnceAsync(QuotaProvider.Claude, cancellationToken);
+            await same.Monitor.RefreshSourceIfDueAsync(QuotaProvider.Claude, cancellationToken);
             Settle();
             // The monitor itself hands its last successful reading to the next response (the shared PreviousSuccess), so the
             // new response is compared with it once: that alert is the NEW response's. The old callback alerted nothing.
@@ -385,7 +385,7 @@ internal static class MacEarlyResetSmoke
             // 4. Normal path is unchanged: a live subscription still evaluates and finishes its row once.
             same.Advance();
             same.Script.Enqueue(now => Weekly(2, now.AddDays(7).AddMinutes(-1)));
-            await same.Monitor.RefreshOnceAsync(QuotaProvider.Claude, cancellationToken);
+            await same.Monitor.RefreshSourceIfDueAsync(QuotaProvider.Claude, cancellationToken);
             Settle();
             Check(Reasons(same.Log).Last() == "Alert/Alert" && shown.Count + controller.PendingCount == 2,
                 "a live subscription must still evaluate each response once and alert once per decrease");

@@ -100,7 +100,7 @@ internal static class QuotaToolTipUiChecks
             }
             popup.Hide();
         }
-        foreach (var provider in Enum.GetValues<QuotaProvider>().Where(QuotaNames.IsQueryEnabled))
+        foreach (var provider in Enum.GetValues<QuotaProvider>().Where(QuotaNames.HasCliRoute))
         {
             string text = QuotaPanelModel.Section(new(provider), now).Detail;
             popup.Display(owner, string.Join('\n', Enumerable.Repeat(text, 10)), pointer, owner.DeviceDpi);
@@ -175,7 +175,7 @@ internal static class QuotaToolTipUiChecks
             "합성 Claude 모델 " + i, 25, now.AddDays(3.5), 10080)).ToArray();
         var state = new QuotaState(QuotaProvider.Claude, new(QuotaProvider.Claude, windows),
             CheckedAtUtc: now, LastSuccessfulCheckUtc: now, NextCheckUtc: now.AddHours(1), IsPrevious: true,
-            Error: string.Concat(Enumerable.Repeat("합성 조회 오류의 긴 설명입니다. 실제 계정 정보가 아닙니다. ", 40)));
+            CacheError: string.Concat(Enumerable.Repeat("합성 조회 오류의 긴 설명입니다. 실제 계정 정보가 아닙니다. ", 40)));
         bool wasVisible = owner.Visible;
         Control? activeTarget = null;
         try
@@ -225,7 +225,7 @@ internal static class QuotaToolTipUiChecks
         string text = view.DetailFor(box);
         check(box.Controls.Cast<Control>().All(control => view.DetailFor(control) == text),
             "Every title, scope, quota row and bar shares one Provider tooltip: " + provider);
-        if (QuotaNames.IsQueryEnabled(provider))
+        if (QuotaNames.HasCliRoute(provider))
         {
             check(text.Contains("리셋·한도 복원 예정", StringComparison.Ordinal) && text.Contains(" KST", StringComparison.Ordinal) &&
                 text.Contains("실제 복원 여부는 새 조회로 확인", StringComparison.Ordinal),
@@ -268,7 +268,7 @@ internal static class QuotaToolTipUiChecks
             check(fitted == text.Length, "Complete Provider detail fits the wrapped popup: " + provider);
             check(box.Controls.OfType<Label>().Where(label => label.Text.Contains('%')).All(label =>
                 view.DetailFor(label) == text && label.AccessibleDescription != text) &&
-                box.AccessibleDescription == text && (QuotaNames.IsQueryEnabled(provider)
+                box.AccessibleDescription == text && (QuotaNames.HasCliRoute(provider)
                     ? text.Contains("리셋·한도 복원 예정", StringComparison.Ordinal) && text.Contains(" KST", StringComparison.Ordinal)
                     : text.StartsWith("Gemini 한도 · 꺼짐\n", StringComparison.Ordinal)),
                 "Row accessibility is separate from its Provider's detail: " + provider);

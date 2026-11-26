@@ -173,16 +173,16 @@ internal static class GrokQuotaTests
             "old diagnostic files are neither read nor overwritten");
         var client = new Client { Reading = reading };
         using var monitor = new AccountQuotaMonitor(client, utcNow: () => now);
-        await monitor.RefreshOnceAsync(QuotaProvider.Xai);
+        await monitor.RefreshSourceIfDueAsync(QuotaProvider.Xai);
         client.Fail = true;
-        await monitor.RefreshOnceAsync(QuotaProvider.Xai);
+        await monitor.RefreshSourceIfDueAsync(QuotaProvider.Xai);
         Check(monitor.Snapshot().Single(s => s.Provider == QuotaProvider.Xai) is { IsPrevious: true, Reading: not null }, "failure preserves verified data");
         client.Fail = false;
         int before = client.Calls;
-        await monitor.RefreshOnceAsync(QuotaProvider.Xai);
+        await monitor.RefreshSourceIfDueAsync(QuotaProvider.Xai);
         Check(client.Calls == before + 1, "an explicit read is not throttled by the scheduling floor");
         using var none = new AccountQuotaMonitor(new Client { Fail = true }, utcNow: () => now);
-        await none.RefreshOnceAsync(QuotaProvider.Xai);
+        await none.RefreshSourceIfDueAsync(QuotaProvider.Xai);
         Check(none.Snapshot().Single(s => s.Provider == QuotaProvider.Xai).Reading is null, "failure with no prior data never creates zero");
         return count;
     }

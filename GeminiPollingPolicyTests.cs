@@ -86,7 +86,8 @@ internal static class GeminiPollingPolicyTests
         check(AccountQuotaPolicy.GetNextCheckUtc(Now.AddMinutes(15), Now.AddMinutes(15), [Window(20, Now)],
             provider: QuotaProvider.Gemini) == Now.AddMinutes(15).AddHours(1), "no trailing five-minute poll follows a genuine band");
         foreach (QuotaProvider provider in Enum.GetValues<QuotaProvider>())
-            check(QuotaPanelModel.Section(new(provider), Now).Detail.Contains(
+            check(QuotaPanelModel.Section(new(provider, Mode: provider == QuotaProvider.Gemini
+                ? QuotaSourceMode.Unavailable : QuotaSourceMode.Active), Now).Detail.Contains(
                 "Antigravity 약관상", StringComparison.Ordinal)
                 == (provider == QuotaProvider.Gemini), "automatic-query stop is explained only in Gemini's Provider detail");
     }
@@ -101,7 +102,7 @@ internal static class GeminiPollingPolicyTests
             using var monitor = new AccountQuotaMonitor(client, utcNow: () => now);
             for (; now <= Now.AddDays(7); now = now.AddHours(1))
             {
-                await monitor.RefreshOnceAsync(QuotaProvider.Gemini);
+                await monitor.RefreshSourceIfDueAsync(QuotaProvider.Gemini);
                 check(State(monitor) is { Reading: null, NextCheckUtc: null, CheckedAtUtc: null },
                     "seven virtual days of unused Gemini resets cannot create a query or schedule");
             }
@@ -118,11 +119,11 @@ internal static class GeminiPollingPolicyTests
         var client = new FakeClient(provider => fail ? throw new IOException("Synthetic read failure")
             : new(provider, [Window(used, null)]));
         using var monitor = new AccountQuotaMonitor(client, utcNow: () => now);
-        await monitor.RefreshOnceAsync(QuotaProvider.Claude);
+        await monitor.RefreshSourceIfDueAsync(QuotaProvider.Claude);
         fail = true;
         foreach (int minutes in new[] { 15, 30, 60, 60, 60, 60, 60 })
         {
-            await monitor.RefreshOnceAsync(QuotaProvider.Claude);
+            await monitor.RefreshSourceIfDueAsync(QuotaProvider.Claude);
             QuotaState state = State(monitor, QuotaProvider.Claude);
             check(state.NextCheckUtc == now.AddMinutes(minutes), "enabled provider retains exponential failure backoff");
             check(state.IsPrevious && state.LastSuccessfulCheckUtc == Now,
@@ -130,18 +131,18 @@ internal static class GeminiPollingPolicyTests
             now = state.NextCheckUtc!.Value;
         }
         fail = false;
-        await monitor.RefreshOnceAsync(QuotaProvider.Claude);
+        await monitor.RefreshSourceIfDueAsync(QuotaProvider.Claude);
         check(State(monitor, QuotaProvider.Claude).NextCheckUtc == now.AddHours(1), "success clears failures and ordinary polling remains hourly");
         fail = true;
-        await monitor.RefreshOnceAsync(QuotaProvider.Claude);
+        await monitor.RefreshSourceIfDueAsync(QuotaProvider.Claude);
         check(State(monitor, QuotaProvider.Claude).NextCheckUtc == now.AddMinutes(15), "a new failure episode starts at fifteen minutes");
         fail = false;
         used = 100;
-        await monitor.RefreshOnceAsync(QuotaProvider.Claude);
+        await monitor.RefreshSourceIfDueAsync(QuotaProvider.Claude);
         fail = true;
         for (int index = 0; index < 4; index++)
         {
-            await monitor.RefreshOnceAsync(QuotaProvider.Claude);
+            await monitor.RefreshSourceIfDueAsync(QuotaProvider.Claude);
             check(State(monitor, QuotaProvider.Claude).NextCheckUtc == now.AddMinutes(15), "exhausted enabled-provider failure retries remain capped at fifteen minutes");
         }
         await monitor.StopAsync();
@@ -170,7 +171,7 @@ internal static class GeminiPollingPolicyTests
                 "automatic query stop preserves the complete legacy Gemini cache");
             client.Handler = provider => provider == QuotaProvider.Gemini ? reading : new(provider, [Window(0, null)]);
             now = now.AddMinutes(1);
-            await monitor.RefreshOnceAsync(QuotaProvider.Gemini);
+            await monitor.RefreshSourceIfDueAsync(QuotaProvider.Gemini);
             var preserved = await store.ReadQuotaAsync(QuotaProvider.Gemini);
             check(preserved?.ResetAnchorPolicyVersion == 0 && preserved.ResetAnchors.SequenceEqual(polluted),
                 "explicit disabled refresh cannot migrate or overwrite the legacy cache");
@@ -211,7 +212,7 @@ internal static class GeminiPollingPolicyTests
             using var monitor = new AccountQuotaMonitor(client, store, () => now);
             monitor.Start();
             await WaitForInitialReadsAsync(monitor);
-            await monitor.RefreshOnceAsync(QuotaProvider.Gemini);
+            await monitor.RefreshSourceIfDueAsync(QuotaProvider.Gemini);
             check(State(monitor) is { Reading: null, LastSuccessfulCheckUtc: null, NextCheckUtc: null },
                 "disabled Gemini ignores trusted reset bands before, during and after expiry");
             var preserved = await store.ReadQuotaAsync(QuotaProvider.Gemini);
@@ -273,7 +274,7 @@ internal static class GeminiPollingPolicyTests
             await completed.WaitAsync(TimeSpan.FromSeconds(5));
             check(completed.IsCompletedSuccessfully, "the fixture completes promptly after the provider callback releases its gate");
             int calls = client.Calls;
-            await monitor.RefreshOnceAsync(QuotaProvider.Claude).WaitAsync(TimeSpan.FromSeconds(5));
+            await monitor.RefreshSourceIfDueAsync(QuotaProvider.Claude).WaitAsync(TimeSpan.FromSeconds(5));
             check(client.Calls == calls + 1 && State(monitor, QuotaProvider.Claude).NextCheckUtc == Now.AddHours(1),
                 "the next direct read executes instead of being skipped by an unfinished initial callback");
         }
@@ -294,10 +295,11 @@ internal static class GeminiPollingPolicyTests
             () => monitor.Snapshot().Where(s => s.Provider != QuotaProvider.Gemini).All(s => s.CheckedAtUtc.HasValue && !s.IsRefreshing), milliseconds: 5000);
         // IsRefreshing is already false inside Succeeded, before the gate is released.
         // Wait for actual completion in this fixture, without a sleep or another read.
-        var gates = (Dictionary<QuotaProvider, SemaphoreSlim>)typeof(AccountQuotaMonitor)
-            .GetField("gates", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.GetValue(monitor)!;
-        foreach (SemaphoreSlim gate in gates.Values)
+        const System.Reflection.BindingFlags flags = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic;
+        var sources = (System.Collections.IDictionary)typeof(AccountQuotaMonitor).GetField("sources", flags)!.GetValue(monitor)!;
+        foreach (var entry in sources.Values)
         {
+            var gate = (SemaphoreSlim)entry!.GetType().GetField("Gate", flags)!.GetValue(entry)!;
             if (!await gate.WaitAsync(TimeSpan.FromSeconds(5))) throw new TimeoutException("Initial quota callback did not finish.");
             gate.Release();
         }

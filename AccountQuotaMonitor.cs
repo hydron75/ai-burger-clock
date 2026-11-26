@@ -5,19 +5,9 @@ namespace AiBurgerClock;
 internal sealed record QuotaState(QuotaProvider Provider, QuotaReading? Reading = null,
     DateTimeOffset? CheckedAtUtc = null, DateTimeOffset? LastSuccessfulCheckUtc = null,
     DateTimeOffset? NextCheckUtc = null, bool IsRefreshing = false, bool IsPrevious = false,
-    string Error = "", string CacheError = "", long ContinuityId = 0, GeminiWebQuotaState? GeminiWeb = null,
-    ClaudeAuthCheck? ClaudeAuth = null, QuotaFailure? Failure = null)
-{
-    // Keep the old initializer for native smoke fixtures until P2. Production
-    // states get their compatibility text from a classified failure.
-    private readonly string legacyError = Error;
-    internal QuotaFailure? ReportedFailure => Failure ?? GeminiUsagePage.ClassifyFailure(GeminiWeb?.Outcome, GeminiWeb?.Diagnostic);
-    public string Error
-    {
-        get => ReportedFailure is { } failure ? QuotaPanelModel.FailureMessage(Provider, failure.Kind) : legacyError;
-        init => legacyError = value;
-    }
-}
+    string CacheError = "", long ContinuityId = 0, ClaudeAuthCheck? ClaudeAuth = null,
+    QuotaFailure? Failure = null, QuotaPresentationPolicy? Presentation = null,
+    QuotaSourceMode Mode = QuotaSourceMode.Active, bool HasResultSinceModeChange = false);
 
 // Only normalized quota numbers/timestamps are cached, never CLI output or credentials.
 internal sealed record QuotaCache(int Version, QuotaReading Reading, DateTimeOffset SuccessfulAtUtc,
@@ -26,53 +16,77 @@ internal sealed record QuotaCache(int Version, QuotaReading Reading, DateTimeOff
 
 internal sealed partial class AccountQuotaMonitor : IDisposable
 {
-    private readonly IAccountQuotaClient client;
-    private readonly UsageStore? store;
+    private sealed class SourceRun(IQuotaSource source, QuotaSourceMode mode)
+    {
+        internal readonly IQuotaSource Source = source;
+        internal QuotaState State = InitialState(source,
+            source is UnavailableQuotaSource ? QuotaSourceMode.Unavailable : mode);
+        internal readonly SemaphoreSlim Wake = new(0, 1);
+        internal readonly SemaphoreSlim Gate = new(1, 1);
+        internal DateTimeOffset[] Anchors = [];
+        internal int Failures;
+        internal long Sequence;
+        internal long ReadingContinuity = 1;
+        internal long Generation;
+        internal bool ManualRequested;
+        internal CancellationTokenSource? ActiveRead;
+        internal Task? ReadCancellation;
+    }
+
     private readonly Func<DateTimeOffset> utcNow;
+    private readonly TimeZoneInfo zone;
     private readonly QuotaPollingDiagnosticLog? pollingLog;
     private readonly QuotaEarlyResetDiagnosticLog? earlyResetLog;
     private readonly object sync = new();
     private readonly CancellationTokenSource lifetime = new();
-    private readonly Dictionary<QuotaProvider, QuotaState> states = Enum.GetValues<QuotaProvider>()
-        .ToDictionary(p => p, p => new QuotaState(p, ContinuityId: 1));
-    private readonly Dictionary<QuotaProvider, SemaphoreSlim> wakes = Enum.GetValues<QuotaProvider>().ToDictionary(p => p, _ => new SemaphoreSlim(0, 1));
-    private readonly Dictionary<QuotaProvider, SemaphoreSlim> gates = Enum.GetValues<QuotaProvider>().ToDictionary(p => p, _ => new SemaphoreSlim(1, 1));
-    private readonly Dictionary<QuotaProvider, DateTimeOffset[]> anchors = Enum.GetValues<QuotaProvider>().ToDictionary(p => p, _ => Array.Empty<DateTimeOffset>());
-    private readonly Dictionary<QuotaProvider, int> failures = Enum.GetValues<QuotaProvider>().ToDictionary(p => p, _ => 0);
-    private readonly Dictionary<QuotaProvider, long> sequences = Enum.GetValues<QuotaProvider>().ToDictionary(p => p, _ => 0L);
-    // Generation of each last successful reading, not an account identity. Failed
-    // attempts advance the state generation without re-stamping the previous read.
-    private readonly Dictionary<QuotaProvider, long> readingContinuities = Enum.GetValues<QuotaProvider>().ToDictionary(p => p, _ => 1L);
+    private readonly Dictionary<QuotaProvider, SourceRun> sources;
+    private readonly bool cancelLifetimeAsynchronously;
     private Task? runner;
+    private Task? lifetimeCancellation;
     private bool disposed;
     public event Action? Changed;
-    // Unlike Changed, this is emitted exactly once for each accepted live response,
-    // never for cached values, refresh starts, failures or cancelled requests.
-    // Invoked synchronously by the refresh task, outside the state lock but while
-    // holding the provider gate. Dispatch UI work asynchronously and return promptly;
-    // slow callbacks delay this provider's next refresh. Never synchronously wait for
-    // StopAsync or shutdown/disposal that awaits it here: shutdown waits for this callback.
-    // RefreshOnceAsync for the same provider is skipped while this callback holds the gate.
+    // Invoked once per accepted live observation, outside the state lock and
+    // before releasing the provider gate. Handlers must not wait on shutdown.
     public event Action<QuotaObservation>? Succeeded;
 
     public AccountQuotaMonitor(IAccountQuotaClient client, UsageStore? store = null, Func<DateTimeOffset>? utcNow = null,
         QuotaPollingDiagnosticLog? diagnosticLog = null, QuotaEarlyResetDiagnosticLog? earlyResetDiagnosticLog = null,
         IGeminiUsagePageReader? geminiWebReader = null, bool geminiWebEnabled = false, TimeZoneInfo? geminiWebTimeZone = null)
+        : this(CreateSources(client, store, geminiWebReader, geminiWebEnabled), store, utcNow, diagnosticLog,
+            earlyResetDiagnosticLog, client as IClaudeAuthClient, geminiWebTimeZone)
+    { }
+
+    internal AccountQuotaMonitor(IEnumerable<(IQuotaSource Source, QuotaSourceMode Mode)> registration, UsageStore? store = null,
+        Func<DateTimeOffset>? utcNow = null, QuotaPollingDiagnosticLog? diagnosticLog = null,
+        QuotaEarlyResetDiagnosticLog? earlyResetDiagnosticLog = null, IClaudeAuthClient? claudeAuthClient = null,
+        TimeZoneInfo? zone = null)
     {
-        this.client = client;
-        claudeAuthClient = client as IClaudeAuthClient;
-        this.store = store;
+        sources = registration.ToDictionary(item => item.Source.Provider, item => new SourceRun(item.Source, item.Mode));
+        this.claudeAuthClient = claudeAuthClient;
         this.utcNow = utcNow ?? (() => DateTimeOffset.UtcNow);
+        this.zone = zone ?? TimeZoneInfo.Local;
         pollingLog = diagnosticLog ?? CreatePollingLog(store);
         earlyResetLog = earlyResetDiagnosticLog ?? CreateEarlyResetLog(store);
-        this.geminiWebReader = geminiWebReader;
-        this.geminiWebTimeZone = geminiWebTimeZone;
-        if (geminiWebReader is not null)
-            states[QuotaProvider.Gemini] = NewGeminiWebState(geminiWebEnabled);
+        // A WebView cancellation callback can dispatch to a UI thread.
+        cancelLifetimeAsynchronously = sources.Values.Any(source => source.Source.Traits.StickyManualRefresh);
     }
 
-    // Hosts finish the existing per-query row after dispatching to their UI thread.
-    // This records a decision, not proof that the OS displayed an alert.
+    internal static IEnumerable<(IQuotaSource Source, QuotaSourceMode Mode)> CreateSources(IAccountQuotaClient client,
+        UsageStore? store, IGeminiUsagePageReader? web, bool webEnabled)
+    {
+        yield return (new CliQuotaSource(QuotaProvider.Codex, client, store), QuotaSourceMode.Active);
+        yield return (new CliQuotaSource(QuotaProvider.Claude, client, store), QuotaSourceMode.Active);
+        yield return web is null
+            ? (new UnavailableQuotaSource(QuotaProvider.Gemini), QuotaSourceMode.Unavailable)
+            : (new GeminiWebQuotaSource(web, store), webEnabled ? QuotaSourceMode.Active : QuotaSourceMode.Off);
+        yield return (new CliQuotaSource(QuotaProvider.Xai, client, store), QuotaSourceMode.Active);
+    }
+
+    private static QuotaState InitialState(IQuotaSource source, QuotaSourceMode mode) =>
+        new(source.Provider, ContinuityId: 1, Mode: mode, Presentation: source.Traits.Presentation);
+
+    internal bool EmitsObservations(QuotaProvider provider) => sources[provider].Source.Traits.EmitsObservations;
+
     internal void RecordEarlyResetDecision(QuotaObservation observation, string outcome, string reason)
     {
         if (observation.DiagnosticAttemptId is { } attemptId)
@@ -84,7 +98,7 @@ internal sealed partial class AccountQuotaMonitor : IDisposable
         lock (sync)
         {
             var now = utcNow();
-            return states.Values.OrderBy(s => s.Provider).Select(s => s with
+            return sources.Values.Select(entry => entry.State).OrderBy(s => s.Provider).Select(s => s with
             {
                 IsPrevious = s.IsPrevious || (s.NextCheckUtc is { } next && now > next.AddMinutes(5)) ||
                     (s.LastSuccessfulCheckUtc is { } success && now < success.AddMinutes(-5)),
@@ -98,9 +112,8 @@ internal sealed partial class AccountQuotaMonitor : IDisposable
         lock (sync)
         {
             if (disposed) return;
-            runner ??= Task.WhenAll(Enum.GetValues<QuotaProvider>().Where(QuotaNames.IsQueryEnabled)
-                .Select(p => Task.Run(() => RunAsync(p)))
-                .Concat(geminiWebReader is null ? [] : [Task.Run(RunGeminiWebAsync)])
+            runner ??= Task.WhenAll(sources.Values.Where(entry => entry.State.Mode != QuotaSourceMode.Unavailable)
+                .Select(entry => Task.Run(() => RunAsync(entry)))
                 .Concat(claudeAuthClient is null ? [] : [Task.Run(RunClaudeAuthAsync)]));
         }
     }
@@ -110,194 +123,315 @@ internal sealed partial class AccountQuotaMonitor : IDisposable
         lock (sync)
         {
             if (disposed || lifetime.IsCancellationRequested) return;
-            // Both hosts queue quota refreshes on resume/network recovery and use
-            // the default for the manual Refresh command.
             if (!queueWhileRefreshing) QueueClaudeAuthCheck(ClaudeAuthRequest.Immediate);
-            foreach (var provider in states.Keys)
-                if (QuotaNames.IsQueryEnabled(provider) && (queueWhileRefreshing || !states[provider].IsRefreshing) && wakes[provider].CurrentCount == 0)
-                    wakes[provider].Release();
+            foreach (var entry in sources.Values)
+                if (entry.State.Mode == QuotaSourceMode.Active && entry.Source.Traits.RefreshOnRecovery &&
+                    (queueWhileRefreshing || !entry.State.IsRefreshing))
+                    Signal(entry);
         }
     }
 
-    private async Task RunAsync(QuotaProvider provider)
+    internal void RequestSourceRefresh(QuotaProvider provider)
+    {
+        lock (sync)
+        {
+            var entry = sources[provider];
+            if (disposed || lifetime.IsCancellationRequested || entry.State.Mode != QuotaSourceMode.Active) return;
+            if (entry.Source.Traits.StickyManualRefresh) entry.ManualRequested = true;
+            else if (entry.State.IsRefreshing) return;
+            Signal(entry);
+        }
+    }
+
+    internal void SetMode(QuotaProvider provider, QuotaSourceMode mode)
+    {
+        if (mode is not (QuotaSourceMode.Active or QuotaSourceMode.Off))
+            throw new ArgumentOutOfRangeException(nameof(mode));
+        lock (sync)
+        {
+            var entry = sources[provider];
+            if (disposed || lifetime.IsCancellationRequested || entry.State.Mode == QuotaSourceMode.Unavailable) return;
+            entry.Generation++;
+            entry.State = InitialState(entry.Source, mode);
+            entry.Anchors = [];
+            entry.Failures = 0;
+            entry.ReadingContinuity = 1;
+            entry.ManualRequested = mode == QuotaSourceMode.Active && entry.Source.Traits.StickyManualRefresh;
+            entry.ReadCancellation ??= entry.ActiveRead?.CancelAsync();
+            Signal(entry);
+        }
+        RaiseChanged();
+    }
+
+    internal Task ClearCacheAsync(QuotaProvider provider, CancellationToken cancellationToken = default)
+    {
+        lock (sync)
+        {
+            var entry = sources[provider];
+            if (entry.State.Mode != QuotaSourceMode.Off || entry.Generation == 0)
+                throw new InvalidOperationException("Disable the quota source before clearing its cache.");
+            return entry.Source.Cache.DeleteAsync(cancellationToken);
+        }
+    }
+
+    private static void Signal(SourceRun entry)
+    {
+        if (entry.Wake.CurrentCount == 0) entry.Wake.Release();
+    }
+
+    private TimeSpan? Delay(SourceRun entry)
+    {
+        var state = entry.State;
+        if (state.Mode != QuotaSourceMode.Active) return null;
+        if (entry.ManualRequested) return TimeSpan.Zero;
+        if (state.NextCheckUtc is { } next) return next - utcNow();
+        if (!entry.Source.Traits.DueCheckBeforeRead) return AccountQuotaPolicy.DefaultInterval;
+        return state.Failure?.Kind == QuotaFailureKind.LoginRequired ? null : TimeSpan.Zero;
+    }
+
+    private async Task RestoreCacheAsync(SourceRun entry)
+    {
+        lock (sync)
+            if (entry.Generation != 0 || !entry.Source.Cache.RestoreOnStart(entry.State.Mode)) return;
+
+        QuotaCache? cache = null;
+        string error = "";
+        try { cache = await entry.Source.Cache.ReadAsync(lifetime.Token).ConfigureAwait(false); }
+        catch (OperationCanceledException) when (lifetime.IsCancellationRequested) { throw; }
+        catch { error = "저장된 한도 정보 확인 실패"; }
+        lock (sync)
+        {
+            var state = entry.State;
+            if (entry.Generation != 0 || state.IsRefreshing || state.CheckedAtUtc is not null) return;
+            if (cache is not null)
+            {
+                var reading = cache.Reading with { Windows = Array.AsReadOnly(cache.Reading.Windows.ToArray()) };
+                entry.State = state with
+                {
+                    Reading = reading, LastSuccessfulCheckUtc = cache.SuccessfulAtUtc, IsPrevious = true, CacheError = error
+                };
+                entry.Anchors = cache.ResetAnchors.ToArray();
+                entry.ReadingContinuity = state.ContinuityId;
+            }
+            else if (error.Length != 0) entry.State = state with { CacheError = error };
+        }
+        RaiseChanged();
+    }
+
+    private async Task RunAsync(SourceRun entry)
     {
         try
         {
-            if (store is not null)
-            {
-                try
-                {
-                    var cached = await store.ReadQuotaAsync(provider, lifetime.Token).ConfigureAwait(false);
-                    if (cached is not null)
-                        lock (sync)
-                        {
-                            var reading = cached.Reading with { Windows = Array.AsReadOnly(cached.Reading.Windows.ToArray()) };
-                            states[provider] = new(provider, reading, LastSuccessfulCheckUtc: cached.SuccessfulAtUtc,
-                                IsPrevious: true, ContinuityId: states[provider].ContinuityId);
-                            // Single-account-per-provider assumption: cache v1 has no
-                            // account identity or persisted failure generation. Rebind
-                            // only its early-reset baseline to this monitor's generation.
-                            readingContinuities[provider] = states[provider].ContinuityId;
-                            // Legacy Gemini anchors have no window provenance and may
-                            // contain a long chain from unused moving resets. Rebuild
-                            // only that legacy cache's anchors from verified used windows.
-                            // Marked caches retain genuine old reset +15m bands even
-                            // after a newly successful reading reports zero usage.
-                            anchors[provider] = provider == QuotaProvider.Gemini && cached.ResetAnchorPolicyVersion == 0
-                                ? AccountQuotaPolicy.CurrentResetAnchors(cached.Reading.Windows, provider).ToArray()
-                                : cached.ResetAnchors.ToArray();
-                        }
-                }
-                catch (OperationCanceledException) when (lifetime.IsCancellationRequested) { return; }
-                catch { lock (sync) states[provider] = states[provider] with { CacheError = "저장된 한도 정보 확인 실패" }; }
-                RaiseChanged();
-            }
+            await RestoreCacheAsync(entry).ConfigureAwait(false);
             while (!lifetime.IsCancellationRequested)
             {
-                await RefreshOnceAsync(provider, lifetime.Token).ConfigureAwait(false);
-                DateTimeOffset next;
-                lock (sync) next = states[provider].NextCheckUtc ?? utcNow() + AccountQuotaPolicy.DefaultInterval;
-                TimeSpan delay = next - utcNow();
-                // No catch-up bursts after resume/clock changes. A wake is coalesced to one pass.
-                await wakes[provider].WaitAsync(delay > TimeSpan.Zero ? delay : TimeSpan.FromSeconds(1), lifetime.Token).ConfigureAwait(false);
+                await RefreshSourceIfDueAsync(entry.Source.Provider, lifetime.Token).ConfigureAwait(false);
+                TimeSpan? delay;
+                lock (sync) delay = Delay(entry);
+                // Coalesce wakes and avoid catch-up bursts after time changes.
+                if (delay is { } due)
+                    await entry.Wake.WaitAsync(due > TimeSpan.Zero ? due : TimeSpan.FromSeconds(1), lifetime.Token).ConfigureAwait(false);
+                else
+                    await entry.Wake.WaitAsync(lifetime.Token).ConfigureAwait(false);
             }
         }
         catch (OperationCanceledException) when (lifetime.IsCancellationRequested) { }
     }
 
-    internal async Task RefreshOnceAsync(QuotaProvider provider, CancellationToken cancellationToken = default)
+    internal async Task RefreshSourceIfDueAsync(QuotaProvider provider, CancellationToken cancellationToken = default)
     {
-        if (!QuotaNames.IsQueryEnabled(provider)) return;
+        var entry = sources[provider];
+        var traits = entry.Source.Traits;
+        lock (sync)
+            if (entry.State.Mode != QuotaSourceMode.Active) return;
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, lifetime.Token);
-        if (!await gates[provider].WaitAsync(0, linked.Token).ConfigureAwait(false)) return;
+        if (!await entry.Gate.WaitAsync(0, linked.Token).ConfigureAwait(false)) return;
         QuotaObservation? observation = null;
         QuotaPollingDiagnostic? diagnostic = null;
-        bool readStarted = false;
-        string attemptId = "";
-        DateTimeOffset attemptedAtUtc = default;
+        bool started = false, readStarted = false;
+        long generation = 0;
+        string? attemptId = null;
+        DateTimeOffset attempted = default;
         try
         {
-            // Even an injected clock failure must release the acquired provider gate.
-            attemptId = Guid.NewGuid().ToString("N");
-            attemptedAtUtc = utcNow().ToUniversalTime();
-            lock (sync) states[provider] = states[provider] with { IsRefreshing = true, NextCheckUtc = null };
-            RaiseChanged();
-            QuotaReading? reading = null;
-            QuotaFailure? failure = null;
-            try
-            {
-                using var timeout = CancellationTokenSource.CreateLinkedTokenSource(linked.Token);
-                timeout.CancelAfter(provider == QuotaProvider.Xai ? AccountQuotaClient.GrokTimeout : TimeSpan.FromSeconds(40));
-                linked.Token.ThrowIfCancellationRequested();
-                readStarted = true;
-                var candidate = await client.ReadAsync(provider, timeout.Token).ConfigureAwait(false);
-                timeout.Token.ThrowIfCancellationRequested();
-                reading = AccountQuotaClient.ValidateReading(candidate, provider, utcNow());
-            }
-            catch (OperationCanceledException) when (linked.IsCancellationRequested) { throw; }
-            catch (Exception ex)
-            {
-                reading = null; // Invalid responses must never replace the last verified reading.
-                failure = AccountQuotaClient.FailureFromRead(ex);
-            }
-            var now = utcNow().ToUniversalTime();
-            QuotaCache? cache = null;
             lock (sync)
             {
-                linked.Token.ThrowIfCancellationRequested();
-                var old = states[provider];
-                var known = reading ?? old.Reading;
-                // Keep the old reset's +15-minute band even when the server returns the next reset.
-                anchors[provider] = AccountQuotaPolicy.CoalesceResetAnchors(anchors[provider]
-                    .Concat(AccountQuotaPolicy.CurrentResetAnchors(old.Reading?.Windows ?? [], provider))
-                    .Concat(AccountQuotaPolicy.CurrentResetAnchors(known?.Windows ?? [], provider))
-                    .Where(r => r.AddMinutes(15) >= now), maximumCount: 64);
-                var plan = AccountQuotaPolicy.GetNextCheckPlan(now, now, known?.Windows ?? [], anchors[provider], provider);
-                failures[provider] = reading is null ? Math.Min(failures[provider] + 1, 100) : 0;
-                if (reading is null)
+                if (disposed || entry.State.Mode != QuotaSourceMode.Active ||
+                    traits.DueCheckBeforeRead && (Delay(entry) is not { } due || due > TimeSpan.Zero)) return;
+                if (traits.EmitsObservations)
                 {
-                    var retry = now + AccountQuotaPolicy.GetFailureRetryDelay(failures[provider], known?.Windows ?? []);
-                    if (retry <= plan.NextCheckUtc) plan = new(retry, QuotaCheckReason.FailureRetry);
+                    attemptId = Guid.NewGuid().ToString("N");
+                    attempted = utcNow().ToUniversalTime();
                 }
-                states[provider] = old with
+                generation = entry.Generation;
+                entry.ActiveRead = linked;
+                entry.ManualRequested = false;
+                entry.State = entry.State with { IsRefreshing = true, NextCheckUtc = null };
+                started = true;
+            }
+            RaiseChanged();
+            linked.Token.ThrowIfCancellationRequested();
+            readStarted = true;
+            DateTimeOffset? sourceTime = null;
+            var result = await ReadAsync(entry.Source, () => sourceTime ??= utcNow().ToUniversalTime(),
+                linked.Token).ConfigureAwait(false);
+            var now = sourceTime ?? utcNow().ToUniversalTime();
+            Task<string>? cacheWrite = null;
+            lock (sync)
+            {
+                if (generation != entry.Generation) return;
+                linked.Token.ThrowIfCancellationRequested();
+                var old = entry.State;
+                var reading = result.Reading;
+                var failure = result.Failure;
+                bool clear = failure?.Kind == QuotaFailureKind.LoginRequired && traits.Presentation.ClearSuccessOnLoginRequired;
+                var known = clear ? null : reading ?? old.Reading;
+                entry.Anchors = traits.Schedule.UpdateAnchors(now, old.Reading, known, entry.Anchors);
+                entry.Failures = reading is null ? Math.Min(entry.Failures + 1, 100) : 0;
+                var plan = traits.Schedule.Next(now, known, failure, entry.Failures, entry.Anchors);
+                entry.State = old with
                 {
-                    Reading = known, CheckedAtUtc = now, LastSuccessfulCheckUtc = reading is not null ? now : old.LastSuccessfulCheckUtc,
-                    NextCheckUtc = plan.NextCheckUtc, IsPrevious = reading is null, Failure = failure
+                    Reading = known, CheckedAtUtc = now,
+                    LastSuccessfulCheckUtc = clear ? null : reading is not null ? now : old.LastSuccessfulCheckUtc,
+                    NextCheckUtc = plan?.NextCheckUtc, IsPrevious = reading is null && (traits.EmitsObservations || known is not null),
+                    Failure = failure, HasResultSinceModeChange = true
                 };
-                diagnostic = new(provider.ToString(), attemptedAtUtc, now, plan.NextCheckUtc, plan.Reason.ToString(),
-                    plan.SelectedResetUtc, reading is not null, failures[provider], anchors[provider].Length);
+                if (traits.EmitsObservations && plan is not null)
+                    diagnostic = new(provider.ToString(), attempted, now, plan.NextCheckUtc, plan.Reason.ToString(),
+                        plan.SelectedResetUtc, reading is not null, entry.Failures, entry.Anchors.Length);
                 if (reading is not null)
                 {
-                    cache = new(1, reading, now, anchors[provider], provider == QuotaProvider.Gemini
-                        ? AccountQuotaPolicy.ResetAnchorPolicyVersion : 0);
-                    QuotaPreviousSuccess? previous = old.Reading is not null && old.LastSuccessfulCheckUtc is { } previousAt
-                        ? new(old.Reading, previousAt, readingContinuities[provider]) : null;
-                    observation = new(provider, ++sequences[provider], now, reading, old.ContinuityId, previous, attemptId);
-                    readingContinuities[provider] = old.ContinuityId;
+                    // Queue the write on the store before allowing a concurrent off/delete.
+                    // The SQLite work and the wait both run outside this lock.
+                    cacheWrite = WriteCacheAsync(entry, reading, now, linked.Token);
+                    if (traits.EmitsObservations)
+                    {
+                        QuotaPreviousSuccess? previous = old.Reading is not null && old.LastSuccessfulCheckUtc is { } previousAt
+                            ? new(old.Reading, previousAt, entry.ReadingContinuity) : null;
+                        observation = new(provider, ++entry.Sequence, now, reading, old.ContinuityId, previous, attemptId);
+                        entry.ReadingContinuity = old.ContinuityId;
+                    }
                 }
             }
-            if (store is not null && cache is not null)
+            if (cacheWrite is not null)
             {
-                try
-                {
-                    await store.SaveQuotaAsync(cache, linked.Token).ConfigureAwait(false);
-                    lock (sync) states[provider] = states[provider] with { CacheError = "" };
-                }
-                catch (OperationCanceledException) when (linked.IsCancellationRequested) { throw; }
-                catch { lock (sync) states[provider] = states[provider] with { CacheError = "한도 캐시 저장 실패 (화면 조회값은 유지)" }; }
+                string cacheError = await cacheWrite.ConfigureAwait(false);
+                lock (sync)
+                    if (generation == entry.Generation) entry.State = entry.State with { CacheError = cacheError };
             }
-            if (diagnostic is not null && !linked.IsCancellationRequested)
-                pollingLog?.TryWrite(diagnostic);
+            if (diagnostic is not null && !linked.IsCancellationRequested) pollingLog?.TryWrite(diagnostic);
         }
+        catch (OperationCanceledException) when (!traits.EmitsObservations && linked.IsCancellationRequested) { }
         finally
         {
-            bool publishSuccess;
-            long continuityId;
-            lock (sync)
-            {
-                // Commit completion once. A valid response whose cache write was
-                // cancelled keeps its verified values/time, but emits no success and
-                // cannot bridge a later early-reset comparison or a queued UI alert.
-                // Cache/diagnostic write failures alone do not invalidate a live read.
-                publishSuccess = observation is not null && !linked.IsCancellationRequested;
-                var state = states[provider];
-                states[provider] = state with
-                {
-                    ContinuityId = readStarted && !publishSuccess ? state.ContinuityId + 1 : state.ContinuityId
-                };
-                continuityId = states[provider].ContinuityId;
-            }
+            bool publish = false;
             try
             {
-                // Separate versioned file: never extend the older strict polling
-                // schema. Append before callbacks so a fast host can update this row.
-                try
-                {
-                    if (readStarted)
-                        earlyResetLog?.TryAppend(new(attemptId, provider.ToString(), attemptedAtUtc,
-                            utcNow().ToUniversalTime(), publishSuccess, publishSuccess ? observation!.Sequence : null,
-                            continuityId, "Excluded", publishSuccess ? "NotEvaluated" : linked.IsCancellationRequested ? "ReadCancelled" : "ReadFailed"));
-                }
-                finally
-                {
-                    // Logging is part of completion. Do not expose an idle state
-                    // throughout a flush while this provider's gate is still busy.
-                    lock (sync) states[provider] = states[provider] with { IsRefreshing = false };
-                }
-                // Outside the state lock, but before releasing the provider gate:
-                // fast host callbacks see a completed refresh and cannot receive
-                // this provider's later response before the current one.
-                if (publishSuccess)
-                    RaiseSucceeded(observation!);
+                if (started)
+                    publish = await FinishAsync(entry, generation, linked.Token, readStarted, attempted,
+                        attemptId, observation).ConfigureAwait(false);
             }
             finally
             {
-                gates[provider].Release();
+                entry.Gate.Release();
                 if (provider == QuotaProvider.Claude && readStarted && !linked.IsCancellationRequested)
-                    RequestClaudeAuthAfterQuota(publishSuccess ? observation : null);
-                RaiseChanged();
+                    RequestClaudeAuthAfterQuota(publish ? observation : null);
+                if (started || traits.EmitsObservations) RaiseChanged();
             }
         }
+    }
+
+    private async Task<QuotaReadResult> ReadAsync(IQuotaSource source, Func<DateTimeOffset> sourceClock, CancellationToken token)
+    {
+        using var timeout = source.Traits.Timeout is not null ? CancellationTokenSource.CreateLinkedTokenSource(token) : null;
+        if (source.Traits.Timeout is { } limit) timeout!.CancelAfter(limit);
+        var readToken = timeout?.Token ?? token;
+        try
+        {
+            var result = await source.ReadAsync(sourceClock, zone, readToken).ConfigureAwait(false);
+            token.ThrowIfCancellationRequested();
+            if (result.Reading is not { } reading) return result;
+            // Preserve a classified CLI failure even if process cleanup ran past the outer deadline.
+            readToken.ThrowIfCancellationRequested();
+            return QuotaReadResult.Success(ValidateReading(reading, source.Provider, utcNow(), source.Traits.Presentation));
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested) { throw; }
+        catch (OperationCanceledException) when (readToken.IsCancellationRequested)
+        { return QuotaReadResult.Failed(new(QuotaFailureKind.Timeout, "timeout")); }
+        catch (QuotaReadException error) { return QuotaReadResult.Failed(error.Failure); }
+    }
+
+    internal static QuotaReading ValidateReading(QuotaReading candidate, QuotaProvider provider, DateTimeOffset now,
+        QuotaPresentationPolicy policy)
+    {
+        try
+        {
+            var snapshot = candidate with
+            {
+                Windows = candidate.Windows is { } windows ? Array.AsReadOnly(windows.ToArray()) : throw new InvalidDataException()
+            };
+            UsageStore.ValidateQuotaCache(new(1, snapshot, now.ToUniversalTime(), []), provider);
+            if (policy.AcceptForDisplay?.Invoke(snapshot) == false) throw new InvalidDataException();
+            return snapshot;
+        }
+        catch (InvalidDataException) { throw new QuotaReadException(QuotaFailureKind.FormatChanged, "validate.reading"); }
+    }
+
+    private static async Task<string> WriteCacheAsync(SourceRun entry, QuotaReading reading, DateTimeOffset now, CancellationToken token)
+    {
+        try
+        {
+            await entry.Source.Cache.WriteAsync(reading, now, entry.Anchors, token).ConfigureAwait(false);
+            return "";
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested) { throw; }
+        catch { return "한도 캐시 저장 실패 (화면 조회값은 유지)"; }
+    }
+
+    private async Task<bool> FinishAsync(SourceRun entry, long generation, CancellationToken token, bool readStarted,
+        DateTimeOffset attempted, string? attemptId, QuotaObservation? observation)
+    {
+        bool publish;
+        long continuity;
+        lock (sync)
+        {
+            bool current = generation == entry.Generation;
+            publish = current && observation is not null && !token.IsCancellationRequested;
+            if (current && entry.Source.Traits.EmitsObservations && readStarted && !publish)
+                entry.State = entry.State with { ContinuityId = entry.State.ContinuityId + 1 };
+            continuity = entry.State.ContinuityId;
+        }
+        Task? cancellation = null;
+        try
+        {
+            // Keep the gate and the refreshing state through the diagnostic flush.
+            if (entry.Source.Traits.EmitsObservations && readStarted)
+                earlyResetLog?.TryAppend(new(attemptId!, entry.Source.Provider.ToString(), attempted,
+                    utcNow().ToUniversalTime(), publish, publish ? observation!.Sequence : null,
+                    continuity, "Excluded", publish ? "NotEvaluated" : token.IsCancellationRequested ? "ReadCancelled" : "ReadFailed"));
+        }
+        finally
+        {
+            lock (sync)
+            {
+                entry.ActiveRead = null;
+                cancellation = entry.ReadCancellation;
+                entry.ReadCancellation = null;
+                if (generation == entry.Generation) entry.State = entry.State with { IsRefreshing = false };
+            }
+            if (cancellation is not null) await ObserveCancellationAsync(cancellation).ConfigureAwait(false);
+        }
+        lock (sync) publish &= generation == entry.Generation && !token.IsCancellationRequested;
+        if (publish) RaiseSucceeded(observation!);
+        return publish;
+    }
+
+    private Task CancelLifetimeAsync() => lifetimeCancellation ??= ObserveCancellationAsync(lifetime.CancelAsync());
+
+    private static async Task ObserveCancellationAsync(Task cancellation)
+    {
+        try { await cancellation.ConfigureAwait(false); }
+        catch (AggregateException) { /* A host cancellation callback cannot prevent shutdown. */ }
     }
 
     private static QuotaPollingDiagnosticLog? CreatePollingLog(UsageStore? store)
@@ -359,13 +493,13 @@ internal sealed partial class AccountQuotaMonitor : IDisposable
         lock (sync)
         {
             if (disposed) return;
-            if (geminiWebReader is null) lifetime.Cancel();
-            else cancellation = CancelGeminiWebLifetimeAsync();
+            if (cancelLifetimeAsynchronously) cancellation = CancelLifetimeAsync();
+            else lifetime.Cancel();
             running = runner;
         }
         if (cancellation is not null) await cancellation.ConfigureAwait(false);
         if (running is not null) await running.ConfigureAwait(false);
-        foreach (var gate in gates.Values) { await gate.WaitAsync().ConfigureAwait(false); gate.Release(); }
+        foreach (var entry in sources.Values) { await entry.Gate.WaitAsync().ConfigureAwait(false); entry.Gate.Release(); }
     }
 
     public void Dispose()
@@ -374,8 +508,8 @@ internal sealed partial class AccountQuotaMonitor : IDisposable
         {
             if (disposed) return;
             disposed = true;
-            if (geminiWebReader is null) lifetime.Cancel();
-            else _ = CancelGeminiWebLifetimeAsync();
+            if (cancelLifetimeAsynchronously) _ = CancelLifetimeAsync();
+            else lifetime.Cancel();
             // Non-awaited forced shutdown may still have a callback using these primitives.
             // Normal ExitApplication awaits StopAsync; no wait handles are allocated here.
         }

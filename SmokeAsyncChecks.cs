@@ -83,7 +83,7 @@ internal static class SmokeAsyncChecks
         var client = new TestAccountQuotaClient(() => now) { NextClaudeResponseGate = responseGate };
         using var monitor = new AccountQuotaMonitor(client, utcNow: () => now);
         using var cancellation = new CancellationTokenSource();
-        Task response = monitor.RefreshOnceAsync(QuotaProvider.Claude, cancellation.Token);
+        Task response = monitor.RefreshSourceIfDueAsync(QuotaProvider.Claude, cancellation.Token);
         using var heartbeat = new Timer { Interval = 20 };
         var uiContinuation = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         heartbeat.Tick += (_, _) => { heartbeat.Stop(); uiContinuation.TrySetResult(); };
@@ -101,7 +101,7 @@ internal static class SmokeAsyncChecks
             check(!monitor.Snapshot().Single(s => s.Provider == QuotaProvider.Claude).IsRefreshing &&
                 !monitor.Snapshot().Single(s => s.Provider == QuotaProvider.Claude).IsPrevious && client.Calls(QuotaProvider.Claude) == 1,
                 "Explicit gate release accepts exactly one successful Claude response");
-            await monitor.RefreshOnceAsync(QuotaProvider.Claude, cancellation.Token).WaitAsync(TimeSpan.FromSeconds(5));
+            await monitor.RefreshSourceIfDueAsync(QuotaProvider.Claude, cancellation.Token).WaitAsync(TimeSpan.FromSeconds(5));
             check(client.Calls(QuotaProvider.Claude) == 2 && !monitor.Snapshot().Single(s => s.Provider == QuotaProvider.Claude).IsRefreshing,
                 "Synthetic response gate is consumed once and does not delay the next Claude read");
         }

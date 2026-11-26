@@ -336,9 +336,9 @@ internal static class PanelModelTests
         check(waiting.Rows.Count == 1 && waiting.Rows[0].WindowId == "" && waiting.Rows[0].Tone == PanelTone.Muted, "placeholder row");
         same(waiting.Rows[0].Text, "한도 조회 대기", "placeholder text");
         same(waiting.Metadata.Text, "성공 — · 다음 —", "metadata before any check");
-        var failed = QuotaPanelModel.Section(new QuotaState(QuotaProvider.Claude, IsPrevious: true, Error: "공식 CLI를 찾지 못했습니다."), now);
+        var failed = QuotaPanelModel.Section(new QuotaState(QuotaProvider.Claude, IsPrevious: true, Failure: new(QuotaFailureKind.NotInstalled, "cli.not-found")), now);
         same(failed.Heading.Text, "Claude", "previous without a reading has no suffix");
-        same(failed.Rows[0].Text, "공식 CLI를 찾지 못했습니다.", "error replaces the placeholder");
+        same(failed.Rows[0].Text, "공식 CLI를 찾지 못했습니다. 설치 경로를 확인하세요.", "error replaces the placeholder");
 
         foreach ((double used, PanelTone tone) in new[] { (0.0, PanelTone.Good), (90.0, PanelTone.Good), (90.1, PanelTone.Caution),
             (99.9, PanelTone.Caution), (100.0, PanelTone.Danger), (101.0, PanelTone.Danger) })
@@ -352,7 +352,7 @@ internal static class PanelModelTests
         var gemini = new QuotaState(QuotaProvider.Gemini, new(QuotaProvider.Gemini,
             [new("gemini-5h", "5시간", 2.012, now.AddHours(2), 300),
              new("gemini-weekly", "주간", 0.335, now.AddDays(6), 10080)]),
-            CheckedAtUtc: now, LastSuccessfulCheckUtc: now, NextCheckUtc: now.AddHours(6));
+            CheckedAtUtc: now, LastSuccessfulCheckUtc: now, NextCheckUtc: now.AddHours(6), Mode: QuotaSourceMode.Unavailable);
         var geminiSection = QuotaPanelModel.Section(gemini, now);
         same(geminiSection.Heading.Text, "Gemini", "Gemini keeps its product heading");
         check(geminiSection.Scope is null, "Gemini query-disabled notice has no live quota scope line");
@@ -365,7 +365,7 @@ internal static class PanelModelTests
             !geminiSection.Detail.Contains("다음 조회:", StringComparison.Ordinal) &&
             !geminiSection.Detail.Contains("최근 시도:", StringComparison.Ordinal) &&
             !geminiSection.Detail.Contains("2026", StringComparison.Ordinal), "Gemini detail does not reveal cached observation times");
-        same(QuotaPanelModel.Section(new QuotaState(QuotaProvider.Gemini), now).Rows[0].Text,
+        same(QuotaPanelModel.Section(new QuotaState(QuotaProvider.Gemini, Mode: QuotaSourceMode.Unavailable), now).Rows[0].Text,
             QuotaNames.GeminiUnavailableText, "Gemini empty state has the same policy notice");
         var oldGemini = QuotaPanelModel.Section(gemini with { IsPrevious = true }, now);
         same(oldGemini.Heading.Text, "Gemini", "Gemini cached values cannot add a previous-reading heading");

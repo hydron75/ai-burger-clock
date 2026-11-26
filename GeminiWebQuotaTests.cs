@@ -24,11 +24,11 @@ internal static class GeminiWebQuotaTests
 
         using (var missingReader = new AccountQuotaMonitor(cli, store, () => now, geminiWebEnabled: true))
         {
-            missingReader.SetGeminiWebEnabled(true);
-            missingReader.RequestGeminiWebRefresh();
-            await missingReader.RefreshGeminiWebIfDueAsync();
+            missingReader.SetMode(QuotaProvider.Gemini, QuotaSourceMode.Active);
+            missingReader.RequestSourceRefresh(QuotaProvider.Gemini);
+            await missingReader.RefreshSourceIfDueAsync(QuotaProvider.Gemini);
             var state = GeminiState(missingReader);
-            Check(state == new QuotaState(QuotaProvider.Gemini, ContinuityId: 1), "saved opt-in alone leaves the old state unchanged");
+            Check(state == new QuotaState(QuotaProvider.Gemini, ContinuityId: 1, Mode: QuotaSourceMode.Unavailable, Presentation: QuotaPresentationPolicy.Cli), "saved opt-in alone leaves the old state unchanged");
             var disabled = QuotaPanelModel.Section(state, now);
             Check(disabled.Detail == QuotaPanelModel.GeminiUnavailableDetail && disabled.Rows.Single().Text == QuotaNames.GeminiUnavailableText,
                 "missing reader keeps the exact disabled UI");
@@ -37,10 +37,10 @@ internal static class GeminiWebQuotaTests
         using var monitor = new AccountQuotaMonitor(cli, store, () => now, geminiWebReader: reader, geminiWebTimeZone: TimeZoneInfo.Utc);
         int observations = 0;
         monitor.Succeeded += observation => { if (observation.Provider == QuotaProvider.Gemini) observations++; };
-        monitor.RequestGeminiWebRefresh();
-        await monitor.RefreshGeminiWebIfDueAsync();
+        monitor.RequestSourceRefresh(QuotaProvider.Gemini);
+        await monitor.RefreshSourceIfDueAsync(QuotaProvider.Gemini);
         var off = GeminiState(monitor);
-        Check(reader.Calls == 0 && off.GeminiWeb is { IsEnabled: false } && off.NextCheckUtc is null,
+        Check(reader.Calls == 0 && off.Mode == QuotaSourceMode.Off && off.NextCheckUtc is null,
             "registration alone neither polls nor schedules");
         var offSection = QuotaPanelModel.Section(off, now);
         Check(offSection.Rows.Single() is { Text: "꺼짐 · 로그인하면 Gemini 앱 사용량 조회", UsedPercent: null, ElapsedPercent: null } &&
@@ -50,13 +50,13 @@ internal static class GeminiWebQuotaTests
             offSection.Detail.Contains("로그인하면 웹 사용량 조회가 켜집니다", StringComparison.Ordinal),
             "off detail names the source and explains how to enable");
         Check(await store.ReadGeminiWebQuotaAsync() is null, "web cache key starts empty despite legacy records");
-        monitor.SetGeminiWebEnabled(true);
-        await monitor.RefreshOnceAsync(QuotaProvider.Gemini);
-        await monitor.RefreshGeminiWebIfDueAsync();
+        monitor.SetMode(QuotaProvider.Gemini, QuotaSourceMode.Active);
+        await monitor.RefreshSourceIfDueAsync(QuotaProvider.Gemini);
+        await monitor.RefreshSourceIfDueAsync(QuotaProvider.Gemini);
         var ok = GeminiState(monitor);
         Check(cli.GeminiCalls == 0 && reader.Calls == 1 && reader.Url == GeminiUsagePage.Url && reader.Script == GeminiUsagePage.ReadScript,
             "login signal goes through just the fixed URL and shared script");
-        Check(ok.GeminiWeb?.Outcome == GeminiUsageOutcome.Ok && ok.LastSuccessfulCheckUtc == now &&
+        Check(ok is { HasResultSinceModeChange: true, Failure: null } && ok.LastSuccessfulCheckUtc == now &&
             ok.NextCheckUtc == now.AddMinutes(15) && !ok.IsPrevious, "100%, 97%, and near reset still schedule fifteen minutes");
 
         var displayed = QuotaPanelModel.Section(ok, now);
@@ -91,75 +91,75 @@ internal static class GeminiWebQuotaTests
         reader.Load = _ => throw new InvalidOperationException("SYNTHETIC-PRIVATE-READER-ERROR");
         now = ok.NextCheckUtc!.Value.AddTicks(-1);
         monitor.RequestRefresh(queueWhileRefreshing: true);
-        await monitor.RefreshGeminiWebIfDueAsync();
+        await monitor.RefreshSourceIfDueAsync(QuotaProvider.Gemini);
         Check(reader.Calls == 1, "generic wake and a clock just before due cannot poll web");
         now = now.AddTicks(1);
-        await monitor.RefreshGeminiWebIfDueAsync();
+        await monitor.RefreshSourceIfDueAsync(QuotaProvider.Gemini);
         var failed = GeminiState(monitor);
-        Check(reader.Calls == 2 && failed.GeminiWeb == new GeminiWebQuotaState(GeminiUsageOutcome.LoadFailed, new(GeminiUsageFailureRule.PageLoad))
+        Check(reader.Calls == 2 && failed.Failure == new QuotaFailure(QuotaFailureKind.Unreachable, "gemini.load")
             && failed.IsPrevious && failed.NextCheckUtc == now.AddMinutes(15), "deadline is inclusive; load failure keeps the previous web cache and retries in fifteen minutes");
         Check(!QuotaPanelModel.Section(failed, now).Detail.Contains("SYNTHETIC-PRIVATE", StringComparison.Ordinal),
             "host exceptions are never copied into presentation");
 
         reader.Load = _ => Task.FromResult(later with { Text = null });
         now = failed.NextCheckUtc!.Value;
-        await monitor.RefreshGeminiWebIfDueAsync();
+        await monitor.RefreshSourceIfDueAsync(QuotaProvider.Gemini);
         var changed = GeminiState(monitor);
-        Check(reader.Calls == 3 && changed.NextCheckUtc == now.AddMinutes(15) && changed.GeminiWeb?.Outcome == GeminiUsageOutcome.FormatChanged,
+        Check(reader.Calls == 3 && changed.NextCheckUtc == now.AddMinutes(15) && changed.Failure?.Kind == QuotaFailureKind.FormatChanged,
             "format failure also retries in fifteen minutes");
         Check(QuotaPanelModel.Section(changed, now).Rows.Single() is { Text: "형식 변경 · 조회 불가", UsedPercent: null },
             "format change is visible and has no numeric bars");
 
         reader.Load = _ => Task.FromResult(signedOut);
-        monitor.RequestGeminiWebRefresh();
-        await monitor.RefreshGeminiWebIfDueAsync();
+        monitor.RequestSourceRefresh(QuotaProvider.Gemini);
+        await monitor.RefreshSourceIfDueAsync(QuotaProvider.Gemini);
         var paused = GeminiState(monitor);
-        Check(reader.Calls == 4 && paused.GeminiWeb?.Outcome == GeminiUsageOutcome.LoginRequired && paused.Reading is null &&
+        Check(reader.Calls == 4 && paused.Failure?.Kind == QuotaFailureKind.LoginRequired && paused.Reading is null &&
             paused.LastSuccessfulCheckUtc is null && paused.NextCheckUtc is null, "login expiry hides values and has no automatic deadline");
         Check(QuotaPanelModel.Section(paused, now).Rows.Single().Text == "로그인 필요 · Gemini 앱 사용량",
             "login expiry uses the Gemini notice");
         now = now.AddHours(1);
         monitor.RequestRefresh();
-        await monitor.RefreshGeminiWebIfDueAsync();
+        await monitor.RefreshSourceIfDueAsync(QuotaProvider.Gemini);
         Check(reader.Calls == 4, "a generic wake or time passing does not resume a signed-out session");
         reader.Load = _ => Task.FromResult(later);
-        monitor.RequestGeminiWebRefresh();
-        await monitor.RefreshGeminiWebIfDueAsync();
-        Check(reader.Calls == 5 && GeminiState(monitor).GeminiWeb?.Outcome == GeminiUsageOutcome.Ok &&
+        monitor.RequestSourceRefresh(QuotaProvider.Gemini);
+        await monitor.RefreshSourceIfDueAsync(QuotaProvider.Gemini);
+        Check(reader.Calls == 5 && GeminiState(monitor) is { HasResultSinceModeChange: true, Failure: null } &&
             GeminiState(monitor).NextCheckUtc == now.AddMinutes(15), "manual Refresh resumes after verifying a signed-in session");
         reader.Load = _ => Task.FromResult(signedOut);
-        monitor.RequestGeminiWebRefresh();
-        await monitor.RefreshGeminiWebIfDueAsync();
+        monitor.RequestSourceRefresh(QuotaProvider.Gemini);
+        await monitor.RefreshSourceIfDueAsync(QuotaProvider.Gemini);
         reader.Load = _ => Task.FromResult(later);
-        monitor.SetGeminiWebEnabled(true);
-        await monitor.RefreshGeminiWebIfDueAsync();
-        Check(reader.Calls == 7 && GeminiState(monitor).GeminiWeb?.Outcome == GeminiUsageOutcome.Ok, "host login completion also resumes the paused schedule");
+        monitor.SetMode(QuotaProvider.Gemini, QuotaSourceMode.Active);
+        await monitor.RefreshSourceIfDueAsync(QuotaProvider.Gemini);
+        Check(reader.Calls == 7 && GeminiState(monitor) is { HasResultSinceModeChange: true, Failure: null }, "host login completion also resumes the paused schedule");
 
         var current = GeminiState(monitor).Reading!;
         var stale = new QuotaObservation(QuotaProvider.Gemini, 1, now, ok.Reading!, 1);
         var fresh = new QuotaObservation(QuotaProvider.Gemini, 2, now, current, 1);
         var recovery = new QuotaRecoveryNotifications();
         var early = new QuotaEarlyResetNotifications();
-        Check(observations == 0 && recovery.Observe(stale, true) is null && recovery.Observe(fresh, true) is null &&
-            early.Evaluate(stale, true).Reason == "QueryDisabled" && early.Evaluate(fresh, true).Alert is null,
+        Check(observations == 0 && recovery.Observe(stale, true, eligible: false) is null && recovery.Observe(fresh, true, eligible: false) is null &&
+            early.Evaluate(stale, true, eligible: false).Reason == "QueryDisabled" && early.Evaluate(fresh, true, eligible: false).Alert is null,
             "live web values cannot reach recovery or early-reset callbacks");
         Check(!QuotaPendingAlertPolicy.RecoveryStillCurrent(
-            new(QuotaProvider.Gemini, 2, "synthetic", "synthetic", [GeminiUsagePage.FiveHourId]), current, current, now) &&
-            !QuotaPendingAlertPolicy.EarlyResetStillCurrent(new(QuotaProvider.Gemini, 2, 1, now, []), current, current, now, 1),
+            new(QuotaProvider.Gemini, 2, "synthetic", "synthetic", [GeminiUsagePage.FiveHourId]), current, current, now, eligible: false) &&
+            !QuotaPendingAlertPolicy.EarlyResetStillCurrent(new(QuotaProvider.Gemini, 2, 1, now, []), current, current, now, 1, eligible: false),
             "a pending Gemini alert is discarded even with a valid web cache");
 
         var completion = new TaskCompletionSource<GeminiUsagePageLoad>(TaskCreationOptions.RunContinuationsAsynchronously);
         reader.Load = _ => completion.Task;
-        monitor.RequestGeminiWebRefresh();
-        Task inFlight = monitor.RefreshGeminiWebIfDueAsync();
+        monitor.RequestSourceRefresh(QuotaProvider.Gemini);
+        Task inFlight = monitor.RefreshSourceIfDueAsync(QuotaProvider.Gemini);
         Check(GeminiState(monitor).IsRefreshing && reader.Calls == 8, "one read is in flight");
-        monitor.RequestGeminiWebRefresh();
-        await monitor.RefreshGeminiWebIfDueAsync();
+        monitor.RequestSourceRefresh(QuotaProvider.Gemini);
+        await monitor.RefreshSourceIfDueAsync(QuotaProvider.Gemini);
         Check(reader.Calls == 8, "refresh while busy cannot start a second read");
-        monitor.SetGeminiWebEnabled(false);
+        monitor.SetMode(QuotaProvider.Gemini, QuotaSourceMode.Off);
         completion.SetResult(later);
         await inFlight.WaitAsync(TimeSpan.FromSeconds(5));
-        await monitor.RefreshGeminiWebIfDueAsync();
+        await monitor.RefreshSourceIfDueAsync(QuotaProvider.Gemini);
         Check(reader.Cancellation.IsCancellationRequested && reader.Calls == 8 &&
             GeminiState(monitor) == off,
             "disabling cancels the active read and ignores its late result and pending refresh");
@@ -198,22 +198,22 @@ internal static class GeminiWebQuotaTests
 
         var late = new TaskCompletionSource<GeminiUsagePageLoad>(TaskCreationOptions.RunContinuationsAsynchronously);
         reader.Load = _ => late.Task;
-        monitor.SetGeminiWebEnabled(true);
-        Task logoutRead = monitor.RefreshGeminiWebIfDueAsync();
+        monitor.SetMode(QuotaProvider.Gemini, QuotaSourceMode.Active);
+        Task logoutRead = monitor.RefreshSourceIfDueAsync(QuotaProvider.Gemini);
         Check(reader.Calls == 10 && GeminiState(monitor).IsRefreshing, "simulate logout with a read in progress");
-        monitor.SetGeminiWebEnabled(false);
-        try { await store.DeleteGeminiWebQuotaAsync(); }
+        monitor.SetMode(QuotaProvider.Gemini, QuotaSourceMode.Off);
+        try { await monitor.ClearCacheAsync(QuotaProvider.Gemini); }
         finally
         {
             late.TrySetResult(later);
             await logoutRead.WaitAsync(TimeSpan.FromSeconds(5));
         }
-        monitor.RequestGeminiWebRefresh();
-        await monitor.RefreshGeminiWebIfDueAsync();
+        monitor.RequestSourceRefresh(QuotaProvider.Gemini);
+        await monitor.RefreshSourceIfDueAsync(QuotaProvider.Gemini);
         Check(reader.Cancellation.IsCancellationRequested && reader.Calls == 10 && GeminiState(monitor) == off,
             "logout leaves the registered reader off and ignores refresh");
         Check(await store.ReadGeminiWebQuotaAsync() is null, "a late result cannot restore the deleted web cache");
-        await store.DeleteGeminiWebQuotaAsync();
+        await monitor.ClearCacheAsync(QuotaProvider.Gemini);
         var preserved = await store.ReadQuotaAsync(QuotaProvider.Gemini);
         Check(preserved is not null && preserved.SuccessfulAtUtc == legacy.SuccessfulAtUtc &&
             preserved.Reading.Windows.SequenceEqual(legacy.Reading.Windows),

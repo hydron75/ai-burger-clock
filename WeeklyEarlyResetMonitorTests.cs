@@ -152,34 +152,34 @@ internal static class WeeklyEarlyResetMonitorTests
             monitor.RecordEarlyResetDecision(observation, result.Alert is null ? "Excluded" : "Alert", result.Reason);
             results.Add((observation, result));
         };
-        await monitor.RefreshOnceAsync(QuotaProvider.Codex);
+        await monitor.RefreshSourceIfDueAsync(QuotaProvider.Codex);
         check(results[0].Observation.PreviousSuccess is null && results[0].Evaluation.Reason == "NoPreviousSuccess",
             "No cache or live baseline means a silent first read");
         now = now.AddHours(8);
         used = 16.999;
-        await monitor.RefreshOnceAsync(QuotaProvider.Codex);
+        await monitor.RefreshSourceIfDueAsync(QuotaProvider.Codex);
         check(results[1].Evaluation.Alert is not null && results[1].Observation.PreviousSuccess?.Reading.Windows[0].UsedPercent == 17,
             "A raw fractional decrease after eight hours is eligible without a reset-time change or old thresholds");
         now = now.AddMinutes(10);
         fail = true;
-        await monitor.RefreshOnceAsync(QuotaProvider.Codex);
+        await monitor.RefreshSourceIfDueAsync(QuotaProvider.Codex);
         check(results.Count == 2 && Entries(log)[2] is { Succeeded: false, ContinuityId: 2, Sequence: null, Reason: "ReadFailed" },
             "A failed attempt gets one excluded row and breaks the positive generation without a success event");
         fail = false;
         now = now.AddMinutes(15);
         used = 5;
-        await monitor.RefreshOnceAsync(QuotaProvider.Codex);
+        await monitor.RefreshSourceIfDueAsync(QuotaProvider.Codex);
         check(results[2].Observation is { ContinuityId: 2, PreviousSuccess.ContinuityId: 1 }
             && results[2].Evaluation.Reason == "ContinuityChanged" && results[2].Evaluation.Alert is null,
             "The previous successful reading retains its old generation across an intervening failed attempt");
         now = now.AddMinutes(10);
         used = 4;
-        await monitor.RefreshOnceAsync(QuotaProvider.Codex);
+        await monitor.RefreshSourceIfDueAsync(QuotaProvider.Codex);
         check(results[3].Observation.PreviousSuccess?.Reading.Windows[0].UsedPercent == 5
             && results[3].Observation.PreviousSuccess?.ContinuityId == 2 && results[3].Evaluation.Alert is not null,
             "The next successful comparison uses the immediately preceding success in the new generation");
         now = now.AddMinutes(10);
-        await monitor.RefreshOnceAsync(QuotaProvider.Codex);
+        await monitor.RefreshSourceIfDueAsync(QuotaProvider.Codex);
         check(results[4].Evaluation.Reason == "UsageNotDecreased" && results[4].Evaluation.Alert is null,
             "An unchanged repeated response cannot rediscover a previous drop");
         check(Entries(log).Length == 6 && Entries(log).All(row => row.Reason != "NotEvaluated"),
@@ -203,7 +203,7 @@ internal static class WeeklyEarlyResetMonitorTests
         });
         using var monitor = new AccountQuotaMonitor(client, utcNow: () => Now, earlyResetDiagnosticLog: log);
         using var cancel = new CancellationTokenSource();
-        Task active = monitor.RefreshOnceAsync(QuotaProvider.Claude, cancel.Token);
+        Task active = monitor.RefreshSourceIfDueAsync(QuotaProvider.Claude, cancel.Token);
         await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
         cancel.Cancel();
         try { await active; } catch (OperationCanceledException) { }
@@ -224,9 +224,9 @@ internal static class WeeklyEarlyResetMonitorTests
             monitor.RecordEarlyResetDecision(observation, "Excluded", "NoPreviousSuccess");
             successes++;
         };
-        await monitor.RefreshOnceAsync(QuotaProvider.Codex);
+        await monitor.RefreshSourceIfDueAsync(QuotaProvider.Codex);
         check(successes == 1 && monitor.Snapshot().Single(state => state.Provider == QuotaProvider.Codex) is
-            { IsRefreshing: false, Error: "", ContinuityId: 1 }, "Optional diagnostic failure cannot change polling, continuity or success delivery");
+            { IsRefreshing: false, Failure: null, ContinuityId: 1 }, "Optional diagnostic failure cannot change polling, continuity or success delivery");
         check(Directory.Exists(log.LogPath), "An incompatible diagnostic target is preserved rather than overwritten");
         await monitor.StopAsync();
     }
@@ -240,7 +240,7 @@ internal static class WeeklyEarlyResetMonitorTests
                 utcNow: () => Now, earlyResetDiagnosticLog: log);
             if (kind == 1) monitor.Succeeded += _ => throw new InvalidOperationException("Synthetic unavailable host");
             if (kind == 2) monitor.Succeeded += _ => { }; // Dispatched host has not yet supplied its decision.
-            await monitor.RefreshOnceAsync(QuotaProvider.Claude);
+            await monitor.RefreshSourceIfDueAsync(QuotaProvider.Claude);
             check(Entries(log) is [{ Succeeded: true, Outcome: "Excluded" } row]
                 && row.Reason == (kind == 2 ? "NotEvaluated" : "HostUnavailable"),
                 "A missing/throwing host has a final exclusion, while a successfully dispatched callback may still be pending");

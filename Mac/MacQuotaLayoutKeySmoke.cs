@@ -19,7 +19,8 @@ internal static class MacQuotaLayoutKeySmoke
         new(provider, ids.Select((id, index) => new QuotaWindow(id, "창 " + id, used + index, Now.AddDays(3), 10080)).ToArray()),
         LastSuccessfulCheckUtc: Now, NextCheckUtc: Now.AddHours(1));
 
-    private static QuotaState Placeholder(QuotaProvider provider) => new(provider, null, Error: "조회 실패 예시");
+    private static QuotaState Placeholder(QuotaProvider provider) =>
+        new(provider, null, Failure: new(QuotaFailureKind.Unreachable, "synthetic"));
 
     internal static string Verify()
     {
@@ -50,7 +51,7 @@ internal static class MacQuotaLayoutKeySmoke
         QuotaState Claude(params string[] ids) => Boxes(QuotaProvider.Claude, 20, ids);
         // Gemini's query is stopped (#156): the shared model shows one fixed notice row (ID "") whatever windows are passed, so the
         // IDs below only prove that the Gemini box never follows them (checked in Step).
-        QuotaState Gemini(params string[] ids) => Boxes(QuotaProvider.Gemini, 5, ids);
+        QuotaState Gemini(params string[] ids) => Boxes(QuotaProvider.Gemini, 5, ids) with { Mode = QuotaSourceMode.Unavailable };
         QuotaState Xai(params string[] ids) => Boxes(QuotaProvider.Xai, 30, ids);
 
         // Two rows whose IDs, joined with a comma, equal one row's ID.

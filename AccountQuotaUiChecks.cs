@@ -60,7 +60,8 @@ internal static class QuotaViewportUiChecks
         var states = new List<QuotaState>();
         foreach (var provider in Enum.GetValues<QuotaProvider>())
             states.Add(new QuotaState(provider, await client.ReadAsync(provider, CancellationToken.None),
-                LastSuccessfulCheckUtc: now, NextCheckUtc: now.AddHours(1)));
+                LastSuccessfulCheckUtc: now, NextCheckUtc: now.AddHours(1),
+                Mode: provider == QuotaProvider.Gemini ? QuotaSourceMode.Unavailable : QuotaSourceMode.Active));
         var failures = new List<string>();
         void Check(bool condition, string label)
         {
@@ -224,7 +225,7 @@ internal static class AccountQuotaUiChecks
         Panel Box(QuotaProvider provider) => context.StatusWindow.QuotaView.Controls.OfType<Panel>()
             .Single(box => box.Name == provider + "QuotaBox");
         Label[] ProviderLabels(QuotaProvider provider) => Box(provider).Controls.OfType<Label>().ToArray();
-        foreach (var provider in Enum.GetValues<QuotaProvider>()) await monitor.RefreshOnceAsync(provider);
+        foreach (var provider in Enum.GetValues<QuotaProvider>()) await monitor.RefreshSourceIfDueAsync(provider);
         var callsBeforeOpen = Enum.GetValues<QuotaProvider>().ToDictionary(provider => provider, client.Calls);
         var dueBeforeOpen = monitor.Snapshot().Select(state => state.NextCheckUtc).ToArray();
         context.ShowWindow();
@@ -407,7 +408,7 @@ internal static class AccountQuotaUiChecks
         await QuotaToolTipUiChecks.CheckGeminiAsync(context.StatusWindow.QuotaView, reportDirectory, Check);
 
         client.FailClaude = true;
-        await monitor.RefreshOnceAsync(QuotaProvider.Claude);
+        await monitor.RefreshSourceIfDueAsync(QuotaProvider.Claude);
         context.RefreshStatus(false);
         Check(monitor.Snapshot().Single(s => s.Provider == QuotaProvider.Claude).IsPrevious &&
             !monitor.Snapshot().Single(s => s.Provider == QuotaProvider.Codex).IsPrevious, "One failed account keeps its previous values without downgrading the other account");
@@ -428,9 +429,9 @@ internal static class AccountQuotaUiChecks
             "Failed refresh clears stale row comparisons while retaining the full Provider error tooltip");
         SmokeTest.RenderAndCheckLayout(context.StatusWindow, "account-quotas-previous.png", reportDirectory);
         client.FailClaude = false;
-        await monitor.RefreshOnceAsync(QuotaProvider.Claude);
+        await monitor.RefreshSourceIfDueAsync(QuotaProvider.Claude);
         int geminiCalls = client.Calls(QuotaProvider.Gemini);
-        await monitor.RefreshOnceAsync(QuotaProvider.Gemini);
+        await monitor.RefreshSourceIfDueAsync(QuotaProvider.Gemini);
         context.RefreshStatus(false);
         Check(client.Calls(QuotaProvider.Gemini) == geminiCalls &&
             monitor.Snapshot().Single(s => s.Provider == QuotaProvider.Gemini) is { Reading: null, IsRefreshing: false, NextCheckUtc: null },
@@ -458,7 +459,7 @@ internal static class AccountQuotaUiChecks
         await Wait(() => client.Calls(QuotaProvider.Claude) > before && monitor.Snapshot().All(s => !s.IsRefreshing), "manual Refresh",
             () => new { claudeBefore = before, claudeNow = client.Calls(QuotaProvider.Claude), claudeAdvanced = client.Calls(QuotaProvider.Claude) > before, allIdle = monitor.Snapshot().All(s => !s.IsRefreshing) });
         Check(monitor.Snapshot().All(s => !s.IsPrevious) &&
-            Enum.GetValues<QuotaProvider>().Where(QuotaNames.IsQueryEnabled).All(provider => client.Calls(provider) > callsBeforeRefresh[provider]) &&
+            Enum.GetValues<QuotaProvider>().Where(QuotaNames.HasCliRoute).All(provider => client.Calls(provider) > callsBeforeRefresh[provider]) &&
             client.Calls(QuotaProvider.Gemini) == geminiCalls,
             "Existing Refresh button recovers three enabled quota displays without querying Gemini");
         before = client.Calls(QuotaProvider.Claude);
@@ -507,7 +508,7 @@ internal static class AccountQuotaUiChecks
             "Status toggle restores the original title without moving either baseline");
         Check(context.StatusWindow.Controls.OfType<Label>().Any(l => l.Text.Contains("최근 조회 시도:")), "Status footer is restored immediately");
 
-        var previousCodex = monitor.Snapshot().Single(s => s.Provider == QuotaProvider.Codex) with { IsPrevious = true, Error = "Synthetic offline condition" };
+        var previousCodex = monitor.Snapshot().Single(s => s.Provider == QuotaProvider.Codex) with { IsPrevious = true, Failure = new(QuotaFailureKind.Unreachable, "synthetic.offline") };
         context.StatusWindow.UpdateQuotas([previousCodex], clock());
         Check(QuotaLabels().Any(l => l.Text == "ChatGPT · 이전 조회값") &&
             QuotaLabels().Any(l => l.Text == "Work/Codex"),
@@ -524,21 +525,21 @@ internal static class AccountQuotaUiChecks
         Check(QuotaLabels().Single(l => l.Text == "한도 조회 대기").ForeColor == Color.DimGray,
             "Shared pre-reading placeholder keeps its text and Windows muted color");
 
-        context.StatusWindow.UpdateQuotas([new QuotaState(QuotaProvider.Gemini)], clock());
+        context.StatusWindow.UpdateQuotas([new QuotaState(QuotaProvider.Gemini, Mode: QuotaSourceMode.Unavailable)], clock());
         Check(QuotaLabels().Any(l => l.Text == "Gemini") &&
             QuotaLabels().Single(l => l.Text == QuotaNames.GeminiUnavailableText).ForeColor == Color.DimGray,
             "Missing Gemini reading uses the fixed policy notice without a login instruction");
         Check(!Box(QuotaProvider.Gemini).Controls.OfType<QuotaBalanceBar>().Any(),
             "Missing or unavailable quota readings do not create guessed balance bars");
-        context.StatusWindow.UpdateQuotas([new QuotaState(QuotaProvider.Gemini, Error: "한도 응답 형식을 확인하지 못했습니다.")], clock());
+        context.StatusWindow.UpdateQuotas([new QuotaState(QuotaProvider.Gemini, Failure: new(QuotaFailureKind.FormatChanged, "synthetic.gemini"), Mode: QuotaSourceMode.Unavailable)], clock());
         Check(QuotaLabels().Any(l => l.Text == QuotaNames.GeminiUnavailableText) &&
-            QuotaLabels().All(l => l.Text != "한도 응답 형식을 확인하지 못했습니다.") &&
+            QuotaLabels().All(l => l.Text != "형식 변경 · 조회 불가") &&
             QuotaLabels().All(l => !l.Text.Contains("%", StringComparison.Ordinal)),
             "Gemini ignores stale lookup errors and retains only its policy notice");
         var historicalGemini = new QuotaState(QuotaProvider.Gemini,
             new(QuotaProvider.Gemini, [new("historical-gemini", "Gemini Synthetic Model", 98.7, clock().AddDays(2), 10080)]),
             CheckedAtUtc: clock(), LastSuccessfulCheckUtc: clock(), NextCheckUtc: clock().AddHours(1),
-            IsPrevious: true, IsRefreshing: true, Error: "Synthetic historical Gemini error");
+            IsPrevious: true, IsRefreshing: true, Failure: new(QuotaFailureKind.Unreachable, "synthetic.historical"), Mode: QuotaSourceMode.Unavailable);
         context.StatusWindow.UpdateQuotas([historicalGemini], clock());
         Check(QuotaLabels().Any(l => l.Text == "Gemini") &&
             QuotaLabels().Any(l => l.Text == QuotaNames.GeminiUnavailableText) &&

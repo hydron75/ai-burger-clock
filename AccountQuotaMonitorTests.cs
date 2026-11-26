@@ -59,14 +59,14 @@ internal static class AccountQuotaMonitorTests
         using var monitor = new AccountQuotaMonitor(client, utcNow: () => now);
         check(monitor.Snapshot().All(state => state.Reading is null && state.CheckedAtUtc is null), "No initial data is unknown");
         monitor.Changed += () => throw new InvalidOperationException("Synthetic display failure");
-        await Task.WhenAll(monitor.RefreshOnceAsync(QuotaProvider.Codex), monitor.RefreshOnceAsync(QuotaProvider.Claude));
+        await Task.WhenAll(monitor.RefreshSourceIfDueAsync(QuotaProvider.Codex), monitor.RefreshSourceIfDueAsync(QuotaProvider.Claude));
         QuotaState codex = State(monitor, QuotaProvider.Codex);
         QuotaState claude = State(monitor, QuotaProvider.Claude);
-        check(codex.Reading?.Windows[0].RemainingPercent == 55 && !codex.IsPrevious && codex.Error.Length == 0,
+        check(codex.Reading?.Windows[0].RemainingPercent == 55 && !codex.IsPrevious && codex.Failure is null,
             "One failed provider does not block the other provider's success");
-        check(claude.Reading is null && claude.IsPrevious && claude.LastSuccessfulCheckUtc is null && claude.Error.Length > 0,
+        check(claude.Reading is null && claude.IsPrevious && claude.LastSuccessfulCheckUtc is null && claude.Failure is not null,
             "Initial failed provider remains unknown, not zero or full");
-        check(!claude.Error.Contains("sensitive", StringComparison.Ordinal), "Exception details never become the visible error");
+        check(!QuotaPanelModel.Section(claude, Now).Detail.Contains("sensitive", StringComparison.Ordinal), "Exception details never become the visible error");
         check(codex.CheckedAtUtc == now && codex.LastSuccessfulCheckUtc == now && codex.NextCheckUtc == now.AddHours(1),
             "Success sets current timestamps and default schedule");
 
@@ -74,20 +74,20 @@ internal static class AccountQuotaMonitorTests
         client.Handler = (provider, _) => provider == QuotaProvider.Claude
             ? Task.FromResult(Reading(provider, 93))
             : Task.FromException<QuotaReading>(new TimeoutException("Synthetic timeout"));
-        await Task.WhenAll(monitor.RefreshOnceAsync(QuotaProvider.Codex), monitor.RefreshOnceAsync(QuotaProvider.Claude));
+        await Task.WhenAll(monitor.RefreshSourceIfDueAsync(QuotaProvider.Codex), monitor.RefreshSourceIfDueAsync(QuotaProvider.Claude));
         codex = State(monitor, QuotaProvider.Codex);
         claude = State(monitor, QuotaProvider.Claude);
         check(codex.Reading?.Windows[0].UsedPercent == 45 && codex.IsPrevious, "Failure retains last known numbers as previous");
         check(codex.CheckedAtUtc == now && codex.LastSuccessfulCheckUtc == now.AddHours(-1), "Failure advances attempt, not successful retrieval");
-        check(codex.Error.Contains("시간 초과") && !codex.IsRefreshing, "Timeout has a bounded friendly message and finishes refresh");
-        check(claude.Reading?.Windows[0].UsedPercent == 93 && !claude.IsPrevious && claude.Error.Length == 0,
+        check(codex.Failure?.Kind == QuotaFailureKind.Timeout && !codex.IsRefreshing, "Timeout has a bounded friendly message and finishes refresh");
+        check(claude.Reading?.Windows[0].UsedPercent == 93 && !claude.IsPrevious && claude.Failure is null,
             "Other provider recovery clears its own previous/error state");
         check(claude.NextCheckUtc == now.AddHours(1) && codex.NextCheckUtc == now.AddMinutes(15),
             "Polling policies are independent per provider; a failed read retries after 15 minutes");
 
         now = now.AddMinutes(1);
         client.Handler = (_, _) => Task.FromResult(Reading(QuotaProvider.Claude, 11));
-        await monitor.RefreshOnceAsync(QuotaProvider.Codex);
+        await monitor.RefreshSourceIfDueAsync(QuotaProvider.Codex);
         codex = State(monitor, QuotaProvider.Codex);
         check(codex.Reading?.Provider == QuotaProvider.Codex && codex.Reading.Windows[0].UsedPercent == 45 && codex.IsPrevious,
             "Mismatched provider response cannot replace a valid previous reading");
@@ -95,13 +95,13 @@ internal static class AccountQuotaMonitorTests
         check(codex.NextCheckUtc == now.AddMinutes(30), "Second consecutive failure retries after 30 minutes");
 
         client.Handler = (provider, _) => Task.FromResult(new QuotaReading(provider, []));
-        await monitor.RefreshOnceAsync(QuotaProvider.Codex);
+        await monitor.RefreshSourceIfDueAsync(QuotaProvider.Codex);
         check(State(monitor, QuotaProvider.Codex).Reading?.Windows.Count == 1
             && State(monitor, QuotaProvider.Codex).IsPrevious, "Empty response cannot become a successful reading");
         check(State(monitor, QuotaProvider.Codex).NextCheckUtc == now.AddHours(1), "Third consecutive failure retries after 1 hour");
         client.Handler = (provider, _) => Task.FromResult(Reading(provider, 1));
-        await monitor.RefreshOnceAsync(QuotaProvider.Codex);
-        check(!State(monitor, QuotaProvider.Codex).IsPrevious && State(monitor, QuotaProvider.Codex).Error.Length == 0,
+        await monitor.RefreshSourceIfDueAsync(QuotaProvider.Codex);
+        check(!State(monitor, QuotaProvider.Codex).IsPrevious && State(monitor, QuotaProvider.Codex).Failure is null,
             "Valid reading recovers after invalid responses");
         check(State(monitor, QuotaProvider.Codex).NextCheckUtc == now.AddHours(1), "Success resets failure backoff to the normal schedule");
         now = now.AddHours(1).AddMinutes(6);
@@ -110,7 +110,7 @@ internal static class AccountQuotaMonitorTests
         check(State(monitor, QuotaProvider.Codex).IsPrevious, "Backward clock change cannot make future cached data fresh");
         now = Now.AddHours(2);
         client.Handler = (_, _) => Task.FromException<QuotaReading>(new IOException("Synthetic failure after recovery"));
-        await monitor.RefreshOnceAsync(QuotaProvider.Codex);
+        await monitor.RefreshSourceIfDueAsync(QuotaProvider.Codex);
         check(State(monitor, QuotaProvider.Codex).NextCheckUtc == now.AddMinutes(15),
             "A new failure after recovery restarts backoff at 15 minutes");
         await monitor.StopAsync();
@@ -127,14 +127,14 @@ internal static class AccountQuotaMonitorTests
             var observations = new List<QuotaObservation>();
             monitor.Succeeded += observations.Add;
             bool clockFailed = false;
-            try { await monitor.RefreshOnceAsync(provider).WaitAsync(TimeSpan.FromSeconds(5)); }
+            try { await monitor.RefreshSourceIfDueAsync(provider).WaitAsync(TimeSpan.FromSeconds(5)); }
             catch (InvalidOperationException error) when (error.Message == "Synthetic clock failure") { clockFailed = true; }
             check(clockFailed, provider + " reports the original clock exception after acquiring its gate");
             check(client.Calls(provider) == 0 && observations.Count == 0,
                 "A clock failure before the client call creates neither a fake read nor a success");
             check(State(monitor, provider) is { IsRefreshing: false, ContinuityId: 1, CheckedAtUtc: null },
                 "An unstarted read leaves the completion state and continuity unchanged");
-            await monitor.RefreshOnceAsync(provider).WaitAsync(TimeSpan.FromSeconds(5));
+            await monitor.RefreshSourceIfDueAsync(provider).WaitAsync(TimeSpan.FromSeconds(5));
             check(client.Calls(provider) == 1 && observations is [{ Sequence: 1, ContinuityId: 1 }],
                 "The same provider can refresh successfully after the failed clock releases its gate");
             await monitor.StopAsync().WaitAsync(TimeSpan.FromSeconds(5));
@@ -152,7 +152,7 @@ internal static class AccountQuotaMonitorTests
             : new(provider, [new("session", "5시간", 20, null, 300), new("weekly_all", "주간", claudeWeeklyUsed, null, 10080)]);
         var client = new FakeClient((provider, _) => Task.FromResult(CurrentReading(provider)));
         using var monitor = new AccountQuotaMonitor(client, utcNow: () => now);
-        await Task.WhenAll(monitor.RefreshOnceAsync(QuotaProvider.Codex), monitor.RefreshOnceAsync(QuotaProvider.Claude));
+        await Task.WhenAll(monitor.RefreshSourceIfDueAsync(QuotaProvider.Codex), monitor.RefreshSourceIfDueAsync(QuotaProvider.Claude));
         check(State(monitor, QuotaProvider.Claude).NextCheckUtc == now.AddMinutes(15),
             "One exhausted weekly window enables 15m polling even while the 5h window has remaining quota");
         check(State(monitor, QuotaProvider.Codex).NextCheckUtc == now.AddHours(1),
@@ -162,19 +162,19 @@ internal static class AccountQuotaMonitorTests
         for (int failure = 1; failure <= 3; failure++)
         {
             now = now.AddMinutes(15);
-            await monitor.RefreshOnceAsync(QuotaProvider.Claude);
+            await monitor.RefreshSourceIfDueAsync(QuotaProvider.Claude);
             QuotaState claude = State(monitor, QuotaProvider.Claude);
             check(claude.NextCheckUtc == now.AddMinutes(15),
                 $"Exhausted failure {failure} cannot back off beyond 15m");
             check(claude.IsPrevious && claude.Reading?.Windows[1].RemainingPercent == 0 && claude.LastSuccessfulCheckUtc == Now,
                 "Failed exhausted read preserves the known zero and its original successful time");
         }
-        check(State(monitor, QuotaProvider.Codex).NextCheckUtc == Now.AddHours(1) && State(monitor, QuotaProvider.Codex).Error.Length == 0,
+        check(State(monitor, QuotaProvider.Codex).NextCheckUtc == Now.AddHours(1) && State(monitor, QuotaProvider.Codex).Failure is null,
             "Repeated Claude failures cannot alter another provider's cadence or error state");
 
         now = now.AddMinutes(15);
         client.Handler = (provider, _) => Task.FromResult(Reading(provider, 101));
-        await monitor.RefreshOnceAsync(QuotaProvider.Claude);
+        await monitor.RefreshSourceIfDueAsync(QuotaProvider.Claude);
         check(State(monitor, QuotaProvider.Claude).NextCheckUtc == now.AddMinutes(15)
             && State(monitor, QuotaProvider.Claude).Reading?.Windows[1].RemainingPercent == 0,
             "Invalid fresh usage cannot replace the last exhausted reading or weaken its retry cap");
@@ -182,20 +182,20 @@ internal static class AccountQuotaMonitorTests
         now = now.AddMinutes(15);
         claudeWeeklyUsed = 95;
         client.Handler = (provider, _) => Task.FromResult(CurrentReading(provider));
-        await monitor.RefreshOnceAsync(QuotaProvider.Claude);
+        await monitor.RefreshSourceIfDueAsync(QuotaProvider.Claude);
         QuotaState recovered = State(monitor, QuotaProvider.Claude);
-        check(recovered.NextCheckUtc == now.AddHours(1) && !recovered.IsPrevious && recovered.Error.Length == 0
+        check(recovered.NextCheckUtc == now.AddHours(1) && !recovered.IsPrevious && recovered.Failure is null
             && recovered.LastSuccessfulCheckUtc == now,
             "A successful partial recovery clears failures and returns to low-remaining hourly checks");
 
         now = now.AddHours(1);
         claudeWeeklyUsed = 0;
-        await monitor.RefreshOnceAsync(QuotaProvider.Claude);
+        await monitor.RefreshSourceIfDueAsync(QuotaProvider.Claude);
         check(State(monitor, QuotaProvider.Claude).NextCheckUtc == now.AddHours(1),
             "A successful full recovery returns the provider to normal hourly polling");
 
         codexUsed = 100;
-        await Task.WhenAll(monitor.RefreshOnceAsync(QuotaProvider.Codex), monitor.RefreshOnceAsync(QuotaProvider.Claude));
+        await Task.WhenAll(monitor.RefreshSourceIfDueAsync(QuotaProvider.Codex), monitor.RefreshSourceIfDueAsync(QuotaProvider.Claude));
         check(State(monitor, QuotaProvider.Codex).NextCheckUtc == now.AddMinutes(15)
             && State(monitor, QuotaProvider.Claude).NextCheckUtc == now.AddHours(1),
             "The same exhausted rule applies to Codex without changing recovered Claude's cadence");
@@ -219,7 +219,7 @@ internal static class AccountQuotaMonitorTests
             observations.Add(observation);
         };
         check(observations.Count == 0, "Construction and snapshot access emit no successful live observation");
-        await monitor.RefreshOnceAsync(QuotaProvider.Codex);
+        await monitor.RefreshSourceIfDueAsync(QuotaProvider.Codex);
         check(observations.Count == 1 && observations[0].Provider == QuotaProvider.Codex
             && observations[0].Sequence == 1 && observations[0].CheckedAtUtc == Now,
             "Accepted live response emits exactly one normalized observation with its own provider sequence");
@@ -241,22 +241,22 @@ internal static class AccountQuotaMonitorTests
         check(immutable && observations[0].Reading.Windows[0].UsedPercent == 100,
             "Notification subscribers cannot mutate accepted quota windows");
         now = now.AddMinutes(15);
-        await monitor.RefreshOnceAsync(QuotaProvider.Codex);
-        await monitor.RefreshOnceAsync(QuotaProvider.Claude);
+        await monitor.RefreshSourceIfDueAsync(QuotaProvider.Codex);
+        await monitor.RefreshSourceIfDueAsync(QuotaProvider.Claude);
         check(observations.Count == 3 && observations[1].Sequence == 2 && observations[1].CheckedAtUtc == now
             && observations[2].Provider == QuotaProvider.Claude && observations[2].Sequence == 1,
             "Sequences increase independently per provider even when another subscriber throws");
 
         client.Handler = (_, _) => Task.FromException<QuotaReading>(new IOException("Synthetic read failure"));
-        await monitor.RefreshOnceAsync(QuotaProvider.Codex);
+        await monitor.RefreshSourceIfDueAsync(QuotaProvider.Codex);
         client.Handler = (_, _) => Task.FromResult(Reading(QuotaProvider.Gemini, 20));
-        await monitor.RefreshOnceAsync(QuotaProvider.Codex);
+        await monitor.RefreshSourceIfDueAsync(QuotaProvider.Codex);
         client.Handler = (provider, _) => Task.FromResult(new QuotaReading(provider, []));
-        await monitor.RefreshOnceAsync(QuotaProvider.Codex);
+        await monitor.RefreshSourceIfDueAsync(QuotaProvider.Codex);
         check(observations.Count == 3 && State(monitor, QuotaProvider.Codex).IsPrevious,
             "Network failure, mismatched provider and invalid windows never emit a success");
         client.Handler = (provider, _) => Task.FromResult(Reading(provider, 20));
-        await monitor.RefreshOnceAsync(QuotaProvider.Codex);
+        await monitor.RefreshSourceIfDueAsync(QuotaProvider.Codex);
         check(observations.Count == 4 && observations[^1].Sequence == 3,
             "Rejected responses consume no successful observation sequence");
         await monitor.StopAsync();
@@ -268,15 +268,15 @@ internal static class AccountQuotaMonitorTests
         using var cacheFailure = new AccountQuotaMonitor(client, new UsageStore(blockedPath), () => Now);
         List<QuotaObservation> cacheObservations = [];
         cacheFailure.Succeeded += cacheObservations.Add;
-        await cacheFailure.RefreshOnceAsync(QuotaProvider.Codex);
+        await cacheFailure.RefreshSourceIfDueAsync(QuotaProvider.Codex);
         var failedCacheState = State(cacheFailure, QuotaProvider.Codex);
         check(cacheObservations.Count == 1 && cacheObservations[0].Sequence == 1
             && failedCacheState.LastSuccessfulCheckUtc == Now && !failedCacheState.IsPrevious,
             "Cache save failure does not hide the independently accepted successful live observation");
-        check(failedCacheState.CacheError.Length > 0 && failedCacheState.Error.Length == 0
+        check(failedCacheState.CacheError.Length > 0 && failedCacheState.Failure is null
             && failedCacheState.Reading?.Windows[0].UsedPercent == 20,
             "Cache warning remains distinct from a live query failure");
-        await cacheFailure.RefreshOnceAsync(QuotaProvider.Codex);
+        await cacheFailure.RefreshSourceIfDueAsync(QuotaProvider.Codex);
         check(cacheObservations.Count == 2 && cacheObservations.All(item => item.ContinuityId == 1)
             && cacheObservations[^1].Sequence == 2 && State(cacheFailure, QuotaProvider.Codex).ContinuityId == 1,
             "Repeated cache-save failures preserve accepted live continuity and successful sequences");
@@ -295,7 +295,7 @@ internal static class AccountQuotaMonitorTests
         List<QuotaObservation> observations = [];
         monitor.Succeeded += observations.Add;
         bool cancellationPreserved = false;
-        try { await monitor.RefreshOnceAsync(QuotaProvider.Codex, canceled.Token); }
+        try { await monitor.RefreshSourceIfDueAsync(QuotaProvider.Codex, canceled.Token); }
         catch (OperationCanceledException) { cancellationPreserved = true; }
         check(cancellationPreserved && observations.Count == 0
             && State(monitor, QuotaProvider.Codex).LastSuccessfulCheckUtc is null,
@@ -305,7 +305,7 @@ internal static class AccountQuotaMonitorTests
         check(State(monitor, QuotaProvider.Codex).ContinuityId == 2,
             "Cancellation after a client returned still exposes a continuity break in the snapshot");
         client.Handler = (provider, _) => Task.FromResult(Reading(provider, 20));
-        await monitor.RefreshOnceAsync(QuotaProvider.Codex);
+        await monitor.RefreshSourceIfDueAsync(QuotaProvider.Codex);
         check(observations.Count == 1 && observations[0].Sequence == 1,
             "Cancelled response does not consume the next provider success sequence");
         await monitor.StopAsync();
@@ -319,7 +319,7 @@ internal static class AccountQuotaMonitorTests
             return Task.FromResult(Reading(provider, 20));
         };
         bool stoppedCanceled = false;
-        try { await stopped.RefreshOnceAsync(QuotaProvider.Claude); }
+        try { await stopped.RefreshSourceIfDueAsync(QuotaProvider.Claude); }
         catch (OperationCanceledException) { stoppedCanceled = true; }
         check(stoppedCanceled && afterStop == 0 && State(stopped, QuotaProvider.Claude).LastSuccessfulCheckUtc is null,
             "Lifetime cancellation after client return suppresses success as well as notification callbacks");
@@ -343,20 +343,20 @@ internal static class AccountQuotaMonitorTests
             // callback to verify that a second caller cannot overtake its response.
             entered.TrySetResult();
             release.Task.GetAwaiter().GetResult();
-            overlapping = monitor.RefreshOnceAsync(QuotaProvider.Codex);
+            overlapping = monitor.RefreshSourceIfDueAsync(QuotaProvider.Codex);
         };
-        Task first = Task.Run(() => monitor.RefreshOnceAsync(QuotaProvider.Codex));
+        Task first = Task.Run(() => monitor.RefreshSourceIfDueAsync(QuotaProvider.Codex));
         await entered.Task.WaitAsync(TimeSpan.FromSeconds(3));
         try
         {
-            await monitor.RefreshOnceAsync(QuotaProvider.Codex);
+            await monitor.RefreshSourceIfDueAsync(QuotaProvider.Codex);
             check(client.Calls(QuotaProvider.Codex) == 1 && delivered.SequenceEqual([1L]),
                 "An overlapping refresh cannot overtake the current provider's success delivery");
         }
         finally { release.TrySetResult(); }
         await first;
         if (overlapping is not null) await overlapping;
-        await monitor.RefreshOnceAsync(QuotaProvider.Codex);
+        await monitor.RefreshSourceIfDueAsync(QuotaProvider.Codex);
         check(delivered.SequenceEqual([1L, 2L]) && client.Calls(QuotaProvider.Codex) == 2,
             "Success callbacks are ordered outside the state lock while the provider gate still serializes delivery");
         await monitor.StopAsync();
@@ -380,43 +380,43 @@ internal static class AccountQuotaMonitorTests
             };
             check(monitor.Snapshot().All(state => state.ContinuityId == 1),
                 "Every provider begins with positive process-local continuity before its first attempt");
-            await monitor.RefreshOnceAsync(provider);
+            await monitor.RefreshSourceIfDueAsync(provider);
             check(observations.Count == 1 && observations[0].Sequence == 1 && observations[0].ContinuityId == 1
                 && State(monitor, provider).ContinuityId == 1,
                 "First accepted live response carries the current positive continuity generation");
             now = now.AddMinutes(1);
-            await monitor.RefreshOnceAsync(provider);
+            await monitor.RefreshSourceIfDueAsync(provider);
             check(observations.Count == 2 && observations[^1].Sequence == 2 && observations[^1].ContinuityId == 1,
                 "Uninterrupted successes advance only the successful sequence, not continuity");
 
             client.Handler = (_, _) => Task.FromException<QuotaReading>(new IOException("Synthetic interrupted read"));
-            await monitor.RefreshOnceAsync(provider);
+            await monitor.RefreshSourceIfDueAsync(provider);
             check(observations.Count == 2 && State(monitor, provider) is { ContinuityId: 2, IsPrevious: true },
                 "A failed started attempt changes the snapshot generation without emitting or consuming success");
             check(monitor.Snapshot().Where(state => state.Provider != provider).All(state => state.ContinuityId == 1),
                 "A continuity break belongs only to its provider");
             client.Handler = (requested, _) => Task.FromResult(Reading(requested, 5));
-            await monitor.RefreshOnceAsync(provider);
+            await monitor.RefreshSourceIfDueAsync(provider);
             check(observations[^1].Sequence == 3 && observations[^1].ContinuityId == 2,
                 "Recovery after failure keeps the old successful sequence semantics but exposes the break");
 
             client.Handler = (requested, _) => Task.FromResult(Reading(
                 requested == QuotaProvider.Codex ? QuotaProvider.Claude : QuotaProvider.Codex, 5));
-            await monitor.RefreshOnceAsync(provider);
+            await monitor.RefreshSourceIfDueAsync(provider);
             check(observations.Count == 3 && State(monitor, provider).ContinuityId == 3,
                 "A mismatched response breaks continuity exactly once without a successful observation");
             client.Handler = (requested, _) => Task.FromResult(Reading(requested, 5));
-            await monitor.RefreshOnceAsync(provider);
+            await monitor.RefreshSourceIfDueAsync(provider);
             check(observations[^1].Sequence == 4 && observations[^1].ContinuityId == 3,
                 "A valid response after invalid data seeds the new generation");
 
             client.Handler = (_, _) => Task.FromException<QuotaReading>(new OperationCanceledException("Synthetic CLI timeout"));
-            await monitor.RefreshOnceAsync(provider);
+            await monitor.RefreshSourceIfDueAsync(provider);
             check(observations.Count == 4 && State(monitor, provider).ContinuityId == 4
-                && State(monitor, provider).Error.Contains("시간 초과", StringComparison.Ordinal),
+                && State(monitor, provider).Failure?.Kind == QuotaFailureKind.Timeout,
                 "Client cancellation without caller cancellation is a timeout failure and breaks continuity");
             client.Handler = (requested, _) => Task.FromResult(Reading(requested, 5));
-            await monitor.RefreshOnceAsync(provider);
+            await monitor.RefreshSourceIfDueAsync(provider);
             check(observations[^1].Sequence == 5 && observations[^1].ContinuityId == 4,
                 "Timeout failures do not consume a successful sequence");
 
@@ -424,7 +424,7 @@ internal static class AccountQuotaMonitorTests
             precanceled.Cancel();
             int callsBefore = client.Calls(provider);
             bool canceled = false;
-            try { await monitor.RefreshOnceAsync(provider, precanceled.Token); }
+            try { await monitor.RefreshSourceIfDueAsync(provider, precanceled.Token); }
             catch (OperationCanceledException) { canceled = true; }
             check(canceled && client.Calls(provider) == callsBefore && observations.Count == 5
                 && State(monitor, provider).ContinuityId == 4 && !State(monitor, provider).IsRefreshing,
@@ -438,9 +438,9 @@ internal static class AccountQuotaMonitorTests
                 await release.Task.WaitAsync(token).ConfigureAwait(false);
                 return Reading(requested, 5);
             };
-            Task active = monitor.RefreshOnceAsync(provider);
+            Task active = monitor.RefreshSourceIfDueAsync(provider);
             await entered.Task.WaitAsync(TimeSpan.FromSeconds(3));
-            await monitor.RefreshOnceAsync(provider);
+            await monitor.RefreshSourceIfDueAsync(provider);
             check(client.Calls(provider) == callsBefore + 1 && State(monitor, provider).ContinuityId == 4,
                 "A busy-provider skip does not start an additional read or break continuity");
             release.TrySetResult();
@@ -449,7 +449,7 @@ internal static class AccountQuotaMonitorTests
                 "The original in-flight success retains continuity after a skipped overlap");
 
             client.Handler = (_, _) => Task.FromException<QuotaReading>(new IOException("Synthetic later failure"));
-            await monitor.RefreshOnceAsync(provider);
+            await monitor.RefreshSourceIfDueAsync(provider);
             check(observations[0].ContinuityId == 1 && observations[0].Reading.Windows[0].UsedPercent == 80
                 && State(monitor, provider).ContinuityId == 5,
                 "Previously delivered immutable observations do not change when the current generation advances");
@@ -465,11 +465,11 @@ internal static class AccountQuotaMonitorTests
         {
             if (recovery.Observe(observation, enabled: true) is { } alert) alerts.Add(alert);
         };
-        await recoveryMonitor.RefreshOnceAsync(QuotaProvider.Codex);
+        await recoveryMonitor.RefreshSourceIfDueAsync(QuotaProvider.Codex);
         recoveryClient.Handler = (_, _) => Task.FromException<QuotaReading>(new IOException("Synthetic recovery gap"));
-        await recoveryMonitor.RefreshOnceAsync(QuotaProvider.Codex);
+        await recoveryMonitor.RefreshSourceIfDueAsync(QuotaProvider.Codex);
         recoveryClient.Handler = (provider, _) => Task.FromResult(Reading(provider, 10));
-        await recoveryMonitor.RefreshOnceAsync(QuotaProvider.Codex);
+        await recoveryMonitor.RefreshSourceIfDueAsync(QuotaProvider.Codex);
         check(alerts.Count == 1 && alerts[0].Sequence == 2 && alerts[0].WindowIds.SequenceEqual(["account:5h"]),
             "Existing exhaustion-recovery alerts still span failed reads; early-reset continuity is independent");
         await recoveryMonitor.StopAsync();
@@ -490,7 +490,7 @@ internal static class AccountQuotaMonitorTests
             using var cancellation = new CancellationTokenSource();
             List<QuotaObservation> observations = [];
             monitor.Succeeded += observations.Add;
-            Task active = monitor.RefreshOnceAsync(provider, cancellation.Token);
+            Task active = monitor.RefreshSourceIfDueAsync(provider, cancellation.Token);
             await entered.Task.WaitAsync(TimeSpan.FromSeconds(3));
             check(State(monitor, provider) is { IsRefreshing: true, ContinuityId: 1 },
                 "A running read keeps the current generation until its result is finalized");
@@ -504,7 +504,7 @@ internal static class AccountQuotaMonitorTests
             check(monitor.Snapshot().Where(state => state.Provider != provider).All(state => state.ContinuityId == 1),
                 "Cancelling one provider does not invalidate another provider's pending comparison");
             client.Handler = (requested, _) => Task.FromResult(Reading(requested, 5));
-            await monitor.RefreshOnceAsync(provider);
+            await monitor.RefreshSourceIfDueAsync(provider);
             check(observations.Count == 1 && observations[0] is { Sequence: 1, ContinuityId: 2 },
                 "The next real success starts at sequence one in the post-cancellation generation");
             await monitor.StopAsync();
@@ -518,7 +518,7 @@ internal static class AccountQuotaMonitorTests
             if (State(beforeRead, QuotaProvider.Codex).IsRefreshing) beforeReadCancellation.Cancel();
         };
         bool beforeReadCanceled = false;
-        try { await beforeRead.RefreshOnceAsync(QuotaProvider.Codex, beforeReadCancellation.Token); }
+        try { await beforeRead.RefreshSourceIfDueAsync(QuotaProvider.Codex, beforeReadCancellation.Token); }
         catch (OperationCanceledException) { beforeReadCanceled = true; }
         check(beforeReadCanceled && notInvoked.Calls(QuotaProvider.Codex) == 0
             && State(beforeRead, QuotaProvider.Codex) is { ContinuityId: 1, IsRefreshing: false },
@@ -581,7 +581,7 @@ internal static class AccountQuotaMonitorTests
         using var cancellation = new CancellationTokenSource();
         List<QuotaObservation> observations = [];
         monitor.Succeeded += observations.Add;
-        Task active = monitor.RefreshOnceAsync(QuotaProvider.Codex, cancellation.Token);
+        Task active = monitor.RefreshSourceIfDueAsync(QuotaProvider.Codex, cancellation.Token);
         try
         {
             await WaitAsync(() => State(monitor, QuotaProvider.Codex).LastSuccessfulCheckUtc == Now);
@@ -598,10 +598,10 @@ internal static class AccountQuotaMonitorTests
                 "Cancelled cache persistence keeps validated values but suppresses delivery and breaks continuity once");
         }
         finally { storeGate.Release(); }
-        await monitor.RefreshOnceAsync(QuotaProvider.Codex);
+        await monitor.RefreshSourceIfDueAsync(QuotaProvider.Codex);
         check(observations.Count == 1 && observations[0] is { Sequence: 2, ContinuityId: 2 },
             "The success sequence already assigned before cancelled persistence remains consumed without bridging generations");
-        await monitor.RefreshOnceAsync(QuotaProvider.Codex);
+        await monitor.RefreshSourceIfDueAsync(QuotaProvider.Codex);
         check(observations.Count == 2 && observations[1] is { Sequence: 3, ContinuityId: 2 },
             "Subsequent fully completed reads remain consecutive in the new generation");
         await monitor.StopAsync();
@@ -614,11 +614,11 @@ internal static class AccountQuotaMonitorTests
         Queue<Action> callbacks = new();
         List<(QuotaObservation Observation, QuotaState Current)> delivered = [];
         monitor.Succeeded += observation => callbacks.Enqueue(() => delivered.Add((observation, State(monitor, observation.Provider))));
-        await monitor.RefreshOnceAsync(QuotaProvider.Codex);
+        await monitor.RefreshSourceIfDueAsync(QuotaProvider.Codex);
         client.Handler = (_, _) => Task.FromException<QuotaReading>(new IOException("Synthetic gap before UI delivery"));
-        await monitor.RefreshOnceAsync(QuotaProvider.Codex);
+        await monitor.RefreshSourceIfDueAsync(QuotaProvider.Codex);
         client.Handler = (provider, _) => Task.FromResult(Reading(provider, 5));
-        await monitor.RefreshOnceAsync(QuotaProvider.Codex);
+        await monitor.RefreshSourceIfDueAsync(QuotaProvider.Codex);
         check(callbacks.Count == 2 && delivered.Count == 0, "Asynchronous hosts can defer success callbacks without retaining a state lock");
         while (callbacks.TryDequeue(out Action? callback)) callback();
         check(delivered[0].Observation is { Sequence: 1, ContinuityId: 1 }
@@ -640,13 +640,13 @@ internal static class AccountQuotaMonitorTests
         using var monitor = new AccountQuotaMonitor(client, utcNow: () => Now, diagnosticLog: diagnosticLog);
         List<QuotaObservation> observations = [];
         monitor.Succeeded += observations.Add;
-        await monitor.RefreshOnceAsync(QuotaProvider.Codex);
-        await monitor.RefreshOnceAsync(QuotaProvider.Codex);
+        await monitor.RefreshSourceIfDueAsync(QuotaProvider.Codex);
+        await monitor.RefreshSourceIfDueAsync(QuotaProvider.Codex);
         check(observations.Count == 2 && observations[0].Sequence == 1 && observations[1].Sequence == 2
             && observations.All(item => item.ContinuityId == 1)
             && State(monitor, QuotaProvider.Codex).ContinuityId == 1,
             "An unavailable optional diagnostic file neither interrupts delivery nor breaks live continuity");
-        check(Directory.Exists(diagnosticLog.LogPath) && State(monitor, QuotaProvider.Codex).Error.Length == 0,
+        check(Directory.Exists(diagnosticLog.LogPath) && State(monitor, QuotaProvider.Codex).Failure is null,
             "A diagnostic failure preserves the existing target and remains separate from the live-read result");
         await monitor.StopAsync();
     }
@@ -665,12 +665,12 @@ internal static class AccountQuotaMonitorTests
             return Reading(provider, 20);
         });
         using var monitor = new AccountQuotaMonitor(client, utcNow: () => Now);
-        Task first = monitor.RefreshOnceAsync(QuotaProvider.Codex);
+        Task first = monitor.RefreshSourceIfDueAsync(QuotaProvider.Codex);
         await entered.Task.WaitAsync(TimeSpan.FromSeconds(3));
-        await Task.WhenAll(Enumerable.Range(0, 10).Select(_ => monitor.RefreshOnceAsync(QuotaProvider.Codex)));
+        await Task.WhenAll(Enumerable.Range(0, 10).Select(_ => monitor.RefreshSourceIfDueAsync(QuotaProvider.Codex)));
         check(client.Calls(QuotaProvider.Codex) == 1 && State(monitor, QuotaProvider.Codex).IsRefreshing,
             "Overlapping refresh requests do not duplicate the running provider command");
-        await monitor.RefreshOnceAsync(QuotaProvider.Claude);
+        await monitor.RefreshSourceIfDueAsync(QuotaProvider.Claude);
         check(client.Calls(QuotaProvider.Claude) == 1 && State(monitor, QuotaProvider.Claude).Reading is not null,
             "Blocked Codex command does not block Claude");
         release.TrySetResult();
@@ -686,7 +686,7 @@ internal static class AccountQuotaMonitorTests
         using var monitor = new AccountQuotaMonitor(client, utcNow: () => Now);
         int successes = 0;
         monitor.Succeeded += _ => Interlocked.Increment(ref successes);
-        await Task.WhenAll(Enum.GetValues<QuotaProvider>().Select(provider => monitor.RefreshOnceAsync(provider)));
+        await Task.WhenAll(Enum.GetValues<QuotaProvider>().Select(provider => monitor.RefreshSourceIfDueAsync(provider)));
         check(client.Calls(QuotaProvider.Gemini) == 0, "Gemini automatic quota query is disabled before client invocation");
         check(State(monitor, QuotaProvider.Gemini) is { Reading: null, CheckedAtUtc: null, LastSuccessfulCheckUtc: null,
             NextCheckUtc: null, IsRefreshing: false }, "Disabled Gemini has no reading, attempt, success or deadline");
@@ -694,7 +694,7 @@ internal static class AccountQuotaMonitorTests
         check(State(monitor, QuotaProvider.Codex).NextCheckUtc == Now.AddMinutes(15) &&
             State(monitor, QuotaProvider.Claude).NextCheckUtc == Now.AddMinutes(15),
             "Enabled exhausted providers retain their polling cadence");
-        await monitor.RefreshOnceAsync(QuotaProvider.Gemini);
+        await monitor.RefreshSourceIfDueAsync(QuotaProvider.Gemini);
         check(client.Calls(QuotaProvider.Gemini) == 0 && successes == 3,
             "Explicit Gemini refresh remains a no-op without a success event");
         await monitor.StopAsync();
@@ -765,9 +765,9 @@ internal static class AccountQuotaMonitorTests
         var client = new FakeClient((provider, _) => Task.FromResult(Reading(provider, provider == QuotaProvider.Codex ? 25 : 75)));
         using (var monitor = new AccountQuotaMonitor(client, store, () => Now))
         {
-            await Task.WhenAll(Enum.GetValues<QuotaProvider>().Select(provider => monitor.RefreshOnceAsync(provider)));
+            await Task.WhenAll(Enum.GetValues<QuotaProvider>().Select(provider => monitor.RefreshSourceIfDueAsync(provider)));
             check(monitor.Snapshot().All(state => state.CacheError.Length == 0), "Successful readings saved without cache errors");
-            for (int index = 0; index < 5; index++) await monitor.RefreshOnceAsync(QuotaProvider.Codex);
+            for (int index = 0; index < 5; index++) await monitor.RefreshSourceIfDueAsync(QuotaProvider.Codex);
             await monitor.StopAsync();
         }
         var reopened = new UsageStore(path);
@@ -825,7 +825,7 @@ internal static class AccountQuotaMonitorTests
             await WaitAsync(() => restarted.Snapshot().Where(state => state.Provider != QuotaProvider.Gemini).All(state => state.CheckedAtUtc.HasValue && !state.IsRefreshing));
             check(restarted.Snapshot().Where(state => state.Provider != QuotaProvider.Gemini).All(state => state.IsPrevious && state.Reading is not null && state.LastSuccessfulCheckUtc == Now),
                 "Offline restart shows persisted values as previous, with original successful time");
-            check(restarted.Snapshot().Where(state => state.Provider != QuotaProvider.Gemini).All(state => state.CheckedAtUtc == Now.AddHours(1) && state.Error.Length > 0),
+            check(restarted.Snapshot().Where(state => state.Provider != QuotaProvider.Gemini).All(state => state.CheckedAtUtc == Now.AddHours(1) && state.Failure is not null),
                 "Offline restart distinguishes current attempt from cached observation");
             await restarted.StopAsync();
             check(liveSuccesses == 0, "Cache loading, refresh starts and failed offline reads emit no live successful observations");
@@ -888,11 +888,11 @@ internal static class AccountQuotaMonitorTests
         var store = new UsageStore(Path.Combine(directory, "quota-reset.db"));
         var client = new FakeClient((provider, _) => Task.FromResult(Reading(provider, 20, reportedReset)));
         using var monitor = new AccountQuotaMonitor(client, store, () => now);
-        await monitor.RefreshOnceAsync(QuotaProvider.Codex);
+        await monitor.RefreshSourceIfDueAsync(QuotaProvider.Codex);
         check(State(monitor, QuotaProvider.Codex).NextCheckUtc == reset.AddMinutes(-15), "Monitor wakes at reset band start instead of waiting an hour");
         now = reset.AddMinutes(1);
         reportedReset = reset.AddDays(7);
-        await monitor.RefreshOnceAsync(QuotaProvider.Codex);
+        await monitor.RefreshSourceIfDueAsync(QuotaProvider.Codex);
         check(State(monitor, QuotaProvider.Codex).NextCheckUtc == now.AddMinutes(5), "Rolled-forward server reset retains old reset's fast band");
         QuotaCache? cache = await store.ReadQuotaAsync(QuotaProvider.Codex);
         check(cache?.ResetAnchors.Contains(reset) == true && cache.ResetAnchors.Contains(reportedReset),
@@ -907,7 +907,7 @@ internal static class AccountQuotaMonitorTests
             await restarted.StopAsync();
         }
         now = reset.AddMinutes(16);
-        await monitor.RefreshOnceAsync(QuotaProvider.Codex);
+        await monitor.RefreshSourceIfDueAsync(QuotaProvider.Codex);
         check(State(monitor, QuotaProvider.Codex).NextCheckUtc == now.AddHours(1), "After old reset+15m monitor returns to ordinary cadence");
         cache = await store.ReadQuotaAsync(QuotaProvider.Codex);
         check(cache is not null && !cache.ResetAnchors.Contains(reset), "Expired anchors are pruned from persisted cache");

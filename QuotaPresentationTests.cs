@@ -11,13 +11,16 @@ internal static class QuotaPresentationTests
         {
             var state = new QuotaState(provider, new(provider,
                 [new("synthetic-weekly", "합성 주간", 25, now.AddDays(3.5), 10080)]),
-                CheckedAtUtc: now, LastSuccessfulCheckUtc: now, NextCheckUtc: now.AddHours(1));
+                CheckedAtUtc: now, LastSuccessfulCheckUtc: now, NextCheckUtc: now.AddHours(1), Mode: FixtureMode(provider));
             yield return ("normal", state);
             yield return ("previous", state with { IsPrevious = true });
-            yield return ("none", new(provider));
-            yield return ("error", state with { IsPrevious = true, Error = "합성 조회 오류", CacheError = "합성 캐시 오류" });
+            yield return ("none", new(provider, Mode: FixtureMode(provider)));
+            yield return ("error", state with { IsPrevious = true, Failure = new(QuotaFailureKind.Unreachable, "synthetic.read"), CacheError = "합성 캐시 오류" });
         }
     }
+
+    private static QuotaSourceMode FixtureMode(QuotaProvider provider) =>
+        provider == QuotaProvider.Gemini ? QuotaSourceMode.Unavailable : QuotaSourceMode.Active;
 
     internal static int Run()
     {
@@ -70,7 +73,7 @@ internal static class QuotaPresentationTests
                 [new("session", "5시간", 12.34, now.AddMinutes(25), 300),
                  new("weekly", "주간", 92, now.AddHours(7), 10080),
                  new("missing", "모델별", 0, null)]),
-                CheckedAtUtc: now, LastSuccessfulCheckUtc: now, NextCheckUtc: now.AddHours(6));
+                CheckedAtUtc: now, LastSuccessfulCheckUtc: now, NextCheckUtc: now.AddHours(6), Mode: FixtureMode(provider));
             var section = QuotaPanelModel.Section(state, now);
             if (provider == QuotaProvider.Gemini)
             {
@@ -80,8 +83,8 @@ internal static class QuotaPresentationTests
                 Check(section.Heading.Text == "Gemini" && section.Scope is null && section.Metadata.Text == "",
                     "Gemini hides scope and observation metadata");
                 Check(QuotaPanelModel.Section(state with { IsPrevious = true, IsRefreshing = true,
-                    Error = "합성 오류", CacheError = "합성 캐시 오류" }, now).Detail == section.Detail &&
-                    QuotaPanelModel.Section(new(provider), now).Detail == section.Detail &&
+                    Failure = new(QuotaFailureKind.Unreachable, "synthetic.read"), CacheError = "합성 캐시 오류" }, now).Detail == section.Detail &&
+                    QuotaPanelModel.Section(new(provider, Mode: FixtureMode(provider)), now).Detail == section.Detail &&
                     !section.Detail.Contains("2026", StringComparison.Ordinal),
                     "Gemini policy detail ignores old, empty, in-flight and failed query states");
                 continue;
@@ -104,10 +107,10 @@ internal static class QuotaPresentationTests
                 ? "기본 1시간 · 사용 90% 초과~100% 미만은 1시간 · 사용 100%는 15분 · 리셋 전후 15분은 10분 · 실패 시 15분부터 재시도"
                 : "기본 1시간 · 사용 90% 초과~100% 미만은 1시간 · 사용 100%는 15분 · 리셋 전후 15분은 5분 · 실패 시 15분부터 재시도", StringComparison.Ordinal) &&
                 !section.Detail.Contains("잔여", StringComparison.Ordinal), provider + " polling text uses consumed percentage");
-            var stale = QuotaPanelModel.Section(state with { IsPrevious = true, Error = "조회 실패", CacheError = "캐시 실패" }, now);
+            var stale = QuotaPanelModel.Section(state with { IsPrevious = true, Failure = new(QuotaFailureKind.Unreachable, "synthetic.read"), CacheError = "캐시 실패" }, now);
             Check(stale.Rows.All(row => row.Tone == PanelTone.Muted && row.Text.Contains("사용 (이전)", StringComparison.Ordinal)) &&
-                stale.Metadata.Tone == PanelTone.Danger && stale.Detail.Contains("조회 실패\n캐시 실패", StringComparison.Ordinal), provider + " previous/error/cache semantics");
-            var empty = QuotaPanelModel.Section(new(provider), now);
+                stale.Metadata.Tone == PanelTone.Danger && stale.Detail.Contains("진단 코드: synthetic.read\n캐시 실패", StringComparison.Ordinal), provider + " previous/error/cache semantics");
+            var empty = QuotaPanelModel.Section(new(provider, Mode: FixtureMode(provider)), now);
             Check(empty.Rows.Single().UsedPercent is null && empty.Detail.Contains("리셋·한도 복원 예정\n조회 값 없음", StringComparison.Ordinal),
                 provider + " no reading retains the reset section without inventing a bar or reset");
             Check(empty.Rows.Single().ComparisonText is null && empty.Heading.ComparisonText is null &&
@@ -129,7 +132,7 @@ internal static class QuotaPresentationTests
                 [new("active", "합성 5시간", 55, now.AddHours(3), 300),
                  new("weekly", "합성 주간", 10, now.AddHours(126), 10080),
                  new("inactive", "합성 5시간 미확인", 0, now.AddHours(5), 300)]),
-                CheckedAtUtc: now, LastSuccessfulCheckUtc: now, NextCheckUtc: now.AddHours(6));
+                CheckedAtUtc: now, LastSuccessfulCheckUtc: now, NextCheckUtc: now.AddHours(6), Mode: FixtureMode(provider));
             var fresh = QuotaPanelModel.Section(state, now);
             var later = QuotaPanelModel.Section(state, now.AddMinutes(17));
             if (provider == QuotaProvider.Gemini)
@@ -203,18 +206,18 @@ internal static class QuotaPresentationTests
             var engine = new QuotaEarlyResetNotifications();
             QuotaObservation Reading(long sequence, DateTimeOffset at, double used, DateTimeOffset reset) =>
                 new(provider, sequence, at, new(provider, [new("synthetic-weekly", "합성 주간", used, reset, 10080)]), 1);
-            _ = engine.Observe(Reading(1, now.AddHours(-1), 60, now.AddDays(2)), true);
+            _ = engine.Observe(Reading(1, now.AddHours(-1), 60, now.AddDays(2)), true, QuotaNames.HasCliRoute(provider));
             var observation = Reading(2, now, 5, now.AddDays(6));
-            var recent = engine.Observe(observation, true)!;
+            var recent = engine.Observe(observation, true, QuotaNames.HasCliRoute(provider))!;
             if (provider == QuotaProvider.Gemini)
             {
                 Check(recent is null && engine.Recent(provider) is null,
                     "Gemini does not retain synthetic early-reset history for presentation");
                 var hidden = new QuotaEarlyResetAlert(provider, 2, 1, now,
                     [new("synthetic-weekly", "합성 주간", 10080, 60, 5, now.AddDays(2), now.AddDays(6))]);
-                var disabledState = new QuotaState(provider, observation.Reading, now, now, now.AddHours(1));
+                var disabledState = new QuotaState(provider, observation.Reading, now, now, now.AddHours(1), Mode: QuotaSourceMode.Unavailable);
                 Check(QuotaPanelModel.Section(disabledState, now, hidden).Detail ==
-                    QuotaPanelModel.Section(new(provider), now).Detail,
+                    QuotaPanelModel.Section(new(provider, Mode: FixtureMode(provider)), now).Detail,
                     "Gemini ignores externally supplied historical reset alerts");
                 continue;
             }
@@ -237,8 +240,8 @@ internal static class QuotaPresentationTests
             Check(later.Detail.Contains("확인 17분 전", StringComparison.Ordinal) &&
                 later.Detail.Contains("현재 한도 값이 아닌 당시의 확인 기록", StringComparison.Ordinal),
                 provider + " confirmation age advances without mislabelling history as the latest quota observation");
-            var failed = QuotaPanelModel.Section(state with { IsPrevious = true, Error = "합성 조회 실패" }, now, recent);
-            Check(failed.Detail.Contains("합성 조회 실패", StringComparison.Ordinal) &&
+            var failed = QuotaPanelModel.Section(state with { IsPrevious = true, Failure = new(QuotaFailureKind.Unreachable, "synthetic.read") }, now, recent);
+            Check(failed.Detail.Contains("진단 코드: synthetic.read", StringComparison.Ordinal) &&
                 failed.Detail.Contains("최근 조기 초기화", StringComparison.Ordinal) && failed.Rows.All(row => row.Tone == PanelTone.Muted),
                 provider + " previous values retain clearly historical information without appearing freshly verified");
             var other = recent! with { Provider = provider == QuotaProvider.Codex ? QuotaProvider.Claude : QuotaProvider.Codex };
