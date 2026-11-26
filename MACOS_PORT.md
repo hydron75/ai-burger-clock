@@ -3424,3 +3424,43 @@ PR #181 병합 뒤 main `9ed4331bdbc11f722f5eaec704c4a7ce6a84cc27`, 작업 트�
 
 ### 아직 하지 않은 것
 - **관찰 항목:** 실제 조회 실패가 생길 때의 원인별 문구와 상세의 `진단 코드:` 줄. 실패가 실제로 일어나야 보이므로, 사용자가 보고하면 이 절에 이어 쓴다. 지금까지는 합성 입력으로만 확인했다.
+
+## 89. 한도 조회 원천 통합(P2, PR #185)의 Mac 호스트 이전
+
+2026-11-26. 기준은 #185 HEAD `db96fa30c99a9cdd1c74fbed4f622d2ca880d480`, 설계는 [QUOTA_SOURCES_DESIGN](QUOTA_SOURCES_DESIGN.md) 4.3–4.5·6.1이다. 버전은 올리지 않았다(0.9.9 그대로). 이 PR(Mac 파일·이 기록)은 #185의 브랜치를 base로 한다. 공통 원본은 바꾸지 않았다.
+
+### 이전한 호출부
+| 이전 | 이후 | Mac 위치 |
+|---|---|---|
+| `RequestGeminiWebRefresh` | `RequestSourceRefresh(Gemini)` | `MacApplication.RefreshAll` 1곳 |
+| `SetGeminiWebEnabled` | `SetMode(Gemini, Active/Off)` | `MacGeminiWebBackend.SetEnabled` 1곳 |
+| `DeleteGeminiWebQuotaAsync` | `ClearCacheAsync(Gemini)`, monitor가 없으면 `QuotaCacheAdapter.ForGeminiWeb(store).DeleteAsync` | `MacGeminiWebBackend.DeleteCacheAsync` 1곳 |
+| 알림 정책 호출 | 대상 여부 인자 추가 | `MacQuotaNotifications` 4곳(`Observe`, `Evaluate`, `StillCurrent` 2곳) |
+| monitor 없는 상태의 `new QuotaState(provider)` | Gemini는 `Mode: Unavailable` | `MacApplication.QuotaStates` |
+| `RefreshOnceAsync` | `RefreshSourceIfDueAsync` | smoke 12곳(조기 초기화 6, 회복 알림 4, 조회 진단 2) |
+| 합성 상태의 `Error`·`GeminiWeb` | `Failure`(상세 팁 검사 2줄은 `CacheError`)·`Mode`·`Presentation` | smoke fixture |
+
+### 동작
+- 판정·문구·주기는 바꾸지 않았다.
+- 로그아웃 순서(끄기 → 캐시 삭제 → 진행 중 조회 대기 → 데이터 저장소 삭제)는 그대로다. 끄기와 삭제 사이에 대기가 없어 그 사이에 monitor가 새로 생기지 않는다. 앱 종료 중에는 `SetMode`가 무시되고 `ClearCacheAsync`가 예외를 내는데, 이전에도 취소된 토큰 때문에 삭제가 실패했으므로 결과(삭제 확인 실패 안내)가 같다. 종료 중 경로는 코드 검토로만 확인했다.
+- 알림 대상 여부는 monitor의 `EmitsObservations`를 쓴다. monitor 없이 응답을 넘기는 경로(Mac smoke harness)는 `HasCliRoute`를 쓴다. 실제 앱의 알림은 monitor가 있을 때만 들어온다.
+
+### 검증 (임시 사본, 커밋 `1395fbc`)
+| 항목 | 결과 |
+|---|---|
+| Shared.Tests | **291,817건 PASS**(0.9.9 main 291,812, +5). SKIP 없음 |
+| `bash Mac/build.sh` 옵션 없음 | 경고 0 / 오류 0 |
+| native `--smoke-test` 1회 | 종료 코드 0, FAIL 0, SKIP 0 |
+| smoke 결과 항목 | 0.9.9 실행의 45개 문구가 모두 그대로이고 `Gemini backend` 1개가 늘어 46개. Mac smoke에는 assertion 총계가 없다 |
+| 임시 사본 정리 | `lsregister -u` 후 삭제. LaunchServices 등록 수 2 → **1** |
+| 독립 검수 | 작성에 관여하지 않은 에이전트가 `db96fa3..9647416` diff를 읽기 전용으로 검수, 차단 사유 없음. 지적한 검사 주석 1건은 `1395fbc`에서 고쳤다 |
+
+새 `Gemini backend` 검사는 시작하지 않은 실제 monitor와 임시 DB를 쓴다. 끄기는 저장 값을 남기고, 로그인은 다시 켜며, 로그아웃의 삭제는 켜진 채 시작한 monitor·꺼진 채 시작한 monitor·monitor 없음 세 경우에 저장 값을 지운다.
+
+### 수행하지 않은 검증
+- 실제 Gemini 웹의 로그인·끄기·로그아웃, 실제 CLI 조회, 실제 알림 배너(계정·네트워크를 건드리지 않았다).
+- 앱 종료 중 로그아웃 경로의 실행 검사.
+- 실행 중인 0.9.9 앱은 다시 빌드하거나 재시작하지 않았다.
+
+### 남은 호환 코드
+공통 `GeminiUsageDiagnostic`의 두 인자 생성자는 Mac에 호출부가 없다. 제거 여부는 공통 원본 담당이 정한다.

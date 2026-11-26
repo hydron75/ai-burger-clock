@@ -217,6 +217,11 @@ internal sealed class MacQuotaNotifications
         else subscription.Monitor?.RecordEarlyResetDecision(observation, outcome, reason);
     }
 
+    // Alert eligibility is the live monitor's source trait. Responses handed over without a monitor (the smoke harness)
+    // keep the CLI-route rule.
+    private bool Eligible(QuotaProvider provider) =>
+        Volatile.Read(ref current)?.Monitor?.EmitsObservations(provider) ?? QuotaNames.HasCliRoute(provider);
+
     private bool IsLive(Subscription subscription) => subscription.Live && ReferenceEquals(Volatile.Read(ref current), subscription);
 
     // Direct delivery (the smoke harness without a monitor): the live subscription, or an ended one after Detach.
@@ -265,11 +270,12 @@ internal sealed class MacQuotaNotifications
         // later returns, an alert queued for the earlier state must stay gone.
         if (pending.TryGetValue(observation.Provider, out Pending? queued))
             Keep(observation.Provider, Current(queued, observation.Reading, observation.CheckedAtUtc, observation.ContinuityId));
-        QuotaRecoveryAlert? recovered = recoveryCurrent ? recoveryEngine.Observe(observation, recovery.Active) : null;
+        bool eligible = Eligible(observation.Provider);
+        QuotaRecoveryAlert? recovered = recoveryCurrent ? recoveryEngine.Observe(observation, recovery.Active, eligible) : null;
         QuotaEarlyResetAlert? early = null;
         if (earlyResetCurrent)
         {
-            QuotaEarlyResetEvaluation evaluation = earlyResetEngine.Evaluate(observation, earlyReset.Active);
+            QuotaEarlyResetEvaluation evaluation = earlyResetEngine.Evaluate(observation, earlyReset.Active, eligible);
             early = evaluation.Alert;
             Record(item.Subscription, observation, early is null ? "Excluded" : "Alert", evaluation.Reason);
         }
@@ -331,10 +337,11 @@ internal sealed class MacQuotaNotifications
     private Pending? Current(Pending queued, QuotaReading reading, DateTimeOffset now, long continuityId)
     {
         if (now < queued.Observation.CheckedAtUtc) return null;
+        bool eligible = Eligible(queued.Observation.Provider);
         QuotaRecoveryAlert? recovered = recovery.Active && queued.Recovery is { } alert &&
-            QuotaPendingAlertPolicy.RecoveryStillCurrent(alert, queued.Observation.Reading, reading, now) ? alert : null;
+            QuotaPendingAlertPolicy.RecoveryStillCurrent(alert, queued.Observation.Reading, reading, now, eligible) ? alert : null;
         QuotaEarlyResetAlert? early = earlyReset.Active && queued.EarlyReset is { } change &&
-            QuotaPendingAlertPolicy.EarlyResetStillCurrent(change, queued.Observation.Reading, reading, now, continuityId) ? change : null;
+            QuotaPendingAlertPolicy.EarlyResetStillCurrent(change, queued.Observation.Reading, reading, now, continuityId, eligible) ? change : null;
         return recovered is null && early is null ? null : queued with { Recovery = recovered, EarlyReset = early };
     }
 

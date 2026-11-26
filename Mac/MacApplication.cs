@@ -309,7 +309,8 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
             statusMonitor?.NextRefreshUtc, statusMonitor?.StorageError ?? "", quotaNotifications?.RecentEarlyResets());
 
     private IReadOnlyList<QuotaState> QuotaStates() => quotaMonitor?.Snapshot() ??
-        Enum.GetValues<QuotaProvider>().Select(provider => new QuotaState(provider)).ToArray();
+        Enum.GetValues<QuotaProvider>().Select(provider => new QuotaState(provider,
+            Mode: provider == QuotaProvider.Gemini ? QuotaSourceMode.Unavailable : QuotaSourceMode.Active)).ToArray();
 
     private void ShowPanel()
     {
@@ -355,7 +356,7 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
     private void RefreshAll()
     {
         RefreshAll(false);
-        if (!stopping && !smoke) quotaMonitor?.RequestGeminiWebRefresh();
+        if (!stopping && !smoke) quotaMonitor?.RequestSourceRefresh(QuotaProvider.Gemini);
     }
 
     private void RefreshAll(bool queueWhileRefreshing)
@@ -862,7 +863,7 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
             QuotaState geminiQuota = new(QuotaProvider.Gemini, new(QuotaProvider.Gemini,
                 [new("gemini-5h", "5시간", 0, now.AddHours(5), 300),
                  new("gemini-weekly", "주간", 0.4, now.AddDays(6), 10080)]),
-                LastSuccessfulCheckUtc: now, NextCheckUtc: now.AddHours(6));
+                LastSuccessfulCheckUtc: now, NextCheckUtc: now.AddHours(6), Mode: QuotaSourceMode.Unavailable);
             // xAI weekly credits (Grok CLI) is the fourth standard box: one synthetic row.
             QuotaState xaiQuota = MacXaiQuotaSmoke.Reading(now, 37);
             QuotaState[] quotas = [quota, claudeQuota, geminiQuota, xaiQuota];
@@ -944,13 +945,13 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
             // failed reading has no bar at all.
             QuotaState[] edgeStates =
             [
-                quota with { IsPrevious = true, Error = "조회 실패 예시" },
+                quota with { IsPrevious = true, Failure = new(QuotaFailureKind.Unreachable, "synthetic") },
                 new(QuotaProvider.Claude, new(QuotaProvider.Claude,
                     [new("session", "세션 (5시간)", 88, now.AddMinutes(-4), 300),
                      new("weekly_all", "주간 전체", 63, null, 10080)]),
                     LastSuccessfulCheckUtc: now, NextCheckUtc: now.AddMinutes(5)),
-                new(QuotaProvider.Gemini, null, Error: "조회 실패 예시"),
-                xaiQuota with { IsPrevious = true, Error = "조회 실패 예시" },
+                new(QuotaProvider.Gemini, null, Failure: new(QuotaFailureKind.Unreachable, "synthetic"), Mode: QuotaSourceMode.Unavailable),
+                xaiQuota with { IsPrevious = true, Failure = new(QuotaFailureKind.Unreachable, "synthetic") },
             ];
             panel.Update(Schedule(now), healthy, edgeStates, false, now.AddMinutes(5), "");
             panel.Verify(Schedule(now), healthy, edgeStates);
@@ -986,7 +987,8 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
                 new(QuotaProvider.Gemini, new(QuotaProvider.Gemini,
                     [new("gemini-5h", "5시간", 55, now.AddHours(3), 300),            // old values: never shown, no bar, no time layer
                      new("gemini-weekly", "주간", 10, now.AddDays(3), 10080)]),
-                    LastSuccessfulCheckUtc: now.AddHours(-1), NextCheckUtc: now.AddMinutes(5), IsPrevious: true),
+                    LastSuccessfulCheckUtc: now.AddHours(-1), NextCheckUtc: now.AddMinutes(5), IsPrevious: true,
+                    Mode: QuotaSourceMode.Unavailable),
                 new(QuotaProvider.Xai, new(QuotaProvider.Xai,
                     [new(AccountQuotaParsers.GrokWeeklyWindowId, "주간 크레딧", 63, now.AddDays(2), AccountQuotaParsers.GrokWeeklyWindowMinutes)]),
                     LastSuccessfulCheckUtc: now, NextCheckUtc: now.AddMinutes(5)),   // current: time layer in the xAI colors
@@ -1011,6 +1013,7 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
             // Gemini app usage reader (0.9.6): reading loop, menu and the five box states, all synthetic and without a web view.
             string geminiWebReadingResult = await MacGeminiWebSmoke.VerifyReadingAsync();
             string geminiWebMenuResult = await MacGeminiWebSmoke.VerifyControllerAsync(contextMenu!, geminiWeb!);
+            string geminiWebBackendResult = await MacGeminiWebSmoke.VerifyBackendAsync(lifetime.Token);
             string geminiWebPanelResult = MacGeminiWebSmoke.VerifyPanel(panel, Schedule(now), healthy, quota, claudeQuota, xaiQuota, now);
             // Claude CLI login state (#171): the Claude box note line, tip and popover in the shared wording, synthetic dates only.
             string claudeAuthPanelResult = MacClaudeAuthSmoke.VerifyPanel(panel, Schedule(now), healthy, quota, claudeQuota, geminiQuota, xaiQuota, now);
@@ -1073,7 +1076,7 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
                 Console.WriteLine($"SKIP: {skippedScreenChecks.Count} screen checks not run because a window of {covering.Value.Owner} covers display {covering.Value.ScreenNumber}, " +
                     $"the display of the status item where ours would open (it would show the menu bar over it): {string.Join("; ", skippedScreenChecks)}. Run again with no full-screen app to check them.");
             string verdict = skippedScreenChecks.Count == 0 ? "PASS" : $"PASS with {skippedScreenChecks.Count} screen checks SKIPPED (not verified)";
-            Console.WriteLine($"{verdict}: bundle version, menu-tracking countdown timer, 20pt menu icon white/dark disc + color glyph light/dark 1x-2x pixels (glyph contrast min {iconContrast:0.0}:1), left/right/control-click routing, right-click menu, popover open/close/reopen, shared panel text/record menu/quota lines, {activationResult}, tone contrast >= 4.5:1 light+dark (min {weakest:0.0}:1), card text x = quota box text x ({layout.BoxTextX:0}pt; titles {layout.TitleX:0}pt), whole-card click/quota boxes read-only, shared quota title, usage bars (0% empty/100% full, provider colors >= 3:1 light+dark min {barWeakest:0.0}:1, muted when previous/elapsed, none without a value), time layer (tint-track/tint-used >= 1.5:1 min {tintWeakest:0.0}:1, marker >= 3:1 min {markerWeakest:0.0}:1 light+dark, dark tint-used >= 2.0:1 min {darkSeparationWeakest:0.0}:1, marker position/end points, hidden states, spoken row = shared reading text once), one shared Provider detail per quota box, four provider cards incl. xAI (same heading width, card size and spacing: {cardGeometry}; whole-card click only, detail without the usage link), four quota boxes (Gemini fixed notice only while no reader is registered, xAI weekly credits), popover {layout.Size.Width:0}x{layout.Size.Height:0}pt (this screen usable {layout.UsableHeight:0}pt; 1280x800 {standard.Height:0}pt not cut off, quota area {standardQuota:0}pt scrolling, every control reachable; 1024x640 {small.Height:0}pt not cut off, quota area {smallQuota:0}pt, whole panel {smallScroll.Document:0}pt scrolling, every control reachable), 1,000-char note limit, temporary SQLite, four events/notes via shared factory, {displayResult}, {permissionResult}, {layoutKeyResult}, {notificationImageResult}, {recoveryResult}, {earlyResetResult}, {earlyResetControllerResult}, {decisionLogResult}, {lateCallbackResult}, {earlyResetUiResult}, {geminiOffResult}, {geminiWebReadingResult}, {geminiWebMenuResult}, {geminiWebPanelResult}, {claudeAuthPanelResult}, {claudeAuthWarningResult}, {xaiQuotaResult}, {detailTipResult}, {quotaRowResult}, {diagnosticResult}, statistics (shared text, explanation fits, Mac empty-state hint), injected quota countdown; no account/network/settings changes.");
+            Console.WriteLine($"{verdict}: bundle version, menu-tracking countdown timer, 20pt menu icon white/dark disc + color glyph light/dark 1x-2x pixels (glyph contrast min {iconContrast:0.0}:1), left/right/control-click routing, right-click menu, popover open/close/reopen, shared panel text/record menu/quota lines, {activationResult}, tone contrast >= 4.5:1 light+dark (min {weakest:0.0}:1), card text x = quota box text x ({layout.BoxTextX:0}pt; titles {layout.TitleX:0}pt), whole-card click/quota boxes read-only, shared quota title, usage bars (0% empty/100% full, provider colors >= 3:1 light+dark min {barWeakest:0.0}:1, muted when previous/elapsed, none without a value), time layer (tint-track/tint-used >= 1.5:1 min {tintWeakest:0.0}:1, marker >= 3:1 min {markerWeakest:0.0}:1 light+dark, dark tint-used >= 2.0:1 min {darkSeparationWeakest:0.0}:1, marker position/end points, hidden states, spoken row = shared reading text once), one shared Provider detail per quota box, four provider cards incl. xAI (same heading width, card size and spacing: {cardGeometry}; whole-card click only, detail without the usage link), four quota boxes (Gemini fixed notice only while no reader is registered, xAI weekly credits), popover {layout.Size.Width:0}x{layout.Size.Height:0}pt (this screen usable {layout.UsableHeight:0}pt; 1280x800 {standard.Height:0}pt not cut off, quota area {standardQuota:0}pt scrolling, every control reachable; 1024x640 {small.Height:0}pt not cut off, quota area {smallQuota:0}pt, whole panel {smallScroll.Document:0}pt scrolling, every control reachable), 1,000-char note limit, temporary SQLite, four events/notes via shared factory, {displayResult}, {permissionResult}, {layoutKeyResult}, {notificationImageResult}, {recoveryResult}, {earlyResetResult}, {earlyResetControllerResult}, {decisionLogResult}, {lateCallbackResult}, {earlyResetUiResult}, {geminiOffResult}, {geminiWebReadingResult}, {geminiWebMenuResult}, {geminiWebBackendResult}, {geminiWebPanelResult}, {claudeAuthPanelResult}, {claudeAuthWarningResult}, {xaiQuotaResult}, {detailTipResult}, {quotaRowResult}, {diagnosticResult}, statistics (shared text, explanation fits, Mac empty-state hint), injected quota countdown; no account/network/settings changes.");
             smokeAnchorWindow?.Close();
             ExitCode = 0;
         }

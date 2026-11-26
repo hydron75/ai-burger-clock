@@ -158,9 +158,14 @@ internal sealed class MacGeminiWebBackend(Func<AccountQuotaMonitor?> monitor, Us
 {
     public bool LoginOpen => loginWindow.IsOpen;
 
-    public void SetEnabled(bool enabled) => monitor()?.SetGeminiWebEnabled(enabled);
+    public void SetEnabled(bool enabled) =>
+        monitor()?.SetMode(QuotaProvider.Gemini, enabled ? QuotaSourceMode.Active : QuotaSourceMode.Off);
 
-    public Task DeleteCacheAsync() => store.DeleteGeminiWebQuotaAsync(lifetime);
+    // The monitor accepts this only after SetEnabled(false), which logout calls first. Without a monitor (start-up not
+    // finished) the same cache entry is deleted through the same store.
+    public Task DeleteCacheAsync() => monitor() is { } running
+        ? running.ClearCacheAsync(QuotaProvider.Gemini, lifetime)
+        : QuotaCacheAdapter.ForGeminiWeb(store).DeleteAsync(lifetime);
 
     public void ShowLogin(Action succeeded) => loginWindow.Show(succeeded);
 

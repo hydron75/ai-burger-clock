@@ -108,10 +108,11 @@ internal static class MacXaiQuotaSmoke
             "a previous xAI value must be spoken as its plain row text.");
 
         // ---- No value: a failed or waiting reading has a text row and no bar ----
-        Show(codex, claude, gemini, new QuotaState(QuotaProvider.Xai, null, Error: "조회 실패 예시"));
+        Show(codex, claude, gemini, new QuotaState(QuotaProvider.Xai, null, Failure: new(QuotaFailureKind.Unreachable, "synthetic")));
         Check(panel.QuotaBarCount == 5 && panel.QuotaRowIds(QuotaProvider.Xai).Length == 1, "a failed xAI reading must show one text row and no bar.");
         string failed = panel.QuotaRowText(QuotaProvider.Xai, panel.QuotaRowIds(QuotaProvider.Xai)[0]);
-        Check(failed == "조회 실패 예시", "a failed xAI reading must show the shared error text.");
+        Check(failed == QuotaPanelModel.FailureMessage(QuotaProvider.Xai, QuotaFailureKind.Unreachable),
+            "a failed xAI reading must show the shared error text.");
         Show(codex, claude, gemini, new QuotaState(QuotaProvider.Xai));
         Check(panel.QuotaBarCount == 5, "a waiting xAI reading must have no bar.");
         string waiting = panel.QuotaRowText(QuotaProvider.Xai, panel.QuotaRowIds(QuotaProvider.Xai)[0]);
