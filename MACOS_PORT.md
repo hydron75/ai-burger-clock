@@ -3464,3 +3464,29 @@ PR #181 병합 뒤 main `9ed4331bdbc11f722f5eaec704c4a7ce6a84cc27`, 작업 트�
 
 ### 남은 호환 코드
 공통 `GeminiUsageDiagnostic`의 두 인자 생성자는 Mac에 호출부가 없다. 제거 여부는 공통 원본 담당이 정한다.
+
+## 90. 0.10.0 정리 (한도 조회 원천 통합 포함)
+
+2026-11-26. Mac 0.9.9 / build 36 → **0.10.0 / build 37**. 공통 원본의 한도 조회 원천 통합(P2, PR #185)과 Mac 호스트 이전(PR #186)을 싣는 버전 올림이다. 이 PR은 버전 필드와 문서만 바꾼다. 아직 배포하지 않았다.
+
+### 버전 필드
+`Version` 0.10.0, `AssemblyVersion` 0.10.0.0, `FileVersion` 0.10.0.0, `ApplicationVersion` 37(`CFBundleVersion`). `Info.plist`에는 적지 않는다.
+
+### 기준
+| 항목 | 값 |
+|---|---|
+| 기준 main(PR #185 병합, #186 포함) | `e4831bcac404885746239a9b43b41624e4509be1` |
+| 버전 변경 커밋(앱 소스) | `218487ec2201221621c647d29fc65a7411da6d0e`(브랜치 `claude/mac-0-10-0`, 이 절의 기록 커밋은 문서만 바꿈) |
+
+기준 main의 파일 트리는 #186 HEAD `92dca8f6afd69b738677db8a91d4b1d562e2e254`와 같다(`2f5d29c65c7783d4fadd9a5d3f10bc46cf68749c`). #186 HEAD와 89절에서 smoke를 실행한 커밋 `1395fbc`의 차이는 문서뿐이다.
+
+### 이번 번들에 실리는 변경
+한도 조회를 조회원(quota source) 구조와 공통 루프 하나로 합쳤다. 설계는 표시 변화가 없는 재구성이다([QUOTA_SOURCES_DESIGN](QUOTA_SOURCES_DESIGN.md) 6.2 P2). PR #185 본문 기준으로 캐시 키와 저장 양식(v1)은 그대로다. Mac 호스트의 이전 내용은 89절에 있다.
+
+### 배포 전 검증 (임시 사본, 저장소 경로 아님, 버전 변경 커밋 `218487e`)
+Shared.Tests **291,817건 PASS**, `bash Mac/build.sh` 옵션 없음 경고 0 / 오류 0, 번들 `CFBundleShortVersionString` 0.10.0 / `CFBundleVersion` 37, `codesign --verify --deep --strict` 통과. Xcode 27.2(27B52), .NET SDK 10.0.404, macos 워크로드 27.2.10000.
+
+native `--smoke-test`는 메인 지시에 따라 생략했다(같은 코드로 89절에서 1회 통과, [39절](#39-메뉴바-강제-표시-증상-원인-미확정-재부팅-후-해소)의 실행 횟수 고려). 빌드만 해서 임시 사본은 등록되지 않았고(`lsregister -u`는 대상 없음 `-10814`), 삭제 전후 LaunchServices 등록 수는 1이다. 실행 중인 0.9.9 앱은 건드리지 않았다.
+
+### 아직 하지 않은 것
+- 배포(저장소 경로 빌드·실행): 버전 PR 병합 뒤 메인의 "배포 진행" 지시를 받고 진행해 이 절에 이어 쓴다. "운영 관찰(3일)" 항목도 그때 함께 적는다.
