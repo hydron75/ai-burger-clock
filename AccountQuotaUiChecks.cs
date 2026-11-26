@@ -60,7 +60,8 @@ internal static class QuotaViewportUiChecks
         var states = new List<QuotaState>();
         foreach (var provider in Enum.GetValues<QuotaProvider>())
             states.Add(new QuotaState(provider, await client.ReadAsync(provider, CancellationToken.None),
-                LastSuccessfulCheckUtc: now, NextCheckUtc: now.AddHours(1)));
+                LastSuccessfulCheckUtc: now, NextCheckUtc: now.AddHours(1),
+                Mode: provider == QuotaProvider.Gemini ? QuotaSourceMode.Unavailable : QuotaSourceMode.Active));
         var failures = new List<string>();
         void Check(bool condition, string label)
         {
