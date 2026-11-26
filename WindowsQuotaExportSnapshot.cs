@@ -60,13 +60,16 @@ internal static class WindowsQuotaExportSnapshot
 
     internal static WindowsQuotaExportProvider Gemini(QuotaState state, DateTimeOffset? generatedAtUtc = null)
     {
-        string? webState = state.GeminiWeb switch
+        string? webState = state.Mode switch
         {
-            { IsEnabled: false } => "off",
-            { Outcome: GeminiUsageOutcome.LoginRequired } => "loginRequired",
-            { Outcome: GeminiUsageOutcome.FormatChanged } => "formatChanged",
-            { Outcome: GeminiUsageOutcome.LoadFailed } => "loadFailed",
-            { Outcome: GeminiUsageOutcome.Ok } => "ok",
+            QuotaSourceMode.Off => "off",
+            QuotaSourceMode.Active when state.HasResultSinceModeChange => state.Failure?.Kind switch
+            {
+                QuotaFailureKind.LoginRequired => "loginRequired",
+                QuotaFailureKind.FormatChanged => "formatChanged",
+                null => "ok",
+                _ => "loadFailed"
+            },
             _ => null
         };
         bool exposesReading = webState is "ok" or "formatChanged" or "loadFailed";

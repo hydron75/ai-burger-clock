@@ -37,10 +37,10 @@ internal static class QuotaPendingAlertPolicyTests
         {
             QuotaReading providerReading = expected with { Provider = provider };
             Check(QuotaPendingAlertPolicy.RecoveryStillCurrent(recovery with { Provider = provider },
-                providerReading, providerReading, now) == (provider != QuotaProvider.Gemini),
+                providerReading, providerReading, now, QuotaNames.HasCliRoute(provider)) == (provider != QuotaProvider.Gemini),
                 provider + " unchanged recovered row requires an enabled provider");
             Check(QuotaPendingAlertPolicy.EarlyResetStillCurrent(early with { Provider = provider },
-                providerReading, providerReading, now, continuity) == (provider != QuotaProvider.Gemini),
+                providerReading, providerReading, now, continuity, QuotaNames.HasCliRoute(provider)) == (provider != QuotaProvider.Gemini),
                 provider + " unchanged early-reset row requires an enabled provider");
         }
 

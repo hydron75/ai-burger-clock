@@ -38,8 +38,6 @@ internal sealed record GeminiUsageResult(GeminiUsageOutcome Outcome, QuotaReadin
 {
     internal QuotaFailure? Failure => GeminiUsagePage.ClassifyFailure(Outcome, Diagnostic);
 }
-internal sealed record GeminiWebQuotaState(GeminiUsageOutcome? Outcome = null, GeminiUsageDiagnostic? Diagnostic = null,
-    bool IsEnabled = true);
 
 internal static partial class GeminiUsagePage
 {

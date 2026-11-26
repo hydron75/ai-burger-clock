@@ -37,7 +37,7 @@ internal static class GeminiQuotaClientTests
                 monitor.RequestRefresh(queueWhileRefreshing: true);
                 foreach (string trigger in new[] { "startup", "scheduled", "Refresh", "resume", "network-recovery" })
                 {
-                    await monitor.RefreshOnceAsync(QuotaProvider.Gemini);
+                    await monitor.RefreshSourceIfDueAsync(QuotaProvider.Gemini);
                     Check(fake.Calls.GetValueOrDefault(QuotaProvider.Gemini) == 0, trigger + " invokes no Gemini client/process");
                 }
             }
@@ -51,7 +51,8 @@ internal static class GeminiQuotaClientTests
             foreach (bool previous in new[] { false, true })
             foreach (bool refreshing in new[] { false, true })
             {
-                var old = new QuotaState(QuotaProvider.Gemini, reading, now, now, now.AddHours(1), refreshing, previous, "private synthetic error", "private synthetic cache error");
+                var old = new QuotaState(QuotaProvider.Gemini, reading, now, now, now.AddHours(1), refreshing, previous, CacheError: "private synthetic cache error",
+                    Failure: new(QuotaFailureKind.FormatChanged, "synthetic.gemini"), Mode: QuotaSourceMode.Unavailable);
                 var section = QuotaPanelModel.Section(old, now);
                 Check(section.Rows.Count == 1 && section.Rows[0].Text == QuotaNames.GeminiUnavailableText && section.Rows[0].UsedPercent is null && section.Rows[0].ElapsedPercent is null, "all old states have one fixed row without usage/pacing");
                 Check(!section.Detail.Contains("Synthetic model") && !section.Detail.Contains("private synthetic") && section.Metadata.Text == "", "detail/metadata never reveal old values, errors or dates");
@@ -64,12 +65,12 @@ internal static class GeminiQuotaClientTests
             var early = new QuotaEarlyResetNotifications();
             var oldObservation = new QuotaObservation(QuotaProvider.Gemini, 1, now, reading, 1);
             var current = reading with { Windows = [reading.Windows[0] with { UsedPercent = 0 }] };
-            Check(recovery.Observe(oldObservation, true) is null && recovery.Observe(oldObservation with { Sequence = 2, Reading = current }, true) is null, "no recovery alert from old/exhausted Gemini values");
-            Check(early.Evaluate(oldObservation, true).Reason == "QueryDisabled" && early.Evaluate(oldObservation with { Sequence = 2, Reading = current }, true).Alert is null, "no early reset alert");
+            Check(recovery.Observe(oldObservation, true, eligible: false) is null && recovery.Observe(oldObservation with { Sequence = 2, Reading = current }, true, eligible: false) is null, "no recovery alert from old/exhausted Gemini values");
+            Check(early.Evaluate(oldObservation, true, eligible: false).Reason == "QueryDisabled" && early.Evaluate(oldObservation with { Sequence = 2, Reading = current }, true, eligible: false).Alert is null, "no early reset alert");
             var recoveryAlert = new QuotaRecoveryAlert(QuotaProvider.Gemini, 2, "synthetic", "synthetic", ["synthetic-week"]);
             var earlyAlert = new QuotaEarlyResetAlert(QuotaProvider.Gemini, 2, 1, now, []);
-            Check(!QuotaPendingAlertPolicy.RecoveryStillCurrent(recoveryAlert, reading, current, now), "pending Gemini recovery is discarded");
-            Check(!QuotaPendingAlertPolicy.EarlyResetStillCurrent(earlyAlert, reading, current, now, 1), "pending Gemini early reset is discarded");
+            Check(!QuotaPendingAlertPolicy.RecoveryStillCurrent(recoveryAlert, reading, current, now, eligible: false), "pending Gemini recovery is discarded");
+            Check(!QuotaPendingAlertPolicy.EarlyResetStillCurrent(earlyAlert, reading, current, now, 1, eligible: false), "pending Gemini early reset is discarded");
             return count;
         }
         finally { Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools(); Directory.Delete(directory, recursive: true); }

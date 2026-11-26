@@ -22,9 +22,9 @@ internal sealed partial class TrayApplicationContext
 
         geminiWebSession = session ?? new WindowsGeminiWebSession(statusWindow, dataDirectory, ReportGeminiIssue);
         statusWindow.UseGeminiWebQuota();
-        var quotas = new AccountQuotaMonitor(client, store, utcNow, geminiWebReader: geminiWebSession,
-            geminiWebEnabled: settings.Enabled);
-        var access = new WindowsGeminiWebAccess(quotas, store, geminiWebSession, settingsStore, settings);
+        var sources = AccountQuotaMonitor.CreateSources(client, store, geminiWebSession, settings.Enabled);
+        var quotas = new AccountQuotaMonitor(sources, store, utcNow, claudeAuthClient: client as IClaudeAuthClient);
+        var access = new WindowsGeminiWebAccess(quotas, geminiWebSession, settingsStore, settings);
         geminiWebAccess = access;
 
         var root = new ToolStripMenuItem(GeminiWebText.MenuTitle);

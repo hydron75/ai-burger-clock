@@ -427,7 +427,8 @@ namespace AiBurgerClock
                 .Select(provider => (Provider: provider, Alert: quotaEarlyResetNotifications.Recent(provider)))
                 .Where(item => item.Alert is not null).ToDictionary(item => item.Provider, item => item.Alert!);
             statusWindow.UpdateQuotas(quotaMonitor?.Snapshot() ??
-                Enum.GetValues<QuotaProvider>().Select(p => new QuotaState(p)).ToArray(), utcNow(), recent);
+                Enum.GetValues<QuotaProvider>().Select(p => new QuotaState(p,
+                    Mode: p == QuotaProvider.Gemini ? QuotaSourceMode.Unavailable : QuotaSourceMode.Active)).ToArray(), utcNow(), recent);
         }
 
         private void DeferProviderNotifications(int milliseconds) =>
@@ -505,12 +506,14 @@ namespace AiBurgerClock
                         KeepPending(observation.Provider, CurrentPending(pending, observation.Reading,
                             observation.CheckedAtUtc, observation.ContinuityId));
                     var recovery = recoveryCurrent ? quotaRecoveryNotifications.Observe(observation,
-                        quotaRecoveryEnabled && quotaRecoverySettingsReady && !changingQuotaRecoverySetting) : null;
+                        quotaRecoveryEnabled && quotaRecoverySettingsReady && !changingQuotaRecoverySetting,
+                        quotaMonitor?.EmitsObservations(observation.Provider) == true) : null;
                     QuotaEarlyResetAlert? earlyReset = null;
                     if (earlyResetCurrent)
                     {
                         QuotaEarlyResetEvaluation evaluation = quotaEarlyResetNotifications.Evaluate(observation,
-                            quotaEarlyResetEnabled && quotaEarlyResetSettingsReady && !changingQuotaEarlyResetSetting);
+                            quotaEarlyResetEnabled && quotaEarlyResetSettingsReady && !changingQuotaEarlyResetSetting,
+                            quotaMonitor?.EmitsObservations(observation.Provider) == true);
                         earlyReset = evaluation.Alert;
                         quotaMonitor?.RecordEarlyResetDecision(observation, earlyReset is null ? "Excluded" : "Alert", evaluation.Reason);
                     }
@@ -630,12 +633,13 @@ namespace AiBurgerClock
             DateTimeOffset now, long continuityId)
         {
             if (now < pending.Observation.CheckedAtUtc) return null;
+            bool eligible = quotaMonitor?.EmitsObservations(pending.Observation.Provider) == true;
             var recovery = quotaRecoveryEnabled && quotaRecoverySettingsReady && !changingQuotaRecoverySetting &&
-                pending.Recovery is { } recovered && QuotaPendingAlertPolicy.RecoveryStillCurrent(recovered, pending.Observation.Reading, reading, now)
+                pending.Recovery is { } recovered && QuotaPendingAlertPolicy.RecoveryStillCurrent(recovered, pending.Observation.Reading, reading, now, eligible)
                 ? recovered : null;
             var earlyReset = quotaEarlyResetEnabled && quotaEarlyResetSettingsReady && !changingQuotaEarlyResetSetting &&
                 pending.EarlyReset is { } early && QuotaPendingAlertPolicy.EarlyResetStillCurrent(early, pending.Observation.Reading,
-                    reading, now, continuityId) ? early : null;
+                    reading, now, continuityId, eligible) ? early : null;
             return recovery is null && earlyReset is null ? null : pending with { Recovery = recovery, EarlyReset = earlyReset };
         }
 

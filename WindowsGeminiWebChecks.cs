@@ -146,16 +146,16 @@ internal static class WindowsGeminiWebChecks
         bool loader = NativeLibrary.TryLoad("WebView2Loader.dll", typeof(Microsoft.Web.WebView2.Core.CoreWebView2Environment).Assembly, null, out var handle);
         if (loader) NativeLibrary.Free(handle);
         Check(loader, "the x64 loader resolves without creating a WebView");
-        Check(WindowsGeminiWebAccess.MenuFor(null, false, false) == default &&
-            WindowsGeminiWebAccess.MenuFor(new(), true, true) == default, "no commands are available while a profile operation is running");
-        Check(WindowsGeminiWebAccess.MenuFor(new(IsEnabled: false), false, false) == new WindowsGeminiWebMenuState(true, false, true),
+        Check(WindowsGeminiWebAccess.MenuFor(new(QuotaProvider.Gemini, Mode: QuotaSourceMode.Unavailable), false, false) == default &&
+            WindowsGeminiWebAccess.MenuFor(new(QuotaProvider.Gemini), true, true) == default, "no commands are available while a profile operation is running");
+        Check(WindowsGeminiWebAccess.MenuFor(new(QuotaProvider.Gemini, Mode: QuotaSourceMode.Off), false, false) == new WindowsGeminiWebMenuState(true, false, true),
             "a new or off profile has login and logout available");
-        Check(WindowsGeminiWebAccess.MenuFor(new(IsEnabled: false), false, true) == new WindowsGeminiWebMenuState(false, false, true),
+        Check(WindowsGeminiWebAccess.MenuFor(new(QuotaProvider.Gemini, Mode: QuotaSourceMode.Off), false, true) == new WindowsGeminiWebMenuState(false, false, true),
             "pending cleanup still allows a manual logout retry");
-        Check(WindowsGeminiWebAccess.MenuFor(new(GeminiUsageOutcome.LoginRequired), false, false) == new WindowsGeminiWebMenuState(true, true, true),
+        Check(WindowsGeminiWebAccess.MenuFor(new(QuotaProvider.Gemini, Failure: new(QuotaFailureKind.LoginRequired, "gemini.destination")), false, false) == new WindowsGeminiWebMenuState(true, true, true),
             "expired session can log in again, turn off, or clear the profile");
         foreach (var outcome in new[] { GeminiUsageOutcome.Ok, GeminiUsageOutcome.FormatChanged, GeminiUsageOutcome.LoadFailed })
-            Check(WindowsGeminiWebAccess.MenuFor(new(outcome), false, false) == new WindowsGeminiWebMenuState(false, true, true),
+            Check(WindowsGeminiWebAccess.MenuFor(new(QuotaProvider.Gemini, Failure: GeminiUsagePage.ClassifyFailure(outcome, null)), false, false) == new WindowsGeminiWebMenuState(false, true, true),
                 "enabled session retains off and logout during ordinary results");
 
         var temp = Directory.CreateTempSubdirectory("AiBurgerClock-gemini-tests-");
@@ -167,45 +167,45 @@ internal static class WindowsGeminiWebChecks
             var settings = new WindowsGeminiWebSettingsStore(preferences);
             using var session = new FakeSession { ReadPage = () => ValidPage(now, TimeZoneInfo.Utc) };
             using var monitor = new AccountQuotaMonitor(new NoCli(), store, () => now, geminiWebReader: session, geminiWebTimeZone: TimeZoneInfo.Utc);
-            var access = new WindowsGeminiWebAccess(monitor, store, session, settings, settings.Load());
+            var access = new WindowsGeminiWebAccess(monitor, session, settings, settings.Load());
             QuotaState Gemini() => monitor.Snapshot().Single(state => state.Provider == QuotaProvider.Gemini);
 
             Check(settings.Load() == new WindowsGeminiWebSettings() && !File.Exists(preferences), "absent settings are off without a write");
             await access.LoginAsync(default);
-            await monitor.RefreshGeminiWebIfDueAsync();
-            Check(Gemini().GeminiWeb is { IsEnabled: false } && session.Reads == 0 && !File.Exists(preferences),
+            await monitor.RefreshSourceIfDueAsync(QuotaProvider.Gemini);
+            Check(Gemini().Mode == QuotaSourceMode.Off && session.Reads == 0 && !File.Exists(preferences),
                 "closing login without success neither enables nor schedules a read");
             session.LoginSucceeds = true;
             await access.LoginAsync(default);
-            Check(Gemini().GeminiWeb is { IsEnabled: true } &&
+            Check(Gemini().Mode == QuotaSourceMode.Active &&
                 new WindowsGeminiWebSettingsStore(preferences).Load() == new WindowsGeminiWebSettings(Enabled: true),
                 "successful login enables and persists");
             using (var restarted = new AccountQuotaMonitor(new NoCli(), utcNow: () => now, geminiWebReader: session,
                 geminiWebEnabled: settings.Load().Enabled))
-                Check(restarted.Snapshot().Single(s => s.Provider == QuotaProvider.Gemini).GeminiWeb is { IsEnabled: true },
+                Check(restarted.Snapshot().Single(s => s.Provider == QuotaProvider.Gemini).Mode == QuotaSourceMode.Active,
                     "saved enabled flag is usable at startup");
-            await monitor.RefreshGeminiWebIfDueAsync();
-            Check(Gemini().GeminiWeb?.Outcome == GeminiUsageOutcome.Ok && session.Reads == 1, "fake reader publishes current rows");
+            await monitor.RefreshSourceIfDueAsync(QuotaProvider.Gemini);
+            Check(Gemini() is { HasResultSinceModeChange: true, Failure: null } && session.Reads == 1, "fake reader publishes current rows");
 
             WindowsGeminiWebAccess.RequestRefresh(monitor, queueWhileRefreshing: false, refreshGeminiWeb: false);
             WindowsGeminiWebAccess.RequestRefresh(monitor, queueWhileRefreshing: true, refreshGeminiWeb: false);
-            await monitor.RefreshGeminiWebIfDueAsync();
+            await monitor.RefreshSourceIfDueAsync(QuotaProvider.Gemini);
             Check(session.Reads == 1, "refreshes without Gemini, including queued recovery, do not wake Gemini");
             WindowsGeminiWebAccess.RequestRefresh(monitor, queueWhileRefreshing: false, refreshGeminiWeb: true);
-            await monitor.RefreshGeminiWebIfDueAsync();
+            await monitor.RefreshSourceIfDueAsync(QuotaProvider.Gemini);
             Check(session.Reads == 2, "manual refresh wakes Gemini before the next scheduled read");
 
             var legacy = new QuotaReading(QuotaProvider.Gemini, [new("synthetic-agy", "Synthetic legacy", 19, now.AddDays(1), 10080)]);
             await store.SaveQuotaAsync(new(1, legacy, now, []));
             access.TurnOff();
-            Check(settings.Load() == new WindowsGeminiWebSettings() && Gemini().GeminiWeb is { IsEnabled: false },
+            Check(settings.Load() == new WindowsGeminiWebSettings() && Gemini().Mode == QuotaSourceMode.Off,
                 "turn off is persisted and removes live state");
             Check(session.HasProfile && session.ProfileDeletes == 0 && await store.ReadGeminiWebQuotaAsync() is not null,
                 "turning off preserves the web profile and cache");
 
             session.BeforeDelete = async _ =>
             {
-                Check(Gemini().GeminiWeb is { IsEnabled: false } && await store.ReadGeminiWebQuotaAsync() is null &&
+                Check(Gemini().Mode == QuotaSourceMode.Off && await store.ReadGeminiWebQuotaAsync() is null &&
                     settings.Load() == new WindowsGeminiWebSettings(LogoutPending: true),
                     "profile cleanup sees off, a deleted cache, and a durable pending flag");
                 throw new IOException("Synthetic profile still locked");
@@ -214,7 +214,7 @@ internal static class WindowsGeminiWebChecks
             catch (IOException) { }
             Check(access.LogoutPending && access.MenuState == new WindowsGeminiWebMenuState(false, false, true) &&
                 session.HasProfile && session.ProfileDeletes == 1, "failed cleanup permits logout retry and blocks login");
-            var retry = new WindowsGeminiWebAccess(monitor, store, session, settings, settings.Load());
+            var retry = new WindowsGeminiWebAccess(monitor, session, settings, settings.Load());
 
             var waitingForExit = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
             var browserExited = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);

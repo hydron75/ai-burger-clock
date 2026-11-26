@@ -49,30 +49,33 @@ internal interface IWindowsGeminiWebSession : IGeminiUsagePageReader, IDisposabl
 internal readonly record struct WindowsGeminiWebMenuState(bool Login, bool Off, bool Logout);
 
 internal sealed class WindowsGeminiWebAccess(
-    AccountQuotaMonitor monitor, UsageStore store, IWindowsGeminiWebSession session,
+    AccountQuotaMonitor monitor, IWindowsGeminiWebSession session,
     WindowsGeminiWebSettingsStore settingsStore, WindowsGeminiWebSettings initial)
 {
+    private const QuotaProvider Provider = QuotaProvider.Gemini;
     private WindowsGeminiWebSettings settings = initial;
     private bool busy;
+    private bool logoutModeSet;
 
     internal const string LogoutPendingText = "Gemini 로그아웃 정리를 완료하지 못했습니다. 다음 시작 때 다시 시도합니다.";
     internal bool LogoutPending => settings.LogoutPending;
 
     internal WindowsGeminiWebMenuState MenuState =>
-        MenuFor(monitor.Snapshot().Single(state => state.Provider == QuotaProvider.Gemini).GeminiWeb,
+        MenuFor(monitor.Snapshot().Single(state => state.Provider == Provider),
             busy, LogoutPending);
 
-    internal static WindowsGeminiWebMenuState MenuFor(GeminiWebQuotaState? state, bool busy, bool logoutPending)
+    internal static WindowsGeminiWebMenuState MenuFor(QuotaState state, bool busy, bool logoutPending)
     {
-        if (state is null || busy) return default;
+        if (state.Mode == QuotaSourceMode.Unavailable || busy) return default;
         if (logoutPending) return new(false, false, true);
-        return new(!state.IsEnabled || state.Outcome == GeminiUsageOutcome.LoginRequired, state.IsEnabled, true);
+        return new(state.Mode == QuotaSourceMode.Off || state.Failure?.Kind == QuotaFailureKind.LoginRequired,
+            state.Mode == QuotaSourceMode.Active, true);
     }
 
     internal static void RequestRefresh(AccountQuotaMonitor? monitor, bool queueWhileRefreshing, bool refreshGeminiWeb)
     {
         monitor?.RequestRefresh(queueWhileRefreshing);
-        if (refreshGeminiWeb) monitor?.RequestGeminiWebRefresh();
+        if (refreshGeminiWeb) monitor?.RequestSourceRefresh(Provider);
     }
 
     internal async Task LoginAsync(CancellationToken cancellationToken)
@@ -85,7 +88,7 @@ internal sealed class WindowsGeminiWebAccess(
             cancellationToken.ThrowIfCancellationRequested();
             settingsStore.Save(new(Enabled: true));
             settings = new(Enabled: true);
-            monitor.SetGeminiWebEnabled(true);
+            monitor.SetMode(Provider, QuotaSourceMode.Active);
         }
         finally { busy = false; }
     }
@@ -96,7 +99,7 @@ internal sealed class WindowsGeminiWebAccess(
         var off = new WindowsGeminiWebSettings();
         settingsStore.Save(off);
         settings = off;
-        monitor.SetGeminiWebEnabled(false);
+        monitor.SetMode(Provider, QuotaSourceMode.Off);
     }
 
     internal async Task LogoutAsync(CancellationToken cancellationToken)
@@ -109,7 +112,6 @@ internal sealed class WindowsGeminiWebAccess(
             var pending = new WindowsGeminiWebSettings(LogoutPending: true);
             settingsStore.Save(pending);
             settings = pending;
-            monitor.SetGeminiWebEnabled(false);
         }
         await RetryLogoutAsync(cancellationToken);
     }
@@ -120,10 +122,18 @@ internal sealed class WindowsGeminiWebAccess(
         busy = true;
         try
         {
-            await store.DeleteGeminiWebQuotaAsync(cancellationToken);
+            // A restart with logout pending is already off. Establish this
+            // monitor's off generation before queuing the cache delete.
+            if (!logoutModeSet)
+            {
+                monitor.SetMode(Provider, QuotaSourceMode.Off);
+                logoutModeSet = true;
+            }
+            await monitor.ClearCacheAsync(Provider, cancellationToken);
             await session.DeleteProfileAsync(cancellationToken);
             settingsStore.Save(new());
             settings = new();
+            logoutModeSet = false;
         }
         finally { busy = false; }
     }

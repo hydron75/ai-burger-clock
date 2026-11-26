@@ -34,12 +34,13 @@ internal sealed class QuotaEarlyResetNotifications
     public QuotaEarlyResetAlert? Recent(QuotaProvider provider) =>
         recent.TryGetValue(provider, out QuotaEarlyResetAlert? alert) ? alert : null;
 
-    public QuotaEarlyResetAlert? Observe(QuotaObservation observation, bool enabled) => Evaluate(observation, enabled).Alert;
+    public QuotaEarlyResetAlert? Observe(QuotaObservation observation, bool enabled, bool eligible = true) =>
+        Evaluate(observation, enabled, eligible).Alert;
 
-    public QuotaEarlyResetEvaluation Evaluate(QuotaObservation observation, bool enabled)
+    public QuotaEarlyResetEvaluation Evaluate(QuotaObservation observation, bool enabled, bool eligible = true)
     {
         if (observation is null) return new(null, "InvalidObservation");
-        if (!QuotaNames.IsQueryEnabled(observation.Provider)) return new(null, "QueryDisabled");
+        if (!eligible) return new(null, "QueryDisabled");
         if (!Valid(observation)) return new(null, "InvalidObservation");
         baselines.TryGetValue(observation.Provider, out Baseline? baseline);
         if (baseline is not null && observation.Sequence <= baseline.Sequence)

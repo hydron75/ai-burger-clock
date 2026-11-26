@@ -59,7 +59,7 @@ internal static class QuotaEarlyResetUiChecks
         }
         async Task Refresh(QuotaProvider provider)
         {
-            await Task.Run(() => context!.QuotaMonitor!.RefreshOnceAsync(provider));
+            await Task.Run(() => context!.QuotaMonitor!.RefreshSourceIfDueAsync(provider));
             await FlushUi();
         }
         async Task ToggleEarly(bool enabled)
@@ -94,7 +94,7 @@ internal static class QuotaEarlyResetUiChecks
             await context!.Initialization;
             await Wait(() => context.ProviderMonitor is { IsRefreshing: false } &&
                 context.ProviderMonitor.Snapshot().All(state => state.LastSuccessfulCheckUtc.HasValue) &&
-                context.QuotaMonitor!.Snapshot().Where(state => QuotaNames.IsQueryEnabled(state.Provider)).All(state => state.LastSuccessfulCheckUtc.HasValue &&
+                context.QuotaMonitor!.Snapshot().Where(state => QuotaNames.HasCliRoute(state.Provider)).All(state => state.LastSuccessfulCheckUtc.HasValue &&
                     !state.IsRefreshing && !state.IsPrevious), "private initial status and quota requests finish");
             await FlushUi();
         }
@@ -185,7 +185,7 @@ internal static class QuotaEarlyResetUiChecks
                 "Early reset tray preference starts available and OFF with shared wording");
             Check(context.QuotaEarlyResetMenuItem.ToolTipText == QuotaEarlyResetText.MenuDetail && nativeAlerts.Count == 0,
                 "Initial private live successes remain silent and the early reset menu explains opt-in scope");
-            Check(Enum.GetValues<QuotaProvider>().Where(QuotaNames.IsQueryEnabled).All(provider => HasDecision(provider, "Excluded", "Disabled")) &&
+            Check(Enum.GetValues<QuotaProvider>().Where(QuotaNames.HasCliRoute).All(provider => HasDecision(provider, "Excluded", "Disabled")) &&
                 Decisions().All(entry => entry.GetProperty("Provider").GetString() != "Gemini"),
                 "Windows records the OFF early reset decision for each private successful Provider query");
             var menu = context.TrayIcon.ContextMenuStrip!;
@@ -450,7 +450,7 @@ internal static class QuotaEarlyResetUiChecks
                 "A queued early reset is discarded after its affected reset time expires rather than presented as current");
 
             client.Set(QuotaProvider.Claude, Rows(5, 5), block: true);
-            Task pending = Task.Run(() => context.QuotaMonitor.RefreshOnceAsync(QuotaProvider.Claude));
+            Task pending = Task.Run(() => context.QuotaMonitor.RefreshSourceIfDueAsync(QuotaProvider.Claude));
             await Wait(() => context.QuotaMonitor.Snapshot().Single(item => item.Provider == QuotaProvider.Claude).IsRefreshing,
                 "a cancellable background synthetic Claude request starts");
             await context.QuotaMonitor.StopAsync();
@@ -532,7 +532,7 @@ internal static class QuotaEarlyResetUiChecks
             Check(cacheResetAlerts.Count == 1 && cacheResetAlerts[0] is
                 { Provider: QuotaProvider.Codex, Recovery: null, EarlyReset.Windows.Count: 1 } &&
                 context.QuotaEarlyResetNotificationsEnabled && !context.QuotaRecoveryNotificationsEnabled &&
-                cacheResetClient.TotalCalls == Enum.GetValues<QuotaProvider>().Count(QuotaNames.IsQueryEnabled),
+                cacheResetClient.TotalCalls == Enum.GetValues<QuotaProvider>().Count(QuotaNames.HasCliRoute),
                 "A cached weekly early reset delivers one native request from normal startup reads without changing recovery or polling again");
             Check(HasDecision(QuotaProvider.Codex, "Alert", "Alert"),
                 "The first-live cached early reset candidate is recorded in its completed local diagnostic row");
@@ -593,7 +593,7 @@ internal static class QuotaEarlyResetUiChecks
         }
         async Task Refresh()
         {
-            await Task.Run(() => context!.QuotaMonitor!.RefreshOnceAsync(QuotaProvider.Claude));
+            await Task.Run(() => context!.QuotaMonitor!.RefreshSourceIfDueAsync(QuotaProvider.Claude));
             await FlushUi();
         }
 
@@ -613,7 +613,7 @@ internal static class QuotaEarlyResetUiChecks
             var deadline = DateTime.UtcNow.AddSeconds(5);
             while (context.ProviderMonitor is not { IsRefreshing: false } ||
                 context.ProviderMonitor.Snapshot().Any(state => !state.LastSuccessfulCheckUtc.HasValue) ||
-                context.QuotaMonitor!.Snapshot().Any(state => QuotaNames.IsQueryEnabled(state.Provider) && (!state.LastSuccessfulCheckUtc.HasValue || state.IsRefreshing)))
+                context.QuotaMonitor!.Snapshot().Any(state => QuotaNames.HasCliRoute(state.Provider) && (!state.LastSuccessfulCheckUtc.HasValue || state.IsRefreshing)))
             {
                 if (DateTime.UtcNow > deadline) throw new TimeoutException("Private delivery failure host startup");
                 await Task.Delay(20);
@@ -659,7 +659,7 @@ internal static class QuotaEarlyResetUiChecks
             client.Set(QuotaProvider.Claude, Rows(60, now.AddHours(2)));
             await Refresh();
             Check(attempts == 1 && context.QuotaMonitor.Snapshot().Single(state => state.Provider == QuotaProvider.Claude)
-                is { IsRefreshing: false, IsPrevious: false, Error: "" },
+                is { IsRefreshing: false, IsPrevious: false, Failure: null },
                 "A native delivery failure does not interrupt later successful quota refreshes");
             now = now.AddMinutes(1);
             milliseconds += 60000;

@@ -210,7 +210,7 @@ internal static class QuotaSchedulingTests
         })
         {
             used = percent;
-            await monitor.RefreshOnceAsync(provider);
+            await monitor.RefreshSourceIfDueAsync(provider);
             QuotaPollingDiagnostic entry = Read(log).Entries[^1];
             check(entry.Provider == provider.ToString() && entry.Reason == reason.ToString(),
                 "each Provider's real monitor schedule is logged with the selected usage reason");
@@ -222,7 +222,7 @@ internal static class QuotaSchedulingTests
         }
 
         fail = true;
-        await monitor.RefreshOnceAsync(QuotaProvider.Codex);
+        await monitor.RefreshSourceIfDueAsync(QuotaProvider.Codex);
         QuotaPollingDiagnostic failed = Read(log).Entries[^1];
         check(!failed.Succeeded && failed.ConsecutiveFailures == 1
             && failed.Reason == QuotaCheckReason.FailureRetry.ToString()
@@ -235,20 +235,20 @@ internal static class QuotaSchedulingTests
         fail = false;
         used = 20;
         reset = now.AddMinutes(17);
-        await monitor.RefreshOnceAsync(QuotaProvider.Codex);
+        await monitor.RefreshSourceIfDueAsync(QuotaProvider.Codex);
         QuotaPollingDiagnostic bandEntry = Read(log).Entries[^1];
         check(bandEntry.Reason == QuotaCheckReason.ResetEntry.ToString()
             && bandEntry.SelectedResetUtc == reset && bandEntry.NextCheckUtc == now.AddMinutes(2),
             "a genuine upcoming band logs the actual reset responsible for its earlier entry");
         fail = true;
-        await monitor.RefreshOnceAsync(QuotaProvider.Codex);
+        await monitor.RefreshSourceIfDueAsync(QuotaProvider.Codex);
         QuotaPollingDiagnostic earlierBand = Read(log).Entries[^1];
         check(!earlierBand.Succeeded && earlierBand.Reason == QuotaCheckReason.ResetEntry.ToString()
             && earlierBand.NextCheckUtc == now.AddMinutes(2),
             "an earlier genuine reset entry still wins over the first fifteen-minute failed retry");
         fail = false;
         now = now.AddMinutes(2);
-        await monitor.RefreshOnceAsync(QuotaProvider.Codex);
+        await monitor.RefreshSourceIfDueAsync(QuotaProvider.Codex);
         QuotaPollingDiagnostic inBand = Read(log).Entries[^1];
         check(inBand.Reason == QuotaCheckReason.ResetPeriod.ToString()
             && inBand.SelectedResetUtc == reset && inBand.NextCheckUtc == now.AddMinutes(5)
@@ -262,7 +262,7 @@ internal static class QuotaSchedulingTests
         var store = new UsageStore(Path.Combine(directory, "quota-scheduling-default", "temporary.db"));
         using var automatic = new AccountQuotaMonitor(new FakeClient((provider, _) =>
             Task.FromResult(new QuotaReading(provider, [Window(20)]))), store, () => Now);
-        await automatic.RefreshOnceAsync(QuotaProvider.Claude);
+        await automatic.RefreshSourceIfDueAsync(QuotaProvider.Claude);
         var expectedDefault = new QuotaPollingDiagnosticLog(Path.Combine(Path.GetDirectoryName(store.DatabasePath)!, "logs"));
         check(Read(expectedDefault).Entries.Single().Provider == QuotaProvider.Claude.ToString(),
             "store-backed monitoring writes diagnostics beside its own temporary database, not user app data");
@@ -291,7 +291,7 @@ internal static class QuotaSchedulingTests
             })
             {
                 used = percent;
-                await monitor.RefreshOnceAsync(provider);
+                await monitor.RefreshSourceIfDueAsync(provider);
                 QuotaPollingDiagnostic entry = Read(log).Entries[^1];
                 check(entry.Provider == provider.ToString() && entry.Reason == reason.ToString(),
                     "persisted diagnostics distinguish raw-usage reasons for every Provider, including both hourly reasons");
@@ -306,14 +306,14 @@ internal static class QuotaSchedulingTests
             {
                 used = percent;
                 fail = false;
-                await monitor.RefreshOnceAsync(provider);
+                await monitor.RefreshSourceIfDueAsync(provider);
                 DateTimeOffset success = now;
                 fail = true;
                 int consecutiveFailures = 0;
                 foreach (int minutes in new[] { 15, 30, 60, 60, 60 })
                 {
                     now = now.AddMinutes(1);
-                    await monitor.RefreshOnceAsync(provider);
+                    await monitor.RefreshSourceIfDueAsync(provider);
                     QuotaPollingDiagnostic entry = Read(log).Entries[^1];
                     check(!entry.Succeeded && entry.Reason == QuotaCheckReason.FailureRetry.ToString()
                         && entry.ConsecutiveFailures == ++consecutiveFailures,
@@ -325,7 +325,7 @@ internal static class QuotaSchedulingTests
                         "an hourly retry never treats previous values as a fresh successful observation");
                 }
                 fail = false;
-                await monitor.RefreshOnceAsync(provider);
+                await monitor.RefreshSourceIfDueAsync(provider);
                 QuotaPollingDiagnostic recovered = Read(log).Entries[^1];
                 QuotaCheckReason expected = used == 100 ? QuotaCheckReason.Exhausted : used > 90
                     ? QuotaCheckReason.LowRemaining : QuotaCheckReason.Regular;
@@ -335,32 +335,32 @@ internal static class QuotaSchedulingTests
 
             used = 20;
             reset = now.AddMinutes(17);
-            await monitor.RefreshOnceAsync(provider);
+            await monitor.RefreshSourceIfDueAsync(provider);
             QuotaPollingDiagnostic upcoming = Read(log).Entries[^1];
             check(upcoming.Reason == QuotaCheckReason.ResetEntry.ToString()
                 && upcoming.NextCheckUtc == now.AddMinutes(provider == QuotaProvider.Xai ? 10 : 2) && upcoming.SelectedResetUtc == reset,
                 "a genuine reset entry still takes precedence over the one-hour default for every Provider");
             fail = true;
-            await monitor.RefreshOnceAsync(provider);
+            await monitor.RefreshSourceIfDueAsync(provider);
             QuotaPollingDiagnostic beforeBand = Read(log).Entries[^1];
             check(!beforeBand.Succeeded && beforeBand.Reason == QuotaCheckReason.ResetEntry.ToString()
                 && beforeBand.NextCheckUtc == now.AddMinutes(provider == QuotaProvider.Xai ? 10 : 2) && beforeBand.SelectedResetUtc == reset,
                 "a reset entry with the provider floor wins over the initial fifteen-minute failure retry");
             now = reset.Value.AddMinutes(-15);
-            await monitor.RefreshOnceAsync(provider);
+            await monitor.RefreshSourceIfDueAsync(provider);
             QuotaPollingDiagnostic withinBand = Read(log).Entries[^1];
             check(!withinBand.Succeeded && withinBand.Reason == QuotaCheckReason.ResetPeriod.ToString()
                 && withinBand.NextCheckUtc == now.AddMinutes(provider == QuotaProvider.Xai ? 10 : 5) && withinBand.SelectedResetUtc == reset,
                 "reset scheduling with the provider floor also wins over a second failed read's thirty-minute retry");
             now = reset.Value.AddMinutes(16);
-            await monitor.RefreshOnceAsync(provider);
+            await monitor.RefreshSourceIfDueAsync(provider);
             QuotaPollingDiagnostic afterBand = Read(log).Entries[^1];
             check(!afterBand.Succeeded && afterBand.Reason == QuotaCheckReason.FailureRetry.ToString()
                 && afterBand.NextCheckUtc == now.AddHours(1) && afterBand.SelectedResetUtc is null,
                 "an expired reset band restores the capped one-hour retry without a stale selected reset");
             fail = false;
             reset = now.AddHours(2);
-            await monitor.RefreshOnceAsync(provider);
+            await monitor.RefreshSourceIfDueAsync(provider);
             QuotaPollingDiagnostic final = Read(log).Entries[^1];
             check(final.Succeeded && final.Reason == QuotaCheckReason.Regular.ToString()
                 && final.ConsecutiveFailures == 0 && final.NextCheckUtc == now.AddHours(1),
@@ -381,7 +381,7 @@ internal static class QuotaSchedulingTests
             throw new InvalidOperationException("Canceled synthetic read cannot finish.");
         });
         using var monitor = new AccountQuotaMonitor(client, utcNow: () => Now, diagnosticLog: log);
-        Task refresh = monitor.RefreshOnceAsync(QuotaProvider.Claude, cancellation.Token);
+        Task refresh = monitor.RefreshSourceIfDueAsync(QuotaProvider.Claude, cancellation.Token);
         await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
         cancellation.Cancel();
         bool canceled = false;
@@ -403,10 +403,10 @@ internal static class QuotaSchedulingTests
             Task.FromResult(new QuotaReading(provider, [Window(20)]))), utcNow: () => Now, diagnosticLog: log);
         int observations = 0;
         monitor.Succeeded += _ => observations++;
-        await monitor.RefreshOnceAsync(QuotaProvider.Codex);
+        await monitor.RefreshSourceIfDueAsync(QuotaProvider.Codex);
         QuotaState state = State(monitor, QuotaProvider.Codex);
         check(state.LastSuccessfulCheckUtc == Now && state.NextCheckUtc == Now.AddHours(1)
-            && !state.IsPrevious && state.Error.Length == 0 && observations == 1,
+            && !state.IsPrevious && state.Failure is null && observations == 1,
             "a diagnostic write failure cannot fail polling, change its deadline or suppress a successful observation");
         check(await File.ReadAllTextAsync(blocked) == "Synthetic file blocks a diagnostic directory.",
             "failed logging does not replace the unrelated blocking fixture");

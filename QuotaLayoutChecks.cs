@@ -32,7 +32,7 @@ internal static class QuotaLayoutChecks
         view.UpdateQuotas([State(two with { Windows = two.Windows.Reverse().ToArray() })], now);
         Check(Rows() == 2 && Bars() == 2, "reordered IDs remain addressable without stale dictionary entries");
         var historicalGemini = new QuotaState(QuotaProvider.Gemini, new(QuotaProvider.Gemini, two.Windows),
-            CheckedAtUtc: now, LastSuccessfulCheckUtc: now, NextCheckUtc: now.AddHours(1), IsPrevious: true, IsRefreshing: true);
+            CheckedAtUtc: now, LastSuccessfulCheckUtc: now, NextCheckUtc: now.AddHours(1), IsPrevious: true, IsRefreshing: true, Mode: QuotaSourceMode.Unavailable);
         view.UpdateQuotas([historicalGemini], now);
         var gemini = view.Controls.OfType<Panel>().Single();
         var notice = gemini.Controls.OfType<AccountQuotaView.RowLabel>().Single();
@@ -40,7 +40,7 @@ internal static class QuotaLayoutChecks
             notice.Text == QuotaNames.GeminiUnavailableText && notice.AccessibleName == QuotaNames.GeminiUnavailableText &&
             gemini.Controls.OfType<Label>().All(label => !label.Text.Contains('%')),
             "historical Gemini data renders one policy notice without percentages or bars");
-        view.UpdateQuotas([new(QuotaProvider.Gemini)], now.AddMinutes(17));
+        view.UpdateQuotas([new(QuotaProvider.Gemini, Mode: QuotaSourceMode.Unavailable)], now.AddMinutes(17));
         Check(ReferenceEquals(gemini, view.Controls.OfType<Panel>().Single()) &&
             ReferenceEquals(notice, gemini.Controls.OfType<AccountQuotaView.RowLabel>().Single()) &&
             notice.Text == QuotaNames.GeminiUnavailableText && Bars() == 0,

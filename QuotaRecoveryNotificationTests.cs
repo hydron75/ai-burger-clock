@@ -39,13 +39,14 @@ internal static class QuotaRecoveryNotificationTests
         foreach (QuotaProvider provider in Enum.GetValues<QuotaProvider>())
         {
             var engine = new QuotaRecoveryNotifications();
-            Check(engine.Observe(Provider(provider, 1, Row()), true) is null, provider + " silent first observation");
-            QuotaRecoveryAlert? alert = engine.Observe(Provider(provider, 2, Row(used: 20)), true);
+            bool eligible = QuotaNames.HasCliRoute(provider);
+            Check(engine.Observe(Provider(provider, 1, Row()), true, eligible) is null, provider + " silent first observation");
+            QuotaRecoveryAlert? alert = engine.Observe(Provider(provider, 2, Row(used: 20)), true, eligible);
             if (provider == QuotaProvider.Gemini)
             {
                 Check(alert is null, "Gemini cannot produce recovery alerts from synthetic observations");
-                Check(engine.Observe(Provider(provider, 3, Row()), true) is null &&
-                    engine.Observe(Provider(provider, 4, Row(used: 0)), true) is null,
+                Check(engine.Observe(Provider(provider, 3, Row()), true, eligible) is null &&
+                    engine.Observe(Provider(provider, 4, Row(used: 0)), true, eligible) is null,
                     "Disabled Gemini never arms a later recovery");
                 continue;
             }

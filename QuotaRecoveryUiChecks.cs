@@ -48,7 +48,7 @@ internal static class QuotaRecoveryUiChecks
         }
         async Task Refresh(QuotaProvider provider)
         {
-            await context!.QuotaMonitor!.RefreshOnceAsync(provider);
+            await context!.QuotaMonitor!.RefreshSourceIfDueAsync(provider);
             await FlushUi();
         }
         async Task Toggle(bool enabled)
@@ -104,7 +104,7 @@ internal static class QuotaRecoveryUiChecks
             await context.Initialization;
             await Wait(() => context.ProviderMonitor is { IsRefreshing: false } &&
                 context.ProviderMonitor.Snapshot().All(state => state.LastSuccessfulCheckUtc.HasValue) &&
-                context.QuotaMonitor!.Snapshot().Where(state => QuotaNames.IsQueryEnabled(state.Provider)).All(state => state.LastSuccessfulCheckUtc.HasValue && !state.IsRefreshing),
+                context.QuotaMonitor!.Snapshot().Where(state => QuotaNames.HasCliRoute(state.Provider)).All(state => state.LastSuccessfulCheckUtc.HasValue && !state.IsRefreshing),
                 "initial fake status and quota requests complete");
             await FlushUi();
             Check(!context.QuotaRecoveryNotificationsEnabled && !context.QuotaRecoveryMenuItem.Checked &&
@@ -304,7 +304,7 @@ internal static class QuotaRecoveryUiChecks
             await Refresh(QuotaProvider.Codex);
 
             client.Set(QuotaProvider.Claude, used: 25, weeklyUsed: 25, block: true);
-            Task pending = context.QuotaMonitor.RefreshOnceAsync(QuotaProvider.Claude);
+            Task pending = context.QuotaMonitor.RefreshSourceIfDueAsync(QuotaProvider.Claude);
             await Wait(() => context.QuotaMonitor.Snapshot().Single(state => state.Provider == QuotaProvider.Claude).IsRefreshing,
                 "cancellable fake quota request starts");
             await context.QuotaMonitor.StopAsync();
@@ -332,7 +332,7 @@ internal static class QuotaRecoveryUiChecks
             await context.Initialization;
             await Wait(() => context.ProviderMonitor is { IsRefreshing: false } &&
                 context.ProviderMonitor.Snapshot().All(state => state.LastSuccessfulCheckUtc.HasValue) &&
-                context.QuotaMonitor!.Snapshot().Where(state => QuotaNames.IsQueryEnabled(state.Provider)).All(state => state.LastSuccessfulCheckUtc.HasValue && !state.IsRefreshing && !state.IsPrevious),
+                context.QuotaMonitor!.Snapshot().Where(state => QuotaNames.HasCliRoute(state.Provider)).All(state => state.LastSuccessfulCheckUtc.HasValue && !state.IsRefreshing && !state.IsPrevious),
                 "restarted fake Provider initial success completes");
             await FlushUi();
             AdvanceNotificationQueue();

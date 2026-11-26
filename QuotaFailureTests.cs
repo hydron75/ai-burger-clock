@@ -56,7 +56,7 @@ internal static class QuotaFailureTests
 
         var now = GeminiUsagePageTests.Now;
         var known = new QuotaReading(Claude, [new("session", "5시간", 37, now.AddHours(2), 300)]);
-        await FailureAsync(() => Task.FromResult(AccountQuotaClient.ValidateReading(known, Codex, now)), FormatChanged, "validate.reading");
+        await FailureAsync(() => Task.FromResult(AccountQuotaMonitor.ValidateReading(known, Codex, now, QuotaPresentationPolicy.Cli)), FormatChanged, "validate.reading");
         await FailureAsync(() => new AccountQuotaClient(claudeExecutable: "relative-claude").ReadAsync(Claude, default),
             NotInstalled, "cli.not-executable");
         Check(AccountQuotaClient.FailureFromRead(new FileNotFoundException(privateMarker)) == new QuotaFailure(NotInstalled, "cli.not-found") &&
@@ -78,7 +78,7 @@ internal static class QuotaFailureTests
         {
             var state = new QuotaState(Claude, Failure: new(kind, code));
             var panel = QuotaPanelModel.Section(state, now);
-            Check(state.Error == text && panel.Rows.Single() is var row && row.Text == text &&
+            Check(panel.Rows.Single() is var row && row.Text == text &&
                 row.Tone == (kind == LoginRequired ? PanelTone.Danger : PanelTone.Muted), code + " matches the shared wording and tone");
             Check(panel.Detail.Split('\n').Count(line => line == "진단 코드: " + code) == 1, code + " appears once in detail only");
         }
@@ -92,11 +92,11 @@ internal static class QuotaFailureTests
             var panel = QuotaPanelModel.Section(state, now);
             Check(panel.Scope is { Text: ClaudeAuthCheck.LoginRequiredText, Tone: PanelTone.Danger } &&
                 panel.Rows.Single() is { UsedPercent: 37, Tone: PanelTone.Muted } &&
-                panel.Detail.Contains("진단 코드: parser.synthetic") && !panel.Detail.Contains(state.Error),
+                panel.Detail.Contains("진단 코드: parser.synthetic") && !panel.Detail.Contains(QuotaPanelModel.FailureMessage(Claude, kind)),
                 "fresh Claude login evidence overrides the read error without hiding previous values or its diagnosis");
             var newerSuccess = state with { LastSuccessfulCheckUtc = now.AddTicks(1) };
             Check(QuotaPanelModel.Section(newerSuccess, now).Scope is null &&
-                QuotaPanelModel.Section(newerSuccess, now).Detail.Contains(state.Error),
+                QuotaPanelModel.Section(newerSuccess, now).Detail.Contains(QuotaPanelModel.FailureMessage(Claude, kind)),
                 "older auth does not override a newer quota success");
         }
 
@@ -112,10 +112,10 @@ internal static class QuotaFailureTests
             var reader = new Reader(load);
             using var monitor = new AccountQuotaMonitor(new Client(), utcNow: () => now, geminiWebReader: reader,
                 geminiWebEnabled: true, geminiWebTimeZone: TimeZoneInfo.Utc);
-            await monitor.RefreshGeminiWebIfDueAsync();
+            await monitor.RefreshSourceIfDueAsync(QuotaProvider.Gemini);
             var state = monitor.Snapshot().Single(s => s.Provider == Gemini);
             var panel = QuotaPanelModel.Section(state, now);
-            Check(state.Failure == new QuotaFailure(kind, code) && state.Error == text && panel.Rows.Single().Text == text &&
+            Check(state.Failure == new QuotaFailure(kind, code) && panel.Rows.Single().Text == text &&
                 panel.Rows.Single().Tone == (kind == LoginRequired ? PanelTone.Danger : PanelTone.Muted) &&
                 panel.Detail.Contains("진단 코드: " + code) && !panel.Detail.Contains(privateMarker), "Gemini projects only the closed diagnostic code");
         }
@@ -125,9 +125,9 @@ internal static class QuotaFailureTests
         var client = new Client { Read = _ => Task.FromResult(known) };
         using (var monitor = new AccountQuotaMonitor(client, store, () => now))
         {
-            await monitor.RefreshOnceAsync(Claude);
+            await monitor.RefreshSourceIfDueAsync(Claude);
             client.Read = _ => Task.FromException<QuotaReading>(new QuotaReadException(FormatChanged, "parser.claude"));
-            await monitor.RefreshOnceAsync(Claude);
+            await monitor.RefreshSourceIfDueAsync(Claude);
             var stale = monitor.Snapshot().Single(s => s.Provider == Claude);
             Check(stale.Failure == new QuotaFailure(FormatChanged, "parser.claude") && stale.IsPrevious &&
                 stale.Reading?.Windows.Single() == known.Windows.Single(), "the monitor retains values while recording a typed failure");
@@ -136,9 +136,9 @@ internal static class QuotaFailureTests
                 Directory.EnumerateFiles(Path.Combine(root, "logs")).All(file => !File.ReadAllText(file).Contains("parser.claude")),
                 "typed diagnostic codes stay out of cache and polling logs");
             client.Read = _ => Task.FromResult(known);
-            await monitor.RefreshOnceAsync(Claude);
-            Check(monitor.Snapshot().Single(s => s.Provider == Claude) is { Failure: null, Error: "", IsPrevious: false },
-                "an accepted live read clears the typed failure and compatibility text");
+            await monitor.RefreshSourceIfDueAsync(Claude);
+            Check(monitor.Snapshot().Single(s => s.Provider == Claude) is { Failure: null, IsPrevious: false },
+                "an accepted live read clears the typed failure");
         }
         return count;
     }

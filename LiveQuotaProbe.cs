@@ -9,7 +9,7 @@ internal static class LiveQuotaProbe
         int failures = 0;
         foreach (var provider in Enum.GetValues<QuotaProvider>())
         {
-            if (!QuotaNames.IsQueryEnabled(provider))
+            if (!QuotaNames.HasCliRoute(provider))
             { Console.WriteLine(QuotaNames.GeminiUnavailableText); continue; }
             try
             {

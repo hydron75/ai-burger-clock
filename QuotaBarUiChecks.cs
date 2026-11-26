@@ -8,7 +8,7 @@ internal static class QuotaBarUiChecks
     internal static void Run(Action<bool, string> check)
     {
         foreach (Color background in new[] { Color.White, Color.FromArgb(30, 30, 30) })
-        foreach (QuotaProvider provider in Enum.GetValues<QuotaProvider>().Where(QuotaNames.IsQueryEnabled))
+        foreach (QuotaProvider provider in Enum.GetValues<QuotaProvider>().Where(QuotaNames.HasCliRoute))
         {
             var palette = QuotaBarPalette.Create(QuotaBalanceBar.ProviderColor(provider, background), background);
             check(palette.HasDistinctTint && palette.TintOpacity is > 0 and < 1 &&

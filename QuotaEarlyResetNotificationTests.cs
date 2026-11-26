@@ -32,8 +32,9 @@ internal static class QuotaEarlyResetNotificationTests
             var engine = new QuotaEarlyResetNotifications();
             QuotaWindow before = Row(oldUsed, minutes, id) with { ResetsAtUtc = oldReset ?? now.AddHours(2) };
             QuotaWindow after = Changed(used, minutes, id) with { ResetsAtUtc = reset ?? now.AddHours(4) };
-            Check(engine.Observe(For(provider, 1, now, before), true) is null, "threshold seed " + provider + "/" + id);
-            return engine.Observe(For(provider, 2, now + (gap ?? TimeSpan.FromHours(1)), after), true);
+            bool eligible = QuotaNames.HasCliRoute(provider);
+            Check(engine.Observe(For(provider, 1, now, before), true, eligible) is null, "threshold seed " + provider + "/" + id);
+            return engine.Observe(For(provider, 2, now + (gap ?? TimeSpan.FromHours(1)), after), true, eligible);
         }
 
         Check(QuotaEarlyResetText.SettingKey == "QuotaEarlyResetNotificationsEnabled", "independent stable setting key");
@@ -141,12 +142,14 @@ internal static class QuotaEarlyResetNotificationTests
         var independent = new QuotaEarlyResetNotifications();
         foreach (QuotaProvider provider in Enum.GetValues<QuotaProvider>())
         {
-            Check(independent.Observe(For(provider, 1, now, Row()), true) is null, "independent Provider baseline " + provider);
+            Check(independent.Observe(For(provider, 1, now, Row()), true, QuotaNames.HasCliRoute(provider)) is null,
+                "independent Provider baseline " + provider);
             Check(independent.Recent(provider) is null, "no history before confirmed comparison " + provider);
         }
         foreach (QuotaProvider provider in Enum.GetValues<QuotaProvider>())
         {
-            QuotaEarlyResetAlert? alert = independent.Observe(For(provider, 2, now.AddHours(1), Changed()), true);
+            QuotaEarlyResetAlert? alert = independent.Observe(For(provider, 2, now.AddHours(1), Changed()), true,
+                QuotaNames.HasCliRoute(provider));
             Check(provider == QuotaProvider.Gemini
                 ? alert is null && independent.Recent(provider) is null
                 : alert?.Provider == provider && independent.Recent(provider) == alert, "separate latest history or disabled Provider " + provider);
@@ -352,12 +355,13 @@ internal static class QuotaEarlyResetNotificationTests
         {
             QuotaObservation cached = Cached(provider);
             var startup = new QuotaEarlyResetNotifications();
-            QuotaEarlyResetEvaluation detected = startup.Evaluate(cached, true);
+            bool eligible = QuotaNames.HasCliRoute(provider);
+            QuotaEarlyResetEvaluation detected = startup.Evaluate(cached, true, eligible);
             if (provider == QuotaProvider.Gemini)
             {
                 Check(detected.Alert is null && startup.Recent(provider) is null,
                     "Disabled Gemini cache cannot seed an alert or session history");
-                Check(startup.Evaluate(cached with { Sequence = 2 }, true).Alert is null,
+                Check(startup.Evaluate(cached with { Sequence = 2 }, true, eligible).Alert is null,
                     "Repeated disabled Gemini observations remain silent");
                 continue;
             }

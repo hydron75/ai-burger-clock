@@ -55,9 +55,26 @@ internal sealed partial class QuotaP0Harness : IDisposable
     internal StateView State(QuotaProvider provider)
     {
         var state = monitor.Snapshot().Single(item => item.Provider == provider);
+        bool? webEnabled = provider == QuotaProvider.Gemini && state.Mode != QuotaSourceMode.Unavailable
+            ? state.Mode == QuotaSourceMode.Active : null;
+        string? webOutcome = webEnabled == true && state.HasResultSinceModeChange ? state.Failure?.Kind switch
+        {
+            QuotaFailureKind.LoginRequired => nameof(GeminiUsageOutcome.LoginRequired),
+            QuotaFailureKind.FormatChanged => nameof(GeminiUsageOutcome.FormatChanged),
+            null => nameof(GeminiUsageOutcome.Ok),
+            _ => nameof(GeminiUsageOutcome.LoadFailed)
+        } : null;
+        string? diagnostic = webEnabled != true ? null : state.Failure?.Code switch
+        {
+            "gemini.load" => nameof(GeminiUsageFailureRule.PageLoad),
+            "gemini.destination" => nameof(GeminiUsageFailureRule.Destination),
+            { } code => Enum.GetNames<GeminiUsageFailureRule>().SingleOrDefault(name =>
+                code == "gemini." + JsonNamingPolicy.KebabCaseLower.ConvertName(name)),
+            _ => null
+        };
         return new(state.Reading?.Windows ?? [], state.CheckedAtUtc, state.LastSuccessfulCheckUtc, state.NextCheckUtc,
-            state.IsRefreshing, state.IsPrevious, state.ContinuityId, state.GeminiWeb?.IsEnabled,
-            state.GeminiWeb?.Outcome?.ToString(), state.CacheError, state.GeminiWeb?.Diagnostic?.Rule.ToString());
+            state.IsRefreshing, state.IsPrevious, state.ContinuityId, webEnabled,
+            webOutcome, state.CacheError, diagnostic);
     }
 
     internal QuotaSectionText Panel(QuotaProvider provider, QuotaEarlyResetAlert? earlyReset = null) =>
@@ -75,20 +92,20 @@ internal sealed partial class QuotaP0Harness : IDisposable
     internal void WatchSuccess(Action<QuotaObservation> action) => monitor.Succeeded += action;
     internal void Start() => monitor.Start();
     internal Task StopAsync() => monitor.StopAsync().WaitAsync(Limit);
-    internal void EnableWeb(bool enabled) => monitor.SetGeminiWebEnabled(enabled);
-    internal void RequestWeb() => monitor.RequestGeminiWebRefresh();
+    internal void EnableWeb(bool enabled) => monitor.SetMode(QuotaProvider.Gemini, enabled ? QuotaSourceMode.Active : QuotaSourceMode.Off);
+    internal void RequestWeb() => monitor.RequestSourceRefresh(QuotaProvider.Gemini);
     internal void Recover() => monitor.RequestRefresh(queueWhileRefreshing: true);
     internal void RefreshManually()
     {
         monitor.RequestRefresh(queueWhileRefreshing: false);
-        monitor.RequestGeminiWebRefresh();
+        monitor.RequestSourceRefresh(QuotaProvider.Gemini);
     }
-    internal Task ReadCliAsync(QuotaProvider provider, CancellationToken token = default) => monitor.RefreshOnceAsync(provider, token);
-    internal Task ReadWebAsync(CancellationToken token = default) => monitor.RefreshGeminiWebIfDueAsync(token);
+    internal Task ReadCliAsync(QuotaProvider provider, CancellationToken token = default) => monitor.RefreshSourceIfDueAsync(provider, token);
+    internal Task ReadWebAsync(CancellationToken token = default) => monitor.RefreshSourceIfDueAsync(QuotaProvider.Gemini, token);
     internal async Task LogoutCacheAsync()
     {
-        monitor.SetGeminiWebEnabled(false);
-        await store!.DeleteGeminiWebQuotaAsync().ConfigureAwait(false);
+        monitor.SetMode(QuotaProvider.Gemini, QuotaSourceMode.Off);
+        await monitor.ClearCacheAsync(QuotaProvider.Gemini).ConfigureAwait(false);
     }
 
     internal static QuotaReading Reading(QuotaProvider provider, double used = 37, DateTimeOffset? reset = null) =>

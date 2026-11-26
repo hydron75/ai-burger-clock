@@ -83,7 +83,7 @@ internal static class WindowsGeminiWebUiChecks
             try
             {
                 WithMenu(() => items[0].PerformClick());
-                await WaitAsync(() => Gemini().GeminiWeb?.Outcome == GeminiUsageOutcome.LoginRequired && !Gemini().IsRefreshing);
+                await WaitAsync(() => Gemini().Failure?.Kind == QuotaFailureKind.LoginRequired && !Gemini().IsRefreshing);
                 check(menusClosedBeforeLogin, "Gemini native login starts after both tray menus close");
             }
             finally { session.BeforeSignIn = null; }
@@ -91,7 +91,7 @@ internal static class WindowsGeminiWebUiChecks
 
             session.ReadPage = () => WindowsGeminiWebChecks.ValidPage(clock(), TimeZoneInfo.Local);
             WithMenu(() => items[0].PerformClick());
-            await WaitAsync(() => Gemini().GeminiWeb?.Outcome == GeminiUsageOutcome.Ok && !Gemini().IsRefreshing);
+            await WaitAsync(() => Gemini() is { HasResultSinceModeChange: true, Failure: null } && !Gemini().IsRefreshing);
             await ShowStateAsync("ok", "5시간", "자동 15분", 2, [false, true, true]);
 
             int reads = session.Reads;
@@ -100,14 +100,14 @@ internal static class WindowsGeminiWebUiChecks
                 "Native tray refresh tooltip includes signed-in Gemini app usage");
             session.ReadPage = () => new(GeminiUsagePage.Url, null);
             trayRefresh.PerformClick();
-            await WaitAsync(() => Gemini().GeminiWeb?.Outcome == GeminiUsageOutcome.FormatChanged && !Gemini().IsRefreshing);
+            await WaitAsync(() => Gemini().Failure?.Kind == QuotaFailureKind.FormatChanged && !Gemini().IsRefreshing);
             check(session.Reads == reads + 1, "Native tray refresh wakes Gemini exactly once");
 
             context.OnPowerModeChanged(null, new PowerModeChangedEventArgs(PowerModes.Resume));
-            await monitor.RefreshGeminiWebIfDueAsync();
+            await monitor.RefreshSourceIfDueAsync(QuotaProvider.Gemini);
             check(session.Reads == reads + 1, "Resume does not wake Gemini");
             context.RefreshAfterRecovery(); // The callback passed to NetworkRefreshScheduler, with no NIC changes.
-            await monitor.RefreshGeminiWebIfDueAsync();
+            await monitor.RefreshSourceIfDueAsync(QuotaProvider.Gemini);
             check(session.Reads == reads + 1, "The network scheduler's recovery callback does not wake Gemini");
             await ShowStateAsync("format-changed", "형식 변경 · 조회 불가", "형식 변경 · 조회 불가", 0, [false, true, true]);
 
@@ -128,15 +128,15 @@ internal static class WindowsGeminiWebUiChecks
             }
             finally { refresh.Click -= CountClick; }
             check(statusClicks == 1, "The reopened status window delivers one native Refresh click");
-            await WaitAsync(() => Gemini().GeminiWeb?.Outcome == GeminiUsageOutcome.LoadFailed && !Gemini().IsRefreshing);
+            await WaitAsync(() => Gemini().Failure?.Kind == QuotaFailureKind.Unreachable && !Gemini().IsRefreshing);
             check(session.Reads == reads + 2, "The native status Refresh button wakes Gemini exactly once");
             await ShowStateAsync("load-failed", "Gemini · 이전 조회값", "한도 조회 실패", 2, [false, true, true]);
 
             WithMenu(() => items[1].PerformClick());
-            check(Gemini().GeminiWeb is { IsEnabled: false } && session.HasProfile, "Native Off keeps the synthetic profile");
+            check(Gemini().Mode == QuotaSourceMode.Off && session.HasProfile, "Native Off keeps the synthetic profile");
             WithMenu(() => items[2].PerformClick());
             await WaitAsync(() => !session.HasProfile);
-            check(Gemini().GeminiWeb is { IsEnabled: false } && session.ProfileDeletes == 1, "Native logout clears the synthetic profile once");
+            check(Gemini().Mode == QuotaSourceMode.Off && session.ProfileDeletes == 1, "Native logout clears the synthetic profile once");
         }
         finally
         {
