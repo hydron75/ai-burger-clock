@@ -1,6 +1,8 @@
 # 소스코드, 쉬운 말로 읽기
 
-**Windows 2.9.9 후보 기준**으로 `AccountQuotaClient.cs`와 `GeminiUsagePage.cs`가 조회 실패를 분류하고, `QuotaPanelModel.cs`가 문구와 톤을 만듭니다. `QuotaFailure.cs`의 고정 진단 코드는 상세와 `--check-quotas`의 실패 출력에 표시합니다. [최신 후보 기록](MAINTENANCE_2_9_9.md)
+**Windows 2.10.0 기준**으로 `QuotaSources.cs`가 조회원별 주기·특성·표시 정책을 묶고, `AccountQuotaMonitor.cs`가 공통 실행 루프를 담당합니다. `QuotaCacheAdapter.cs`가 조회원별 캐시를 다룹니다. P0 검사에서 기존 조회·표시·송신 동작을 확인합니다. [2.10.0 배포 기록](MAINTENANCE_2_10_0.md)
+
+**Windows 2.9.9 후보 기준**으로 `AccountQuotaClient.cs`와 `GeminiUsagePage.cs`가 조회 실패를 분류하고, `QuotaPanelModel.cs`가 문구와 톤을 만듭니다. `QuotaFailure.cs`의 고정 진단 코드는 상세와 `--check-quotas`의 실패 출력에 표시합니다. [2.9.9 기록](MAINTENANCE_2_9_9.md)
 
 **Windows 2.9.8 기준**으로 `AccountQuotaClient.ClaudeAuth.cs`와 `AccountQuotaMonitor.ClaudeAuth.cs`가 Claude CLI 로그인을 확인합니다. `ClaudeAuthStatus.cs`와 `QuotaPanelModel.cs`가 만료 판정과 문구를 담당하며, Windows와 Mac의 알림 연결은 각각 `TrayApplicationContext.ClaudeAuth.cs`와 `Mac/MacClaudeAuthWarning.cs`에서 처리합니다. [2.9.8 기록](MAINTENANCE_2_9_8.md)
 
@@ -386,7 +388,16 @@ Windows 내부 승인 형식은 알려진 경우만 해석합니다. 낯선 값�
 
 ## 11. 전체 소스 파일 지도
 
-이름을 눌러 소스를 열 수 있습니다. 역할을 알고 필요한 파일부터 읽으면 됩니다. 2.9.1 후보의 현재 표는 루트·Properties C# 126개(앱 기능 60 + 검사·진단 65 + 명찰 1), Mac 23개, 공통 검사 입구 1개로 총 150개이며 공통 제품 원본은 35개입니다. #130의 Mac 상세 팝업 원본·검사 두 파일을 포함하며 이번 버전 PR이 C# 파일을 추가한 것은 아닙니다. 위 과거 파일 수 기록과 생성된 bin·obj·artifacts는 이 집계와 구분합니다.
+2.10.0의 추적 C#은 루트·Properties 151개, Mac 31개, 공통 검사 입구 1개로 총 183개입니다. 공통 제품 원본 43개는 `Shared/SharedSources.props`에 등록돼 있습니다. 생성된 bin·obj·artifacts는 집계에서 제외합니다.
+
+| P2에서 찾을 파일 | 맡은 일 |
+|---|---|
+| [QuotaSources.cs](QuotaSources.cs) | CLI·Gemini 웹·미등록 조회원과 조회원별 주기·표시 정책 |
+| [QuotaCacheAdapter.cs](QuotaCacheAdapter.cs) | 조회원별 캐시 키·검증·복원·저장·삭제 |
+| [AccountQuotaMonitor.cs](AccountQuotaMonitor.cs) | 조회 예약부터 검증·상태 갱신·저장·성공 관측까지 공통 루프 |
+| [QuotaSourceContractTests.cs](QuotaSourceContractTests.cs), [QuotaCacheFixtureTests.cs](QuotaCacheFixtureTests.cs) | 조회원 등록과 캐시 삭제 조건, P0 검사용 캐시 fixture |
+
+아래 표의 2.9.1 후보 당시 집계는 루트·Properties C# 126개(앱 기능 60 + 검사·진단 65 + 명찰 1), Mac 23개, 공통 검사 입구 1개로 총 150개입니다. 당시 공통 제품 원본 35개와 #130의 Mac 상세 팝업 원본·검사 두 파일을 포함한 기록입니다.
 
 ### 실제 앱 기능: 60개
 
