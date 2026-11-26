@@ -270,7 +270,8 @@ internal static class MacGeminiWebSmoke
         {
             var store = new UsageStore(Path.Combine(directory, "burgerclock.db"));
             var cache = QuotaCacheAdapter.ForGeminiWeb(store);
-            // Neither is asked to open anything: the reader would throw on its first main-thread dispatch.
+            // The monitors are never started, so no read runs. The reader's main-thread dispatch throws, so it cannot create
+            // a web view either way; the login window is never shown.
             var reader = new MacGeminiUsageReader(_ => throw new InvalidOperationException("synthetic: no read is expected"));
             var login = new MacGeminiLoginWindow(_ => { });
             DateTimeOffset utc = DateTimeOffset.UtcNow;
