@@ -431,9 +431,9 @@ You have used some of your #-hour limit, it will fully refresh in # hours, ## mi
 |---|---|---|
 | 1 | 최종 위치가 Google 로그인 화면 | LoginRequired / `antigravity.destination` |
 | 2 | 탐색 실패, 최종 위치가 `antigravity.google.com/remote` 아님 | Unreachable / `antigravity.load` |
-| 3 | 읽을 영역이 없고 `DocumentLanguage`가 `en`으로 시작하지 않음 | FormatChanged / `antigravity.language` |
+| 3 | 읽을 영역이 없고 `DocumentLanguage`가 `null`이 아닌 값이며 `en`으로 시작하지 않음. 언어가 `null`이면 다음 단계로 진행 | FormatChanged / `antigravity.language` |
 | 4 | 대기 끝에 `VisibilityState == "hidden"` | Unreachable / `antigravity.not-visible` |
-| 5 | 읽을 영역 없음(보이는 상태) | Unreachable / `antigravity.not-rendered` |
+| 5 | 읽을 영역 없음 | Unreachable / `antigravity.not-rendered` |
 | 6 | 영역은 있으나 위 규칙 위반 | FormatChanged / `antigravity.{규칙}` |
 
 - **개인정보:** 페이지 원문, 이메일, 요금제 문구는 저장·로그·표시하지 않는다. 리더는 읽을 영역 밖의 텍스트를 넘기지 않는다. 진단에는 규칙 코드만 남긴다.
