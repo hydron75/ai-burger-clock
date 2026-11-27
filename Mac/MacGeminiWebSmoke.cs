@@ -122,6 +122,7 @@ internal static class MacGeminiWebSmoke
         internal bool ThrowOnRemove;
         public bool LoginOpen { get; set; }
         public void SetEnabled(bool enabled) => Calls.Add("enabled:" + enabled);
+        public void SetAntigravity(bool active, bool afterSignIn = false) { } // checked by MacAntigravitySmoke
         public Task DeleteCacheAsync() { Calls.Add("delete-cache"); return Task.CompletedTask; }
         public void ShowLogin(Action succeeded) { Calls.Add("show-login"); LoginOpen = true; Succeeded = succeeded; }
         public void CloseLogin() { if (LoginOpen) Calls.Add("close-login"); LoginOpen = false; }
@@ -136,10 +137,10 @@ internal static class MacGeminiWebSmoke
 
     internal static async Task<string> VerifyControllerAsync(NSMenu contextMenu, MacGeminiWebController appController)
     {
-        // The app's own menu: the submenu is in the right-click menu with its three items, and a fresh run starts off.
+        // The app's own menu: the submenu is in the right-click menu with its four items, and a fresh run starts off.
         NSMenuItem? item = contextMenu.Items.FirstOrDefault(entry => entry.Title == GeminiWebText.MenuTitle);
-        Check(item?.Submenu is { } appSubmenu && appSubmenu.Items.Select(entry => entry.Title).SequenceEqual(["로그인…", "끄기", "로그아웃"]),
-            "the right-click menu has no 'Gemini 사용량' submenu with 로그인… / 끄기 / 로그아웃.");
+        Check(item?.Submenu is { } appSubmenu && appSubmenu.Items.Select(entry => entry.Title).SequenceEqual(["로그인…", "끄기", "로그아웃", AntigravityWebText.MenuLabel]),
+            "the right-click menu has no 'Gemini 사용량' submenu with 로그인… / 끄기 / 로그아웃 / Antigravity.");
         Check(!appController.Enabled && !appController.HasSession && appController.Items == (true, false, true),
             "a fresh run is not off with sign-in and logout usable.");
 
@@ -176,7 +177,7 @@ internal static class MacGeminiWebSmoke
             var backend = new FakeBackend();
             var feedback = new List<(string Text, bool Error)>();
             var controller = new MacGeminiWebController(settings, backend, (text, error) => feedback.Add((text, error)));
-            Check(controller.MenuItem.Title == "Gemini 사용량" && controller.MenuItem.Submenu!.Items.Length == 3, "the controller's submenu is wrong.");
+            Check(controller.MenuItem.Title == "Gemini 사용량" && controller.MenuItem.Submenu!.Items.Length == 4, "the controller's submenu is wrong.");
 
             // 끄기 does nothing while off.
             controller.Off();
@@ -252,7 +253,7 @@ internal static class MacGeminiWebSmoke
         }
         finally { Directory.Delete(directory, recursive: true); }
 
-        return "Gemini menu (right-click 'Gemini 사용량' with 로그인… / 끄기 / 로그아웃; 6 usable-item states (로그아웃 always usable unless busy); settings missing/garbage/on-without-session = off, round trip; " +
+        return "Gemini menu (right-click 'Gemini 사용량' with 로그인… / 끄기 / 로그아웃 and the Antigravity item; 6 usable-item states (로그아웃 always usable unless busy); settings missing/garbage/on-without-session = off, round trip; " +
                "sign-in window closed without login = no change; login = on + saved; 끄기 keeps login; logout = off -> cache -> web views -> data store, failure and exception keep retry, repeat finishes; shutdown closes sign-in)";
     }
 
@@ -273,6 +274,7 @@ internal static class MacGeminiWebSmoke
             // The monitors are never started, so no read runs. The reader's main-thread dispatch throws, so it cannot create
             // a web view either way; the login window is never shown.
             var reader = new MacGeminiUsageReader(_ => throw new InvalidOperationException("synthetic: no read is expected"));
+            var antigravity = new MacAntigravityUsageReader(_ => throw new InvalidOperationException("synthetic: no read is expected"));
             var login = new MacGeminiLoginWindow(_ => { });
             DateTimeOffset utc = DateTimeOffset.UtcNow;
             QuotaReading reading = new(QuotaProvider.Gemini,
@@ -287,7 +289,7 @@ internal static class MacGeminiWebSmoke
 
             using (var monitor = new AccountQuotaMonitor(new NoClient(), store, geminiWebReader: reader, geminiWebEnabled: true))
             {
-                var backend = new MacGeminiWebBackend(() => monitor, store, reader, login, cancellationToken);
+                var backend = new MacGeminiWebBackend(() => monitor, store, reader, antigravity, login, cancellationToken);
                 await Save();
                 Check(Mode(monitor) == QuotaSourceMode.Active && await Saved(), "the backend fixture did not start on with a saved reading.");
                 backend.SetEnabled(false);
@@ -301,7 +303,7 @@ internal static class MacGeminiWebSmoke
             // Started with the setting off: logout switches it off again first, which is what allows the delete.
             using (var monitor = new AccountQuotaMonitor(new NoClient(), store, geminiWebReader: reader, geminiWebEnabled: false))
             {
-                var backend = new MacGeminiWebBackend(() => monitor, store, reader, login, cancellationToken);
+                var backend = new MacGeminiWebBackend(() => monitor, store, reader, antigravity, login, cancellationToken);
                 await Save();
                 backend.SetEnabled(false);
                 await backend.DeleteCacheAsync();
@@ -309,7 +311,7 @@ internal static class MacGeminiWebSmoke
             }
 
             // No monitor yet (start-up not finished): the saved reading is still deleted.
-            var early = new MacGeminiWebBackend(() => null, store, reader, login, cancellationToken);
+            var early = new MacGeminiWebBackend(() => null, store, reader, antigravity, login, cancellationToken);
             await Save();
             early.SetEnabled(false);
             await early.DeleteCacheAsync();

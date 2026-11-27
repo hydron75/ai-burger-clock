@@ -3516,3 +3516,41 @@ native `--smoke-test`는 배포에서 실행하지 않았다. 팝오버의 실�
 | 팝오버 네 박스 | 배포 뒤 네 한도 박스가 평소처럼 보이는지 | **정상**(2026-11-26 사용자) |
 
 로그아웃은 실제로 실행하지 않는다(앱의 Gemini 로그인 세션이 지워진다). 로그아웃 경로는 89절의 합성 검사와 코드 검토까지만 확인했다.
+
+## 91. Antigravity 웹 한도 조회원(P2.5, PR #191)의 Mac 호스트
+
+2026-11-27. 기준은 #191 HEAD `899652fa115c197ec4e034a4aaaefd363ada6522`, 설계는 [QUOTA_SOURCES_DESIGN](QUOTA_SOURCES_DESIGN.md) 4.7·5·7절이다. 버전은 올리지 않았다(0.10.0 그대로). 이 PR(Mac 파일·이 기록)은 #191의 브랜치를 base로 하는 Draft이며, 병합과 배포는 P2 관찰(90절) 종료 뒤 메인 지시로 한다. 공통 원본은 바꾸지 않았다.
+
+### 동작
+- **리더(`MacAntigravityUsageReader`):** 공통 `AntigravityUsagePage.Url`·`ReadScript`를 Gemini 앱 리더와 같은 웹 데이터 저장소에서 쓴다. 읽는 동안만 창을 만들고(`alphaValue` 0, status 레벨, 클릭 통과, 그림자 없음, `canJoinAllSpaces`·`transient`·`ignoresCycle`, `fullScreenAuxiliary` 없음, 앱 활성화·키 포커스 없음) 끝나면 창과 `WKWebView`를 바로 해제한다. 탐색이 끝난 뒤 0.25초 간격으로 최대 20초, 전체 30초. URL은 scheme·host·path만 남기고 페이지에서는 읽을 영역의 문구만 받는다.
+- **화면 판정(`MacScreenCoverage`):** smoke 전용이던 `MacScreenGuard`의 전체 화면 판정을 제품 공용으로 옮겼다(판정 조건은 그대로, smoke의 화면 선택 동작도 그대로). 창은 잠들지 않았고 전체 화면 앱이 덮지 않은 디스플레이(메뉴 막대 디스플레이 우선)에만 만든다. 그런 디스플레이가 없으면 창을 만들지 않는다.
+- **Readiness:** 화면 잠금, 또는 모든 디스플레이가 잠들었거나 덮였으면 `Deferred`. 판정할 수 없으면 `Ready`. monitor의 잠금 안에서 불리므로 CoreGraphics만 쓰고 메인 스레드를 기다리지 않는다.
+- **메뉴:** `Gemini 사용량` 하위 메뉴 네 번째 항목 `Antigravity 사용량 조회`(체크, 기본 꺼짐). 설정은 `gemini-web.settings`의 `antigravity=` 줄에 따로 저장한다(0.10.0이 쓴 파일은 꺼짐). Gemini 조회가 꺼졌거나 로그아웃 중이면 비활성이고 `Gemini 웹 조회를 먼저 켜세요.` 설명이 붙는다. 실제 켜짐은 Gemini 켜짐 ∧ Antigravity 설정이다. `끄기`는 두 조회를 멈추고 설정은 남긴다. 로그인 성공 뒤 켜져 있으면 바로 다시 읽는다. Mac의 `로그인…`은 로그인 창이 없고 작업 중이 아니면 항상 활성이라 Antigravity만 로그인이 필요한 경우를 따로 바꾸지 않았다. Mac에는 저장되는 `로그아웃 대기` 상태가 없어 작업 중·Gemini 꺼짐으로 대응한다.
+- **Refresh:** 직접 누른 경우에만 Gemini와 함께 Antigravity를 요청한다(10분 최소 간격은 공통 monitor). 잠자기 복귀·네트워크 복구 경로에는 넣지 않았다.
+- **로그아웃:** Antigravity 설정 끔 → 두 조회 Off → 두 캐시 삭제(monitor 없음·조회원 없음 포함) → Gemini·Antigravity 진행 중 읽기 대기 → 데이터 저장소 삭제.
+- **base 갱신 대응:** `899652f`부터 `SetMode`는 켜고 끌 수 없는 조회원(CLI·Unavailable)에 예외를 낸다. Mac의 호출부(backend 2곳)는 상태의 `Mode`가 `Unavailable`이 아닐 때만 부른다. 삭제된 `GeminiUsageDiagnostic` 두 인자 생성자는 Mac에 호출부가 없다.
+- **팝오버:** 공통 `Parts`가 있으면 Gemini 박스 안에 부분마다 제목·행·막대·상태 줄을 그린다. Antigravity가 꺼졌거나 없으면 0.10.0과 같은 한 부분 박스다.
+- **#191이 고친 Mac 파일 3개**(`MacApplication`, `MacQuotaLayoutKeySmoke`, `MacQuotaNotifications`): 박스·알림 순회를 `QuotaProviders.Boxes`로 바꾼 것뿐이며 맞다.
+
+### 변경 파일
+- 신규: `Mac/MacAntigravityUsageReader.cs`, `Mac/MacScreenCoverage.cs`, `Mac/MacAntigravitySmoke.cs`
+- 수정: `Mac/MacApplication.cs`, `Mac/MacGeminiWebController.cs`, `Mac/MacGeminiWebSettings.cs`, `Mac/MacGeminiWebSmoke.cs`, `Mac/MacScreenGuard.cs`, `Mac/MacStatusPanel.cs`, `Mac/README.md`
+
+### 검증 (임시 사본)
+| 항목 | 결과 |
+|---|---|
+| Shared.Tests | **291,867건 PASS** |
+| `bash Mac/build.sh` 옵션 없음 | 경고 0 / 오류 0 (Xcode 27.2, .NET SDK 10.0.404, macos 워크로드 27.2.10000) |
+| 독립 검수 | 작성에 관여하지 않은 에이전트가 읽기 전용으로 검수. 제품 코드의 차단 사유 없음. 실행하면 실패했을 smoke 검사 1건(행 문구로 추정 표기를 구분)을 상세 문구 기준으로 고침 |
+| native `--smoke-test` | **미실행**(실제 페이지 확인 뒤 마지막에 실행) |
+| 실제 페이지 1회 | **미실행**(사용자 동의 필요) |
+
+추가한 native 검사는 합성 값만 쓰고 web view와 네트워크를 쓰지 않으며 읽기 창을 화면에 올리지 않는다: 읽기 반복(재시도·숨김·로그인 호스트·취소), 화면 판정 표와 창 속성, 메뉴·설정·로그아웃 순서, 임시 DB의 두 캐시, 두 부분 박스.
+
+### 공통 코드 관찰 (바꾸지 않음, Windows도 같은 동작)
+- 읽는 동안 script 답을 한 번도 받지 못하고 사용량 페이지에서 시간이 끝나면 언어 값이 비어 `antigravity.language`(형식 변경)가 된다.
+- 로그인 호스트에 머문 채 30초를 넘기거나 탐색이 실패하면 파서 순서상 `로그인 필요`가 된다.
+- Readiness 직후 모든 디스플레이가 덮이면 Mac 리더는 창을 만들지 않고 `antigravity.load` 실패를 돌려주며, 다음 조회는 1시간 뒤다.
+
+### 수행하지 않은 검증
+실제 계정의 로그인·조회·로그아웃, 투명 창의 화면·Dock·Mission Control 비노출, 비활성 앱에서의 표시, 전체 화면 앱이 있는 디스플레이 구성, 화면 잠금·디스플레이 잠자기에서의 미루기. 실행 중인 0.10.0 앱과 운영 데이터 저장소는 건드리지 않았다.

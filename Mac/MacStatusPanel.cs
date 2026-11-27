@@ -53,8 +53,15 @@ internal sealed class MacStatusPanel : IDisposable
     private string shownStorageError = "";
 
     private sealed record Card(CardView View, NSTextField Heading, NSTextField Official, NSTextField Reason, NSMenu Menu);
+    // Rows and bars are cached by row ID (unique within a box, placeholders included). A box has one part, or two when the
+    // Gemini box also shows Antigravity; only the two-part box has part titles.
     private sealed record QuotaViews(CardView Box, NSTextField Heading, NSTextField? Scope,
-        Dictionary<string, QuotaRowView> Rows, Dictionary<string, UsageBarView> Bars, NSTextField Metadata);
+        Dictionary<string, QuotaRowView> Rows, Dictionary<string, UsageBarView> Bars, Dictionary<QuotaProvider, QuotaPartViews> Parts);
+    private sealed record QuotaPartViews(NSTextField? Title, NSTextField Metadata);
+
+    // A box without shared parts is one part made of the section's own fields, so both shapes are drawn by the same code.
+    private static IReadOnlyList<QuotaSectionPart> PartsFor(QuotaSectionText section) =>
+        section.Parts ?? [new(section.Provider, section.Heading, section.Rows, section.Metadata)];
 
     internal MacStatusPanel(Action requestRefresh, Action showStatistics, Action<bool> changeHoliday,
         Action<bool> changeAutoStart, Action<ProviderKind> openPage,
@@ -291,26 +298,32 @@ internal sealed class MacStatusPanel : IDisposable
                 // One usage bar under each row that has a value; a waiting or failed row has none.
                 var rows = new Dictionary<string, QuotaRowView>();
                 var bars = new Dictionary<string, UsageBarView>();
-                foreach (QuotaLine row in section.Rows)
+                var parts = new Dictionary<QuotaProvider, QuotaPartViews>();
+                foreach (QuotaSectionPart part in PartsFor(section))
                 {
-                    var rowField = rows[row.WindowId] = new QuotaRowView(ContentWidth - CardPadding * 2);
-                    lines.AddArrangedSubview(rowField);
-                    if (row.UsedPercent is null) continue;
-                    // The bar is this row's single accessibility element (see UsageBarView); hide the text
-                    // fields explicitly, once per layout: a standard text field reads as not-an-element
-                    // through the property by default, so the default cannot be relied on.
-                    rowField.HideFromAccessibility();
-                    spokenByBar.Add(rowField);
-                    var bar = new UsageBarView(ContentWidth - CardPadding * 2);
-                    lines.AddArrangedSubview(bar);
-                    lines.SetCustomSpacing(3, bar);
-                    bars[row.WindowId] = bar;
+                    var title = section.Parts is null ? null : QuotaLine(lines, 11, bold: true);
+                    foreach (QuotaLine row in part.Rows)
+                    {
+                        var rowField = rows[row.WindowId] = new QuotaRowView(ContentWidth - CardPadding * 2);
+                        lines.AddArrangedSubview(rowField);
+                        if (row.UsedPercent is null) continue;
+                        // The bar is this row's single accessibility element (see UsageBarView); hide the text
+                        // fields explicitly, once per layout: a standard text field reads as not-an-element
+                        // through the property by default, so the default cannot be relied on.
+                        rowField.HideFromAccessibility();
+                        spokenByBar.Add(rowField);
+                        var bar = new UsageBarView(ContentWidth - CardPadding * 2);
+                        lines.AddArrangedSubview(bar);
+                        lines.SetCustomSpacing(3, bar);
+                        bars[row.WindowId] = bar;
+                    }
+                    var metadata = QuotaLine(lines, 10);
+                    // Hidden before the refit below, so the quota area is measured without the blank line (see Apply further down).
+                    metadata.Hidden = part.Metadata.Text.Length == 0;
+                    parts[part.Source] = new(title, metadata);
                 }
-                var metadata = QuotaLine(lines, 10);
-                // Hidden before the refit below, so the quota area is measured without the blank line (see Apply further down).
-                metadata.Hidden = section.Metadata.Text.Length == 0;
                 quotaStack.AddArrangedSubview(box);
-                quotas[section.Provider] = new(box, heading, scope, rows, bars, metadata);
+                quotas[section.Provider] = new(box, heading, scope, rows, bars, parts);
             }
             // Box count or rows changed: refit so no gap is left above the check times.
             FitContent();
@@ -324,29 +337,34 @@ internal sealed class MacStatusPanel : IDisposable
             SetDetail(views.Box, detail);
             Apply(views.Heading, section.Heading);
             if (views.Scope is not null && section.Scope is not null) Apply(views.Scope, section.Scope);
-            foreach (QuotaLine row in section.Rows)
+            foreach (QuotaSectionPart part in PartsFor(section))
             {
-                views.Rows[row.WindowId].Apply(row, MacControls.Color(row.Tone));
-                if (views.Bars.TryGetValue(row.WindowId, out UsageBarView? bar) && row.UsedPercent is { } used)
+                QuotaPartViews partViews = views.Parts[part.Source];
+                if (partViews.Title is not null) Apply(partViews.Title, part.Title);
+                foreach (QuotaLine row in part.Rows)
                 {
-                    // One element per row: the bar speaks "row text. comparison"; its text field is hidden.
-                    SetSpoken(bar, SpokenRow(row));
-                    // Previous and elapsed values are shown muted, never in the provider color, and
-                    // never with a time comparison (the shared model already gives null for them).
-                    bool muted = row.Tone == PanelTone.Muted;
-                    bar.Set(used, muted ? null : row.ElapsedPercent,
-                        muted ? MacControls.QuotaBarPreviousColor(section.Provider) : MacControls.QuotaBarColor(section.Provider));
-                    SetHelp(bar, detail);
+                    views.Rows[row.WindowId].Apply(row, MacControls.Color(row.Tone));
+                    if (views.Bars.TryGetValue(row.WindowId, out UsageBarView? bar) && row.UsedPercent is { } used)
+                    {
+                        // One element per row: the bar speaks "row text. comparison"; its text field is hidden.
+                        SetSpoken(bar, SpokenRow(row));
+                        // Previous and elapsed values are shown muted, never in the provider color, and
+                        // never with a time comparison (the shared model already gives null for them).
+                        bool muted = row.Tone == PanelTone.Muted;
+                        bar.Set(used, muted ? null : row.ElapsedPercent,
+                            muted ? MacControls.QuotaBarPreviousColor(part.Source) : MacControls.QuotaBarColor(part.Source));
+                        SetHelp(bar, detail);
+                    }
                 }
-            }
-            Apply(views.Metadata, section.Metadata);
-            // A box whose shared metadata line is empty (the Gemini fixed notice) shows no blank line under its row:
-            // a hidden arranged subview takes no room in the stack.
-            bool hideMetadata = section.Metadata.Text.Length == 0;
-            if (views.Metadata.Hidden != hideMetadata)
-            {
-                views.Metadata.Hidden = hideMetadata;
-                metadataVisibilityChanged = true;
+                Apply(partViews.Metadata, part.Metadata);
+                // A box whose shared metadata line is empty (the Gemini fixed notice) shows no blank line under its row:
+                // a hidden arranged subview takes no room in the stack.
+                bool hideMetadata = part.Metadata.Text.Length == 0;
+                if (partViews.Metadata.Hidden != hideMetadata)
+                {
+                    partViews.Metadata.Hidden = hideMetadata;
+                    metadataVisibilityChanged = true;
+                }
             }
         }
         // The boxes got taller or shorter without a structure change: refit so no gap is left below them.
@@ -907,14 +925,18 @@ internal sealed class MacStatusPanel : IDisposable
         foreach (QuotaSectionText section in sections)
         {
             QuotaViews views = quotas[section.Provider];
-            if (views.Heading.StringValue != section.Heading.Text || views.Metadata.StringValue != section.Metadata.Text ||
+            IReadOnlyList<QuotaSectionPart> parts = PartsFor(section);
+            QuotaLine[] modelRows = parts.SelectMany(part => part.Rows).ToArray();
+            if (views.Heading.StringValue != section.Heading.Text || views.Parts.Count != parts.Count || views.Rows.Count != modelRows.Length ||
+                parts.Any(part => views.Parts[part.Source].Metadata.StringValue != part.Metadata.Text ||
+                    (views.Parts[part.Source].Title?.StringValue ?? "") != (section.Parts is null ? "" : part.Title.Text)) ||
                 (views.Scope?.StringValue ?? "") != (section.Scope?.Text ?? "") ||
-                section.Rows.Any(row => views.Rows[row.WindowId].FullText != row.Text))
+                modelRows.Any(row => views.Rows[row.WindowId].FullText != row.Text))
                 throw new InvalidOperationException($"{section.Provider} quota lines differ from the shared panel model.");
             // VoiceOver: one element per row. A row with a bar is spoken by the bar (row text, then the
             // shared comparison; no comparison, no suffix) and its text field is hidden, so the visible
             // text is never announced twice; a row without a bar keeps its plain text field untouched.
-            foreach (QuotaLine row in section.Rows)
+            foreach (QuotaLine row in modelRows)
             {
                 QuotaRowView field = views.Rows[row.WindowId];
                 bool hasSpokenBar = views.Bars.TryGetValue(row.WindowId, out UsageBarView? spokenBar);
@@ -927,7 +949,8 @@ internal sealed class MacStatusPanel : IDisposable
             }
             // One Provider detail per box: the box carries the shared text as its fixed-width tip (its tracking area covers
             // every line and bar), no line or bar has a system tooltip of its own, and VoiceOver help on the box and the bars is the same text.
-            NSView[] lines = new NSView?[] { views.Heading, views.Scope, views.Metadata }
+            NSView[] lines = new NSView?[] { views.Heading, views.Scope }
+                .Concat(views.Parts.Values.SelectMany(part => new NSView?[] { part.Title, part.Metadata }))
                 .OfType<NSView>().Concat(views.Rows.Values).Concat(views.Bars.Values).ToArray();
             if (section.Detail.Length == 0 || views.Box.Detail != section.Detail || views.Box.ToolTip is not null ||
                 lines.Any(view => view.ToolTip is not null) ||
@@ -935,7 +958,7 @@ internal sealed class MacStatusPanel : IDisposable
                 throw new InvalidOperationException($"{section.Provider} quota box does not show the single shared Provider detail.");
             // A usage bar per row with a value (none for a waiting or failed row), drawn from the model's
             // used percentage; previous/elapsed (Muted) values use the muted color, never the provider color.
-            foreach (QuotaLine row in section.Rows)
+            foreach (var (source, row) in parts.SelectMany(part => part.Rows.Select(row => (part.Source, row))))
             {
                 bool hasBar = views.Bars.TryGetValue(row.WindowId, out UsageBarView? bar);
                 if (row.UsedPercent is not { } used)
@@ -943,8 +966,8 @@ internal sealed class MacStatusPanel : IDisposable
                     if (hasBar) throw new InvalidOperationException($"{section.Provider} row without a value has a usage bar.");
                     continue;
                 }
-                NSColor expectedColor = row.Tone == PanelTone.Muted ? MacControls.QuotaBarPreviousColor(section.Provider)
-                    : MacControls.QuotaBarColor(section.Provider);
+                NSColor expectedColor = row.Tone == PanelTone.Muted ? MacControls.QuotaBarPreviousColor(source)
+                    : MacControls.QuotaBarColor(source);
                 if (!hasBar || Math.Abs(bar!.Fraction - Math.Clamp(used, 0, 100) / 100) > 1e-9 ||
                     !bar.FillColor.Equals(expectedColor) || bar.GestureRecognizers.Length != 0 || bar.Menu is not null ||
                     !bar.AccessibilityElement)
@@ -989,7 +1012,9 @@ internal sealed class MacStatusPanel : IDisposable
         if (Math.Abs(X(quotaTitle) - titleX) > 0.5)
             throw new InvalidOperationException($"Quota title x {X(quotaTitle)} differs from the panel title x {titleX}.");
         NSView[] boxed = cards.Values.SelectMany(card => new NSView[] { card.Heading, card.Official, card.Reason })
-            .Concat(quotas.Values.SelectMany(q => new NSView?[] { q.Heading, q.Scope, q.Metadata }.OfType<NSView>()).Where(view => !view.Hidden))
+            .Concat(quotas.Values.SelectMany(q => new NSView?[] { q.Heading, q.Scope }
+                .Concat(q.Parts.Values.SelectMany(part => new NSView?[] { part.Title, part.Metadata }))
+                .OfType<NSView>()).Where(view => !view.Hidden))
             .ToArray();
         // A label's frame sits a couple of points left of where its text starts (its alignment rect), so
         // a bar must start at its row's alignment-rect x, i.e. exactly where that row's text starts, and
@@ -1183,7 +1208,7 @@ internal sealed class MacStatusPanel : IDisposable
 
     // Smoke: whether a box's unsplit row text is shown whole on one line, and whether its metadata line takes no room.
     internal bool QuotaRowTextFits(QuotaProvider provider, string windowId) => quotas[provider].Rows[windowId].TextFits;
-    internal bool QuotaMetadataHidden(QuotaProvider provider) => quotas[provider].Metadata.Hidden;
+    internal bool QuotaMetadataHidden(QuotaProvider provider) => quotas[provider].Parts.Values.All(part => part.Metadata.Hidden);
     internal nfloat QuotaBoxHeight(QuotaProvider provider) => quotas[provider].Box.Frame.Height;
 
     // Smoke: spoken value of a row and the time layer of its bar.
@@ -1203,6 +1228,16 @@ internal sealed class MacStatusPanel : IDisposable
     internal string[] QuotaRowIds(QuotaProvider provider) => quotas[provider].Rows.Keys.Order(StringComparer.Ordinal).ToArray();
     internal NSView QuotaBoxView(QuotaProvider provider) => quotas[provider].Box;
     internal int QuotaBoxCount => quotas.Count;
+    // Smoke: the lines of one box in stack order (top to bottom): titles, rows by their unsplit text, "(bar)" and metadata;
+    // hidden lines left out.
+    internal string[] QuotaBoxLines(QuotaProvider provider) =>
+        ((NSStackView)quotas[provider].Heading.Superview!).ArrangedSubviews.Where(view => !view.Hidden).Select(view => view switch
+        {
+            QuotaRowView row => row.FullText,
+            NSTextField field => field.StringValue,
+            UsageBarView => "(bar)",
+            _ => "(other)"
+        }).ToArray();
     internal nfloat QuotaBarFill(QuotaProvider provider, string windowId) => quotas[provider].Bars[windowId].FilledWidth;
 
     public void Dispose()
