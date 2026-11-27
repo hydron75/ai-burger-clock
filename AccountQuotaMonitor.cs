@@ -70,7 +70,7 @@ internal sealed partial class AccountQuotaMonitor : IDisposable
         pollingLog = diagnosticLog ?? CreatePollingLog(store);
         earlyResetLog = earlyResetDiagnosticLog ?? CreateEarlyResetLog(store);
         // A WebView cancellation callback can dispatch to a UI thread.
-        cancelLifetimeAsynchronously = sources.Values.Any(source => source.Source.Traits.StickyManualRefresh);
+        cancelLifetimeAsynchronously = sources.Values.Any(source => source.Source.Traits.CancelLifetimeAsynchronously);
     }
 
     internal static IEnumerable<(IQuotaSource Source, QuotaSourceMode Mode)> CreateSources(IAccountQuotaClient client,
@@ -161,7 +161,9 @@ internal sealed partial class AccountQuotaMonitor : IDisposable
         lock (sync)
         {
             var entry = sources[provider];
-            if (disposed || lifetime.IsCancellationRequested || entry.State.Mode == QuotaSourceMode.Unavailable) return;
+            if (!entry.Source.Traits.CanSetMode)
+                throw new InvalidOperationException("This quota source does not support changing its mode.");
+            if (disposed || lifetime.IsCancellationRequested) return;
             entry.Generation++;
             entry.State = InitialState(entry.Source, mode);
             entry.Anchors = [];
@@ -276,9 +278,9 @@ internal sealed partial class AccountQuotaMonitor : IDisposable
             {
                 if (disposed || entry.State.Mode != QuotaSourceMode.Active ||
                     traits.DueCheckBeforeRead && (Delay(entry) is not { } due || due > TimeSpan.Zero)) return;
-                if (entry.Source.CheckReadiness() == QuotaReadiness.Deferred ||
-                    provider == QuotaProvider.Antigravity && sources.TryGetValue(QuotaProvider.Gemini, out var gemini) &&
-                    gemini.State.Failure?.Kind == QuotaFailureKind.LoginRequired)
+                bool dependencyNeedsLogin = traits.DependsOn is { } dependency && sources.TryGetValue(dependency, out var required) &&
+                    required.State.Failure?.Kind == QuotaFailureKind.LoginRequired;
+                if (dependencyNeedsLogin || entry.Source.CheckReadiness() == QuotaReadiness.Deferred)
                 {
                     entry.DeferredUntilUtc = utcNow().AddMinutes(5);
                     return;

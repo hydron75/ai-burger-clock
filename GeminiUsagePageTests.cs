@@ -97,15 +97,15 @@ internal static class GeminiUsagePageTests
             "https://gemini.google.com:444/usage", "https://gemini.google.com/usage-other", "not an absolute URL" })
         {
             Check(Parse(English, redirect) == new GeminiUsageResult(GeminiUsageOutcome.LoginRequired,
-                Diagnostic: new(GeminiUsageFailureRule.Destination, 0)), "redirect is login required");
+                Diagnostic: new(GeminiUsageFailureRule.Destination)), "redirect is login required");
         }
         Check(GeminiUsagePage.Parse(GeminiUsagePageLoad.LoadFailed, Now, TimeZoneInfo.Utc) ==
-            new GeminiUsageResult(GeminiUsageOutcome.LoadFailed, Diagnostic: new(GeminiUsageFailureRule.PageLoad, 0)),
+            new GeminiUsageResult(GeminiUsageOutcome.LoadFailed, Diagnostic: new(GeminiUsageFailureRule.PageLoad)),
             "navigation error is separate from login and format");
         var sensitive = new GeminiUsagePageLoad(GeminiUsagePage.Url + "&fixture=PRIVATE-QUERY",
             "PRIVATE-PLAN-LABEL\nCurrent usage\n<1% used");
         var diagnostic = GeminiUsagePage.Parse(sensitive, Now, TimeZoneInfo.Utc);
-        Check(diagnostic == new GeminiUsageResult(GeminiUsageOutcome.FormatChanged, Diagnostic: new(GeminiUsageFailureRule.InvalidUsage, 3))
+        Check(diagnostic == new GeminiUsageResult(GeminiUsageOutcome.FormatChanged, Diagnostic: new(GeminiUsageFailureRule.InvalidUsage))
               && !diagnostic.ToString().Contains("PRIVATE-", StringComparison.Ordinal) &&
               !sensitive.ToString().Contains("PRIVATE-", StringComparison.Ordinal),
             "diagnostic and load summary cannot expose URL queries or text");

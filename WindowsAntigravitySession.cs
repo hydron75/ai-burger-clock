@@ -16,14 +16,18 @@ internal static class WindowsAntigravitySession
     internal static QuotaReadiness Readiness()
     {
         if (!WTSQuerySessionInformation(IntPtr.Zero, uint.MaxValue, WtsSessionInfoEx, out var info, out int bytes))
-            return QuotaReadiness.Deferred;
+            return ReadinessForSessionFlags(null);
         try
         {
-            return bytes >= SessionFlagsOffset + sizeof(int) && Marshal.ReadInt32(info) == 1 &&
-                Marshal.ReadInt32(info, SessionFlagsOffset) == 1 ? QuotaReadiness.Ready : QuotaReadiness.Deferred;
+            int? flags = bytes >= SessionFlagsOffset + sizeof(int) && Marshal.ReadInt32(info) == 1
+                ? Marshal.ReadInt32(info, SessionFlagsOffset) : null;
+            return ReadinessForSessionFlags(flags);
         }
         finally { WTSFreeMemory(info); }
     }
+
+    internal static QuotaReadiness ReadinessForSessionFlags(int? flags) =>
+        flags == 0 ? QuotaReadiness.Deferred : QuotaReadiness.Ready;
 
     [DllImport("wtsapi32.dll", EntryPoint = "WTSQuerySessionInformationW", ExactSpelling = true)]
     [return: MarshalAs(UnmanagedType.Bool)]

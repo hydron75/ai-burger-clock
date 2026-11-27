@@ -72,7 +72,7 @@ internal static partial class AntigravityUsagePage
             return Fail(QuotaFailureKind.LoginRequired, "destination");
         if (load.TimedOut || !IsUsagePage(load.FinalUri))
             return Fail(QuotaFailureKind.Unreachable, "load");
-        if (load.DocumentLanguage?.StartsWith("en", StringComparison.OrdinalIgnoreCase) != true)
+        if (load.Text is null && load.DocumentLanguage?.StartsWith("en", StringComparison.OrdinalIgnoreCase) != true)
             return Format("language");
         if (load.VisibilityState == "hidden")
             return Fail(QuotaFailureKind.Unreachable, "not-visible");

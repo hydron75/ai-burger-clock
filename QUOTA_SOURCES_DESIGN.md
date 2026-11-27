@@ -208,7 +208,11 @@ internal sealed record QuotaSourceTraits(
     bool StickyManualRefresh,        // 진행 중 수동 요청을 남김(웹)
     bool RefreshOnRecovery,          // 절전 복귀·네트워크 복구 때 조회(CLI)
     QuotaPresentationPolicy Presentation,
-    QuotaExportMode Export);         // Completion / OnChange / None(Antigravity, P4 전까지)
+    QuotaExportMode Export,          // Completion / OnChange / None(Antigravity, P4 전까지)
+    TimeSpan? ManualMinimumInterval = null,
+    bool CancelLifetimeAsynchronously = false, // UI 취소 콜백을 사용하는 웹 조회원
+    bool CanSetMode = false,         // 등록된 웹 조회원만 켜기·끄기 지원
+    QuotaProvider? DependsOn = null); // 의존 조회원이 LoginRequired면 미룸
 
 internal sealed record QuotaPresentationPolicy(
     IReadOnlySet<QuotaFailureKind> HideReadingInPanel,       // 웹: {LoginRequired, FormatChanged}, CLI: {}
@@ -300,7 +304,7 @@ internal sealed record QuotaState(QuotaProvider Provider, QuotaReading? Reading 
   - `Snapshot()`, `Start()`, `StopAsync()`, `Dispose()`: 그대로.
   - `RequestRefresh(bool queueWhileRefreshing)`: 그대로. `RefreshOnRecovery` 조회원만 깨우고, 수동이면 로그인 확인 Immediate를 함께 요청한다.
   - `RequestSourceRefresh(QuotaProvider)`: `RequestGeminiWebRefresh`를 일반화한다. `StickyManualRefresh` 규칙을 따른다. 호스트의 수동·복귀 구분은 지금처럼 호스트가 정한다.
-  - `SetMode(QuotaProvider, QuotaSourceMode)`: 켜기·끄기를 일반화한다. 세대 번호 증가, 진행 중 조회의 비동기 취소, 켤 때 상태 비우기(3.1-7)를 포함한다.
+  - `SetMode(QuotaProvider, QuotaSourceMode)`는 `CanSetMode` 조회원에 적용한다. 세대 번호 증가, 진행 중 조회의 비동기 취소, 켤 때 상태 비우기(3.1-7)를 포함한다. CLI나 미등록 조회원에는 예외를 반환한다.
   - `ClearCacheAsync(QuotaProvider)`: 로그아웃용이다.
     - `Mode ≠ Active`와 세대 번호 증가를 먼저 요구한다.
     - 저장소 직렬화 순서상 이미 받아들인 진행 중 저장보다 뒤에 실행된다.
@@ -406,9 +410,9 @@ You have used some of your #-hour limit, it will fully refresh in # hours, ## mi
 - `IQuotaSource`에 `QuotaReadiness CheckReadiness()`(Ready / Deferred)를 더한다. 기본은 Ready다. 모니터는 기한 확인 단계에서, `IsRefreshing`과 `NextCheckUtc`를 바꾸기 전에 이것을 부른다. 그래서 4.3의 "값 또는 실패 정확히 하나" 계약은 그대로다.
 - Deferred면 상태를 바꾸지 않고 5분 뒤 다시 기한을 확인한다. 기한이 지난 채로 남으므로 3.1-3 규칙대로 값이 "이전 조회값"으로 흐려진다. 잠금이 풀리면 5분 안에 읽는다. 따로 깨우는 이벤트는 두지 않는다.
 - Deferred 조건:
-  - Windows: 세션 잠금.
+  - Windows는 세션 플래그가 잠금(0)일 때만 미룬다. API 실패·UNKNOWN·기타 값은 Ready로 처리한다.
   - Mac: 화면 잠금, 디스플레이 잠자기, 모든 디스플레이가 전체 화면 앱에 덮임.
-  - 공통: Gemini 웹이 `LoginRequired`. 같은 세션이므로 Antigravity를 열어도 로그인 화면일 가능성이 높다. 상태 줄에는 Gemini 로그인이 필요하다는 공통 문구를 보인다.
+  - 공통 루프는 `DependsOn`으로 지정한 조회원의 실패가 `LoginRequired`이면 미룬다. Antigravity의 의존 조회원은 같은 세션을 쓰는 Gemini 웹이다. 상태 줄에는 Gemini 로그인이 필요하다는 공통 문구를 보인다.
 - 수동 Refresh도 Deferred면 읽지 않는다.
 
 **파서 (`AntigravityUsagePage.Parse`, 공통)**
@@ -427,7 +431,7 @@ You have used some of your #-hour limit, it will fully refresh in # hours, ## mi
 |---|---|---|
 | 1 | 최종 위치가 Google 로그인 화면 | LoginRequired / `antigravity.destination` |
 | 2 | 탐색 실패, 최종 위치가 `antigravity.google.com/remote` 아님 | Unreachable / `antigravity.load` |
-| 3 | 문서 언어가 영어 아님(`DocumentLanguage`가 `en`으로 시작하지 않음) | FormatChanged / `antigravity.language` |
+| 3 | 읽을 영역이 없고 `DocumentLanguage`가 `en`으로 시작하지 않음 | FormatChanged / `antigravity.language` |
 | 4 | 대기 끝에 `VisibilityState == "hidden"` | Unreachable / `antigravity.not-visible` |
 | 5 | 읽을 영역 없음(보이는 상태) | Unreachable / `antigravity.not-rendered` |
 | 6 | 영역은 있으나 위 규칙 위반 | FormatChanged / `antigravity.{규칙}` |
@@ -444,6 +448,9 @@ You have used some of your #-hour limit, it will fully refresh in # hours, ## mi
 | `DueCheckBeforeRead` | 참 | 웹 조회원 공통 |
 | `StickyManualRefresh` | 참 | 수동 Refresh 때 `RequestSourceRefresh(Antigravity)`를 함께 부른다 |
 | `RefreshOnRecovery` | 거짓 | 복귀 때 따로 읽지 않는다 |
+| `CancelLifetimeAsynchronously` | 참 | WebView 취소 콜백이 UI 스레드를 쓸 수 있다 |
+| `CanSetMode` | 참 | 사용자가 별도로 켜고 끈다 |
+| `DependsOn` | Gemini | 공용 세션이므로 Gemini 로그인 필요 상태에서 읽지 않는다 |
 | `Presentation` | 로그인 필요·형식 변경이면 값 숨김, `AcceptForDisplay = AntigravityUsagePage.IsWebReading`, `ShowEarlyResetDetail` 거짓, `ApproximateReset` 참 | Gemini 웹과 같은 숨김 규칙에 Antigravity 판정 |
 | `Export` | `None`(P4 목표 값, P2.5에서는 브리지가 직접 거름) | 사이트를 먼저 바꿔야 한다(6.2 P4) |
 

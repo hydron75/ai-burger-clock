@@ -264,6 +264,14 @@ internal static class WindowsGeminiWebChecks
 
     private static async Task CheckAntigravityAsync(Action<bool, string> check)
     {
+        foreach (var (flags, expected) in new (int?, QuotaReadiness)[]
+        {
+            (0, QuotaReadiness.Deferred), (1, QuotaReadiness.Ready), (-1, QuotaReadiness.Ready),
+            (7, QuotaReadiness.Ready), (null, QuotaReadiness.Ready)
+        })
+            check(WindowsAntigravitySession.ReadinessForSessionFlags(flags) == expected,
+                "only the explicit session lock defers Antigravity");
+
         var now = GeminiUsagePageTests.Now;
         var temp = Directory.CreateTempSubdirectory("AiBurgerClock-antigravity-tests-");
         try

@@ -77,6 +77,12 @@ internal static class AntigravityUsageTests
             (Valid(""), "sections")
         })
             Check(AntigravityUsagePage.Parse(load, Epoch).Failure?.Code == "antigravity." + code, "classification precedence");
+        foreach (string language in new[] { "ko", "" })
+        {
+            var localized = AntigravityUsagePage.Parse(Valid() with { DocumentLanguage = language }, Epoch);
+            Check(localized.Reading?.Windows.SequenceEqual(reading.Windows) == true,
+                "an English usage section parses regardless of the document language");
+        }
 
         var now = Epoch;
         var reader = new Reader();
@@ -97,7 +103,8 @@ internal static class AntigravityUsageTests
         bool ready = false;
         var source = new AntigravityWebQuotaSource(reader, store, () => ready ? QuotaReadiness.Ready : QuotaReadiness.Deferred);
         Check(source.Traits is { Export: QuotaExportMode.None, Timeout: null, EmitsObservations: false,
-            RefreshOnRecovery: false, StickyManualRefresh: true, DueCheckBeforeRead: true }, "web source traits");
+            RefreshOnRecovery: false, StickyManualRefresh: true, DueCheckBeforeRead: true, DependsOn: QuotaProvider.Gemini,
+            CancelLifetimeAsynchronously: true, CanSetMode: true }, "web source traits");
         using var monitor = new AccountQuotaMonitor([(source, QuotaSourceMode.Active)], store, () => now);
         int observations = 0;
         monitor.Succeeded += _ => observations++;
