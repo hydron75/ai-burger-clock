@@ -7,7 +7,7 @@ internal static class QuotaPresentationTests
 {
     internal static IEnumerable<(string Scenario, QuotaState State)> DetailFixtures(DateTimeOffset now)
     {
-        foreach (var provider in Enum.GetValues<QuotaProvider>())
+        foreach (var provider in QuotaProviders.Boxes)
         {
             var state = new QuotaState(provider, new(provider,
                 [new("synthetic-weekly", "합성 주간", 25, now.AddDays(3.5), 10080)]),
@@ -67,7 +67,7 @@ internal static class QuotaPresentationTests
         Check(Reset(now.AddHours(47).AddMinutes(59).AddSeconds(30), 10080) == "약 2일 후 리셋", "weekly carry to two days omits zero hours");
 
         Check(QuotaPanelModel.AccessibleName == "개인 계정 사용량", "shared usage title");
-        foreach (var provider in Enum.GetValues<QuotaProvider>())
+        foreach (var provider in QuotaProviders.Boxes)
         {
             var state = new QuotaState(provider, new(provider,
                 [new("session", "5시간", 12.34, now.AddMinutes(25), 300),
@@ -126,7 +126,7 @@ internal static class QuotaPresentationTests
         Check(expired.Rows.Single() is { UsedPercent: 97, Tone: PanelTone.Muted } &&
             expired.Rows.Single().Text == "5시간  97% 사용 (이전) · 갱신 대기" &&
             expired.Detail.Contains("예정 시각 경과, 새 조회 필요", StringComparison.Ordinal), "elapsed value retained, not reset to zero");
-        foreach (var provider in Enum.GetValues<QuotaProvider>())
+        foreach (var provider in QuotaProviders.Boxes)
         {
             var state = new QuotaState(provider, new(provider,
                 [new("active", "합성 5시간", 55, now.AddHours(3), 300),
@@ -201,7 +201,7 @@ internal static class QuotaPresentationTests
                 Check(QuotaPanelModel.Section(unavailable, now).Rows.All(row => row.ComparisonText is null),
                     provider + " unavailable comparison is null in the shared row contract");
         }
-        foreach (var provider in Enum.GetValues<QuotaProvider>())
+        foreach (var provider in QuotaProviders.Boxes)
         {
             var engine = new QuotaEarlyResetNotifications();
             QuotaObservation Reading(long sequence, DateTimeOffset at, double used, DateTimeOffset reset) =>

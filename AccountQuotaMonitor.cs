@@ -29,6 +29,8 @@ internal sealed partial class AccountQuotaMonitor : IDisposable
         internal long ReadingContinuity = 1;
         internal long Generation;
         internal bool ManualRequested;
+        internal DateTimeOffset? LastReadStartedUtc;
+        internal DateTimeOffset? DeferredUntilUtc;
         internal CancellationTokenSource? ActiveRead;
         internal Task? ReadCancellation;
     }
@@ -72,7 +74,9 @@ internal sealed partial class AccountQuotaMonitor : IDisposable
     }
 
     internal static IEnumerable<(IQuotaSource Source, QuotaSourceMode Mode)> CreateSources(IAccountQuotaClient client,
-        UsageStore? store, IGeminiUsagePageReader? web, bool webEnabled)
+        UsageStore? store, IGeminiUsagePageReader? web, bool webEnabled,
+        IAntigravityUsagePageReader? antigravity = null, bool antigravityEnabled = false,
+        Func<QuotaReadiness>? antigravityReadiness = null)
     {
         yield return (new CliQuotaSource(QuotaProvider.Codex, client, store), QuotaSourceMode.Active);
         yield return (new CliQuotaSource(QuotaProvider.Claude, client, store), QuotaSourceMode.Active);
@@ -80,6 +84,10 @@ internal sealed partial class AccountQuotaMonitor : IDisposable
             ? (new UnavailableQuotaSource(QuotaProvider.Gemini), QuotaSourceMode.Unavailable)
             : (new GeminiWebQuotaSource(web, store), webEnabled ? QuotaSourceMode.Active : QuotaSourceMode.Off);
         yield return (new CliQuotaSource(QuotaProvider.Xai, client, store), QuotaSourceMode.Active);
+        yield return antigravity is null
+            ? (new UnavailableQuotaSource(QuotaProvider.Antigravity), QuotaSourceMode.Unavailable)
+            : (new AntigravityWebQuotaSource(antigravity, store, antigravityReadiness),
+                web is not null && webEnabled && antigravityEnabled ? QuotaSourceMode.Active : QuotaSourceMode.Off);
     }
 
     private static QuotaState InitialState(IQuotaSource source, QuotaSourceMode mode) =>
@@ -98,7 +106,7 @@ internal sealed partial class AccountQuotaMonitor : IDisposable
         lock (sync)
         {
             var now = utcNow();
-            return sources.Values.Select(entry => entry.State).OrderBy(s => s.Provider).Select(s => s with
+            return QuotaProviders.All.Where(sources.ContainsKey).Select(provider => sources[provider].State).Select(s => s with
             {
                 IsPrevious = s.IsPrevious || (s.NextCheckUtc is { } next && now > next.AddMinutes(5)) ||
                     (s.LastSuccessfulCheckUtc is { } success && now < success.AddMinutes(-5)),
@@ -131,12 +139,15 @@ internal sealed partial class AccountQuotaMonitor : IDisposable
         }
     }
 
-    internal void RequestSourceRefresh(QuotaProvider provider)
+    internal void RequestSourceRefresh(QuotaProvider provider, bool afterSignIn = false)
     {
         lock (sync)
         {
             var entry = sources[provider];
             if (disposed || lifetime.IsCancellationRequested || entry.State.Mode != QuotaSourceMode.Active) return;
+            if (!afterSignIn && entry.Source.Traits.ManualMinimumInterval is { } interval &&
+                entry.LastReadStartedUtc is { } started && utcNow() - started < interval) return;
+            if (afterSignIn) entry.DeferredUntilUtc = null;
             if (entry.Source.Traits.StickyManualRefresh) entry.ManualRequested = true;
             else if (entry.State.IsRefreshing) return;
             Signal(entry);
@@ -156,6 +167,8 @@ internal sealed partial class AccountQuotaMonitor : IDisposable
             entry.Anchors = [];
             entry.Failures = 0;
             entry.ReadingContinuity = 1;
+            entry.LastReadStartedUtc = null;
+            entry.DeferredUntilUtc = null;
             entry.ManualRequested = mode == QuotaSourceMode.Active && entry.Source.Traits.StickyManualRefresh;
             entry.ReadCancellation ??= entry.ActiveRead?.CancelAsync();
             Signal(entry);
@@ -183,6 +196,11 @@ internal sealed partial class AccountQuotaMonitor : IDisposable
     {
         var state = entry.State;
         if (state.Mode != QuotaSourceMode.Active) return null;
+        if (entry.DeferredUntilUtc is { } recheck)
+        {
+            TimeSpan wait = recheck - utcNow();
+            if (wait > TimeSpan.Zero) return wait;
+        }
         if (entry.ManualRequested) return TimeSpan.Zero;
         if (state.NextCheckUtc is { } next) return next - utcNow();
         if (!entry.Source.Traits.DueCheckBeforeRead) return AccountQuotaPolicy.DefaultInterval;
@@ -258,6 +276,15 @@ internal sealed partial class AccountQuotaMonitor : IDisposable
             {
                 if (disposed || entry.State.Mode != QuotaSourceMode.Active ||
                     traits.DueCheckBeforeRead && (Delay(entry) is not { } due || due > TimeSpan.Zero)) return;
+                if (entry.Source.CheckReadiness() == QuotaReadiness.Deferred ||
+                    provider == QuotaProvider.Antigravity && sources.TryGetValue(QuotaProvider.Gemini, out var gemini) &&
+                    gemini.State.Failure?.Kind == QuotaFailureKind.LoginRequired)
+                {
+                    entry.DeferredUntilUtc = utcNow().AddMinutes(5);
+                    return;
+                }
+                entry.DeferredUntilUtc = null;
+                if (traits.ManualMinimumInterval is not null) entry.LastReadStartedUtc = utcNow();
                 if (traits.EmitsObservations)
                 {
                     attemptId = Guid.NewGuid().ToString("N");

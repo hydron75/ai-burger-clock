@@ -45,6 +45,7 @@ internal static class SharedTestSuite
             Report("quota sources P0 characterization (synthetic)", await QuotaP0CharacterizationTests.RunAsync(directory));
             Report("quota typed failures and shared presentation (synthetic)", await QuotaFailureTests.RunAsync(directory));
             Report("quota source registration and cache guards (synthetic)", await QuotaSourceContractTests.RunAsync(directory));
+            Report("Antigravity web quota parser/readiness/cache/presentation (synthetic)", await AntigravityUsageTests.RunAsync(directory));
             Report("weekly early-reset cache/decision integration (synthetic)", await WeeklyEarlyResetMonitorTests.RunAsync(directory));
             Report("quota CLI setup/protocol/cancellation (POSIX fixtures)", await SharedQuotaProtocolTests.RunAsync());
             Report("paths/IANA/formatting/CLI candidates", PortablePlatformTests.Run());

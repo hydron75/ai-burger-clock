@@ -24,7 +24,7 @@ internal static class QuotaRowTextTests
         Unsplit(legacy, "new optional fields remain null for a legacy caller");
 
         var now = new DateTimeOffset(2026, 10, 20, 12, 0, 0, TimeSpan.Zero);
-        foreach (var provider in Enum.GetValues<QuotaProvider>())
+        foreach (var provider in QuotaProviders.Boxes)
         {
             QuotaWindow[] windows =
             [

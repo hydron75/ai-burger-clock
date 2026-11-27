@@ -9,12 +9,15 @@ internal sealed record WindowsGeminiPageDom(string? Url, string? Text);
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]
 [JsonSerializable(typeof(string))]
 [JsonSerializable(typeof(WindowsGeminiPageDom))]
+[JsonSerializable(typeof(WindowsAntigravityDom))]
 [JsonSerializable(typeof(WindowsGeminiWebSettings))]
 internal partial class WindowsGeminiWebJson : JsonSerializerContext;
 
-internal sealed class WindowsGeminiWebSession(Control dispatcher, string dataDirectory, Action<string> reportLoginIssue) : IWindowsGeminiWebSession
+internal sealed partial class WindowsGeminiWebSession(Control dispatcher, string dataDirectory, Action<string> reportLoginIssue)
+    : IWindowsGeminiWebSession, IAntigravityUsagePageReader
 {
     internal const string ProfileName = "GeminiWeb";
+    private readonly Control viewDispatcher = dispatcher;
     private static readonly TimeSpan ViewTimeout = TimeSpan.FromSeconds(30);
     private readonly string profilePath = Path.GetFullPath(Path.Combine(dataDirectory, ProfileName));
     private readonly SemaphoreSlim profileUse = new(1, 1);
@@ -30,7 +33,7 @@ internal sealed class WindowsGeminiWebSession(Control dispatcher, string dataDir
         var token = deadline.Token;
         try
         {
-            var read = dispatcher.InvokeAsync<GeminiUsagePageLoad>(async _ => await ReadOnUiAsync(url, script, token), token);
+            var read = viewDispatcher.InvokeAsync<GeminiUsagePageLoad>(async _ => await ReadOnUiAsync(url, script, token), token);
             return await WaitWithinAsync(read, token).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }

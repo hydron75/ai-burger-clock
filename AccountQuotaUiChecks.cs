@@ -58,7 +58,7 @@ internal static class QuotaViewportUiChecks
         var now = new DateTimeOffset(2026, 9, 19, 12, 0, 0, TimeSpan.FromHours(9));
         var client = new TestAccountQuotaClient(() => now);
         var states = new List<QuotaState>();
-        foreach (var provider in Enum.GetValues<QuotaProvider>())
+        foreach (var provider in QuotaProviders.Boxes)
             states.Add(new QuotaState(provider, await client.ReadAsync(provider, CancellationToken.None),
                 LastSuccessfulCheckUtc: now, NextCheckUtc: now.AddHours(1),
                 Mode: provider == QuotaProvider.Gemini ? QuotaSourceMode.Unavailable : QuotaSourceMode.Active));
@@ -225,8 +225,8 @@ internal static class AccountQuotaUiChecks
         Panel Box(QuotaProvider provider) => context.StatusWindow.QuotaView.Controls.OfType<Panel>()
             .Single(box => box.Name == provider + "QuotaBox");
         Label[] ProviderLabels(QuotaProvider provider) => Box(provider).Controls.OfType<Label>().ToArray();
-        foreach (var provider in Enum.GetValues<QuotaProvider>()) await monitor.RefreshSourceIfDueAsync(provider);
-        var callsBeforeOpen = Enum.GetValues<QuotaProvider>().ToDictionary(provider => provider, client.Calls);
+        foreach (var provider in QuotaProviders.Boxes) await monitor.RefreshSourceIfDueAsync(provider);
+        var callsBeforeOpen = QuotaProviders.Boxes.ToDictionary(provider => provider, client.Calls);
         var dueBeforeOpen = monitor.Snapshot().Select(state => state.NextCheckUtc).ToArray();
         context.ShowWindow();
         var appearance = context.CurrentAppearance;
@@ -244,7 +244,7 @@ internal static class AccountQuotaUiChecks
         Check(diagnostics.QuotaClicks == hiddenQuotaClicks && context.StatusWindow.QuotaButton.Text == hiddenQuotaText,
             "Hidden quota PerformClick emits no Click and preserves the selected mode");
         ClickQuotaButton("Show initial quota view");
-        Check(Enum.GetValues<QuotaProvider>().All(provider => client.Calls(provider) == callsBeforeOpen[provider]) &&
+        Check(QuotaProviders.Boxes.All(provider => client.Calls(provider) == callsBeforeOpen[provider]) &&
             monitor.Snapshot().Select(state => state.NextCheckUtc).SequenceEqual(dueBeforeOpen),
             "Opening and toggling quota view never requests a query or changes its existing schedule");
         Check(context.StatusWindow.QuotaView.Visible, "Quota toggle shows ChatGPT Work/Codex and Claude without enlarging the popup");
@@ -386,7 +386,7 @@ internal static class AccountQuotaUiChecks
                     bar.AccessibleDescription == "" && (!bar.ElapsedPercent.HasValue ||
                         bar.AccessibleName?.EndsWith("17분 전 기준", StringComparison.Ordinal) == true)),
                 "Screen-reader row and bar ages advance using only their own shared comparison: " + section.Provider);
-        Check(Enum.GetValues<QuotaProvider>().All(provider => client.Calls(provider) == callsBeforeOpen[provider]) &&
+        Check(QuotaProviders.Boxes.All(provider => client.Calls(provider) == callsBeforeOpen[provider]) &&
             monitor.Snapshot().Select(state => state.NextCheckUtc).SequenceEqual(dueBeforeOpen),
             "Reference-age display performs no query and preserves provider-specific due dates");
         context.StatusWindow.UpdateQuotas(comparisonSnapshot, clock());
@@ -449,7 +449,7 @@ internal static class AccountQuotaUiChecks
         var refreshButton = context.StatusWindow.Controls.OfType<Button>().Single(b => b.Text == "Refresh");
         Check(context.StatusWindow.Visible && refreshButton.Enabled && refreshButton.CanSelect,
             "Quota Refresh is actionable after normal reopening and provider completion");
-        var callsBeforeRefresh = Enum.GetValues<QuotaProvider>().ToDictionary(provider => provider, client.Calls);
+        var callsBeforeRefresh = QuotaProviders.Boxes.ToDictionary(provider => provider, client.Calls);
         int before = client.Calls(QuotaProvider.Claude);
         int refreshClicks = diagnostics.RefreshClicks;
         diagnostics.Record("quota.refresh-before-click", new { callsBeforeRefresh });
@@ -459,7 +459,7 @@ internal static class AccountQuotaUiChecks
         await Wait(() => client.Calls(QuotaProvider.Claude) > before && monitor.Snapshot().All(s => !s.IsRefreshing), "manual Refresh",
             () => new { claudeBefore = before, claudeNow = client.Calls(QuotaProvider.Claude), claudeAdvanced = client.Calls(QuotaProvider.Claude) > before, allIdle = monitor.Snapshot().All(s => !s.IsRefreshing) });
         Check(monitor.Snapshot().All(s => !s.IsPrevious) &&
-            Enum.GetValues<QuotaProvider>().Where(QuotaNames.HasCliRoute).All(provider => client.Calls(provider) > callsBeforeRefresh[provider]) &&
+            QuotaProviders.Boxes.Where(QuotaNames.HasCliRoute).All(provider => client.Calls(provider) > callsBeforeRefresh[provider]) &&
             client.Calls(QuotaProvider.Gemini) == geminiCalls,
             "Existing Refresh button recovers three enabled quota displays without querying Gemini");
         before = client.Calls(QuotaProvider.Claude);
@@ -587,7 +587,7 @@ internal static class AccountQuotaUiChecks
     {
         var monitor = context.QuotaMonitor!;
         var originalNow = clock();
-        var calls = Enum.GetValues<QuotaProvider>().ToDictionary(provider => provider, client.Calls);
+        var calls = QuotaProviders.Boxes.ToDictionary(provider => provider, client.Calls);
         var menu = context.TrayIcon.ContextMenuStrip!;
         int uiTicks = 0;
         var tooltipValues = new HashSet<string>();

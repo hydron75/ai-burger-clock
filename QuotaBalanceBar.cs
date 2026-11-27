@@ -37,7 +37,8 @@ internal sealed class QuotaBalanceBar : Control
         QuotaProvider.Xai => QuotaBarPalette.Contrast(background ?? Color.White, Color.Black) >=
             QuotaBarPalette.Contrast(background ?? Color.White, Color.White)
                 ? Color.FromArgb(32, 32, 32) : Color.FromArgb(235, 235, 235),
-        _ => Color.FromArgb(66, 133, 244)
+        QuotaProvider.Gemini or QuotaProvider.Antigravity => Color.FromArgb(66, 133, 244),
+        _ => throw new ArgumentOutOfRangeException(nameof(provider))
     };
 
     public QuotaBalanceBar()

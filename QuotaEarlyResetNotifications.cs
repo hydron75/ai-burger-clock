@@ -28,7 +28,7 @@ internal sealed class QuotaEarlyResetNotifications
     public void Reset()
     {
         baselines.Clear();
-        seedAfterReset.UnionWith(Enum.GetValues<QuotaProvider>());
+        seedAfterReset.UnionWith(QuotaProviders.Boxes);
     }
 
     public QuotaEarlyResetAlert? Recent(QuotaProvider provider) =>

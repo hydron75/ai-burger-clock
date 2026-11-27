@@ -185,7 +185,7 @@ internal static class QuotaEarlyResetUiChecks
                 "Early reset tray preference starts available and OFF with shared wording");
             Check(context.QuotaEarlyResetMenuItem.ToolTipText == QuotaEarlyResetText.MenuDetail && nativeAlerts.Count == 0,
                 "Initial private live successes remain silent and the early reset menu explains opt-in scope");
-            Check(Enum.GetValues<QuotaProvider>().Where(QuotaNames.HasCliRoute).All(provider => HasDecision(provider, "Excluded", "Disabled")) &&
+            Check(QuotaProviders.Boxes.Where(QuotaNames.HasCliRoute).All(provider => HasDecision(provider, "Excluded", "Disabled")) &&
                 Decisions().All(entry => entry.GetProperty("Provider").GetString() != "Gemini"),
                 "Windows records the OFF early reset decision for each private successful Provider query");
             var menu = context.TrayIcon.ContextMenuStrip!;
@@ -473,7 +473,7 @@ internal static class QuotaEarlyResetUiChecks
             // weekly windows. Prepare this duplicate-only restart fixture explicitly:
             // otherwise a fresh zero reading is a legitimate cached early reset now.
             bool zeroCachesReady = true;
-            foreach (QuotaProvider provider in Enum.GetValues<QuotaProvider>())
+            foreach (QuotaProvider provider in QuotaProviders.Boxes)
             {
                 await store.SaveQuotaAsync(new(1, new(provider, Rows(0, 0)), now.AddMinutes(-1), []));
                 QuotaCache? cached = await store.ReadQuotaAsync(provider);
@@ -497,7 +497,7 @@ internal static class QuotaEarlyResetUiChecks
             Check(context.QuotaEarlyResetNotificationsEnabled && context.QuotaEarlyResetMenuItem.Checked &&
                 !context.QuotaRecoveryNotificationsEnabled,
                 "Restart reloads the independently persisted early reset preference without enabling recovery");
-            Check(Enum.GetValues<QuotaProvider>().All(provider => context.RecentEarlyReset(provider) is null) &&
+            Check(QuotaProviders.Boxes.All(provider => context.RecentEarlyReset(provider) is null) &&
                 restartedAlerts.Count == 0 && nativeAlerts.Count == oldHostAlerts,
                 "Application restart clears local early reset history and unchanged zero-use cached values do not create notifications");
             await context.QuotaMonitor!.StopAsync();
@@ -526,13 +526,13 @@ internal static class QuotaEarlyResetUiChecks
             Check(context.RecentEarlyReset(QuotaProvider.Codex) is { Windows.Count: 1 } fromCache &&
                 fromCache.Windows[0] is { PreviousUsedPercent: 17, UsedPercent: 0 } &&
                 fromCache.Windows[0].PreviousResetUtc == cachedWeeklyReset &&
-                Enum.GetValues<QuotaProvider>().Where(provider => provider != QuotaProvider.Codex)
+                QuotaProviders.Boxes.Where(provider => provider != QuotaProvider.Codex)
                     .All(provider => context.RecentEarlyReset(provider) is null),
                 "The first live Windows success after restart compares the cached weekly seventeen-to-zero decrease before its reset");
             Check(cacheResetAlerts.Count == 1 && cacheResetAlerts[0] is
                 { Provider: QuotaProvider.Codex, Recovery: null, EarlyReset.Windows.Count: 1 } &&
                 context.QuotaEarlyResetNotificationsEnabled && !context.QuotaRecoveryNotificationsEnabled &&
-                cacheResetClient.TotalCalls == Enum.GetValues<QuotaProvider>().Count(QuotaNames.HasCliRoute),
+                cacheResetClient.TotalCalls == QuotaProviders.Boxes.Count(QuotaNames.HasCliRoute),
                 "A cached weekly early reset delivers one native request from normal startup reads without changing recovery or polling again");
             Check(HasDecision(QuotaProvider.Codex, "Alert", "Alert"),
                 "The first-live cached early reset candidate is recorded in its completed local diagnostic row");
@@ -701,7 +701,7 @@ internal static class QuotaEarlyResetUiChecks
     {
         private sealed record Response(IReadOnlyList<QuotaWindow> Windows, bool Fail = false, bool Block = false);
         private readonly object sync = new();
-        private readonly Dictionary<QuotaProvider, Response> responses = Enum.GetValues<QuotaProvider>()
+        private readonly Dictionary<QuotaProvider, Response> responses = QuotaProviders.Boxes
             .ToDictionary(provider => provider, _ => new Response(initial.ToArray()));
         private readonly List<int> readThreads = new();
         private int calls;

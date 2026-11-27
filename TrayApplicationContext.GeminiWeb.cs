@@ -22,7 +22,9 @@ internal sealed partial class TrayApplicationContext
 
         geminiWebSession = session ?? new WindowsGeminiWebSession(statusWindow, dataDirectory, ReportGeminiIssue);
         statusWindow.UseGeminiWebQuota();
-        var sources = AccountQuotaMonitor.CreateSources(client, store, geminiWebSession, settings.Enabled);
+        var sources = AccountQuotaMonitor.CreateSources(client, store, geminiWebSession, settings.Enabled,
+            geminiWebSession as IAntigravityUsagePageReader, settings.AntigravityEnabled,
+            session is null ? WindowsAntigravitySession.Readiness : null);
         var quotas = new AccountQuotaMonitor(sources, store, utcNow, claudeAuthClient: client as IClaudeAuthClient);
         var access = new WindowsGeminiWebAccess(quotas, geminiWebSession, settingsStore, settings);
         geminiWebAccess = access;
@@ -31,7 +33,8 @@ internal sealed partial class TrayApplicationContext
         var login = new ToolStripMenuItem(GeminiWebText.LoginLabel);
         var off = new ToolStripMenuItem(GeminiWebText.OffLabel);
         var logout = new ToolStripMenuItem(GeminiWebText.LogoutLabel);
-        root.DropDownItems.AddRange([login, off, logout]);
+        var antigravity = new ToolStripMenuItem(AntigravityWebText.MenuLabel);
+        root.DropDownItems.AddRange([login, off, logout, antigravity]);
         menu.Items.Insert(menu.Items.IndexOf(mobileExportMenuItem), root);
 
         void UpdateMenu()
@@ -40,6 +43,9 @@ internal sealed partial class TrayApplicationContext
             login.Enabled = state.Login;
             off.Enabled = state.Off;
             logout.Enabled = state.Logout;
+            antigravity.Enabled = access.CanToggleAntigravity;
+            antigravity.Checked = access.AntigravityEnabled;
+            antigravity.ToolTipText = antigravity.Enabled ? "" : AntigravityWebText.EnableGemini;
             root.ToolTipText = access.LogoutPending ? WindowsGeminiWebAccess.LogoutPendingText : "";
         }
 
@@ -59,6 +65,12 @@ internal sealed partial class TrayApplicationContext
             return Task.CompletedTask;
         }, "Gemini 웹 조회 설정을 저장하지 못했습니다.");
         logout.Click += async (_, _) => await RunGeminiActionAsync(access.LogoutAsync, "Gemini 로그아웃 설정을 저장하지 못했습니다.");
+        antigravity.Click += async (_, _) => await RunGeminiActionAsync(_ =>
+        {
+            access.ToggleAntigravity();
+            UpdateMenu();
+            return Task.CompletedTask;
+        }, "Antigravity 웹 조회 설정을 저장하지 못했습니다.");
         UpdateMenu();
         return quotas;
     }

@@ -207,7 +207,7 @@ namespace AiBurgerClock
             mobileExport = mobileExportService ?? new WindowsQuotaExportService(
                 new WindowsQuotaExportSettingsStore(Path.Combine(Path.GetDirectoryName(Path.GetFullPath(store.DatabasePath))!, WindowsQuotaExportSettingsStore.FileName)),
                 exportCredentials, new WindowsQuotaExportTransport(exportCredentials),
-                () => quotaMonitor?.Snapshot() ?? Enum.GetValues<QuotaProvider>().Select(p => new QuotaState(p)).ToArray(),
+                () => quotaMonitor?.Snapshot() ?? QuotaProviders.Boxes.Select(p => new QuotaState(p)).ToArray(),
                 typeof(TrayApplicationContext).Assembly.GetName().Version!.ToString(3));
             if (quotaMonitor is not null) mobileExportBridge = new(quotaMonitor, mobileExport.Completed);
             timer.Tick += delegate { RefreshStatus(true); mobileExport.Tick(); };
@@ -423,11 +423,11 @@ namespace AiBurgerClock
             statusWindow.UpdateProviders(result.Providers, result.Schedule, monitor?.IsRefreshing ?? false,
                 monitor?.NextRefreshUtc, monitor?.StorageError ?? "");
             // Quotas never change official service health, schedule recommendations or tray colors.
-            var recent = Enum.GetValues<QuotaProvider>()
+            var recent = QuotaProviders.Boxes
                 .Select(provider => (Provider: provider, Alert: quotaEarlyResetNotifications.Recent(provider)))
                 .Where(item => item.Alert is not null).ToDictionary(item => item.Provider, item => item.Alert!);
             statusWindow.UpdateQuotas(quotaMonitor?.Snapshot() ??
-                Enum.GetValues<QuotaProvider>().Select(p => new QuotaState(p,
+                QuotaProviders.Boxes.Select(p => new QuotaState(p,
                     Mode: p == QuotaProvider.Gemini ? QuotaSourceMode.Unavailable : QuotaSourceMode.Active)).ToArray(), utcNow(), recent);
         }
 

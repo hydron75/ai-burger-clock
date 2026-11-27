@@ -152,7 +152,7 @@ internal static class QuotaSchedulingTests
         check(AccountQuotaPolicy.DefaultInterval == TimeSpan.FromHours(1)
             && AccountQuotaPolicy.LowRemainingInterval == AccountQuotaPolicy.DefaultInterval,
             "the shared hourly default deliberately equals the high-usage interval without sharing its reason");
-        foreach (QuotaProvider provider in Enum.GetValues<QuotaProvider>())
+        foreach (QuotaProvider provider in QuotaProviders.Boxes)
         {
             foreach ((double used, QuotaCheckReason reason) in new[]
             {
@@ -429,7 +429,7 @@ internal static class QuotaSchedulingTests
         using (var restarted = new AccountQuotaMonitor(client, store, () => Now))
         {
             restarted.Start();
-            await MonitorTests.WaitUntilAsync(() => restarted.Snapshot().Where(state => state.Provider != QuotaProvider.Gemini).All(state =>
+            await MonitorTests.WaitUntilAsync(() => restarted.Snapshot().Where(state => QuotaNames.HasCliRoute(state.Provider)).All(state =>
                 state.CheckedAtUtc.HasValue && !state.IsRefreshing), milliseconds: 5000);
             await restarted.StopAsync();
             QuotaCache? compact = await store.ReadQuotaAsync(QuotaProvider.Claude);
@@ -447,7 +447,7 @@ internal static class QuotaSchedulingTests
             ? advanced : new QuotaReading(provider, [Window(20)]));
         using var again = new AccountQuotaMonitor(client, store, () => inOldBand);
         again.Start();
-        await MonitorTests.WaitUntilAsync(() => again.Snapshot().Where(state => state.Provider != QuotaProvider.Gemini).All(state =>
+        await MonitorTests.WaitUntilAsync(() => again.Snapshot().Where(state => QuotaNames.HasCliRoute(state.Provider)).All(state =>
             state.CheckedAtUtc.HasValue && !state.IsRefreshing), milliseconds: 5000);
         await again.StopAsync();
         QuotaCache? persisted = await store.ReadQuotaAsync(QuotaProvider.Claude);

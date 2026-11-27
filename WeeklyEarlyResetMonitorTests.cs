@@ -48,7 +48,7 @@ internal static class WeeklyEarlyResetMonitorTests
     private static async Task CachedRestartAsync(string directory, Action<bool, string> check)
     {
         var store = new UsageStore(Path.Combine(directory, "weekly-restart.db"));
-        foreach (QuotaProvider provider in Enum.GetValues<QuotaProvider>())
+        foreach (QuotaProvider provider in QuotaProviders.Boxes)
             await store.SaveQuotaAsync(new(1, Weekly(provider, 17, Now.AddDays(4.6)), Now.AddDays(-2), []));
         var log = new QuotaEarlyResetDiagnosticLog(Path.Combine(directory, "restart-decisions"));
         var client = ConcurrentZeroClient();

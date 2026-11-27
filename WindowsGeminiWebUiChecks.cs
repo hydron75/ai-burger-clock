@@ -52,8 +52,10 @@ internal static class WindowsGeminiWebUiChecks
 
             WithMenu(() =>
             {
-                check(root.DropDown.Visible && items.Select(item => item.Text).SequenceEqual(["로그인…", "끄기", "로그아웃"]) &&
-                    items.Select(item => item.Enabled).SequenceEqual(enabled), $"Gemini web {name} enables its native menu actions");
+                check(root.DropDown.Visible && items.Select(item => item.Text).SequenceEqual(
+                    ["로그인…", "끄기", "로그아웃", AntigravityWebText.MenuLabel]) &&
+                    items.Take(3).Select(item => item.Enabled).SequenceEqual(enabled) &&
+                    items[3].Enabled == enabled[1], $"Gemini web {name} enables its native menu actions");
                 Save(root.DropDown, $"gemini-web-{name}-menu.png");
             });
         }
@@ -93,6 +95,25 @@ internal static class WindowsGeminiWebUiChecks
             WithMenu(() => items[0].PerformClick());
             await WaitAsync(() => Gemini() is { HasResultSinceModeChange: true, Failure: null } && !Gemini().IsRefreshing);
             await ShowStateAsync("ok", "5시간", "자동 15분", 2, [false, true, true]);
+            check(session.AntigravityReads == 0, "Gemini sign-in leaves Antigravity off by default");
+            WithMenu(() => items[3].PerformClick());
+            await WaitAsync(() => monitor.Snapshot().Any(state => state.Provider == QuotaProvider.Antigravity &&
+                state.Reading is not null && !state.IsRefreshing));
+            context.RefreshStatus(false);
+            Panel GeminiBox() => view.Controls.OfType<Panel>().Single(box => box.Name == "GeminiQuotaBox");
+            var combined = GeminiBox();
+            view.ScrollControlIntoView(combined);
+            await SmokeUiProbe.SettleAsync(window);
+            check(view.Controls.OfType<Panel>().Count() == 4 && combined.Controls.OfType<QuotaBalanceBar>().Count() == 4 &&
+                combined.Controls.OfType<Label>().Any(label => label.Text == "Gemini 앱") &&
+                combined.Controls.OfType<Label>().Any(label => label.Text == "Antigravity") &&
+                view.DetailFor(combined).Contains("약 ", StringComparison.Ordinal),
+                "Antigravity and Gemini render as two parts of one four-row box with approximate reset detail");
+            SmokeTest.RenderAndCheckLayout(window, "antigravity-two-parts-synthetic.png", reportDirectory);
+            WithMenu(() => items[3].PerformClick());
+            context.RefreshStatus(false);
+            check(GeminiBox().Controls.OfType<QuotaBalanceBar>().Count() == 2 && session.AntigravityReads == 1,
+                "turning Antigravity off restores the original Gemini box");
 
             int reads = session.Reads;
             var trayRefresh = menu.Items.OfType<ToolStripMenuItem>().Single(item => item.Text == "상태·한도 새로 고침");

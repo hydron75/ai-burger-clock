@@ -48,7 +48,7 @@ internal static class QuotaDetailTemplateTests
             else
                 Check(hash == NonDetailHashes[key], key + " preserves every field other than Detail against the pre-change baseline");
         }
-        foreach (var provider in Enum.GetValues<QuotaProvider>())
+        foreach (var provider in QuotaProviders.Boxes)
         {
             var state = QuotaPresentationTests.DetailFixtures(now).First(f => f.State.Provider == provider).State;
             var empty = QuotaPanelModel.Section(state with { Reading = new(provider, []) }, now);

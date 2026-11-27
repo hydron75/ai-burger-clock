@@ -309,7 +309,7 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
             statusMonitor?.NextRefreshUtc, statusMonitor?.StorageError ?? "", quotaNotifications?.RecentEarlyResets());
 
     private IReadOnlyList<QuotaState> QuotaStates() => quotaMonitor?.Snapshot() ??
-        Enum.GetValues<QuotaProvider>().Select(provider => new QuotaState(provider,
+        QuotaProviders.Boxes.Select(provider => new QuotaState(provider,
             Mode: provider == QuotaProvider.Gemini ? QuotaSourceMode.Unavailable : QuotaSourceMode.Active)).ToArray();
 
     private void ShowPanel()
@@ -769,7 +769,7 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
                     }
                 }
                 // Usage-bar fills are graphical objects: provider colors keep at least 3:1 on the panel background.
-                foreach (QuotaProvider provider in Enum.GetValues<QuotaProvider>())
+                foreach (QuotaProvider provider in QuotaProviders.Boxes)
                 {
                     double barContrast = MacControls.Contrast(MacControls.QuotaBarColor(provider), () => MacControls.PanelBackground, appearance);
                     barWeakest = Math.Min(barWeakest, barContrast);
