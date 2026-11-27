@@ -83,6 +83,14 @@ internal static class AntigravityUsageTests
             Check(localized.Reading?.Windows.SequenceEqual(reading.Windows) == true,
                 "an English usage section parses regardless of the document language");
         }
+        var noScriptResponse = new AntigravityUsagePageLoad(new Uri(AntigravityUsagePage.Url), null, null, null, TimedOut: false);
+        Check(AntigravityUsagePage.Parse(noScriptResponse, Epoch).Failure is
+            { Kind: QuotaFailureKind.Unreachable, Code: "antigravity.not-rendered" },
+            "a usage page with no script response is classified as not rendered");
+        var missingLanguage = Valid(null) with { DocumentLanguage = "", VisibilityState = "visible" };
+        Check(AntigravityUsagePage.Parse(missingLanguage, Epoch).Failure is
+            { Kind: QuotaFailureKind.Unreachable, Code: "antigravity.not-rendered" },
+            "a visible page with an empty document language and no usage section is classified as not rendered");
 
         var now = Epoch;
         var reader = new Reader();
