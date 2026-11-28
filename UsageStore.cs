@@ -30,6 +30,7 @@ internal sealed class UsageStore(string? databasePath = null)
         ExecuteAsync(connection =>
         {
             ValidateQuotaCache(cache, cache.Reading.Provider);
+            ValidateAntigravityCacheKey(key, cache.Reading.Provider);
             validate?.Invoke(cache);
             string json = JsonSerializer.Serialize(cache, QuotaJsonContext.Default.QuotaCache);
             if (json.Length > MaximumQuotaCacheCharacters) throw new InvalidDataException("Invalid quota cache size.");
@@ -54,6 +55,7 @@ internal sealed class UsageStore(string? databasePath = null)
         CancellationToken cancellationToken = default) =>
         ExecuteAsync<QuotaCache?>(connection =>
         {
+            ValidateAntigravityCacheKey(key, provider);
             using var command = connection.CreateCommand();
             command.CommandText = "SELECT Value FROM AppMetadata WHERE Key=$key;";
             command.Parameters.AddWithValue("$key", key);
@@ -64,6 +66,12 @@ internal sealed class UsageStore(string? databasePath = null)
             validate?.Invoke(cache);
             return cache;
         }, cancellationToken);
+
+    private static void ValidateAntigravityCacheKey(string key, QuotaProvider provider)
+    {
+        if ((key == QuotaCacheAdapter.AntigravityWebKey) != (provider == QuotaProvider.Antigravity))
+            throw new InvalidDataException("Invalid quota cache key.");
+    }
 
     internal static void ValidateQuotaCache(QuotaCache cache, QuotaProvider provider)
     {

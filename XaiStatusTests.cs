@@ -80,7 +80,7 @@ internal static class XaiStatusTests
         var reviewAgentsIncident = Parse(history: JsonSerializer.Serialize(new { incidents = new[] { Incident(components: ["review-agents"]) } }));
         Check(reviewAgentsIncident.Status == OfficialStatus.PartialOutage && reviewAgentsIncident.RelevantComponent == "Cursor · Review Agents",
             "Review Agents JSON incident contributes to Cursor work status with the public display name");
-        Check(Enum.GetValues<QuotaProvider>().SequenceEqual([QuotaProvider.Codex, QuotaProvider.Claude, QuotaProvider.Gemini, QuotaProvider.Xai])
+        Check(QuotaProviders.Boxes.SequenceEqual([QuotaProvider.Codex, QuotaProvider.Claude, QuotaProvider.Gemini, QuotaProvider.Xai])
             && ProviderNames.Provider(ProviderKind.Xai) == "xAI" && ProviderNames.Quota(QuotaProvider.Xai) == "xAI",
             "xAI weekly quota is appended without changing the existing official status provider");
         Check(ProviderStatusPages.For(ProviderKind.Xai).AbsoluteUri == "https://status.x.ai/",

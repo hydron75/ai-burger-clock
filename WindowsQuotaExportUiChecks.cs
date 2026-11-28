@@ -90,7 +90,7 @@ internal static class WindowsQuotaExportUiChecks
         using (var monitor = new AccountQuotaMonitor(new Client(fixture.Time), utcNow: fixture.Time.GetUtcNow))
         using (var bridge = new WindowsQuotaExportBridge(monitor, fixture.Service.Completed))
         {
-            await Task.WhenAll(Enum.GetValues<QuotaProvider>().Select(p => monitor.RefreshSourceIfDueAsync(p))).WaitAsync(TimeSpan.FromSeconds(5));
+            await Task.WhenAll(QuotaProviders.Boxes.Select(p => monitor.RefreshSourceIfDueAsync(p))).WaitAsync(TimeSpan.FromSeconds(5));
             Check(monitor.Snapshot().All(s => !s.IsRefreshing &&
                 (QuotaNames.HasCliRoute(s.Provider) ? s.LastSuccessfulCheckUtc is not null : s.Reading is null && s.LastSuccessfulCheckUtc is null && s.NextCheckUtc is null)) && !server.Task.IsCompleted,
                 "enabled Provider reads finish while export server is slow and Gemini remains unavailable");

@@ -20,6 +20,7 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
     private AccountQuotaMonitor? quotaMonitor;
     // Gemini app usage (0.9.6): hidden WKWebView reader, sign-in window and the menu-bar submenu.
     private MacGeminiUsageReader? geminiReader;
+    private MacAntigravityUsageReader? antigravityReader;
     private MacGeminiWebController? geminiWeb;
     private MacStatusPanel? panel;
     private MacStatisticsWindow? statisticsWindow;
@@ -112,22 +113,23 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
         contextMenu.AddItem(quotaNotifications.EarlyResetMenuItem);
         // Third alert setting, default OFF, right after the two quota items (Windows keeps the same order).
         contextMenu.AddItem(claudeAuthWarning!.MenuItem);
-        // Gemini app usage: sign in / turn off / sign out. Off until the user signs in themselves.
+        // Gemini app usage: sign in / turn off / sign out, and the Antigravity usage check item. Off until the user signs in themselves.
         contextMenu.AddItem(geminiWeb!.MenuItem);
         contextMenu.AddItem(new NSMenuItem("로그인 항목 설정 열기…", (_, _) => MacAutoStart.OpenSettings()) { Enabled = !smoke });
         contextMenu.AddItem(NSMenuItem.SeparatorItem);
         contextMenu.AddItem(new NSMenuItem("종료", "q", (_, _) => NSApplication.SharedApplication.Terminate(null)));
     }
 
-    // The reader exists from the start (registered with the monitor); the setting says whether it is on. A smoke run keeps its
+    // The readers exist from the start (registered with the monitor); the setting says which are on. A smoke run keeps its
     // setting file in the run's temporary folder and never creates a web view.
     private void CreateGeminiWeb()
     {
         string directory = Path.GetDirectoryName(store.DatabasePath)!;
         var settings = MacGeminiWebSettings.Load(directory);
         geminiReader = new(action => BeginInvokeOnMainThread(action));
+        antigravityReader = new(action => BeginInvokeOnMainThread(action));
         var login = new MacGeminiLoginWindow(action => BeginInvokeOnMainThread(action));
-        geminiWeb = new(settings, new MacGeminiWebBackend(() => quotaMonitor, store, geminiReader, login, lifetime.Token),
+        geminiWeb = new(settings, new MacGeminiWebBackend(() => quotaMonitor, store, geminiReader, antigravityReader, login, lifetime.Token),
             (text, error) => panel?.SetFeedback(text, error));
     }
 
@@ -190,7 +192,9 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
             }
             http = ProviderStatusClient.CreateHttpClient();
             statusMonitor = new(new ProviderStatusClient(http, xaiDiagnostic: LogXaiDiagnostic), store, scheduleAt: Schedule);
-            quotaMonitor = new(new AccountQuotaClient(), store, geminiWebReader: geminiReader, geminiWebEnabled: geminiWeb!.Enabled);
+            var quotaClient = new AccountQuotaClient();
+            quotaMonitor = new(AccountQuotaMonitor.CreateSources(quotaClient, store, geminiReader, geminiWeb!.Enabled,
+                antigravityReader, geminiWeb.AntigravityEnabled, MacScreenCoverage.Readiness), store, claudeAuthClient: quotaClient);
             statusMonitor.Changed += QueueDisplayRefresh;
             quotaMonitor.Changed += QueueDisplayRefresh;
             // Only verified live responses (Succeeded), never Changed: cache loads, refresh starts and
@@ -309,7 +313,7 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
             statusMonitor?.NextRefreshUtc, statusMonitor?.StorageError ?? "", quotaNotifications?.RecentEarlyResets());
 
     private IReadOnlyList<QuotaState> QuotaStates() => quotaMonitor?.Snapshot() ??
-        Enum.GetValues<QuotaProvider>().Select(provider => new QuotaState(provider,
+        QuotaProviders.Boxes.Select(provider => new QuotaState(provider,
             Mode: provider == QuotaProvider.Gemini ? QuotaSourceMode.Unavailable : QuotaSourceMode.Active)).ToArray();
 
     private void ShowPanel()
@@ -351,12 +355,15 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
         statisticsWindow.Show();
     }
 
-    // Manual Refresh (button and menu) is the only trigger that also reads the Gemini usage page; wake-up and network
-    // recovery go through RefreshAll(true) and never do.
+    // Manual Refresh (button and menu) is the only trigger that also reads the Gemini and Antigravity usage pages; wake-up
+    // and network recovery go through RefreshAll(true) and never do. The monitor drops an Antigravity request within 10
+    // minutes of the last read.
     private void RefreshAll()
     {
         RefreshAll(false);
-        if (!stopping && !smoke) quotaMonitor?.RequestSourceRefresh(QuotaProvider.Gemini);
+        if (stopping || smoke) return;
+        quotaMonitor?.RequestSourceRefresh(QuotaProvider.Gemini);
+        quotaMonitor?.RequestSourceRefresh(QuotaProvider.Antigravity);
     }
 
     private void RefreshAll(bool queueWhileRefreshing)
@@ -721,7 +728,7 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
             // display's full-screen app is left alone: the popover opens under the status item, the statistics window
             // is placed on the same display.
             MacScreenGuard.Choice screenChoice = MacScreenGuard.Choose(statusItem?.Button?.Window?.Screen);
-            MacScreenGuard.Covering? covering = screenChoice.Skipped;
+            MacScreenCoverage.Covering? covering = screenChoice.Skipped;
             smokeScreen = screenChoice.Screen;
             if (screenChoice.NeedsAnchor && smokeScreen is not null) smokeAnchor = MakeSmokeAnchor(smokeScreen);
             Console.WriteLine("SCREEN: " + screenChoice.Description);
@@ -769,7 +776,7 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
                     }
                 }
                 // Usage-bar fills are graphical objects: provider colors keep at least 3:1 on the panel background.
-                foreach (QuotaProvider provider in Enum.GetValues<QuotaProvider>())
+                foreach (QuotaProvider provider in QuotaProviders.Boxes)
                 {
                     double barContrast = MacControls.Contrast(MacControls.QuotaBarColor(provider), () => MacControls.PanelBackground, appearance);
                     barWeakest = Math.Min(barWeakest, barContrast);
@@ -1015,6 +1022,13 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
             string geminiWebMenuResult = await MacGeminiWebSmoke.VerifyControllerAsync(contextMenu!, geminiWeb!);
             string geminiWebBackendResult = await MacGeminiWebSmoke.VerifyBackendAsync(lifetime.Token);
             string geminiWebPanelResult = MacGeminiWebSmoke.VerifyPanel(panel, Schedule(now), healthy, quota, claudeQuota, xaiQuota, now);
+            // Antigravity usage reader (P2.5): reading loop, screen decision, menu, backend and the two-part box, all synthetic
+            // and without a web view or a visible read window.
+            string antigravityReadingResult = await MacAntigravitySmoke.VerifyReadingAsync();
+            string antigravityScreenResult = MacAntigravitySmoke.VerifyScreen();
+            string antigravityMenuResult = await MacAntigravitySmoke.VerifyMenuAsync(geminiWeb!);
+            string antigravityBackendResult = await MacAntigravitySmoke.VerifyBackendAsync(lifetime.Token);
+            string antigravityPanelResult = MacAntigravitySmoke.VerifyPanel(panel, Schedule(now), healthy, quota, claudeQuota, xaiQuota, now);
             // Claude CLI login state (#171): the Claude box note line, tip and popover in the shared wording, synthetic dates only.
             string claudeAuthPanelResult = MacClaudeAuthSmoke.VerifyPanel(panel, Schedule(now), healthy, quota, claudeQuota, geminiQuota, xaiQuota, now);
             panel.Update(Schedule(now), healthy, quotas, false, now.AddMinutes(5), "");
@@ -1076,7 +1090,7 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
                 Console.WriteLine($"SKIP: {skippedScreenChecks.Count} screen checks not run because a window of {covering.Value.Owner} covers display {covering.Value.ScreenNumber}, " +
                     $"the display of the status item where ours would open (it would show the menu bar over it): {string.Join("; ", skippedScreenChecks)}. Run again with no full-screen app to check them.");
             string verdict = skippedScreenChecks.Count == 0 ? "PASS" : $"PASS with {skippedScreenChecks.Count} screen checks SKIPPED (not verified)";
-            Console.WriteLine($"{verdict}: bundle version, menu-tracking countdown timer, 20pt menu icon white/dark disc + color glyph light/dark 1x-2x pixels (glyph contrast min {iconContrast:0.0}:1), left/right/control-click routing, right-click menu, popover open/close/reopen, shared panel text/record menu/quota lines, {activationResult}, tone contrast >= 4.5:1 light+dark (min {weakest:0.0}:1), card text x = quota box text x ({layout.BoxTextX:0}pt; titles {layout.TitleX:0}pt), whole-card click/quota boxes read-only, shared quota title, usage bars (0% empty/100% full, provider colors >= 3:1 light+dark min {barWeakest:0.0}:1, muted when previous/elapsed, none without a value), time layer (tint-track/tint-used >= 1.5:1 min {tintWeakest:0.0}:1, marker >= 3:1 min {markerWeakest:0.0}:1 light+dark, dark tint-used >= 2.0:1 min {darkSeparationWeakest:0.0}:1, marker position/end points, hidden states, spoken row = shared reading text once), one shared Provider detail per quota box, four provider cards incl. xAI (same heading width, card size and spacing: {cardGeometry}; whole-card click only, detail without the usage link), four quota boxes (Gemini fixed notice only while no reader is registered, xAI weekly credits), popover {layout.Size.Width:0}x{layout.Size.Height:0}pt (this screen usable {layout.UsableHeight:0}pt; 1280x800 {standard.Height:0}pt not cut off, quota area {standardQuota:0}pt scrolling, every control reachable; 1024x640 {small.Height:0}pt not cut off, quota area {smallQuota:0}pt, whole panel {smallScroll.Document:0}pt scrolling, every control reachable), 1,000-char note limit, temporary SQLite, four events/notes via shared factory, {displayResult}, {permissionResult}, {layoutKeyResult}, {notificationImageResult}, {recoveryResult}, {earlyResetResult}, {earlyResetControllerResult}, {decisionLogResult}, {lateCallbackResult}, {earlyResetUiResult}, {geminiOffResult}, {geminiWebReadingResult}, {geminiWebMenuResult}, {geminiWebBackendResult}, {geminiWebPanelResult}, {claudeAuthPanelResult}, {claudeAuthWarningResult}, {xaiQuotaResult}, {detailTipResult}, {quotaRowResult}, {diagnosticResult}, statistics (shared text, explanation fits, Mac empty-state hint), injected quota countdown; no account/network/settings changes.");
+            Console.WriteLine($"{verdict}: bundle version, menu-tracking countdown timer, 20pt menu icon white/dark disc + color glyph light/dark 1x-2x pixels (glyph contrast min {iconContrast:0.0}:1), left/right/control-click routing, right-click menu, popover open/close/reopen, shared panel text/record menu/quota lines, {activationResult}, tone contrast >= 4.5:1 light+dark (min {weakest:0.0}:1), card text x = quota box text x ({layout.BoxTextX:0}pt; titles {layout.TitleX:0}pt), whole-card click/quota boxes read-only, shared quota title, usage bars (0% empty/100% full, provider colors >= 3:1 light+dark min {barWeakest:0.0}:1, muted when previous/elapsed, none without a value), time layer (tint-track/tint-used >= 1.5:1 min {tintWeakest:0.0}:1, marker >= 3:1 min {markerWeakest:0.0}:1 light+dark, dark tint-used >= 2.0:1 min {darkSeparationWeakest:0.0}:1, marker position/end points, hidden states, spoken row = shared reading text once), one shared Provider detail per quota box, four provider cards incl. xAI (same heading width, card size and spacing: {cardGeometry}; whole-card click only, detail without the usage link), four quota boxes (Gemini fixed notice only while no reader is registered, xAI weekly credits), popover {layout.Size.Width:0}x{layout.Size.Height:0}pt (this screen usable {layout.UsableHeight:0}pt; 1280x800 {standard.Height:0}pt not cut off, quota area {standardQuota:0}pt scrolling, every control reachable; 1024x640 {small.Height:0}pt not cut off, quota area {smallQuota:0}pt, whole panel {smallScroll.Document:0}pt scrolling, every control reachable), 1,000-char note limit, temporary SQLite, four events/notes via shared factory, {displayResult}, {permissionResult}, {layoutKeyResult}, {notificationImageResult}, {recoveryResult}, {earlyResetResult}, {earlyResetControllerResult}, {decisionLogResult}, {lateCallbackResult}, {earlyResetUiResult}, {geminiOffResult}, {geminiWebReadingResult}, {geminiWebMenuResult}, {geminiWebBackendResult}, {geminiWebPanelResult}, {antigravityReadingResult}, {antigravityScreenResult}, {antigravityMenuResult}, {antigravityBackendResult}, {antigravityPanelResult}, {claudeAuthPanelResult}, {claudeAuthWarningResult}, {xaiQuotaResult}, {detailTipResult}, {quotaRowResult}, {diagnosticResult}, statistics (shared text, explanation fits, Mac empty-state hint), injected quota countdown; no account/network/settings changes.");
             smokeAnchorWindow?.Close();
             ExitCode = 0;
         }

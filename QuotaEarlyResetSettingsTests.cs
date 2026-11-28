@@ -29,12 +29,12 @@ internal static class QuotaEarlyResetSettingsTests
         // Simulate an existing installation with cached quotas and an independently
         // enabled recovery preference, rather than using any actual app database.
         var now = new DateTimeOffset(2026, 9, 19, 12, 0, 0, TimeSpan.Zero);
-        foreach (QuotaProvider provider in Enum.GetValues<QuotaProvider>())
+        foreach (QuotaProvider provider in QuotaProviders.Boxes)
         {
             var reading = new QuotaReading(provider, [new("synthetic-weekly", "주간", 60, now.AddDays(2), 10080)]);
             await store.SaveQuotaAsync(new(1, reading, now, [now.AddDays(2)], AccountQuotaPolicy.ResetAnchorPolicyVersion));
         }
-        string[] cacheBefore = Enum.GetValues<QuotaProvider>()
+        string[] cacheBefore = QuotaProviders.Boxes
             .Select(provider => RawValue(path, "AccountQuota.v1." + provider)).ToArray();
         await store.SetQuotaRecoveryNotificationsEnabledAsync(true);
         await store.SetHolidayAdjustmentAsync(false);
@@ -119,10 +119,10 @@ internal static class QuotaEarlyResetSettingsTests
         Check(!await store.GetQuotaEarlyResetNotificationsEnabledAsync(),
             "an explicit retry after the write failure saves normally");
 
-        string[] cacheAfter = Enum.GetValues<QuotaProvider>()
+        string[] cacheAfter = QuotaProviders.Boxes
             .Select(provider => RawValue(path, "AccountQuota.v1." + provider)).ToArray();
         Check(cacheBefore.SequenceEqual(cacheAfter), "notification settings leave all existing quota cache JSON untouched");
-        foreach (QuotaProvider provider in Enum.GetValues<QuotaProvider>())
+        foreach (QuotaProvider provider in QuotaProviders.Boxes)
         {
             QuotaCache? cache = await new UsageStore(path).ReadQuotaAsync(provider);
             Check(cache is { Version: 1 } && cache.Reading.Provider == provider && cache.Reading.Windows.Count == 1 &&
@@ -137,7 +137,7 @@ internal static class QuotaEarlyResetSettingsTests
         Check(ScalarLong(path, "SELECT COUNT(*) FROM UsageEvents;") == 0 &&
             ScalarLong(path, "SELECT COUNT(*) FROM ProviderStatusHistory;") == 0,
             "preference operations never create usage or status event history");
-        Check(ScalarLong(path, "SELECT COUNT(*) FROM AppMetadata;") == 4 + Enum.GetValues<QuotaProvider>().Length,
+        Check(ScalarLong(path, "SELECT COUNT(*) FROM AppMetadata;") == 4 + QuotaProviders.Boxes.Count,
             "metadata contains only schema, one cache per Provider, holiday and two preferences, not early reset history");
 
         // A directory is an unusable database path on both hosts without changing

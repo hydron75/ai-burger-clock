@@ -15,6 +15,7 @@ internal sealed class AccountQuotaView : Panel, IMessageFilter
     private readonly Font metaFont = new("Segoe UI", 8F);
     private readonly Dictionary<QuotaProvider, Label> headings = new();
     private readonly Dictionary<QuotaProvider, Label> scopes = new();
+    private readonly Dictionary<QuotaProvider, Label> partTitles = new();
     private readonly Dictionary<QuotaProvider, Label> metadata = new();
     private readonly Dictionary<(QuotaProvider, string), Label> rows = new();
     private readonly Dictionary<(QuotaProvider, string), QuotaBalanceBar> bars = new();
@@ -306,7 +307,7 @@ internal sealed class AccountQuotaView : Panel, IMessageFilter
             AutoScrollPosition = Point.Empty;
             SuspendLayout();
             foreach (Control child in Controls.Cast<Control>().ToArray()) child.Dispose();
-            headings.Clear(); scopes.Clear(); metadata.Clear(); rows.Clear(); bars.Clear(); detailOwners.Clear(); providerDetails.Clear();
+            headings.Clear(); scopes.Clear(); partTitles.Clear(); metadata.Clear(); rows.Clear(); bars.Clear(); detailOwners.Clear(); providerDetails.Clear();
             int y = 0;
             foreach (var section in sections)
             {
@@ -328,18 +329,27 @@ internal sealed class AccountQuotaView : Panel, IMessageFilter
                 {
                     scopes[section.Provider] = AddRow(box, rowY, rowFont); rowY += 20;
                 }
-                foreach (var line in section.Rows)
+                foreach (var part in PartsFor(section))
                 {
-                    rows[(section.Provider, line.WindowId)] = AddRow(box, rowY, rowFont, quotaRow: true); rowY += 20;
-                    if (line.WindowId.Length == 0) continue;
-                    var bar = new QuotaBalanceBar { Location = new Point(Scale(8), Scale(rowY)),
-                        Size = new Size(box.Width - Scale(16), Scale(6)), Name = section.Provider + "-" + line.WindowId + "BalanceBar" };
-                    box.Controls.Add(bar);
-                    BindDetail(bar, section.Provider);
-                    bars[(section.Provider, line.WindowId)] = bar;
-                    rowY += 14;
+                    if (section.Parts is not null)
+                    {
+                        partTitles[part.Source] = AddRow(box, rowY, headingFont);
+                        rowY += 20;
+                    }
+                    foreach (var line in part.Rows)
+                    {
+                        rows[(part.Source, line.WindowId)] = AddRow(box, rowY, rowFont, quotaRow: true); rowY += 20;
+                        if (line.WindowId.Length == 0 ||
+                            section.Parts is not null && line.WindowId == part.Source + ":placeholder") continue;
+                        var bar = new QuotaBalanceBar { Location = new Point(Scale(8), Scale(rowY)),
+                            Size = new Size(box.Width - Scale(16), Scale(6)), Name = part.Source + "-" + line.WindowId + "BalanceBar" };
+                        box.Controls.Add(bar);
+                        BindDetail(bar, section.Provider);
+                        bars[(part.Source, line.WindowId)] = bar;
+                        rowY += 14;
+                    }
+                    metadata[part.Source] = AddRow(box, rowY, metaFont); rowY += 20;
                 }
-                metadata[section.Provider] = AddRow(box, rowY, metaFont); rowY += 20;
                 box.Height = Scale(rowY);
                 y += rowY + 6;
             }
@@ -354,14 +364,17 @@ internal sealed class AccountQuotaView : Panel, IMessageFilter
             headings[section.Provider].Parent!.AccessibleDescription = providerDetails[section.Provider];
             ApplyLine(headings[section.Provider], section.Heading);
             if (section.Scope is { } scope) ApplyLine(scopes[section.Provider], scope);
-            ApplyLine(metadata[section.Provider], section.Metadata);
-            foreach (var line in section.Rows)
+            foreach (var part in PartsFor(section))
             {
-                var label = rows[(section.Provider, line.WindowId)];
-                ApplyLine(label, line);
-                if (line.UsedPercent is not { } used) continue;
-                bars[(section.Provider, line.WindowId)].UpdateBalance(section.Provider, used, line.Tone,
-                    section.Heading.Text + " · " + (line.ReadingText ?? line.Text), "", line.ElapsedPercent);
+                if (section.Parts is not null) ApplyLine(partTitles[part.Source], part.Title);
+                ApplyLine(metadata[part.Source], part.Metadata);
+                foreach (var line in part.Rows)
+                {
+                    ApplyLine(rows[(part.Source, line.WindowId)], line);
+                    if (line.UsedPercent is not { } used) continue;
+                    bars[(part.Source, line.WindowId)].UpdateBalance(part.Source, used, line.Tone,
+                        part.Title.Text + " · " + (line.ReadingText ?? line.Text), "", line.ElapsedPercent);
+                }
             }
         }
         if (details.Visible && pendingDetail is { } shown && ProviderAt(pointerPosition()) == shown)
@@ -369,6 +382,9 @@ internal sealed class AccountQuotaView : Panel, IMessageFilter
         else if (details.Visible && pendingDetail is { } scrolling && details.CanInteractAt(pointerPosition()))
             ShowDetail(scrolling, details.AnchorPoint);
     }
+
+    private static IReadOnlyList<QuotaSectionPart> PartsFor(QuotaSectionText section) =>
+        section.Parts ?? [new(section.Provider, section.Heading, section.Rows, section.Metadata)];
 
     // Text and tone come from the shared model; the Windows palette stays local.
     private void ApplyLine(Label label, QuotaLine line)

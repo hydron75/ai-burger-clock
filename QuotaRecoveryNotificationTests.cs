@@ -36,7 +36,7 @@ internal static class QuotaRecoveryNotificationTests
         Check(QuotaRecoveryText.DeliveryFailed == "한도 회복 알림을 표시하지 못했습니다. OS 알림 설정을 확인하세요.",
             "shared safe notification delivery failure feedback");
 
-        foreach (QuotaProvider provider in Enum.GetValues<QuotaProvider>())
+        foreach (QuotaProvider provider in QuotaProviders.Boxes)
         {
             var engine = new QuotaRecoveryNotifications();
             bool eligible = QuotaNames.HasCliRoute(provider);

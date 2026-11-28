@@ -86,9 +86,9 @@ internal static class MacQuotaLayoutKeySmoke
 
         QuotaState[] before = [Boxes(QuotaProvider.Codex, 10, "five", "week"), Claude("session"), Gemini("g5h"), Xai("week")];
         Step("before value change", before);
-        NSView[] boxes = Enum.GetValues<QuotaProvider>().Select(panel.QuotaBoxView).ToArray();
+        NSView[] boxes = QuotaProviders.Boxes.Select(panel.QuotaBoxView).ToArray();
         Step("only values changed", Boxes(QuotaProvider.Codex, 55, "five", "week"), Claude("session") with { LastSuccessfulCheckUtc = Now.AddMinutes(1) }, Gemini("g5h"), Xai("week") with { LastSuccessfulCheckUtc = Now.AddMinutes(1) });
-        Check(Enum.GetValues<QuotaProvider>().Select(panel.QuotaBoxView).Zip(boxes).All(pair => ReferenceEquals(pair.First, pair.Second)),
+        Check(QuotaProviders.Boxes.Select(panel.QuotaBoxView).Zip(boxes).All(pair => ReferenceEquals(pair.First, pair.Second)),
             "a value-only update rebuilt the quota boxes.");
         steps++;
 

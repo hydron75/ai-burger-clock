@@ -24,7 +24,10 @@ internal static class GeminiWebQuotaTests
 
         using (var missingReader = new AccountQuotaMonitor(cli, store, () => now, geminiWebEnabled: true))
         {
-            missingReader.SetMode(QuotaProvider.Gemini, QuotaSourceMode.Active);
+            bool modeRejected = false;
+            try { missingReader.SetMode(QuotaProvider.Gemini, QuotaSourceMode.Active); }
+            catch (InvalidOperationException) { modeRejected = true; }
+            Check(modeRejected, "a missing web reader cannot change mode");
             missingReader.RequestSourceRefresh(QuotaProvider.Gemini);
             await missingReader.RefreshSourceIfDueAsync(QuotaProvider.Gemini);
             var state = GeminiState(missingReader);

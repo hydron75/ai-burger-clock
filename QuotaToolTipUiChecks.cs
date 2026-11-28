@@ -100,7 +100,7 @@ internal static class QuotaToolTipUiChecks
             }
             popup.Hide();
         }
-        foreach (var provider in Enum.GetValues<QuotaProvider>().Where(QuotaNames.HasCliRoute))
+        foreach (var provider in QuotaProviders.Boxes.Where(QuotaNames.HasCliRoute))
         {
             string text = QuotaPanelModel.Section(new(provider), now).Detail;
             popup.Display(owner, string.Join('\n', Enumerable.Repeat(text, 10)), pointer, owner.DeviceDpi);

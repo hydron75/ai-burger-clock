@@ -53,7 +53,7 @@ internal static class QuotaEarlyResetNotificationTests
         Check(QuotaEarlyResetText.Saved(true) == "한도 조기 초기화 알림을 켰습니다. 다음 성공 조회부터 기준을 설정합니다.",
             "existing enable feedback remains byte-for-byte unchanged");
 
-        foreach (QuotaProvider provider in Enum.GetValues<QuotaProvider>())
+        foreach (QuotaProvider provider in QuotaProviders.Boxes)
         foreach ((int minutes, string id) in new[] { (10080, "synthetic-weekly"), (10080, "synthetic-model-weekly") })
         {
             string name = provider + "/" + id;
@@ -140,13 +140,13 @@ internal static class QuotaEarlyResetNotificationTests
             "display label change retains identity and uses latest label");
 
         var independent = new QuotaEarlyResetNotifications();
-        foreach (QuotaProvider provider in Enum.GetValues<QuotaProvider>())
+        foreach (QuotaProvider provider in QuotaProviders.Boxes)
         {
             Check(independent.Observe(For(provider, 1, now, Row()), true, QuotaNames.HasCliRoute(provider)) is null,
                 "independent Provider baseline " + provider);
             Check(independent.Recent(provider) is null, "no history before confirmed comparison " + provider);
         }
-        foreach (QuotaProvider provider in Enum.GetValues<QuotaProvider>())
+        foreach (QuotaProvider provider in QuotaProviders.Boxes)
         {
             QuotaEarlyResetAlert? alert = independent.Observe(For(provider, 2, now.AddHours(1), Changed()), true,
                 QuotaNames.HasCliRoute(provider));
@@ -351,7 +351,7 @@ internal static class QuotaEarlyResetNotificationTests
             QuotaEarlyResetEvaluation evaluation = new QuotaEarlyResetNotifications().Evaluate(observation, enabled);
             Check(evaluation.Reason == reason && (evaluation.Alert is not null) == (reason == "Alert"), label);
         }
-        foreach (QuotaProvider provider in Enum.GetValues<QuotaProvider>())
+        foreach (QuotaProvider provider in QuotaProviders.Boxes)
         {
             QuotaObservation cached = Cached(provider);
             var startup = new QuotaEarlyResetNotifications();

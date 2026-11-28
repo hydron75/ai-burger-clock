@@ -545,7 +545,7 @@ internal static class QuotaP0CharacterizationTests
         check(h.CacheJson(WebGeminiKey) is null && h.CacheJson(LegacyGeminiKey) == legacy && h.State(Gemini) is { CacheError: "", ReadingNow: false },
             "3.3-3/5 logout leaves web cache deleted after the save race and preserves the old agy key byte-for-byte");
 
-        check(Enum.GetValues<QuotaProvider>().Select(p => ((int)p, p.ToString()))
+        check(QuotaProviders.Boxes.Select(p => ((int)p, p.ToString()))
             .SequenceEqual([(0, "Codex"), (1, "Claude"), (2, "Gemini"), (3, "Xai")]), "3.3-8 Provider ordinal and wire names are fixed");
     }
 }

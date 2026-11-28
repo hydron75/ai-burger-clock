@@ -7,7 +7,7 @@ internal static class LiveQuotaProbe
     {
         var client = new AccountQuotaClient();
         int failures = 0;
-        foreach (var provider in Enum.GetValues<QuotaProvider>())
+        foreach (var provider in QuotaProviders.Boxes)
         {
             if (!QuotaNames.HasCliRoute(provider))
             { Console.WriteLine(QuotaNames.GeminiUnavailableText); continue; }

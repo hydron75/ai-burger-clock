@@ -7,10 +7,13 @@ namespace AiBurgerClock;
 
 internal static class WindowsGeminiWebChecks
 {
-    internal sealed class FakeSession : IWindowsGeminiWebSession
+    internal sealed class FakeSession : IWindowsGeminiWebSession, IAntigravityUsagePageReader
     {
         private int reads;
         internal int Reads => Volatile.Read(ref reads);
+        private int antigravityReads;
+        internal int AntigravityReads => Volatile.Read(ref antigravityReads);
+        internal Func<AntigravityUsagePageLoad> ReadAntigravity { get; set; } = () => AntigravityUsageTests.Valid();
         internal int SignIns { get; private set; }
         internal int ProfileDeletes { get; private set; }
         internal bool LoginSucceeds { get; set; }
@@ -44,6 +47,13 @@ internal static class WindowsGeminiWebChecks
         }
 
         public void Dispose() { }
+
+        public Task<AntigravityUsagePageLoad> LoadAntigravityAsync(CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            Interlocked.Increment(ref antigravityReads);
+            return Task.FromResult(ReadAntigravity());
+        }
     }
 
     internal static GeminiUsagePageLoad ValidPage(DateTimeOffset now, TimeZoneInfo zone)
@@ -248,6 +258,124 @@ internal static class WindowsGeminiWebChecks
                 throw new IOException("Synthetic Gemini fixture cleanup boundary mismatch.");
             temp.Delete(recursive: true);
         }
+        await CheckAntigravityAsync(Check);
         return count;
+    }
+
+    private static async Task CheckAntigravityAsync(Action<bool, string> check)
+    {
+        foreach (var (flags, expected) in new (int?, QuotaReadiness)[]
+        {
+            (0, QuotaReadiness.Deferred), (1, QuotaReadiness.Ready), (-1, QuotaReadiness.Ready),
+            (7, QuotaReadiness.Ready), (null, QuotaReadiness.Ready)
+        })
+            check(WindowsAntigravitySession.ReadinessForSessionFlags(flags) == expected,
+                "only the explicit session lock defers Antigravity");
+
+        var now = GeminiUsagePageTests.Now;
+        var temp = Directory.CreateTempSubdirectory("AiBurgerClock-antigravity-tests-");
+        try
+        {
+            var store = new UsageStore(Path.Combine(temp.FullName, "synthetic.db"));
+            var settings = new WindowsGeminiWebSettingsStore(Path.Combine(temp.FullName, WindowsGeminiWebSettingsStore.FileName));
+            using var session = new FakeSession { LoginSucceeds = true };
+            var sources = AccountQuotaMonitor.CreateSources(new NoCli(), store, session, false, session);
+            using var monitor = new AccountQuotaMonitor(sources, store, () => now, zone: TimeZoneInfo.Utc);
+            var access = new WindowsGeminiWebAccess(monitor, session, settings, settings.Load());
+            const QuotaProvider web = QuotaProvider.Antigravity;
+            bool excludedFromNotifications = false;
+            try { _ = WindowsNotificationRequest.FromQuota(new(web, 1, "Synthetic", "Synthetic", null, null)); }
+            catch (ArgumentOutOfRangeException) { excludedFromNotifications = true; }
+            check(excludedFromNotifications, "Antigravity cannot enter the four-provider notification mapping");
+            QuotaState State(QuotaProvider provider) => monitor.Snapshot().Single(state => state.Provider == provider);
+            byte[] Packet(bool includeWeb) => WindowsQuotaExportSnapshot.Serialize(
+                monitor.Snapshot().Where(state => includeWeb || state.Provider != web).ToArray(),
+                new(1, true, "https://quota.example.invalid", "00000000-0000-4000-8000-000000000001", 1), now, "2.10.0");
+            int sends = 0;
+            using var bridge = new WindowsQuotaExportBridge(monitor, _ => sends++);
+            check(!access.CanToggleAntigravity && !access.AntigravityEnabled && State(web).Mode == QuotaSourceMode.Off,
+                "Antigravity is separately off and unavailable to toggle without Gemini enabled");
+            await access.LoginAsync(default);
+            check(access.CanToggleAntigravity && !settings.Load().AntigravityEnabled, "Gemini login doesn't opt in");
+            access.ToggleAntigravity();
+            await monitor.RefreshSourceIfDueAsync(web);
+            check(session.AntigravityReads == 1 && State(web).Reading is not null && sends == 0 &&
+                Packet(true).SequenceEqual(Packet(false)), "Antigravity opt-in and success never affect existing v2 bytes or send");
+            session.ReadAntigravity = () => default;
+            now = now.AddHours(1);
+            await monitor.RefreshSourceIfDueAsync(web);
+            check(session.AntigravityReads == 2 && State(web).Failure?.Code == "antigravity.load" && sends == 0 &&
+                Packet(true).SequenceEqual(Packet(false)), "Antigravity failure never affects existing v2 bytes or sends");
+            access.ToggleAntigravity();
+            check(sends == 0 && State(web).Mode == QuotaSourceMode.Off, "Antigravity toggle off never sends");
+            access.ToggleAntigravity();
+            session.ReadAntigravity = () => AntigravityUsageTests.Valid();
+            await monitor.RefreshSourceIfDueAsync(web);
+            var cache = QuotaCacheAdapter.ForAntigravityWeb(store);
+            access.TurnOff();
+            check(State(web).Mode == QuotaSourceMode.Off && settings.Load().AntigravityEnabled &&
+                await cache.ReadAsync(default) is not null, "Gemini off suspends Antigravity and preserves preference and cache");
+            await access.LoginAsync(default);
+            await monitor.RefreshSourceIfDueAsync(web);
+            check(session.AntigravityReads == 4 && State(web).Mode == QuotaSourceMode.Active, "Gemini login reactivates a prior opt-in");
+            session.ReadPage = () => new("https://gemini.google.com/app", null);
+            await monitor.RefreshSourceIfDueAsync(QuotaProvider.Gemini);
+            now = now.AddHours(1);
+            var state = State(web);
+            await monitor.RefreshSourceIfDueAsync(web);
+            check(session.AntigravityReads == 4 && State(web).CheckedAtUtc == state.CheckedAtUtc,
+                "Gemini login-required defers Antigravity before mutating read state");
+            session.ReadPage = () => ValidPage(now, TimeZoneInfo.Utc);
+            await access.LoginAsync(default);
+            await monitor.RefreshSourceIfDueAsync(QuotaProvider.Gemini);
+            await monitor.RefreshSourceIfDueAsync(web);
+            check(session.AntigravityReads == 5 && State(web).Failure is null, "Gemini relogin wakes deferred Antigravity immediately");
+            session.ReadAntigravity = () => AntigravityUsageTests.Valid() with { FinalUri = new("https://accounts.google.com/") };
+            monitor.RequestSourceRefresh(web, afterSignIn: true);
+            await monitor.RefreshSourceIfDueAsync(web);
+            check(State(web) is { Failure.Kind: QuotaFailureKind.LoginRequired, NextCheckUtc: null } &&
+                State(QuotaProvider.Gemini).Failure is null && access.MenuState.Login,
+                "Antigravity login-required alone pauses its reads and enables the shared login menu");
+            session.ReadAntigravity = () => AntigravityUsageTests.Valid();
+            await access.LoginAsync(default);
+            await monitor.RefreshSourceIfDueAsync(web);
+            await monitor.RefreshSourceIfDueAsync(web);
+            check(session.AntigravityReads == 7 && State(web).Failure is null,
+                "shared relogin resumes only one Antigravity read");
+
+            session.BeforeDelete = async _ =>
+            {
+                check(settings.Load() == new WindowsGeminiWebSettings(LogoutPending: true) &&
+                    State(web).Mode == QuotaSourceMode.Off && State(QuotaProvider.Gemini).Mode == QuotaSourceMode.Off &&
+                    await cache.ReadAsync(default) is null && await store.ReadGeminiWebQuotaAsync() is null,
+                    "profile removal follows turning off and clearing both web sources");
+                if (session.ProfileDeletes == 1) throw new IOException("Synthetic profile release failure");
+            };
+            try { await access.LogoutAsync(default); throw new InvalidOperationException("Expected synthetic profile failure."); }
+            catch (IOException) { }
+            var retry = new WindowsGeminiWebAccess(monitor, session, settings, settings.Load());
+            await retry.RetryLogoutAsync(default);
+            check(!settings.Load().AntigravityEnabled && session.ProfileDeletes == 2 && !retry.LogoutPending,
+                "retry completes both-cache logout and leaves Antigravity off");
+
+            int navigations = 0, scripts = 0;
+            var fromDom = await WindowsGeminiWebSession.ReadAntigravityDomAsync(
+                () => ++navigations == 1 ? "https://accounts.google.com/" : AntigravityUsagePage.Url,
+                () =>
+                {
+                    scripts++;
+                    var dom = new WindowsAntigravityDom(AntigravityUsagePage.Url, AntigravityUsageTests.Text, "visible", "en");
+                    return Task.FromResult(JsonSerializer.Serialize(JsonSerializer.Serialize(dom, WindowsGeminiWebJson.Default.WindowsAntigravityDom)));
+                }, default);
+            check(scripts == 1 && AntigravityUsagePage.Parse(fromDom, now).Reading is not null,
+                "the DOM script runs only after navigation to the Antigravity usage page");
+        }
+        finally
+        {
+            if (temp.Parent?.FullName != Path.GetFullPath(Path.GetTempPath()).TrimEnd(Path.DirectorySeparatorChar) ||
+                !temp.Name.StartsWith("AiBurgerClock-antigravity-tests-", StringComparison.Ordinal))
+                throw new IOException("Synthetic Antigravity fixture cleanup boundary mismatch.");
+            temp.Delete(recursive: true);
+        }
     }
 }

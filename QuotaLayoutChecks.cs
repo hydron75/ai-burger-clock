@@ -45,6 +45,28 @@ internal static class QuotaLayoutChecks
             ReferenceEquals(notice, gemini.Controls.OfType<AccountQuotaView.RowLabel>().Single()) &&
             notice.Text == QuotaNames.GeminiUnavailableText && Bars() == 0,
             "Gemini policy card and row stay stable across historical and empty snapshots");
+        const QuotaProvider antigravity = QuotaProvider.Antigravity;
+        QuotaState[] providers = QuotaProviders.Boxes.Select(provider => new QuotaState(provider)).ToArray();
+        view.UpdateQuotas([.. providers, new(antigravity)], now);
+        Panel Combined() => view.Controls.OfType<Panel>().Single(panel => panel.Name == "GeminiQuotaBox");
+        Check(view.Controls.OfType<Panel>().Count() == 4 && Combined().Controls.OfType<AccountQuotaView.RowLabel>().Count() == 2 &&
+            Combined().Controls.OfType<QuotaBalanceBar>().Count() == 0, "two source placeholders share one box with neither bar");
+        QuotaReading ag = AntigravityUsagePage.Parse(AntigravityUsageTests.Valid(), now).Reading!;
+        var geminiWeb = GeminiUsagePage.Parse(new(GeminiUsagePage.Url, GeminiUsagePageTests.English),
+            GeminiUsagePageTests.Now, TimeZoneInfo.Utc).Reading!;
+        providers[(int)QuotaProvider.Gemini] = new(QuotaProvider.Gemini, geminiWeb, LastSuccessfulCheckUtc: now);
+        view.UpdateQuotas([.. providers, new(antigravity, ag, LastSuccessfulCheckUtc: now)], now);
+        Check(Combined().Controls.OfType<QuotaBalanceBar>().Count() == 4 &&
+            Combined().Controls.OfType<Label>().Any(label => label.Text == "Gemini 앱") &&
+            Combined().Controls.OfType<Label>().Any(label => label.Text == "Antigravity"),
+            "four synthetic rows and their source headings render in the Gemini box");
+        Check(view.DetailFor(Combined()).Contains("약 ", StringComparison.Ordinal) &&
+            Combined().Controls.OfType<QuotaBalanceBar>().All(bar => bar.Bottom <= Combined().Height),
+            "the combined detail shows approximate estimates and bars fit the box");
+        view.UpdateQuotas([.. providers, new(antigravity, Mode: QuotaSourceMode.Off)], now);
+        Check(Combined().Controls.OfType<QuotaBalanceBar>().Count() == 2 &&
+            !Combined().Controls.OfType<Label>().Any(label => label.Text == "Antigravity"),
+            "turning off Antigravity restores the original native Gemini layout");
         return count;
     }
 }

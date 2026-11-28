@@ -529,7 +529,7 @@ internal static class AccountQuotaMonitorTests
     private static async Task CacheContinuityTestsAsync(string directory, Action<bool, string> check)
     {
         var store = new UsageStore(Path.Combine(directory, "continuity-cache.db"));
-        foreach (QuotaProvider provider in Enum.GetValues<QuotaProvider>())
+        foreach (QuotaProvider provider in QuotaProviders.Boxes)
             await store.SaveQuotaAsync(new(1, Reading(provider, 80), Now.AddMinutes(-10), []));
         var release = Signal();
         var client = new FakeClient(async (provider, token) =>
@@ -542,8 +542,8 @@ internal static class AccountQuotaMonitorTests
             var observations = new System.Collections.Concurrent.ConcurrentQueue<QuotaObservation>();
             monitor.Succeeded += observations.Enqueue;
             monitor.Start();
-            await WaitAsync(() => monitor.Snapshot().Where(state => state.Provider != QuotaProvider.Gemini).All(state => state.IsRefreshing && state.Reading is not null));
-            check(monitor.Snapshot().Where(state => state.Provider != QuotaProvider.Gemini).All(state => state is { ContinuityId: 1, IsPrevious: true }
+            await WaitAsync(() => monitor.Snapshot().Where(state => QuotaNames.HasCliRoute(state.Provider)).All(state => state.IsRefreshing && state.Reading is not null));
+            check(monitor.Snapshot().Where(state => QuotaNames.HasCliRoute(state.Provider)).All(state => state is { ContinuityId: 1, IsPrevious: true }
                 && state.LastSuccessfulCheckUtc == Now.AddMinutes(-10)) && observations.IsEmpty,
                 "Loading a cache preserves the new monitor's positive generation but never establishes live continuity");
             release.TrySetResult();
@@ -686,7 +686,7 @@ internal static class AccountQuotaMonitorTests
         using var monitor = new AccountQuotaMonitor(client, utcNow: () => Now);
         int successes = 0;
         monitor.Succeeded += _ => Interlocked.Increment(ref successes);
-        await Task.WhenAll(Enum.GetValues<QuotaProvider>().Select(provider => monitor.RefreshSourceIfDueAsync(provider)));
+        await Task.WhenAll(QuotaProviders.Boxes.Select(provider => monitor.RefreshSourceIfDueAsync(provider)));
         check(client.Calls(QuotaProvider.Gemini) == 0, "Gemini automatic quota query is disabled before client invocation");
         check(State(monitor, QuotaProvider.Gemini) is { Reading: null, CheckedAtUtc: null, LastSuccessfulCheckUtc: null,
             NextCheckUtc: null, IsRefreshing: false }, "Disabled Gemini has no reading, attempt, success or deadline");
@@ -720,7 +720,7 @@ internal static class AccountQuotaMonitorTests
             for (int index = 0; index < 10; index++) monitor.RequestRefresh(queueWhileRefreshing: true);
             release.TrySetResult();
             await WaitAsync(() => new[] { QuotaProvider.Codex, QuotaProvider.Claude, QuotaProvider.Xai }.All(provider => client.Calls(provider) >= 2)
-                && monitor.Snapshot().Where(state => state.Provider != QuotaProvider.Gemini).All(state => !state.IsRefreshing && state.CheckedAtUtc.HasValue));
+                && monitor.Snapshot().Where(state => QuotaNames.HasCliRoute(state.Provider)).All(state => !state.IsRefreshing && state.CheckedAtUtc.HasValue));
             await Task.Delay(40);
             check(new[] { QuotaProvider.Codex, QuotaProvider.Claude, QuotaProvider.Xai }.All(provider => client.Calls(provider) == 2),
                 "Resume/reconnect requests during refresh coalesce into one follow-up");
@@ -728,8 +728,8 @@ internal static class AccountQuotaMonitorTests
                 "Background polling never overlaps a provider process");
             monitor.RequestRefresh();
             await WaitAsync(() => new[] { QuotaProvider.Codex, QuotaProvider.Claude, QuotaProvider.Xai }.All(provider => client.Calls(provider) == 3)
-                && monitor.Snapshot().Where(state => state.Provider != QuotaProvider.Gemini).All(state => !state.IsRefreshing));
-            check(monitor.Snapshot().Where(state => state.Provider != QuotaProvider.Gemini).All(state => state.NextCheckUtc == Now.AddHours(1)),
+                && monitor.Snapshot().Where(state => QuotaNames.HasCliRoute(state.Provider)).All(state => !state.IsRefreshing));
+            check(monitor.Snapshot().Where(state => QuotaNames.HasCliRoute(state.Provider)).All(state => state.NextCheckUtc == Now.AddHours(1)),
                 "Manual refresh re-arms the next scheduled check");
             await monitor.StopAsync();
             monitor.RequestRefresh(queueWhileRefreshing: true);
@@ -765,7 +765,7 @@ internal static class AccountQuotaMonitorTests
         var client = new FakeClient((provider, _) => Task.FromResult(Reading(provider, provider == QuotaProvider.Codex ? 25 : 75)));
         using (var monitor = new AccountQuotaMonitor(client, store, () => Now))
         {
-            await Task.WhenAll(Enum.GetValues<QuotaProvider>().Select(provider => monitor.RefreshSourceIfDueAsync(provider)));
+            await Task.WhenAll(QuotaProviders.Boxes.Select(provider => monitor.RefreshSourceIfDueAsync(provider)));
             check(monitor.Snapshot().All(state => state.CacheError.Length == 0), "Successful readings saved without cache errors");
             for (int index = 0; index < 5; index++) await monitor.RefreshSourceIfDueAsync(QuotaProvider.Codex);
             await monitor.StopAsync();
@@ -776,7 +776,7 @@ internal static class AccountQuotaMonitorTests
         check(codex is { Version: 1 } && codex.SuccessfulAtUtc == Now && codex.Reading.Windows[0].UsedPercent == 25,
             "Reopened DB returns exact normalized quota and successful time");
         check(claude?.Reading.Windows[0].UsedPercent == 75, "Provider caches persist independently");
-        check(Scalar(path, "SELECT COUNT(*) FROM AppMetadata WHERE Key LIKE 'AccountQuota.v1.%';") == Enum.GetValues<QuotaProvider>().Length,
+        check(Scalar(path, "SELECT COUNT(*) FROM AppMetadata WHERE Key LIKE 'AccountQuota.v1.%';") == QuotaProviders.Boxes.Count,
             "Repeated polling overwrites one bounded metadata cache entry per Provider");
         QuotaCache? geminiCache = await reopened.ReadQuotaAsync(QuotaProvider.Gemini);
         check(geminiCache?.Reading.Provider == QuotaProvider.Gemini && geminiCache.Reading.Windows[0].UsedPercent == 75,
@@ -788,7 +788,7 @@ internal static class AccountQuotaMonitorTests
         string legacyPath = Path.Combine(directory, "quota-legacy-cache.db");
         var legacyStore = new UsageStore(legacyPath);
         await legacyStore.InitializeAsync();
-        foreach (var provider in Enum.GetValues<QuotaProvider>())
+        foreach (var provider in QuotaProviders.Boxes)
         {
             var legacy = new QuotaCache(1, new(provider,
                 [new("account:5h", "5시간", 100, Now.AddHours(5), 300),
@@ -813,7 +813,7 @@ internal static class AccountQuotaMonitorTests
                 "Source-generated quota save and restart preserve every normalized field");
         }
         check(Scalar(legacyPath, "PRAGMA user_version;") == 2 &&
-              Scalar(legacyPath, "SELECT COUNT(*) FROM AppMetadata WHERE Key LIKE 'AccountQuota.v1.%';") == Enum.GetValues<QuotaProvider>().Length,
+              Scalar(legacyPath, "SELECT COUNT(*) FROM AppMetadata WHERE Key LIKE 'AccountQuota.v1.%';") == QuotaProviders.Boxes.Count,
             "Source generation changes neither SQLite schema nor quota metadata keys");
 
         var offline = new FakeClient((_, _) => Task.FromException<QuotaReading>(new IOException("Offline")));
@@ -822,10 +822,10 @@ internal static class AccountQuotaMonitorTests
             int liveSuccesses = 0;
             restarted.Succeeded += _ => Interlocked.Increment(ref liveSuccesses);
             restarted.Start();
-            await WaitAsync(() => restarted.Snapshot().Where(state => state.Provider != QuotaProvider.Gemini).All(state => state.CheckedAtUtc.HasValue && !state.IsRefreshing));
-            check(restarted.Snapshot().Where(state => state.Provider != QuotaProvider.Gemini).All(state => state.IsPrevious && state.Reading is not null && state.LastSuccessfulCheckUtc == Now),
+            await WaitAsync(() => restarted.Snapshot().Where(state => QuotaNames.HasCliRoute(state.Provider)).All(state => state.CheckedAtUtc.HasValue && !state.IsRefreshing));
+            check(restarted.Snapshot().Where(state => QuotaNames.HasCliRoute(state.Provider)).All(state => state.IsPrevious && state.Reading is not null && state.LastSuccessfulCheckUtc == Now),
                 "Offline restart shows persisted values as previous, with original successful time");
-            check(restarted.Snapshot().Where(state => state.Provider != QuotaProvider.Gemini).All(state => state.CheckedAtUtc == Now.AddHours(1) && state.Failure is not null),
+            check(restarted.Snapshot().Where(state => QuotaNames.HasCliRoute(state.Provider)).All(state => state.CheckedAtUtc == Now.AddHours(1) && state.Failure is not null),
                 "Offline restart distinguishes current attempt from cached observation");
             await restarted.StopAsync();
             check(liveSuccesses == 0, "Cache loading, refresh starts and failed offline reads emit no live successful observations");
@@ -836,7 +836,7 @@ internal static class AccountQuotaMonitorTests
         using (var corrupted = new AccountQuotaMonitor(corruptClient, new UsageStore(path), () => Now.AddHours(2)))
         {
             corrupted.Start();
-            await WaitAsync(() => corrupted.Snapshot().Where(state => state.Provider != QuotaProvider.Gemini).All(state => state.CheckedAtUtc.HasValue && !state.IsRefreshing));
+            await WaitAsync(() => corrupted.Snapshot().Where(state => QuotaNames.HasCliRoute(state.Provider)).All(state => state.CheckedAtUtc.HasValue && !state.IsRefreshing));
             check(State(corrupted, QuotaProvider.Codex).Reading is null && State(corrupted, QuotaProvider.Codex).CacheError.Length > 0,
                 "Malformed persisted cache becomes unknown with a cache warning");
             check(State(corrupted, QuotaProvider.Claude).Reading?.Windows[0].UsedPercent == 75,
@@ -901,7 +901,7 @@ internal static class AccountQuotaMonitorTests
         using (var restarted = new AccountQuotaMonitor(client, new UsageStore(store.DatabasePath), () => reset.AddMinutes(6)))
         {
             restarted.Start();
-            await WaitAsync(() => restarted.Snapshot().Where(state => state.Provider != QuotaProvider.Gemini).All(state => state.CheckedAtUtc.HasValue && !state.IsRefreshing));
+            await WaitAsync(() => restarted.Snapshot().Where(state => QuotaNames.HasCliRoute(state.Provider)).All(state => state.CheckedAtUtc.HasValue && !state.IsRefreshing));
             check(State(restarted, QuotaProvider.Codex).NextCheckUtc == reset.AddMinutes(11),
                 "Restart during old reset band restores 5m polling from persisted anchor");
             await restarted.StopAsync();
@@ -953,9 +953,9 @@ internal static class AccountQuotaMonitorTests
 
     private sealed class FakeClient(Func<QuotaProvider, CancellationToken, Task<QuotaReading>> handler) : IAccountQuotaClient
     {
-        private readonly int[] calls = new int[Enum.GetValues<QuotaProvider>().Length];
-        private readonly int[] active = new int[Enum.GetValues<QuotaProvider>().Length];
-        private readonly int[] maximumActive = new int[Enum.GetValues<QuotaProvider>().Length];
+        private readonly int[] calls = new int[QuotaProviders.All.Count];
+        private readonly int[] active = new int[QuotaProviders.All.Count];
+        private readonly int[] maximumActive = new int[QuotaProviders.All.Count];
         private readonly object sync = new();
         public Func<QuotaProvider, CancellationToken, Task<QuotaReading>> Handler { get; set; } = handler;
         public int Calls(QuotaProvider provider) { lock (sync) return calls[(int)provider]; }

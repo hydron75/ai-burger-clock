@@ -2,6 +2,7 @@ namespace AiBurgerClock;
 
 internal enum QuotaSourceMode { Active, Off, Unavailable }
 internal enum QuotaExportMode { Completion, OnChange, None }
+internal enum QuotaReadiness { Ready, Deferred }
 
 internal sealed record QuotaPresentationPolicy(
     IReadOnlySet<QuotaFailureKind> HideReadingInPanel, IReadOnlySet<QuotaFailureKind> HideReadingInExport,
@@ -13,17 +14,24 @@ internal sealed record QuotaPresentationPolicy(
     internal static readonly QuotaPresentationPolicy GeminiWeb = new(
         new HashSet<QuotaFailureKind> { QuotaFailureKind.LoginRequired, QuotaFailureKind.FormatChanged },
         new HashSet<QuotaFailureKind> { QuotaFailureKind.LoginRequired }, true, GeminiUsagePage.IsWebReading, false);
+    internal static readonly QuotaPresentationPolicy AntigravityWeb = GeminiWeb with
+    {
+        AcceptForDisplay = AntigravityUsagePage.IsWebReading,
+        ApproximateReset = true
+    };
 }
 
 internal sealed record QuotaSourceTraits(IQuotaSchedule Schedule, TimeSpan? Timeout, bool EmitsObservations,
     bool DueCheckBeforeRead, bool StickyManualRefresh, bool RefreshOnRecovery,
-    QuotaPresentationPolicy Presentation, QuotaExportMode Export);
+    QuotaPresentationPolicy Presentation, QuotaExportMode Export, TimeSpan? ManualMinimumInterval = null,
+    bool CancelLifetimeAsynchronously = false, bool CanSetMode = false, QuotaProvider? DependsOn = null);
 
 internal interface IQuotaSource
 {
     QuotaProvider Provider { get; }
     QuotaSourceTraits Traits { get; }
     IQuotaCacheAdapter Cache { get; }
+    QuotaReadiness CheckReadiness() => QuotaReadiness.Ready;
     // The web parser needs the injected clock at response time, after WebView navigation.
     Task<QuotaReadResult> ReadAsync(Func<DateTimeOffset> utcNow, TimeZoneInfo zone, CancellationToken cancellationToken);
 }
@@ -99,7 +107,7 @@ internal sealed class GeminiWebQuotaSource(IGeminiUsagePageReader reader, UsageS
     public IQuotaCacheAdapter Cache { get; } = QuotaCacheAdapter.ForGeminiWeb(store);
     public QuotaSourceTraits Traits { get; } = new(new FixedSchedule(TimeSpan.FromMinutes(GeminiUsagePage.PollMinutes), stopOnLoginRequired: true),
         Timeout: null, EmitsObservations: false, DueCheckBeforeRead: true, StickyManualRefresh: true, RefreshOnRecovery: false,
-        QuotaPresentationPolicy.GeminiWeb, QuotaExportMode.OnChange);
+        QuotaPresentationPolicy.GeminiWeb, QuotaExportMode.OnChange, CancelLifetimeAsynchronously: true, CanSetMode: true);
 
     public async Task<QuotaReadResult> ReadAsync(Func<DateTimeOffset> utcNow, TimeZoneInfo zone, CancellationToken cancellationToken)
     {
@@ -114,6 +122,30 @@ internal sealed class GeminiWebQuotaSource(IGeminiUsagePageReader reader, UsageS
         cancellationToken.ThrowIfCancellationRequested();
         var result = GeminiUsagePage.Parse(load, utcNow().ToUniversalTime(), zone);
         return result.Reading is { } reading ? QuotaReadResult.Success(reading) : QuotaReadResult.Failed(result.Failure!);
+    }
+}
+
+internal sealed class AntigravityWebQuotaSource(IAntigravityUsagePageReader reader, UsageStore? store,
+    Func<QuotaReadiness>? hostReadiness = null) : IQuotaSource
+{
+    public QuotaProvider Provider => QuotaProvider.Antigravity;
+    public IQuotaCacheAdapter Cache { get; } = QuotaCacheAdapter.ForAntigravityWeb(store);
+    public QuotaSourceTraits Traits { get; } = new(
+        new FixedSchedule(TimeSpan.FromMinutes(AntigravityUsagePage.PollMinutes), stopOnLoginRequired: true),
+        Timeout: null, EmitsObservations: false, DueCheckBeforeRead: true, StickyManualRefresh: true, RefreshOnRecovery: false,
+        QuotaPresentationPolicy.AntigravityWeb, QuotaExportMode.None, TimeSpan.FromMinutes(AntigravityUsagePage.ManualMinimumMinutes),
+        CancelLifetimeAsynchronously: true, CanSetMode: true, DependsOn: QuotaProvider.Gemini);
+
+    public QuotaReadiness CheckReadiness() => hostReadiness?.Invoke() ?? QuotaReadiness.Ready;
+
+    public async Task<QuotaReadResult> ReadAsync(Func<DateTimeOffset> utcNow, TimeZoneInfo zone, CancellationToken cancellationToken)
+    {
+        AntigravityUsagePageLoad load;
+        try { load = await reader.LoadAntigravityAsync(cancellationToken).ConfigureAwait(false); }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+        catch { load = default; }
+        cancellationToken.ThrowIfCancellationRequested();
+        return AntigravityUsagePage.Parse(load, utcNow());
     }
 }
 

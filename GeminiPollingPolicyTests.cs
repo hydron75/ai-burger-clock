@@ -85,7 +85,7 @@ internal static class GeminiPollingPolicyTests
                 provider: QuotaProvider.Gemini) == TimeSpan.FromMinutes(5), "positive reset bands retain inclusive boundaries");
         check(AccountQuotaPolicy.GetNextCheckUtc(Now.AddMinutes(15), Now.AddMinutes(15), [Window(20, Now)],
             provider: QuotaProvider.Gemini) == Now.AddMinutes(15).AddHours(1), "no trailing five-minute poll follows a genuine band");
-        foreach (QuotaProvider provider in Enum.GetValues<QuotaProvider>())
+        foreach (QuotaProvider provider in QuotaProviders.Boxes)
             check(QuotaPanelModel.Section(new(provider, Mode: provider == QuotaProvider.Gemini
                 ? QuotaSourceMode.Unavailable : QuotaSourceMode.Active), Now).Detail.Contains(
                 "Antigravity 약관상", StringComparison.Ordinal)
@@ -266,7 +266,7 @@ internal static class GeminiPollingPolicyTests
         try
         {
             await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
-            await MonitorTests.WaitUntilAsync(() => monitor.Snapshot().Where(state => state.Provider != QuotaProvider.Gemini).All(state => state.CheckedAtUtc.HasValue && !state.IsRefreshing));
+            await MonitorTests.WaitUntilAsync(() => monitor.Snapshot().Where(state => QuotaNames.HasCliRoute(state.Provider)).All(state => state.CheckedAtUtc.HasValue && !state.IsRefreshing));
             check(client.Calls == 3, "all initial reads have returned while the synthetic success callback still holds its provider gate");
             Task completed = WaitForInitialReadsAsync(monitor);
             check(!completed.IsCompleted, "the fixture must not mistake idle display state for completed success callbacks");
@@ -292,7 +292,7 @@ internal static class GeminiPollingPolicyTests
     private static async Task WaitForInitialReadsAsync(AccountQuotaMonitor monitor)
     {
         await MonitorTests.WaitUntilAsync(
-            () => monitor.Snapshot().Where(s => s.Provider != QuotaProvider.Gemini).All(s => s.CheckedAtUtc.HasValue && !s.IsRefreshing), milliseconds: 5000);
+            () => monitor.Snapshot().Where(s => QuotaNames.HasCliRoute(s.Provider)).All(s => s.CheckedAtUtc.HasValue && !s.IsRefreshing), milliseconds: 5000);
         // IsRefreshing is already false inside Succeeded, before the gate is released.
         // Wait for actual completion in this fixture, without a sleep or another read.
         const System.Reflection.BindingFlags flags = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic;

@@ -159,7 +159,7 @@ internal sealed class MacQuotaNotifications
     internal IReadOnlyDictionary<QuotaProvider, QuotaEarlyResetAlert> RecentEarlyResets()
     {
         var recent = new Dictionary<QuotaProvider, QuotaEarlyResetAlert>();
-        foreach (QuotaProvider provider in Enum.GetValues<QuotaProvider>())
+        foreach (QuotaProvider provider in QuotaProviders.Boxes)
             if (earlyResetEngine.Recent(provider) is { } alert) recent[provider] = alert;
         return recent;
     }

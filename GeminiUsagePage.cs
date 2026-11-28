@@ -28,11 +28,7 @@ internal enum GeminiUsageFailureRule
     InvalidReset, DuplicateReset, MissingReset, ResetOutsideWindow
 }
 
-internal sealed record GeminiUsageDiagnostic(GeminiUsageFailureRule Rule)
-{
-    // The Mac smoke fixtures still construct the older two-argument shape.
-    internal GeminiUsageDiagnostic(GeminiUsageFailureRule rule, int _) : this(rule) { }
-}
+internal sealed record GeminiUsageDiagnostic(GeminiUsageFailureRule Rule);
 internal sealed record GeminiUsageResult(GeminiUsageOutcome Outcome, QuotaReading? Reading = null,
     GeminiUsageDiagnostic? Diagnostic = null)
 {

@@ -33,7 +33,7 @@ internal static class QuotaPendingAlertPolicyTests
         bool EarlyCurrent(QuotaReading current, DateTimeOffset? at = null, long id = continuity) =>
             QuotaPendingAlertPolicy.EarlyResetStillCurrent(early, expected, current, at ?? now, id);
 
-        foreach (QuotaProvider provider in Enum.GetValues<QuotaProvider>())
+        foreach (QuotaProvider provider in QuotaProviders.Boxes)
         {
             QuotaReading providerReading = expected with { Provider = provider };
             Check(QuotaPendingAlertPolicy.RecoveryStillCurrent(recovery with { Provider = provider },

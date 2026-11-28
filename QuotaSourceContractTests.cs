@@ -42,10 +42,23 @@ internal static class QuotaSourceContractTests
             retry.NextCheckUtc == now.AddMinutes(15),
             "a fixed retry without a stop condition keeps its deadline without a reset anchor");
 
+        foreach (var cliProvider in QuotaProviders.All.Where(QuotaNames.HasCliRoute))
+        {
+            var cliSource = new CliQuotaSource(cliProvider, new Client(now), null);
+            using var cli = new AccountQuotaMonitor([(cliSource, QuotaSourceMode.Active)], utcNow: () => now);
+            rejected = false;
+            try { cli.SetMode(cliProvider, QuotaSourceMode.Off); }
+            catch (InvalidOperationException) { rejected = true; }
+            Check(rejected && cli.Snapshot().Single().Mode == QuotaSourceMode.Active,
+                "the CLI route rejects SetMode without changing its state");
+        }
+
         AccountQuotaMonitor? duringCompletion = null;
         int timestamps = 0, published = 0;
-        using var cli = duringCompletion = new AccountQuotaMonitor(
-            [(new CliQuotaSource(QuotaProvider.Codex, new Client(now), null), QuotaSourceMode.Active)],
+        var codex = new CliQuotaSource(QuotaProvider.Codex, new Client(now), null);
+        var switchable = new FixtureSource(codex, codex.Traits with { CanSetMode = true });
+        using var completing = duringCompletion = new AccountQuotaMonitor(
+            [(switchable, QuotaSourceMode.Active)],
             utcNow: () =>
             {
                 // Attempt start, validation, result time, then diagnostic time.
@@ -53,11 +66,78 @@ internal static class QuotaSourceContractTests
                 return now;
             },
             earlyResetDiagnosticLog: new(Path.Combine(directory, "quota-source-contract", "completion-log")));
-        cli.Succeeded += _ => published++;
-        await cli.RefreshSourceIfDueAsync(QuotaProvider.Codex);
-        Check(published == 0 && cli.Snapshot().Single() is { Mode: QuotaSourceMode.Off, Reading: null },
+        completing.Succeeded += _ => published++;
+        await completing.RefreshSourceIfDueAsync(QuotaProvider.Codex);
+        Check(published == 0 && completing.Snapshot().Single() is { Mode: QuotaSourceMode.Off, Reading: null },
             "switching mode during completion cannot publish a discarded generation");
+
+        var claude = new CliQuotaSource(QuotaProvider.Claude, new Client(now), null);
+        var dependency = new FixtureSource(claude, claude.Traits)
+        {
+            Read = _ => Task.FromResult(QuotaReadResult.Failed(new(QuotaFailureKind.LoginRequired, "synthetic.login")))
+        };
+        var dependent = new FixtureSource(codex, codex.Traits with { DependsOn = QuotaProvider.Claude, DueCheckBeforeRead = true });
+        using var linked = new AccountQuotaMonitor(
+            [(dependent, QuotaSourceMode.Active), (dependency, QuotaSourceMode.Active)], utcNow: () => now);
+        await linked.RefreshSourceIfDueAsync(QuotaProvider.Claude);
+        QuotaState DependentState() => linked.Snapshot().Single(state => state.Provider == QuotaProvider.Codex);
+        var initial = DependentState();
+        await linked.RefreshSourceIfDueAsync(QuotaProvider.Codex);
+        Check(DependentState() == initial, "the configured dependency defers a read without mutating its state");
+        dependency.Read = _ => Task.FromResult(QuotaReadResult.Failed(new(QuotaFailureKind.FormatChanged, "synthetic.format")));
+        await linked.RefreshSourceIfDueAsync(QuotaProvider.Claude);
+        now = now.AddMinutes(5);
+        await linked.RefreshSourceIfDueAsync(QuotaProvider.Codex);
+        Check(DependentState().Reading is not null, "a dependency failure other than login required does not defer");
+
+        var readingStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var cancellationEntered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var cancellable = new FixtureSource(codex, codex.Traits with
+        {
+            CancelLifetimeAsynchronously = true, StickyManualRefresh = false, Timeout = null, EmitsObservations = false
+        })
+        {
+            Read = async token =>
+            {
+                using var registration = token.Register(() =>
+                {
+                    cancellationEntered.TrySetResult();
+                    release.Task.GetAwaiter().GetResult();
+                });
+                readingStarted.TrySetResult();
+                await release.Task;
+                token.ThrowIfCancellationRequested();
+                throw new InvalidOperationException("The synthetic read expected cancellation.");
+            }
+        };
+        using var shutdown = new AccountQuotaMonitor([(cancellable, QuotaSourceMode.Active)], utcNow: () => now);
+        var read = shutdown.RefreshSourceIfDueAsync(QuotaProvider.Codex);
+        var limit = TimeSpan.FromSeconds(5);
+        try
+        {
+            await readingStarted.Task.WaitAsync(limit);
+            var dispose = Task.Run(shutdown.Dispose);
+            await cancellationEntered.Task.WaitAsync(limit);
+            await dispose.WaitAsync(limit);
+            Check(!read.IsCompleted, "non-sticky source lifetime cancellation does not block Dispose");
+        }
+        finally
+        {
+            release.TrySetResult();
+            await read.WaitAsync(limit);
+        }
         return count;
+    }
+
+    private sealed class FixtureSource(IQuotaSource source, QuotaSourceTraits traits) : IQuotaSource
+    {
+        public QuotaProvider Provider => source.Provider;
+        public QuotaSourceTraits Traits => traits;
+        public IQuotaCacheAdapter Cache => source.Cache;
+        internal Func<CancellationToken, Task<QuotaReadResult>>? Read { get; set; }
+        public Task<QuotaReadResult> ReadAsync(Func<DateTimeOffset> utcNow, TimeZoneInfo zone, CancellationToken cancellationToken) =>
+            Read?.Invoke(cancellationToken) ?? source.ReadAsync(utcNow, zone, cancellationToken);
     }
 
     private sealed class Reader : IGeminiUsagePageReader

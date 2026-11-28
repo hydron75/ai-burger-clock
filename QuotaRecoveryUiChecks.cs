@@ -375,7 +375,7 @@ internal static class QuotaRecoveryUiChecks
     {
         private sealed record Response(double Used, double WeeklyUsed, bool Fail = false, bool Block = false, int SessionMinutes = 300);
         private readonly object sync = new();
-        private readonly Dictionary<QuotaProvider, Response> responses = Enum.GetValues<QuotaProvider>()
+        private readonly Dictionary<QuotaProvider, Response> responses = QuotaProviders.Boxes
             .ToDictionary(provider => provider, _ => new Response(25, 25));
         private int calls;
         internal int TotalCalls => Volatile.Read(ref calls);

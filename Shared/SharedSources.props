@@ -26,6 +26,7 @@
     <Compile Include="$(MSBuildThisFileDirectory)../AccountQuotaMonitor.cs" Link="Shared/AccountQuotaMonitor.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)../AccountQuotaMonitor.ClaudeAuth.cs" Link="Shared/AccountQuotaMonitor.ClaudeAuth.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)../GeminiUsagePage.cs" Link="Shared/GeminiUsagePage.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)../AntigravityUsagePage.cs" Link="Shared/AntigravityUsagePage.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)../GeminiWebText.cs" Link="Shared/GeminiWebText.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)../RecommendationNotifications.cs" Link="Shared/RecommendationNotifications.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)../NetworkRefreshScheduler.cs" Link="Shared/NetworkRefreshScheduler.cs" />

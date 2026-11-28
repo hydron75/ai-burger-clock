@@ -75,7 +75,7 @@ internal static class WindowsQuotaExportChecks
     }
 
     internal static IReadOnlyList<QuotaState> Readings(DateTimeOffset now, double used = 37.5) =>
-        Enum.GetValues<QuotaProvider>().Select(provider => new QuotaState(provider,
+        QuotaProviders.Boxes.Select(provider => new QuotaState(provider,
             new(provider, [new("synthetic-weekly", "주간 합성 모델 👩🏽‍💻", used, now.AddDays(2), 10080)]),
             now, now, now.AddHours(1), Failure: new(QuotaFailureKind.Unreachable, "SYNTHETIC-PRIVATE-ERROR"), CacheError: "SYNTHETIC-PRIVATE-CACHE", ContinuityId: 1234)).ToArray();
 
@@ -202,7 +202,7 @@ internal static class WindowsQuotaExportChecks
             Check(previous.RootElement.GetProperty("providers").EnumerateArray().All(p => p.GetProperty("reading").GetString() ==
                 (p.GetProperty("provider").GetString() == "Gemini" ? "none" : "previous")), "failed enabled Provider read keeps previous readings while Gemini remains none");
             Check(Seq(f.Http.Last) == first + 1, "new snapshot reserves a greater sequence");
-            f.States = Enum.GetValues<QuotaProvider>().Select(p => new QuotaState(p,
+            f.States = QuotaProviders.Boxes.Select(p => new QuotaState(p,
                 CacheError: Credentials.SyntheticToken, Failure: new(QuotaFailureKind.FormatChanged, "parser.synthetic-private"))).ToArray();
             f.Service.Completed(f.States); await f.Service.WaitForIdleAsync();
             using var none = Body(f.Http.Last);
@@ -278,8 +278,8 @@ internal static class WindowsQuotaExportChecks
             for (int round = 0; round < 40; round++)
             {
                 client.Fail = round % 2 == 1;
-                await Task.WhenAll(Enum.GetValues<QuotaProvider>().Select(p => monitor.RefreshSourceIfDueAsync(p))).WaitAsync(TimeSpan.FromSeconds(3));
-                Check(completions == (round + 1) * Enum.GetValues<QuotaProvider>().Count(QuotaNames.HasCliRoute), "parallel completion round has no missed or duplicate enabled Provider success/failure");
+                await Task.WhenAll(QuotaProviders.Boxes.Select(p => monitor.RefreshSourceIfDueAsync(p))).WaitAsync(TimeSpan.FromSeconds(3));
+                Check(completions == (round + 1) * QuotaProviders.Boxes.Count(QuotaNames.HasCliRoute), "parallel completion round has no missed or duplicate enabled Provider success/failure");
             }
             Check(f.Http.Count <= 1, "slow sender never holds Provider callbacks");
             blocked.TrySetResult(new HttpResponseMessage(HttpStatusCode.OK)); await f.Service.WaitForIdleAsync();
@@ -304,9 +304,9 @@ internal static class WindowsQuotaExportChecks
                     "startup ignores historical Gemini cache and starts no Gemini query");
                 Check(completions == 0 && f.Http.Count == 0 && f.Vault.Reads == 0, "startup/cache/start events do not export");
                 client.Gate.SetResult();
-                await Wait(() => Volatile.Read(ref completions) == Enum.GetValues<QuotaProvider>().Count(QuotaNames.HasCliRoute));
+                await Wait(() => Volatile.Read(ref completions) == QuotaProviders.Boxes.Count(QuotaNames.HasCliRoute));
                 await f.Service.WaitForIdleAsync();
-                Check(completions == Enum.GetValues<QuotaProvider>().Count(QuotaNames.HasCliRoute) && f.Http.Count > 0, "only completed live enabled Provider startup reads export");
+                Check(completions == QuotaProviders.Boxes.Count(QuotaNames.HasCliRoute) && f.Http.Count > 0, "only completed live enabled Provider startup reads export");
             }
             finally { await monitor.StopAsync(); Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools(); }
         }

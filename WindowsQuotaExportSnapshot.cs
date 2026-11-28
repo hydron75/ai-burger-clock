@@ -34,12 +34,13 @@ internal static class WindowsQuotaExportSnapshot
                 else if (char.IsLowSurrogate(value[i])) return false;
             return true;
         }
-        if (states.Count != 4 || !Guid.TryParseExact(settings.SourceId, "D", out _) || settings.Seq < 1 ||
+        var boxStates = states.Where(state => state.Provider != QuotaProvider.Antigravity).ToArray();
+        if (boxStates.Length != QuotaProviders.Boxes.Count || !Guid.TryParseExact(settings.SourceId, "D", out _) || settings.Seq < 1 ||
             settings.Seq > WindowsQuotaExportSettingsStore.MaximumSequence || !Text(appVersion, 64))
             throw new InvalidDataException("Invalid quota export envelope.");
-        var providers = Enum.GetValues<QuotaProvider>().Select(provider =>
+        var providers = QuotaProviders.Boxes.Select(provider =>
         {
-            var state = states.Single(s => s.Provider == provider);
+            var state = boxStates.Single(s => s.Provider == provider);
             if (provider == QuotaProvider.Gemini) return Gemini(state, generatedAtUtc);
             bool none = state.Reading is null;
             if (!none && (state.LastSuccessfulCheckUtc is null || state.Reading!.Windows.Count is < 1 or > 64 ||
@@ -123,7 +124,7 @@ internal sealed class WindowsQuotaExportBridge : IDisposable
             bool otherCompleted = false;
             foreach (var state in states)
             {
-                if (state.Provider == QuotaProvider.Gemini) continue;
+                if (state.Provider is QuotaProvider.Gemini or QuotaProvider.Antigravity) continue;
                 if (state.IsRefreshing) started.Add(state.Provider);
                 else if (started.Remove(state.Provider) && state.CheckedAtUtc is not null && state.NextCheckUtc is not null)
                 {
