@@ -425,6 +425,8 @@ internal static class MacAntigravitySmoke
               parts[1].Rows.All(row => row.Text.Contains("약 ", StringComparison.Ordinal) && row.Detail.Contains("약 20", StringComparison.Ordinal)) &&
               parts[0].Rows.All(row => !row.Detail.Contains("약 20", StringComparison.Ordinal)) &&
               panel.QuotaRowIds(QuotaProvider.Gemini).Length == 4, "the two parts, their rows or the estimate mark are wrong.");
+        Check(parts.All(part => part.Title.Detail.Contains(MacPollingDiagnosticSmoke.FixedCadenceLine, StringComparison.Ordinal)),
+              "a part's detail does not state the fixed cadence.");
         NSView twoBox = panel.QuotaBoxView(QuotaProvider.Gemini);
         Show(gemini, antigravity with { LastSuccessfulCheckUtc = utc.AddMinutes(-1) });
         Check(ReferenceEquals(twoBox, panel.QuotaBoxView(QuotaProvider.Gemini)), "a value-only update rebuilt the two-part box.");
