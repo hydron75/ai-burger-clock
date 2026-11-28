@@ -3638,3 +3638,35 @@ native `--smoke-test`는 배포에서 실행하지 않았다.
 
 ### 수행하지 않은 검증 (0.11.0)
 읽기 창이 있는 순간을 특정한 비노출 확인, 앱 비활성 상태를 구분한 확인, 전체 화면 앱이 덮은 디스플레이에서의 읽기·미루기, 화면 잠금·디스플레이 잠자기에서의 미루기, 1시간 뒤 자동 조회와 수동 Refresh의 Antigravity 갱신, Antigravity만 로그인이 필요한 경우, 로그아웃(실행하지 않음), 0.10.0으로 되돌리기, 배포 번들의 native smoke.
+
+## 93. 조회 간격 30분 고정(PR #197)의 Mac 확인
+
+2026-11-28. 메인 지시로 #197(xAI·Gemini 앱·Antigravity 30분 고정, 공통 원본)을 Mac에서 확인했다. 운영 앱(0.11.0 / 38)은 바꾸지 않았다. 공통 원본과 Windows 파일도 고치지 않았다.
+
+### 기준
+- #197 HEAD `4a0c1d0debaea69c19c897a886e22d44583e903d`. 지시에 적힌 `12896c1` 뒤에 `QUOTA_SOURCES_DESIGN.md`만 바꾼 문서 커밋 하나가 붙었다.
+- .NET SDK 10.0.404, Xcode 27.2(27B52), macOS 워크로드 27.2.10000. 임시 worktree에서 옵션 없는 `bash Mac/build.sh`.
+
+### 수정 전 HEAD
+- `build.sh`: Shared.Tests 291,705건(0.11.0 때보다 164건 적음, #197 본문의 설명과 같은 차이), 경고 0·오류 0, 종료 코드 0. Mac 코드는 제거된 심볼을 참조하지 않아 컴파일은 고칠 것이 없다.
+- native smoke는 이 HEAD로 실행하지 않았다. `MacPollingDiagnosticSmoke`의 기대값(xAI 성공 +1시간·앵커 1개, 리셋 구간 +10분, 상세의 `기본 1시간`·`리셋 전후 15분은 10분`·`최소 10분`)이 바뀐 코드에서 반드시 실패하므로, 실패할 창 검사를 화면에 띄우지 않았다.
+
+### 변경 (`f45794e7168f5a11b39a516cb40ddae51d9b0586`)
+
+| 파일 | 내용 |
+|---|---|
+| `Mac/MacPollingDiagnosticSmoke.cs` | xAI 사용 20%·40%·100%(뒤 둘은 리셋 10분 전) 성공과 연속 실패 2회가 모두 +30분, 선택 리셋 없음, 앵커 0개. 상세는 xAI에 고정 주기 문구만, Codex·Claude에 기존 사용량 기준 문구 |
+| `Mac/MacGeminiWebSmoke.cs` | Gemini 앱 상세에서 고정 주기 문구 전체를 확인(이전: `자동 …분`만) |
+| `Mac/MacAntigravitySmoke.cs` | 두 부분 Gemini 박스의 각 부분 상세에 같은 문구 |
+| `Mac/MacApplication.cs` | Antigravity 요청을 10분 안에는 버린다는 주석 삭제(동작 코드 변경 없음) |
+| `Mac/README.md` | 0.11.0 이후 소스의 30분 고정 안내 |
+
+확인한 문구는 `자동 30분 · 수동 Refresh · 실패 시 30분 뒤 다시 조회`다.
+
+### 수정 후 검증
+- `build.sh`: Shared.Tests 291,705건, 경고 0·오류 0, 종료 코드 0.
+- native smoke 1회: 종료 코드 0, PASS, SKIP 0. 상태 항목이 있는 디스플레이는 전체 화면 앱에 덮여 있어 팝오버와 통계 창은 다른 디스플레이의 smoke 전용 창에서 검사했다(74절 동작).
+- 임시 사본 앱을 `lsregister -u`로 해제해 등록 수 1. 이 앱의 충돌 보고 없음.
+
+### 수행하지 않은 검증
+수정 전 HEAD의 native smoke, 상태 항목에 붙은 팝오버, 실제 계정에서의 30분 자동 조회·Antigravity 연속 수동 Refresh·로그인 필요 시 자동 조회 중단(합성 리더와 가짜 시계의 검사만), 30분 주기에서 Antigravity 읽기 창의 화면 영향, 운영 앱 교체(0.11.1 / 39는 #197이 main에 병합된 뒤 별도 PR).
