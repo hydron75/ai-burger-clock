@@ -398,7 +398,7 @@ internal static class MacGeminiWebSmoke
             Check(!detail.Contains("Antigravity 약관상", StringComparison.Ordinal), where + "a web state shows the Antigravity stop text.");
             if (name == "off") Check(detail.Contains("꺼짐", StringComparison.Ordinal), where + "the tip does not say the reader is off.");
             if (name == "normal")
-                Check(detail.Contains("gemini.google.com/usage", StringComparison.Ordinal) && detail.Contains($"자동 {GeminiUsagePage.PollMinutes}분", StringComparison.Ordinal),
+                Check(detail.Contains("gemini.google.com/usage", StringComparison.Ordinal) && detail.Contains(MacPollingDiagnosticSmoke.FixedCadenceLine, StringComparison.Ordinal),
                     where + "the tip lacks the source page or the polling interval.");
             MacDetailTip.Metrics tip = MacDetailTip.Measure(detail);
             Check(Math.Abs((double)tip.Size.Width - MacDetailTip.Width) < 0.5 && tip.PlacedCharacters == tip.Characters,

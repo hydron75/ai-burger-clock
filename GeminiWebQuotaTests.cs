@@ -60,14 +60,14 @@ internal static class GeminiWebQuotaTests
         Check(cli.GeminiCalls == 0 && reader.Calls == 1 && reader.Url == GeminiUsagePage.Url && reader.Script == GeminiUsagePage.ReadScript,
             "login signal goes through just the fixed URL and shared script");
         Check(ok is { HasResultSinceModeChange: true, Failure: null } && ok.LastSuccessfulCheckUtc == now &&
-            ok.NextCheckUtc == now.AddMinutes(15) && !ok.IsPrevious, "100%, 97%, and near reset still schedule fifteen minutes");
+            ok.NextCheckUtc == now.AddMinutes(30) && !ok.IsPrevious, "100%, 97%, and near reset still schedule thirty minutes");
 
         var displayed = QuotaPanelModel.Section(ok, now);
         Check(displayed.Rows.Select(row => row.NameText).SequenceEqual(["5시간", "주간"]) &&
             displayed.Rows.All(row => row.UsedPercent is not null && row.ElapsedPercent is not null), "both web windows use the shared rows and time layers");
         Check(displayed.Detail.Contains("gemini.google.com/usage", StringComparison.Ordinal) &&
             displayed.Detail.Contains("Antigravity 한도와 별개", StringComparison.Ordinal) &&
-            displayed.Detail.Contains("자동 15분", StringComparison.Ordinal) &&
+            displayed.Detail.Contains("자동 30분", StringComparison.Ordinal) &&
             displayed.Detail.Contains("수 분", StringComparison.Ordinal) &&
             displayed.Detail.Contains("로그인 필요", StringComparison.Ordinal), "web detail explains its source, delay, and session policy");
         var elapsed = QuotaPanelModel.Section(ok, now.AddMinutes(5));
@@ -100,7 +100,7 @@ internal static class GeminiWebQuotaTests
         await monitor.RefreshSourceIfDueAsync(QuotaProvider.Gemini);
         var failed = GeminiState(monitor);
         Check(reader.Calls == 2 && failed.Failure == new QuotaFailure(QuotaFailureKind.Unreachable, "gemini.load")
-            && failed.IsPrevious && failed.NextCheckUtc == now.AddMinutes(15), "deadline is inclusive; load failure keeps the previous web cache and retries in fifteen minutes");
+            && failed.IsPrevious && failed.NextCheckUtc == now.AddMinutes(30), "deadline is inclusive; load failure keeps the previous web cache and retries in thirty minutes");
         Check(!QuotaPanelModel.Section(failed, now).Detail.Contains("SYNTHETIC-PRIVATE", StringComparison.Ordinal),
             "host exceptions are never copied into presentation");
 
@@ -108,8 +108,8 @@ internal static class GeminiWebQuotaTests
         now = failed.NextCheckUtc!.Value;
         await monitor.RefreshSourceIfDueAsync(QuotaProvider.Gemini);
         var changed = GeminiState(monitor);
-        Check(reader.Calls == 3 && changed.NextCheckUtc == now.AddMinutes(15) && changed.Failure?.Kind == QuotaFailureKind.FormatChanged,
-            "format failure also retries in fifteen minutes");
+        Check(reader.Calls == 3 && changed.NextCheckUtc == now.AddMinutes(30) && changed.Failure?.Kind == QuotaFailureKind.FormatChanged,
+            "format failure also retries in thirty minutes");
         Check(QuotaPanelModel.Section(changed, now).Rows.Single() is { Text: "형식 변경 · 조회 불가", UsedPercent: null },
             "format change is visible and has no numeric bars");
 
@@ -129,7 +129,7 @@ internal static class GeminiWebQuotaTests
         monitor.RequestSourceRefresh(QuotaProvider.Gemini);
         await monitor.RefreshSourceIfDueAsync(QuotaProvider.Gemini);
         Check(reader.Calls == 5 && GeminiState(monitor) is { HasResultSinceModeChange: true, Failure: null } &&
-            GeminiState(monitor).NextCheckUtc == now.AddMinutes(15), "manual Refresh resumes after verifying a signed-in session");
+            GeminiState(monitor).NextCheckUtc == now.AddMinutes(30), "manual Refresh resumes after verifying a signed-in session");
         reader.Load = _ => Task.FromResult(signedOut);
         monitor.RequestSourceRefresh(QuotaProvider.Gemini);
         await monitor.RefreshSourceIfDueAsync(QuotaProvider.Gemini);

@@ -152,7 +152,7 @@ internal static class QuotaSchedulingTests
         check(AccountQuotaPolicy.DefaultInterval == TimeSpan.FromHours(1)
             && AccountQuotaPolicy.LowRemainingInterval == AccountQuotaPolicy.DefaultInterval,
             "the shared hourly default deliberately equals the high-usage interval without sharing its reason");
-        foreach (QuotaProvider provider in QuotaProviders.Boxes)
+        foreach (QuotaProvider provider in QuotaProviders.Boxes.Where(provider => provider != QuotaProvider.Xai))
         {
             foreach ((double used, QuotaCheckReason reason) in new[]
             {
@@ -271,7 +271,7 @@ internal static class QuotaSchedulingTests
 
     private static async Task HourlyDiagnosticIntegrationTestsAsync(string directory, Action<bool, string> check)
     {
-        foreach (QuotaProvider provider in new[] { QuotaProvider.Codex, QuotaProvider.Claude, QuotaProvider.Xai })
+        foreach (QuotaProvider provider in new[] { QuotaProvider.Codex, QuotaProvider.Claude })
         {
             var log = new QuotaPollingDiagnosticLog(Path.Combine(directory, "quota-hourly-diagnostics-" + provider));
             DateTimeOffset now = Now;
@@ -338,20 +338,20 @@ internal static class QuotaSchedulingTests
             await monitor.RefreshSourceIfDueAsync(provider);
             QuotaPollingDiagnostic upcoming = Read(log).Entries[^1];
             check(upcoming.Reason == QuotaCheckReason.ResetEntry.ToString()
-                && upcoming.NextCheckUtc == now.AddMinutes(provider == QuotaProvider.Xai ? 10 : 2) && upcoming.SelectedResetUtc == reset,
+                && upcoming.NextCheckUtc == now.AddMinutes(2) && upcoming.SelectedResetUtc == reset,
                 "a genuine reset entry still takes precedence over the one-hour default for every Provider");
             fail = true;
             await monitor.RefreshSourceIfDueAsync(provider);
             QuotaPollingDiagnostic beforeBand = Read(log).Entries[^1];
             check(!beforeBand.Succeeded && beforeBand.Reason == QuotaCheckReason.ResetEntry.ToString()
-                && beforeBand.NextCheckUtc == now.AddMinutes(provider == QuotaProvider.Xai ? 10 : 2) && beforeBand.SelectedResetUtc == reset,
-                "a reset entry with the provider floor wins over the initial fifteen-minute failure retry");
+                && beforeBand.NextCheckUtc == now.AddMinutes(2) && beforeBand.SelectedResetUtc == reset,
+                "a reset entry wins over the initial fifteen-minute failure retry");
             now = reset.Value.AddMinutes(-15);
             await monitor.RefreshSourceIfDueAsync(provider);
             QuotaPollingDiagnostic withinBand = Read(log).Entries[^1];
             check(!withinBand.Succeeded && withinBand.Reason == QuotaCheckReason.ResetPeriod.ToString()
-                && withinBand.NextCheckUtc == now.AddMinutes(provider == QuotaProvider.Xai ? 10 : 5) && withinBand.SelectedResetUtc == reset,
-                "reset scheduling with the provider floor also wins over a second failed read's thirty-minute retry");
+                && withinBand.NextCheckUtc == now.AddMinutes(5) && withinBand.SelectedResetUtc == reset,
+                "reset scheduling also wins over a second failed read's thirty-minute retry");
             now = reset.Value.AddMinutes(16);
             await monitor.RefreshSourceIfDueAsync(provider);
             QuotaPollingDiagnostic afterBand = Read(log).Entries[^1];

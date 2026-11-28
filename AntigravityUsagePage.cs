@@ -24,8 +24,7 @@ internal static class AntigravityWebText
 internal static partial class AntigravityUsagePage
 {
     internal const string Url = "https://antigravity.google.com/remote?settingsOpen=true&settingsScreen=Models";
-    internal const int PollMinutes = 60;
-    internal const int ManualMinimumMinutes = 10;
+    internal const int PollMinutes = 30;
     internal const string FiveHourId = "antigravity-web:five-hour";
     internal const string WeeklyId = "antigravity-web:weekly";
     private const string Title = "Gemini Models";

@@ -729,7 +729,8 @@ internal static class AccountQuotaMonitorTests
             monitor.RequestRefresh();
             await WaitAsync(() => new[] { QuotaProvider.Codex, QuotaProvider.Claude, QuotaProvider.Xai }.All(provider => client.Calls(provider) == 3)
                 && monitor.Snapshot().Where(state => QuotaNames.HasCliRoute(state.Provider)).All(state => !state.IsRefreshing));
-            check(monitor.Snapshot().Where(state => QuotaNames.HasCliRoute(state.Provider)).All(state => state.NextCheckUtc == Now.AddHours(1)),
+            check(monitor.Snapshot().Where(state => QuotaNames.HasCliRoute(state.Provider)).All(state =>
+                state.NextCheckUtc == Now.AddMinutes(state.Provider == QuotaProvider.Xai ? 30 : 60)),
                 "Manual refresh re-arms the next scheduled check");
             await monitor.StopAsync();
             monitor.RequestRefresh(queueWhileRefreshing: true);

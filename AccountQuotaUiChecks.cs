@@ -327,7 +327,7 @@ internal static class AccountQuotaUiChecks
         Check(xaiBox.Controls.OfType<QuotaBalanceBar>() is var xaiBars && xaiBars.Count() == 1 &&
             xaiBars.Single().ElapsedPercent is > 42 and < 43 &&
             ProviderLabels(QuotaProvider.Xai).Any(label => label.Text.StartsWith("주간 크레딧  37.5% 사용", StringComparison.Ordinal)) &&
-            context.StatusWindow.QuotaView.DetailFor(xaiBox).Contains("최소 10분", StringComparison.Ordinal),
+            context.StatusWindow.QuotaView.DetailFor(xaiBox).Contains("자동 30분 · 수동 Refresh · 실패 시 30분 뒤 다시 조회", StringComparison.Ordinal),
             "xAI has one weekly-credit row, time boundary and ten-minute scheduled-policy detail");
         var geminiBox = Box(QuotaProvider.Gemini);
         const string geminiWebOff = "꺼짐 · 로그인하면 Gemini 앱 사용량 조회";

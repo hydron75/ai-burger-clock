@@ -57,11 +57,11 @@ Provider나 경로가 바뀔 때마다 모니터·상태·표시·송신·양쪽
 2. **시작:** CLI 조회원은 캐시 복원 뒤 `Changed`를 한 번 내고 즉시 조회한다.
 3. **스냅샷:** `NextCheckUtc + 5분`을 지났거나 `LastSuccess − 5분`보다 이르면 `IsPrevious`를 덧씌운다.
 4. **조회 주기(CLI):**
-   - `AccountQuotaPolicy` 그대로다. 기본 1시간, 90% 초과, 100%, 리셋 전후 ±15분, 연속 실패 재시도(15→30→60분)를 적용한다.
-   - xAI 최소 10분은 예약된 리셋 구간·진입 조회에만 적용한다.
+   - Codex·Claude의 `AccountQuotaPolicy`는 유지한다. 기본 1시간, 90% 초과~100% 미만도 1시간, 100%는 15분이다. 리셋 전후 ±15분은 5분이고, 연속 실패는 15→30→60분 뒤 재시도한다(소진 중 최대 15분, 리셋 구간 우선).
+   - xAI는 사용률·리셋 시각과 무관하게 성공과 실패 모두 30분 뒤에 조회한다. 기존 캐시 값은 복원하고 새 캐시에는 조회 예약 기준점을 저장하지 않는다. 회복·조기 초기화 알림은 이전·현재 조회 응답으로 판정한다.
    - CLI 루프는 깨어나면 조건 없이 조회한다.
-5. **조회 주기(Gemini 웹):**
-   - 15분 고정이다. 성공과 실패 모두 다음 15분에 조회한다.
+5. **조회 주기(Gemini 웹·Antigravity):**
+   - 사용률·리셋 시각과 무관하게 성공과 실패 모두 30분 뒤에 조회한다.
    - 로그인 필요면 자동 조회를 멈춘다. 수동 요청이나 새로 켤 때만 다시 시작한다.
    - 깨어나도 기한 확인 후에만 조회한다. 그래서 끄기로 깨워도 조회하지 않는다.
 6. **수동·복귀 구분:**
@@ -209,7 +209,6 @@ internal sealed record QuotaSourceTraits(
     bool RefreshOnRecovery,          // 절전 복귀·네트워크 복구 때 조회(CLI)
     QuotaPresentationPolicy Presentation,
     QuotaExportMode Export,          // Completion / OnChange / None(Antigravity, P4 전까지)
-    TimeSpan? ManualMinimumInterval = null,
     bool CancelLifetimeAsynchronously = false, // UI 취소 콜백을 사용하는 웹 조회원
     bool CanSetMode = false,         // 등록된 웹 조회원만 켜기·끄기 지원
     QuotaProvider? DependsOn = null); // 의존 조회원이 LoginRequired면 미룸
@@ -259,8 +258,8 @@ internal interface IQuotaSchedule
 ```
 
 - **주기 정책 구현:**
-  - `UsageBasedSchedule(provider)`: `AccountQuotaPolicy`의 계획 계산, 실패 재시도, 기준점 병합을 그대로 감싼다. xAI 최소 간격도 그대로다.
-  - `FixedSchedule(15분, stopOnLoginRequired: true)`: Gemini 웹. 로그인 필요면 null을 돌려준다.
+  - `UsageBasedSchedule(provider)`: Codex·Claude에 `AccountQuotaPolicy`의 계획 계산, 실패 재시도, 기준점 병합을 적용한다.
+  - `FixedSchedule(30분, stopOnLoginRequired: true)`: Gemini 웹·Antigravity. 로그인 필요면 null을 돌려준다. xAI는 같은 30분 주기에 `stopOnLoginRequired: false`를 쓰므로 로그인 실패 뒤에도 예약을 이어 간다.
   - 두 정책 모두 진단용 `QuotaCheckPlan.Reason`과 `SelectedResetUtc`를 지금처럼 낸다.
 - **조회원 구현:**
   - `CliQuotaSource`(Codex·Claude·xAI): 기존 `AccountQuotaClient` 프로토콜을 감싸고, 4.1 표대로 분류한다.
@@ -442,7 +441,7 @@ You have used some of your #-hour limit, it will fully refresh in # hours, ## mi
 
 | 항목 | 값 | 이유 |
 |---|---|---|
-| `Schedule` | `FixedSchedule(1시간, stopOnLoginRequired: true)` | 약관 위험을 줄이려고 Gemini 웹(15분)보다 드물게 읽는다 |
+| `Schedule` | `FixedSchedule(30분, stopOnLoginRequired: true)` | 성공·실패 모두 30분, 로그인 필요 시 자동 조회 중지 |
 | `Timeout` | null(호스트 30초) | 웹 조회원 공통 |
 | `EmitsObservations` | 거짓 | 회복·조기 초기화·대기 알림 대상이 아니다 |
 | `DueCheckBeforeRead` | 참 | 웹 조회원 공통 |
@@ -454,7 +453,7 @@ You have used some of your #-hour limit, it will fully refresh in # hours, ## mi
 | `Presentation` | 로그인 필요·형식 변경이면 값 숨김, `AcceptForDisplay = AntigravityUsagePage.IsWebReading`, `ShowEarlyResetDetail` 거짓, `ApproximateReset` 참 | Gemini 웹과 같은 숨김 규칙에 Antigravity 판정 |
 | `Export` | `None`(P4 목표 값, P2.5에서는 브리지가 직접 거름) | 사이트를 먼저 바꿔야 한다(6.2 P4) |
 
-- **수동 Refresh 최소 간격:** 마지막 조회 시작 뒤 10분 안의 수동 요청은 버린다. 트레이 Refresh를 여러 번 눌러도 Antigravity 페이지를 반복해서 열지 않게 하려는 것이다. 새로 켤 때와 Gemini 재로그인 직후 요청은 이 제한을 받지 않는다.
+- **수동 Refresh:** 최소 간격 없이 요청한다. 조회가 진행 중이면 끝난 뒤 한 번 더 조회한다. Gemini 로그인 상태와 호스트 준비 상태에 따른 지연은 계속 적용한다.
 
 **켜기·끄기·로그인·로그아웃**
 
@@ -484,7 +483,7 @@ You have used some of your #-hour limit, it will fully refresh in # hours, ## mi
 
 - 공통 검사:
   - 파서: 정상, 단수형, 1성분 기간, 상한 초과, 단위 순서 위반, 100% 기간 없음, 라벨 중복·누락, 비율 범위 밖, 구간 안 비율 2개, 비영어, 판정 순서.
-  - 조회원 특성, 수동 최소 간격, Deferred에서 상태 불변, 예상 시각 경과 판정.
+  - 조회원 특성, 사용량·리셋 시각과 무관한 30분 주기, 수동 Refresh, 로그인 필요 시 중지, Deferred에서 상태 불변, 예상 시각 경과 판정.
   - 로그아웃 순서, Gemini 웹 끄기·켜기 연동, 재로그인 깨우기.
   - 송신 0회와 다른 Provider 송신 바이트 불변.
   - 박스 구성: Antigravity 꺼짐 시 기존 `LayoutKey`·문구 불변, 두 부분 박스의 자리 표시 행 ID 중복 없음.
@@ -504,7 +503,9 @@ You have used some of your #-hour limit, it will fully refresh in # hours, ## mi
 - **문구는 공통에만 둔다.** 클라이언트 예외 메시지에 섞인 문구는 P1에서 없앤다.
 - **웹과 CLI의 표시 차이는 정책 객체로 표현한다.** 불리언 하나로는 박스·송신·성공 시각 처리의 차이를 담을 수 없다(검토 지적).
 - **Antigravity 한도를 자동으로 읽는다(2026-11-26, 사용자 결정).** Antigravity 약관 §6은 제3자 소프트웨어로 서비스에 접근하는 것을 위반으로 보고, Antigravity·Gemini CLI 계정 정지를 언급한다. 사용자는 이 위험을 알고 받아들였다. 위험을 줄이는 장치는 1시간 주기, 별도 켜기와 기본 꺼짐, Models 설정 화면 읽기만(클릭·원격 세션 조작·내부 API·쿠키·토큰 사용 없음), UA 변경 없음이다(4.7).
+- **xAI·Gemini 웹·Antigravity를 30분 고정으로 조회한다(2026-11-28, 사용자 결정).** 세 조회원은 성공과 실패에 같은 주기를 쓰고, Antigravity의 수동 Refresh 최소 간격은 없앤다. [Antigravity 약관 §6](https://antigravity.google/terms)은 접근 방식을 다루며 조회 빈도에 따른 예외를 두지 않는다. 빈도는 탐지 가능성에만 영향을 준다는 것이 사용자의 위험 판단 전제다. 별도 켜기와 기본 꺼짐은 유지한다.
 - **Antigravity는 Gemini와 다른 조회원이다.** 로그인·실패·켜기·캐시가 따로 움직이기 때문이다(예: Gemini 앱은 정상인데 Antigravity 형식만 바뀜). 표시는 Gemini 박스 하나로 합친다. "Provider당 조회원 하나" 원칙을 지키려고 열거형 끝에 `Antigravity`를 추가한다.
+- **P4에서 Antigravity를 다섯 번째 박스로 분리한다(2026-11-28, 사용자 결정).** Windows·Mac·모바일 사이트에 함께 반영한다. Gemini 앱과 Antigravity는 같은 구독에 포함되지만 제공 방식·쓰임새·사용량이 각각 다른 서비스다. P2.5에서 두 부분으로 나눴던 Gemini 박스를 정리한다. 같은 로그인 세션과 Gemini에 대한 `DependsOn` 관계를 유지하며, 로그아웃하면 두 조회원을 모두 끈다.
 - **숨김 읽기는 가시성 판정에 기댄다.** 문서에 없는 동작이라 깨질 수 있음을 알고 택했다. 깨지면 진단 코드로 바로 드러나게 한다(4.7 가시성 의존 대응).
 
 ## 6. 단계별 PR
@@ -526,7 +527,7 @@ You have used some of your #-hour limit, it will fully refresh in # hours, ## mi
 | P2 | **조회원 인터페이스와 공통 루프.** `IQuotaSource`, 어댑터, 주기 정책, `SetMode`, `RequestSourceRefresh`, `ClearCacheAsync`, 호환 팩토리, `IsQueryEnabled` 대체, Gemini 전용 루프·상태 필드 제거, 호스트의 Gemini 메뉴 연결 변경, 기존 검사·smoke의 호출부 이전(건수 증감 기록). **Claude 로그인 확인 루프와 `LatestClaudeAuth`, `QuotaState.ClaudeAuth`는 그대로 둔다** | 없음(P0 검사 그대로 통과) | Windows·Mac(회귀만 관찰) |
 | P2.5 | **Antigravity 웹 조회원(4.7).** P2가 운영에서 3일 이상 회귀 없이 돈 뒤 시작한다. 공통 파서·조회원·표시, 두 호스트의 리더·메뉴·로그아웃 연동. 송신 제외. P3와 순서는 준비된 쪽이 먼저지만, 같은 배포에 묶지 않는다 | 켜면 Gemini 박스가 네 줄 | Windows·Mac |
 | P3 | **로그인 상태 일반화.** P2가 운영에서 3일 이상 회귀 없이 돈 뒤 시작한다. `QuotaAuth`, `IQuotaAuthProbe`, Claude 확인 이전, `LatestAuth`, 호스트 알림의 API 변경, Gemini 웹 로그인 상태 연결, Codex·Grok 공식 상태 명령 조사(있을 때만 추가), 박스 상세 "로그인 상태" 절 공통화 | Gemini와 조사 결과에 따라 Codex·xAI에도 로그인 상태 표시 | Windows·Mac |
-| P4 | **송신 일반화.** `Traits.Export` 기반 송신, Antigravity 줄 송신, (선택) v2에 실패 종류 선택 필드 추가. 사이트가 허용 목록 밖 필드를 지우므로 **사이트를 먼저 배포하고 앱을 그다음 배포한다** | 사이트에 로그인 필요 표시(선택 시) | 사이트 → Windows |
+| P4 | **송신 일반화.** `Traits.Export` 기반 송신, Antigravity 줄 송신, Antigravity 다섯 번째 박스 분리(두 부분 Gemini 박스 정리), (선택) v2에 실패 종류 선택 필드 추가. 사이트가 허용 목록 밖 필드를 지우므로 **사이트를 먼저 배포하고 앱을 그다음 배포한다** | Windows·Mac·사이트에서 Antigravity를 별도 박스로 표시, 사이트에 로그인 필요 표시(선택 시) | 사이트 → Windows·Mac |
 
 - **통과 기준:**
   - P0 검사가 통과 기준이다.
@@ -543,7 +544,7 @@ You have used some of your #-hour limit, it will fully refresh in # hours, ## mi
 - **로그아웃과 저장 경쟁:** 진행 중 저장과 캐시 삭제가 겹치는 경우를 P0에 넣는다.
 - **검사 호출부 대량 수정:** 기존 검사와 smoke가 모니터 API를 직접 부른다(`RefreshOnceAsync` 189곳, `RefreshGeminiWebIfDueAsync` 27곳, `SetGeminiWebEnabled` 17곳, `LatestClaudeAuth` 12곳, `IsQueryEnabled` 35곳). 호환 팩토리와 계산 속성으로 P2 안에서 단계적으로 옮기고, 건수 증감을 PR에 적는다.
 - **호스트 동시 수정:** P2와 P3는 공통과 두 호스트가 함께 바뀐다. 순서는 Windows 공통 PR → Mac 호스트 PR을 그 브랜치에 병합 → 합친 HEAD를 두 OS에서 확인 → main 병합이다.
-- **Antigravity 계정 위험:** 약관 §6 위반으로 계정이 제한될 수 있다(5절). 기본 꺼짐과 1시간 주기로 줄이며, 문제가 생기면 사용자가 메뉴에서 바로 끌 수 있다. 같은 Google 세션을 쓰므로 Antigravity 페이지 로드가 Gemini 웹 세션에 영향을 주는지 운영에서 관찰한다.
+- **Antigravity 계정 위험:** 약관 §6 위반으로 계정이 제한될 수 있다(5절). 기본값은 꺼짐이며 사용자가 메뉴에서 바로 끌 수 있다. 같은 Google 세션을 쓰므로 Antigravity 페이지 로드가 Gemini 웹 세션에 영향을 주는지 운영에서 관찰한다.
 - **Mac 투명 창과 메뉴바:** 매시간 창을 여는 동작이 MACOS_PORT 39절 증상(22회 반복 뒤 재발)과 겹칠 수 있다. 그래서 `fullScreenAuxiliary`를 빼고, 전체 화면 앱이 덮은 디스플레이에는 창을 두지 않으며, 모두 덮였으면 미룬다(4.7). 이 설정에서 앱 비활성 상태로 값이 나오는지는 구현 PR에서 확인한다.
 - **문구 변화에 따른 smoke 기대값:** P1에서 문구가 바뀌면 Windows와 Mac smoke 기대값을 함께 바꾼다. 비교는 공통 상수로만 한다.
 

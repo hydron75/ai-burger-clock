@@ -356,8 +356,7 @@ internal sealed class MacApplication(UsageStore store, bool smoke) : NSApplicati
     }
 
     // Manual Refresh (button and menu) is the only trigger that also reads the Gemini and Antigravity usage pages; wake-up
-    // and network recovery go through RefreshAll(true) and never do. The monitor drops an Antigravity request within 10
-    // minutes of the last read.
+    // and network recovery go through RefreshAll(true) and never do.
     private void RefreshAll()
     {
         RefreshAll(false);

@@ -48,7 +48,7 @@ internal static class WindowsQuotaP0Checks
         await h.ReadWebAsync();
         var live = Provider(packets.Single());
         check(live.GetProperty("webState").GetString() == "ok" && live.GetProperty("reading").GetString() == "ok" &&
-            live.GetProperty("rows").GetArrayLength() == 2 && live.GetProperty("nextCheckUtc").GetDateTimeOffset() == Epoch.AddMinutes(15),
+            live.GetProperty("rows").GetArrayLength() == 2 && live.GetProperty("nextCheckUtc").GetDateTimeOffset() == Epoch.AddMinutes(30),
             "3.3-4 schema v2 sends both live Gemini rows and its deadline");
         h.RequestWeb();
         await h.ReadWebAsync();
@@ -120,7 +120,7 @@ internal static class WindowsQuotaP0Checks
             await cold.ReadWebAsync();
             var sent = Provider(cold.CurrentPacket());
             check(sent.GetProperty("reading").GetString() == "none" && sent.GetProperty("rows").GetArrayLength() == 0 &&
-                sent.GetProperty("nextCheckUtc").GetDateTimeOffset() == Epoch.AddMinutes(15), "3.3-4 observed: cold web failures still carry nextCheckUtc");
+                sent.GetProperty("nextCheckUtc").GetDateTimeOffset() == Epoch.AddMinutes(30), "3.3-4 observed: cold web failures still carry nextCheckUtc");
         }
     }
 

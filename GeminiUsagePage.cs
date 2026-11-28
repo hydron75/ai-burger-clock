@@ -41,7 +41,7 @@ internal static partial class GeminiUsagePage
     public const string ReadScript = "JSON.stringify({ url: location.href, text: (document.querySelector('declared-route-island-page')||{}).innerText ?? null })";
     public const string FiveHourId = "gemini-web:five-hour";
     public const string WeeklyId = "gemini-web:weekly";
-    public const int PollMinutes = 15;
+    public const int PollMinutes = 30;
 
     private const string FiveHourLabel = "5시간";
     private const string WeeklyLabel = "주간";

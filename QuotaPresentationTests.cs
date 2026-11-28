@@ -104,7 +104,7 @@ internal static class QuotaPresentationTests
             Check(section.Detail.Contains("마지막 성공: 10-10 21:00\n다음 조회: 10-11 03:00\n최근 시도: 10-10 21:00:00", StringComparison.Ordinal) &&
                 section.Detail.Contains("서버 데이터 생성 시각을 보장하지 않습니다", StringComparison.Ordinal), provider + " query metadata/freshness preserved");
             Check(section.Detail.Contains(provider == QuotaProvider.Xai
-                ? "기본 1시간 · 사용 90% 초과~100% 미만은 1시간 · 사용 100%는 15분 · 리셋 전후 15분은 10분 · 실패 시 15분부터 재시도"
+                ? "자동 30분 · 수동 Refresh · 실패 시 30분 뒤 다시 조회"
                 : "기본 1시간 · 사용 90% 초과~100% 미만은 1시간 · 사용 100%는 15분 · 리셋 전후 15분은 5분 · 실패 시 15분부터 재시도", StringComparison.Ordinal) &&
                 !section.Detail.Contains("잔여", StringComparison.Ordinal), provider + " polling text uses consumed percentage");
             var stale = QuotaPanelModel.Section(state with { IsPrevious = true, Failure = new(QuotaFailureKind.Unreachable, "synthetic.read"), CacheError = "캐시 실패" }, now);
