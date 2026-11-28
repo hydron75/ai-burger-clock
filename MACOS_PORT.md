@@ -3556,3 +3556,37 @@ native `--smoke-test`는 배포에서 실행하지 않았다. 팝오버의 실�
 
 ### 수행하지 않은 검증
 실제 계정의 로그인·조회·로그아웃, 투명 창의 화면·Dock·Mission Control 비노출, 비활성 앱에서의 표시, 전체 화면 앱이 있는 디스플레이 구성, 화면 잠금·디스플레이 잠자기에서의 미루기. 실행 중인 0.10.0 앱과 운영 데이터 저장소는 건드리지 않았다.
+
+## 92. 0.11.0 정리 (Antigravity 웹 한도 조회 포함)
+
+2026-11-28. Mac 0.10.0 / build 37 → **0.11.0 / build 38**. Antigravity 웹 한도 조회원(P2.5, 공통 PR #191)과 Mac 호스트(PR #192)를 싣는 버전 올림이다. 이 PR은 버전 필드와 문서만 바꾼다. 배포와 첫 켜기 확인은 메인의 "배포 진행" 지시 뒤에 이 절에 이어 쓴다.
+
+### 버전 필드
+`Version` 0.11.0, `AssemblyVersion` 0.11.0.0, `FileVersion` 0.11.0.0, `ApplicationVersion` 38(`CFBundleVersion`). `Info.plist`에는 적지 않는다.
+
+### 기준
+| 항목 | 값 |
+|---|---|
+| #192 병합(#191 브랜치로) | `d4d5dc87f31b9aedbc546ca93689c905d7c91e5e` |
+| 기준 main(PR #191 병합) | `1c38a966754bad85059a03216ae9112818374c43` |
+| 버전 변경 커밋(앱 소스) | `5f989286c216b94775f722c0f7647733c2b59fa5`(브랜치 `claude/mac-0-11-0`, 기준 main과의 차이는 `Mac/AiBurgerClock.Mac.csproj`의 버전 필드뿐. 이 절의 기록 커밋은 문서만 바꿈) |
+
+### smoke를 통과한 코드와의 대조 (git 해시)
+| 대상 | smoke 실행 커밋 `6c1c5dbc06a7ed7ebb9728d5daaff048a9114922` | #192 HEAD `845f2047086be9e3038ef3b45440177ed39d1903` | 기준 main `1c38a96` |
+|---|---|---|---|
+| 전체 파일 트리 | `d47bd79ad4b723c21738b6cb3290772033940579` | `f622cd486b3f0552192d2051e501da81012c2fa5` | `f622cd486b3f0552192d2051e501da81012c2fa5` |
+| `Mac/` 트리 | `511fcb94f273a36d20aaa7371969d6ccb8086683` | 같음 | 같음 |
+| `Shared/` 트리 | `df336b5da6933b54fe43d5fbef5a30f8e5fa06cb` | 같음 | 같음 |
+| `AntigravityUsagePage.cs` | `3fe04e7a43cc03e9ac9171c765866f700318da8e` | `1215f9d91ebf7ee3a6e4ddb89f585d0028f31500` | `1215f9d91ebf7ee3a6e4ddb89f585d0028f31500` |
+
+- 기준 main의 파일 트리는 #192 HEAD와 같다.
+- **smoke를 실행한 커밋과는 앱 원본 1개가 다르다.** `6c1c5db`와 기준 main의 차이는 `AntigravityUsagePage.cs`, `AntigravityUsageTests.cs`, `MACOS_PORT.md`, `QUOTA_SOURCES_DESIGN.md` 4개이고, 앱이 컴파일하는 것은 `AntigravityUsagePage.cs`뿐이다. smoke 뒤에 #191 `54a929e`로 base를 갱신하며 들어온 공통 파서 변경이다: 읽을 영역의 문구가 없고 **언어 값이 영어가 아닌 값으로 채워진 경우에만** `antigravity.language`로 보며, 언어 값이 비어 있으면 이 조건에 걸리지 않는다.
+- Mac smoke가 파서에 주는 "문구 없음" 입력은 언어 값이 `en`이어서 바뀐 조건에 걸리지 않는다(`Mac/MacAntigravitySmoke.cs`의 읽기 검사, 코드 확인). 바뀐 파서는 아래 Shared.Tests로 확인했다. native smoke는 다시 실행하지 않았다.
+
+### 이번 번들에 실리는 변경
+Antigravity 웹 한도 조회(기본 꺼짐)와 Gemini 박스의 두 부분 표시다. 동작은 [91절](#91-antigravity-웹-한도-조회원p25-pr-191의-mac-호스트)에 있다. DB 스키마는 바꾸지 않는다. Antigravity를 켜면 `AppMetadata`에 캐시 키 `AccountQuota.v1.AntigravityWeb`가, `gemini-web.settings`에 `antigravity=` 줄이 생긴다. 0.10.0의 설정 읽기는 모르는 줄을 무시한다(코드 확인, 되돌리기 실행은 하지 않음).
+
+### 배포 전 검증 (임시 사본, 저장소 경로 아님, 버전 변경 커밋 `5f98928`)
+Shared.Tests **291,869건 PASS**, `bash Mac/build.sh` 옵션 없음 경고 0 / 오류 0, 번들 `CFBundleShortVersionString` 0.11.0 / `CFBundleVersion` 38, `codesign --verify --deep --strict` 통과. Xcode 27.2, .NET SDK 10.0.404, macos 워크로드 27.2.10000.
+
+native `--smoke-test`는 메인 지시에 따라 실행하지 않았다. 빌드만 해서 임시 사본은 등록되지 않았고(`lsregister -u`는 대상 없음 `-10814`), LaunchServices 등록 수는 1이다. 실행 중인 0.10.0 앱은 건드리지 않았다.
