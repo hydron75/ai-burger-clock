@@ -29,7 +29,6 @@ internal sealed partial class AccountQuotaMonitor : IDisposable
         internal long ReadingContinuity = 1;
         internal long Generation;
         internal bool ManualRequested;
-        internal DateTimeOffset? LastReadStartedUtc;
         internal DateTimeOffset? DeferredUntilUtc;
         internal CancellationTokenSource? ActiveRead;
         internal Task? ReadCancellation;
@@ -145,8 +144,6 @@ internal sealed partial class AccountQuotaMonitor : IDisposable
         {
             var entry = sources[provider];
             if (disposed || lifetime.IsCancellationRequested || entry.State.Mode != QuotaSourceMode.Active) return;
-            if (!afterSignIn && entry.Source.Traits.ManualMinimumInterval is { } interval &&
-                entry.LastReadStartedUtc is { } started && utcNow() - started < interval) return;
             if (afterSignIn) entry.DeferredUntilUtc = null;
             if (entry.Source.Traits.StickyManualRefresh) entry.ManualRequested = true;
             else if (entry.State.IsRefreshing) return;
@@ -169,7 +166,6 @@ internal sealed partial class AccountQuotaMonitor : IDisposable
             entry.Anchors = [];
             entry.Failures = 0;
             entry.ReadingContinuity = 1;
-            entry.LastReadStartedUtc = null;
             entry.DeferredUntilUtc = null;
             entry.ManualRequested = mode == QuotaSourceMode.Active && entry.Source.Traits.StickyManualRefresh;
             entry.ReadCancellation ??= entry.ActiveRead?.CancelAsync();
@@ -286,7 +282,6 @@ internal sealed partial class AccountQuotaMonitor : IDisposable
                     return;
                 }
                 entry.DeferredUntilUtc = null;
-                if (traits.ManualMinimumInterval is not null) entry.LastReadStartedUtc = utcNow();
                 if (traits.EmitsObservations)
                 {
                     attemptId = Guid.NewGuid().ToString("N");

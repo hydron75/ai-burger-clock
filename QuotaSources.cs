@@ -23,7 +23,7 @@ internal sealed record QuotaPresentationPolicy(
 
 internal sealed record QuotaSourceTraits(IQuotaSchedule Schedule, TimeSpan? Timeout, bool EmitsObservations,
     bool DueCheckBeforeRead, bool StickyManualRefresh, bool RefreshOnRecovery,
-    QuotaPresentationPolicy Presentation, QuotaExportMode Export, TimeSpan? ManualMinimumInterval = null,
+    QuotaPresentationPolicy Presentation, QuotaExportMode Export,
     bool CancelLifetimeAsynchronously = false, bool CanSetMode = false, QuotaProvider? DependsOn = null);
 
 internal interface IQuotaSource
@@ -86,9 +86,13 @@ internal sealed class FixedSchedule(TimeSpan interval, bool stopOnLoginRequired)
 
 internal sealed class CliQuotaSource(QuotaProvider provider, IAccountQuotaClient client, UsageStore? store) : IQuotaSource
 {
+    internal const int XaiPollMinutes = 30;
     public QuotaProvider Provider { get; } = provider;
     public IQuotaCacheAdapter Cache { get; } = QuotaCacheAdapter.ForCli(store, provider);
-    public QuotaSourceTraits Traits { get; } = new(new UsageBasedSchedule(provider),
+    public QuotaSourceTraits Traits { get; } = new(
+        provider == QuotaProvider.Xai
+            ? new FixedSchedule(TimeSpan.FromMinutes(XaiPollMinutes), stopOnLoginRequired: false)
+            : new UsageBasedSchedule(provider),
         provider == QuotaProvider.Xai ? AccountQuotaClient.GrokTimeout : TimeSpan.FromSeconds(40),
         EmitsObservations: true, DueCheckBeforeRead: false, StickyManualRefresh: false, RefreshOnRecovery: true,
         QuotaPresentationPolicy.Cli, QuotaExportMode.Completion);
@@ -133,7 +137,7 @@ internal sealed class AntigravityWebQuotaSource(IAntigravityUsagePageReader read
     public QuotaSourceTraits Traits { get; } = new(
         new FixedSchedule(TimeSpan.FromMinutes(AntigravityUsagePage.PollMinutes), stopOnLoginRequired: true),
         Timeout: null, EmitsObservations: false, DueCheckBeforeRead: true, StickyManualRefresh: true, RefreshOnRecovery: false,
-        QuotaPresentationPolicy.AntigravityWeb, QuotaExportMode.None, TimeSpan.FromMinutes(AntigravityUsagePage.ManualMinimumMinutes),
+        QuotaPresentationPolicy.AntigravityWeb, QuotaExportMode.None,
         CancelLifetimeAsynchronously: true, CanSetMode: true, DependsOn: QuotaProvider.Gemini);
 
     public QuotaReadiness CheckReadiness() => hostReadiness?.Invoke() ?? QuotaReadiness.Ready;

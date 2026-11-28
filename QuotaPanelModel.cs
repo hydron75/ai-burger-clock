@@ -292,15 +292,14 @@ internal static class QuotaPanelModel
         lines.Add("조회 주기");
         lines.Add(state.Provider switch
         {
-            QuotaProvider.Gemini => $"자동 {GeminiUsagePage.PollMinutes}분 · 수동 Refresh · 실패 시 {GeminiUsagePage.PollMinutes}분 뒤 다시 조회",
-            QuotaProvider.Xai => "기본 1시간 · 사용 90% 초과~100% 미만은 1시간 · 사용 100%는 15분 · 리셋 전후 15분은 10분 · 실패 시 15분부터 재시도",
-            QuotaProvider.Antigravity => "자동 1시간 · 수동 Refresh 최소 10분 · 실패 시 1시간 뒤 다시 조회",
+            QuotaProvider.Gemini => FixedScheduleText(GeminiUsagePage.PollMinutes),
+            QuotaProvider.Xai => FixedScheduleText(CliQuotaSource.XaiPollMinutes),
+            QuotaProvider.Antigravity => FixedScheduleText(AntigravityUsagePage.PollMinutes),
             _ => "기본 1시간 · 사용 90% 초과~100% 미만은 1시간 · 사용 100%는 15분 · 리셋 전후 15분은 5분 · 실패 시 15분부터 재시도"
         });
         lines.Add("참고: " + (state.Provider switch
         {
             QuotaProvider.Gemini => "사용량 페이지 자체 갱신에 수 분이 걸릴 수 있습니다. 세션이 만료되면 로그인 필요로 표시하고 자동 조회를 멈춥니다.",
-            QuotaProvider.Xai => "xAI 예약 조회는 최소 10분입니다. 시작·Refresh·복귀·네트워크 조회에는 적용하지 않습니다.",
             QuotaProvider.Antigravity => "남은 기간을 바탕으로 초기화 시각을 추정합니다. Gemini 로그인 필요 또는 세션 잠금 상태에서는 조회를 미룹니다.",
             _ => "—"
         }));
@@ -309,4 +308,6 @@ internal static class QuotaPanelModel
             : "공식 CLI 응답 수신 시각이며 서버 데이터 생성 시각을 보장하지 않습니다.");
         return string.Join('\n', lines);
     }
+
+    private static string FixedScheduleText(int minutes) => $"자동 {minutes}분 · 수동 Refresh · 실패 시 {minutes}분 뒤 다시 조회";
 }

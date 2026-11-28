@@ -82,11 +82,11 @@ internal static class QuotaDetailTemplateTests
                 "Antigravity 약관상 앱에서 자동 조회하지 않습니다.\n" +
                 "근거: https://antigravity.google/docs/faq.md\n" +
                 "공식 서비스 상태는 상태 카드에서 확인하세요.";
-        (string name, string scope, string resetMinutes, string note) = provider switch
+        (string name, string scope) = provider switch
         {
-            QuotaProvider.Codex => ("ChatGPT", "ChatGPT 계정의 Work/Codex 한도입니다. 일반 채팅의 모든 모델 한도를 뜻하지 않습니다.", "5", "—"),
-            QuotaProvider.Claude => ("Claude", "Claude Code CLI의 /usage 응답으로 받은 구독 사용 한도입니다.", "5", "—"),
-            QuotaProvider.Xai => ("xAI", "Grok CLI의 ACP _x.ai/billing 응답으로 받은 주간 크레딧 한도입니다.", "10", "xAI 예약 조회는 최소 10분입니다. 시작·Refresh·복귀·네트워크 조회에는 적용하지 않습니다."),
+            QuotaProvider.Codex => ("ChatGPT", "ChatGPT 계정의 Work/Codex 한도입니다. 일반 채팅의 모든 모델 한도를 뜻하지 않습니다."),
+            QuotaProvider.Claude => ("Claude", "Claude Code CLI의 /usage 응답으로 받은 구독 사용 한도입니다."),
+            QuotaProvider.Xai => ("xAI", "Grok CLI의 ACP _x.ai/billing 응답으로 받은 주간 크레딧 한도입니다."),
             _ => throw new ArgumentOutOfRangeException(nameof(provider))
         };
         bool missing = scenario == "none";
@@ -116,8 +116,8 @@ internal static class QuotaDetailTemplateTests
             최근 시도: {{(missing ? "—" : "03-04 09:00:00")}}{{(scenario == "error" ? "\n한도 조회 실패 · 네트워크와 CLI 상태를 확인하세요.\n진단 코드: synthetic.read\n합성 캐시 오류" : "")}}
 
             조회 주기
-            기본 1시간 · 사용 90% 초과~100% 미만은 1시간 · 사용 100%는 15분 · 리셋 전후 15분은 {{resetMinutes}}분 · 실패 시 15분부터 재시도
-            참고: {{note}}
+            {{(provider == QuotaProvider.Xai ? "자동 30분 · 수동 Refresh · 실패 시 30분 뒤 다시 조회" : "기본 1시간 · 사용 90% 초과~100% 미만은 1시간 · 사용 100%는 15분 · 리셋 전후 15분은 5분 · 실패 시 15분부터 재시도")}}
+            참고: —
             공식 CLI 응답 수신 시각이며 서버 데이터 생성 시각을 보장하지 않습니다.
             """.ReplaceLineEndings("\n");
     }

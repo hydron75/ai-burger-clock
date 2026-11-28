@@ -127,28 +127,44 @@ internal static class AntigravityUsageTests
         Check(reader.Calls == 0, "manual request cannot bypass deferred interval");
         now = now.AddMinutes(1);
         await monitor.RefreshSourceIfDueAsync(provider);
-        Check(reader.Calls == 1 && monitor.Snapshot().Single().NextCheckUtc == now.AddHours(1) && observations == 0,
-            "ready at deferred boundary, hourly schedule with no notification observation");
-        now = now.AddMinutes(9);
+        Check(reader.Calls == 1 && monitor.Snapshot().Single().NextCheckUtc == now.AddMinutes(30) && observations == 0,
+            "ready at deferred boundary uses thirty minutes with no notification observation");
+        reader.Page = Valid(Text.Replace("61%", "0%").Replace("1 hour, 2 minutes", "3 minutes"));
         monitor.RequestSourceRefresh(provider);
         await monitor.RefreshSourceIfDueAsync(provider);
-        Check(reader.Calls == 1, "minimum manual interval");
-        now = now.AddMinutes(1);
+        Check(reader.Calls == 2 && monitor.Snapshot().Single().CheckedAtUtc == now &&
+            monitor.Snapshot().Single().NextCheckUtc == now.AddMinutes(30), "manual refresh is immediate and exhaustion near reset stays at thirty minutes");
+        reader.Page = Valid(Text.Replace("61%", "9%").Replace("1 hour, 2 minutes", "3 minutes"));
         monitor.RequestSourceRefresh(provider);
         await monitor.RefreshSourceIfDueAsync(provider);
-        Check(reader.Calls == 2, "manual refresh accepted at ten minutes");
+        Check(reader.Calls == 3 && monitor.Snapshot().Single().NextCheckUtc == now.AddMinutes(30),
+            "usage over ninety percent and a near reset also use thirty minutes");
+        Check((await cache.ReadAsync(default))?.ResetAnchors.Count == 0, "successful reads still save zero reset anchors");
+        reader.Page = default;
+        for (int failure = 0; failure < 2; failure++)
+        {
+            now = monitor.Snapshot().Single().NextCheckUtc!.Value;
+            await monitor.RefreshSourceIfDueAsync(provider);
+            Check(monitor.Snapshot().Single() is { IsPrevious: true, Failure.Kind: QuotaFailureKind.Unreachable }
+                && monitor.Snapshot().Single().NextCheckUtc == now.AddMinutes(30), "consecutive failures keep the same thirty-minute delay");
+        }
         reader.Page = Valid() with { FinalUri = new Uri("https://accounts.google.com/") };
-        monitor.RequestSourceRefresh(provider, afterSignIn: true);
+        monitor.RequestSourceRefresh(provider);
         await monitor.RefreshSourceIfDueAsync(provider);
-        Check(reader.Calls == 3 && monitor.Snapshot().Single() is { NextCheckUtc: null, Failure.Kind: QuotaFailureKind.LoginRequired },
-            "login required pauses auto checks and sign-in request bypasses the minimum");
-        await monitor.RefreshSourceIfDueAsync(provider);
-        Check(reader.Calls == 3, "paused deadline does not spin");
+        Check(reader.Calls == 6 && monitor.Snapshot().Single() is { NextCheckUtc: null, Failure.Kind: QuotaFailureKind.LoginRequired },
+            "login required pauses auto checks");
+        now = now.AddHours(2);
         reader.Page = Valid();
+        await monitor.RefreshSourceIfDueAsync(provider);
+        Check(reader.Calls == 6, "paused deadline does not resume automatically");
+        monitor.RequestSourceRefresh(provider);
+        await monitor.RefreshSourceIfDueAsync(provider);
+        Check(reader.Calls == 7 && monitor.Snapshot().Single().NextCheckUtc == now.AddMinutes(30),
+            "a manual request can resume a paused session");
         monitor.SetMode(provider, QuotaSourceMode.Off);
         monitor.SetMode(provider, QuotaSourceMode.Active);
         await monitor.RefreshSourceIfDueAsync(provider);
-        Check(reader.Calls == 4, "explicit re-enable bypasses last read time");
+        Check(reader.Calls == 8, "explicit re-enable triggers a read immediately");
         monitor.SetMode(provider, QuotaSourceMode.Off);
         await monitor.ClearCacheAsync(provider);
         Check(await cache.ReadAsync(default) is null, "explicit off clears the dedicated cache");
@@ -164,6 +180,8 @@ internal static class AntigravityUsageTests
             QuotaPanelModel.LayoutKey(both) != QuotaPanelModel.LayoutKey(before), "two parts have distinct placeholders and layout identity");
         var estimate = reading.Windows[0].ResetsAtUtc!.Value;
         var active = new QuotaState(provider, reading, LastSuccessfulCheckUtc: Epoch);
+        Check(QuotaPanelModel.Section(active, Epoch).Detail.Contains("자동 30분 · 수동 Refresh · 실패 시 30분 뒤 다시 조회",
+            StringComparison.Ordinal), "Antigravity displays the same fixed cadence guidance as Gemini and xAI");
         Check(QuotaPanelModel.Section(active, estimate.AddMinutes(29)).Rows[0].Tone != PanelTone.Muted &&
             QuotaPanelModel.Section(active, estimate.AddMinutes(30)).Rows[0].Tone == PanelTone.Muted &&
             QuotaPanelModel.Section(active, estimate).Detail.Contains("약 ", StringComparison.Ordinal) &&

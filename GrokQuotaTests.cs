@@ -114,30 +114,26 @@ internal static class GrokQuotaTests
             mac.Contains("/opt/custom/grok") && !mac.Any(path => path.Contains("project", StringComparison.Ordinal) || !path.StartsWith('/')),
             "Mac native/PATH fallbacks, no relative/current directory");
 
-        foreach (int offset in Enumerable.Range(-30, 76))
+        var schedule = new CliQuotaSource(QuotaProvider.Xai, new Client(), null).Traits.Schedule;
+        foreach (double used in new[] { 0d, 90, 95, 100 })
+        foreach (int offset in new[] { -16, -15, 0, 15, 16, 45 })
         {
             DateTimeOffset reset = now.AddMinutes(offset);
-            var windows = new[] { row with { ResetsAtUtc = reset } };
-            QuotaCheckPlan plan = AccountQuotaPolicy.GetNextCheckPlan(now, now, windows, provider: QuotaProvider.Xai);
-            Check(plan.NextCheckUtc - now >= TimeSpan.FromMinutes(10), "every scheduled entry/band/exit respects the floor");
-            if (plan.Reason is QuotaCheckReason.ResetEntry or QuotaCheckReason.ResetPeriod)
-                Check(plan.NextCheckUtc >= reset.AddMinutes(-15) && plan.NextCheckUtc <= reset.AddMinutes(15), "no trailing fast poll outside reset band");
+            var sample = reading with { Windows = [row with { UsedPercent = used, ResetsAtUtc = reset }] };
+            Check(schedule.Next(now, sample, null, 0, [reset]) == new QuotaCheckPlan(now.AddMinutes(30), QuotaCheckReason.Regular),
+                "a successful xAI read uses 30 minutes at any usage and reset offset, even with a saved anchor");
+            Check(schedule.Next(now, sample, new(QuotaFailureKind.Unreachable, "synthetic.read"), 3, [reset])
+                == new QuotaCheckPlan(now.AddMinutes(30), QuotaCheckReason.FailureRetry),
+                "xAI failures use the same interval without selecting a reset");
         }
-        Check(AccountQuotaPolicy.GetNextCheckPlan(now, now, [row with { ResetsAtUtc = now.AddMinutes(17) }], provider: QuotaProvider.Xai)
-            is { Reason: QuotaCheckReason.ResetEntry, NextCheckUtc: var entry } && entry == now.AddMinutes(10), "near entry coalesces to ten minutes");
-        foreach (var provider in new[] { QuotaProvider.Codex, QuotaProvider.Claude, QuotaProvider.Gemini })
-            Check(AccountQuotaPolicy.GetNextCheckPlan(now, now, [row with { ResetsAtUtc = now.AddMinutes(3) }], provider: provider).NextCheckUtc == now.AddMinutes(5),
-                "existing providers retain five-minute reset polling");
-        foreach (double used in new[] { 20d, 95, 100 })
-        {
-            var plan = AccountQuotaPolicy.GetNextCheckPlan(now, now, [row with { UsedPercent = used }], provider: QuotaProvider.Xai);
-            Check(plan.NextCheckUtc == now + (used == 100 ? TimeSpan.FromMinutes(15) : TimeSpan.FromHours(1)), "regular/high/exhausted policy unchanged");
-        }
-        var state = new QuotaState(QuotaProvider.Xai, reading, LastSuccessfulCheckUtc: now, NextCheckUtc: now.AddHours(1));
+        Check(schedule.Next(now, null, new(QuotaFailureKind.LoginRequired, "synthetic.login"), 1, [])
+            == new QuotaCheckPlan(now.AddMinutes(30), QuotaCheckReason.FailureRetry), "xAI keeps its timer on login failure");
+        var state = new QuotaState(QuotaProvider.Xai, reading, LastSuccessfulCheckUtc: now, NextCheckUtc: now.AddMinutes(30));
         var section = QuotaPanelModel.Section(state, now);
         Check(section.Heading.Text == "xAI" && section.Rows.Single().NameText == "주간 크레딧" && section.Rows.Single().ElapsedPercent is not null,
             "shared box/row/pacing text");
-        Check(section.Detail.Contains("최소 10분", StringComparison.Ordinal), "provider-specific policy guidance");
+        Check(section.Detail.Contains("자동 30분 · 수동 Refresh · 실패 시 30분 뒤 다시 조회\n참고: —", StringComparison.Ordinal),
+            "fixed cadence guidance without a minimum interval note");
         Check(QuotaPacing.Calculate(row with { UsedPercent = 0 }, now, false, now).ElapsedPercent is not null, "weekly zero still has a time layer");
         Check(QuotaPanelModel.Section(state with { IsPrevious = true }, now).Rows[0].ElapsedPercent is null, "previous hides comparison");
         var recovery = new QuotaRecoveryNotifications();
@@ -153,9 +149,11 @@ internal static class GrokQuotaTests
         Check(early.Observe(observation, true) is null, "duplicate sequence never alerts twice");
 
         var store = new UsageStore(Path.Combine(directory, "grok-synthetic.db"));
-        await store.SaveQuotaAsync(new(1, reading, now, []));
+        var legacyAnchor = now.AddMinutes(5);
+        await store.SaveQuotaAsync(new(1, reading, now, [legacyAnchor], AccountQuotaPolicy.ResetAnchorPolicyVersion));
         var cached = await store.ReadQuotaAsync(QuotaProvider.Xai);
-        Check(cached?.Reading.Windows.Single() == row && cached.Version == 1, "new provider uses unchanged cache schema");
+        Check(cached?.Reading.Windows.Single() == row && cached.Version == 1 && cached.ResetAnchors.SequenceEqual([legacyAnchor]),
+            "pre-change cache with reset anchors still decodes");
         string cacheJson = JsonSerializer.Serialize(cached, QuotaJsonContext.Default.QuotaCache);
         Check(!cacheJson.Contains("SYNTHETIC-PRIVATE", StringComparison.Ordinal) && !cacheJson.Contains("subscription", StringComparison.Ordinal) &&
             !cacheJson.Contains("prepaid", StringComparison.Ordinal), "cache only contains normalized quota data");
@@ -172,19 +170,45 @@ internal static class GrokQuotaTests
         Check(File.ReadAllText(oldPolling) == "Synthetic retained v1 polling" && File.ReadAllText(oldDecisions) == "Synthetic retained v1 decisions",
             "old diagnostic files are neither read nor overwritten");
         var client = new Client { Reading = reading };
-        using var monitor = new AccountQuotaMonitor(client, utcNow: () => now);
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using (var restoring = new AccountQuotaMonitor([(new CliQuotaSource(QuotaProvider.Xai, new WaitingClient(entered), store), QuotaSourceMode.Active)],
+            store, () => now))
+        {
+            restoring.Start();
+            try
+            {
+                await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+                var restored = restoring.Snapshot().Single();
+                Check(restored is { IsPrevious: true } && restored.Reading?.Windows.Single() == row &&
+                    restored.LastSuccessfulCheckUtc == now, "the old cache is restored before starting the first live read");
+            }
+            finally { await restoring.StopAsync(); }
+        }
+        using var monitor = new AccountQuotaMonitor(client, store, utcNow: () => now);
         await monitor.RefreshSourceIfDueAsync(QuotaProvider.Xai);
+        Check((await store.ReadQuotaAsync(QuotaProvider.Xai)) is { ResetAnchors.Count: 0 },
+            "the first successful read saves xAI without anchors");
         client.Fail = true;
         await monitor.RefreshSourceIfDueAsync(QuotaProvider.Xai);
         Check(monitor.Snapshot().Single(s => s.Provider == QuotaProvider.Xai) is { IsPrevious: true, Reading: not null }, "failure preserves verified data");
         client.Fail = false;
         int before = client.Calls;
         await monitor.RefreshSourceIfDueAsync(QuotaProvider.Xai);
-        Check(client.Calls == before + 1, "an explicit read is not throttled by the scheduling floor");
+        Check(client.Calls == before + 1, "an explicit read is not throttled by the scheduled deadline");
         using var none = new AccountQuotaMonitor(new Client { Fail = true }, utcNow: () => now);
         await none.RefreshSourceIfDueAsync(QuotaProvider.Xai);
         Check(none.Snapshot().Single(s => s.Provider == QuotaProvider.Xai).Reading is null, "failure with no prior data never creates zero");
         return count;
+    }
+
+    private sealed class WaitingClient(TaskCompletionSource entered) : IAccountQuotaClient
+    {
+        public async Task<QuotaReading> ReadAsync(QuotaProvider provider, CancellationToken cancellationToken)
+        {
+            entered.TrySetResult();
+            await Task.Delay(Timeout.Infinite, cancellationToken);
+            throw new InvalidOperationException("The synthetic read must be canceled.");
+        }
     }
 
     private sealed class Client : IAccountQuotaClient

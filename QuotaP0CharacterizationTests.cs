@@ -131,21 +131,21 @@ internal static class QuotaP0CharacterizationTests
         h.CliRead = (p, _) => Task.FromResult(Reading(p, 38, Epoch.AddMinutes(18)));
         await h.ReadCliAsync(Codex);
         await h.ReadCliAsync(Xai);
-        check(h.State(Codex).NextCheck == Epoch.AddMinutes(3) && h.State(Xai).NextCheck == Epoch.AddMinutes(10) &&
-            h.LastPollingReason(Codex) == "ResetEntry" && h.LastPollingReason(Xai) == "ResetEntry", "3.1-4 xAI floors only its scheduled reset entry");
+        check(h.State(Codex).NextCheck == Epoch.AddMinutes(3) && h.State(Xai).NextCheck == Epoch.AddMinutes(30) &&
+            h.LastPollingReason(Codex) == "ResetEntry" && h.LastPollingReason(Xai) == "Regular", "3.1-4 xAI ignores scheduled reset entry");
         h.Now = Epoch.AddMinutes(5);
         await h.ReadCliAsync(Codex);
         await h.ReadCliAsync(Xai);
-        check(h.State(Codex).NextCheck == h.Now.AddMinutes(5) && h.State(Xai).NextCheck == h.Now.AddMinutes(10) &&
-            h.LastPollingReason(Xai) == "ResetPeriod", "3.1-4 in-band checks use five versus ten minutes");
+        check(h.State(Codex).NextCheck == h.Now.AddMinutes(5) && h.State(Xai).NextCheck == h.Now.AddMinutes(30) &&
+            h.LastPollingReason(Xai) == "Regular", "3.1-4 xAI keeps thirty minutes in the former reset band");
         h.Now = Epoch.AddHours(2);
         h.CliRead = (_, _) => Task.FromException<QuotaReading>(new IOException("Synthetic offline"));
-        foreach (int minutes in new[] { 15, 30, 60, 60 })
+        for (int failure = 0; failure < 4; failure++)
         {
             await h.ReadCliAsync(Xai);
-            check(h.State(Xai).NextCheck == h.Now.AddMinutes(minutes) && h.LastPollingReason(Xai) == "FailureRetry",
-                "3.1-4 failures retry at 15, 30 and capped 60 minutes");
-            h.Now = h.Now.AddMinutes(minutes);
+            check(h.State(Xai).NextCheck == h.Now.AddMinutes(30) && h.LastPollingReason(Xai) == "FailureRetry",
+                "3.1-4 repeated xAI failures retry in thirty minutes");
+            h.Now = h.Now.AddMinutes(30);
         }
     }
 
@@ -155,9 +155,9 @@ internal static class QuotaP0CharacterizationTests
         int successes = 0;
         h.WatchSuccess(_ => successes++);
         await h.ReadWebAsync();
-        check(h.WebCalls == 1 && h.State(Gemini) is { WebOutcome: "Ok" } && h.State(Gemini).NextCheck == Epoch.AddMinutes(15),
-            "3.1-5 first web success uses a fixed 15-minute interval");
-        h.Now = Epoch.AddMinutes(15).AddTicks(-1);
+        check(h.WebCalls == 1 && h.State(Gemini) is { WebOutcome: "Ok" } && h.State(Gemini).NextCheck == Epoch.AddMinutes(30),
+            "3.1-5 first web success uses a fixed 30-minute interval");
+        h.Now = Epoch.AddMinutes(30).AddTicks(-1);
         h.Recover();
         await h.ReadWebAsync();
         check(h.WebCalls == 1, "3.1-5 a recovery wake before the due time does not read web usage");
@@ -165,7 +165,7 @@ internal static class QuotaP0CharacterizationTests
         h.WebRead = _ => Task.FromResult(GeminiUsagePageLoad.LoadFailed);
         await h.ReadWebAsync();
         check(h.WebCalls == 2 && h.State(Gemini) is { WebOutcome: "LoadFailed", Previous: true } &&
-            h.State(Gemini).NextCheck == h.Now.AddMinutes(15), "3.1-5 due time is inclusive and a failed read still waits 15 minutes");
+            h.State(Gemini).NextCheck == h.Now.AddMinutes(30), "3.1-5 due time is inclusive and a failed read still waits 30 minutes");
         h.WebRead = _ => Task.FromResult(WebSignedOut);
         h.RequestWeb();
         await h.ReadWebAsync();
@@ -202,7 +202,7 @@ internal static class QuotaP0CharacterizationTests
             try
             {
                 await WaitAsync(() => h.CliCalls(Codex) == 1 && h.WebCalls == 1 && !h.State(Xai).ReadingNow &&
-                    h.State(Xai).NextCheck == Epoch.AddMinutes(10));
+                    h.State(Xai).NextCheck == Epoch.AddMinutes(30));
                 h.RefreshManually();
                 h.RefreshManually();
                 check(h.CliCalls(Codex) == 1 && h.WebCalls == 1, "3.1-6 overlapping manual requests do not start parallel reads");
@@ -213,7 +213,7 @@ internal static class QuotaP0CharacterizationTests
                 // loops after the sticky request and before supplying another wake.
                 await Task.Delay(100);
                 check(h.CliCalls(Codex) == 1 && h.WebCalls == 2, "3.1-6 in-flight CLI manual wakes drop, web manual wakes coalesce and survive");
-                check(h.CliCalls(Xai) >= 2 && h.Now == Epoch, "3.1-4 the xAI scheduled floor does not delay a manual refresh");
+                check(h.CliCalls(Xai) >= 2 && h.Now == Epoch, "3.1-4 the xAI schedule does not delay a manual refresh");
                 var recoveryReply = Signal<QuotaReading>();
                 h.CliRead = (p, token) => p == Codex ? recoveryReply.Task.WaitAsync(token) : Task.FromResult(Reading(p));
                 h.Recover();

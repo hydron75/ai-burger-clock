@@ -94,7 +94,7 @@ internal static class WindowsGeminiWebUiChecks
             session.ReadPage = () => WindowsGeminiWebChecks.ValidPage(clock(), TimeZoneInfo.Local);
             WithMenu(() => items[0].PerformClick());
             await WaitAsync(() => Gemini() is { HasResultSinceModeChange: true, Failure: null } && !Gemini().IsRefreshing);
-            await ShowStateAsync("ok", "5시간", "자동 15분", 2, [false, true, true]);
+            await ShowStateAsync("ok", "5시간", "자동 30분", 2, [false, true, true]);
             check(session.AntigravityReads == 0, "Gemini sign-in leaves Antigravity off by default");
             WithMenu(() => items[3].PerformClick());
             await WaitAsync(() => monitor.Snapshot().Any(state => state.Provider == QuotaProvider.Antigravity &&
