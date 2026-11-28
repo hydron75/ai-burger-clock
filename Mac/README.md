@@ -4,6 +4,10 @@ Apple Silicon / macOS 27을 위한 C# AppKit 메뉴바 앱입니다. 함께 쓰�
 
 이 폴더는 **일반 사용 검증을 진행 중인 preview 소스**입니다. 2026-10-03 KST **0.1.2의 실제 Mac 공통 검사 244,347건·Release `.app`·서명·ARM64 SQLite·native smoke PASS에 이어, 일반 실행의 커진 컬러 아이콘과 양쪽 메뉴막대 표시도 확인했습니다.** 앞선 0.1.1의 한 화면 배치·두 계정 한도 수신도 확인했습니다. 이후 이 Mac에서 직접 빌드해 보니 **이전 bundle은 `Info.plist` 버전이 0.1.0 / 1로 남아 있었습니다.** 소스 `66fb868`에서 버전을 csproj로 옮겨 0.1.2 / 3이 반영되도록 고쳤고, native smoke가 bundle 버전도 검사합니다. 절전 복귀·연결 복구 자동 조회와 재로그인 자동 실행·로그아웃 정상 종료도 실제로 확인했습니다. OS 알림·장기 사용은 남아 있습니다. [재로그인 확인](../MACOS_PORT.md#27-로그아웃-정상-종료와-재로그인-자동-실행-실제-확인), [절전·연결 복구 확인](../MACOS_PORT.md#26-연결-복구절전-복귀-실제-확인), [버전 수정과 로컬 검증](../MACOS_PORT.md#24-012-bundle-버전-미반영-수정과-첫-로컬-mac-검증), [실제 Mac 빌드](../MACOS_PORT.md#21-012-실제-mac-release-빌드-성공), [native 검사](../MACOS_PORT.md#22-012-아이콘-native-smoke-pass), [실제 메뉴막대](../MACOS_PORT.md#23-012-실제-컬러-아이콘과-양쪽-메뉴막대-확인)
 
+## 0.11.0 이후 소스: 조회 간격 30분 고정
+
+공통 원본(PR #197)이 xAI·Gemini 앱·Antigravity 한도를 사용률·리셋 시각과 관계없이 성공·실패 모두 30분 뒤에 다시 조회합니다. Antigravity의 Refresh 최소 10분 간격과 xAI의 리셋 구간·최소 10분 간격은 없앴습니다. Gemini 앱과 Antigravity는 로그인 필요 상태에서 자동 조회를 멈춥니다. Codex·Claude는 그대로입니다. 아래 0.11.0 이하 버전 절의 `1시간`·`15분`·`최소 10분`은 그 버전 기준입니다. 기록: [MACOS_PORT 93절](../MACOS_PORT.md#93-조회-간격-30분-고정pr-197의-mac-확인)
+
 ## 0.11.0: Antigravity 사용량 조회
 
 공통 원본의 Antigravity 웹 한도 조회원(PR #191)에 Mac 리더·메뉴·팝오버(PR #192)를 붙인 빌드입니다. 기록: [MACOS_PORT 91절](../MACOS_PORT.md#91-antigravity-웹-한도-조회원p25-pr-191의-mac-호스트), [92절](../MACOS_PORT.md#92-0110-정리-antigravity-웹-한도-조회-포함)
@@ -335,7 +339,7 @@ open "/Users/hydron/ai-burger-clock/Mac/bin/Release/net10.0-macos27.2/osx-arm64/
 - 미국 ET 09:00~PT 18:00 업무시간, DST, 미국 연방 공휴일 보정. Windows와 같은 정책입니다.
 - OpenAI·Claude·Gemini 공식 상태와 Provider별 독립 권고. 클릭하면 기본 브라우저에서 공식 상태 페이지를 엽니다. 카드에는 마지막으로 응답을 정상 수신한 시각이 함께 표시됩니다(0.4.1).
 - 개인 계정 한도: ChatGPT(Work/Codex), Claude, Gemini(Antigravity의 Gemini 모델 그룹, #30). 설치·로그인된 공식 CLI(`codex`, `claude`, `agy`)가 조회하며 앱은 토큰·Keychain·쿠키를 읽지 않습니다. Gemini는 Gemini Apps(웹·모바일) 전체 한도가 아니라 Antigravity CLI의 Gemini 모델 그룹 5시간·주간 한도(모델 전용 주간 한도가 있으면 추가 행)입니다. 아래 "Gemini 한도(agy)"를 보세요.
-- 조회 간격(공통 정책, #68): 기본 1시간(0.7.0까지는 6시간, 0.8.0부터 1시간), 사용 90% 초과~100% 미만 1시간, 사용 정확히 100%는 15분, 리셋 전후 각 15분은 5분, 실패하면 15분부터 최대 1시간 간격으로 재시도. 조건이 겹치면 짧은 주기가 적용됩니다. 예정 리셋 시각 경과만으로 100% 회복을 가정하지 않습니다. 이 앱이 쓰는 이유별 예약은 진단 파일에 `Regular`(기본)·`LowRemaining`(90% 초과)·`Exhausted`·`ResetPeriod`·`ResetEntry`·`FailureRetry`로 구분해 기록됩니다.
+- 조회 간격(공통 정책, #68): 기본 1시간(0.7.0까지는 6시간, 0.8.0부터 1시간), 사용 90% 초과~100% 미만 1시간, 사용 정확히 100%는 15분, 리셋 전후 각 15분은 5분, 실패하면 15분부터 최대 1시간 간격으로 재시도. 조건이 겹치면 짧은 주기가 적용됩니다. 예정 리셋 시각 경과만으로 100% 회복을 가정하지 않습니다. 이 앱이 쓰는 이유별 예약은 진단 파일에 `Regular`(기본)·`LowRemaining`(90% 초과)·`Exhausted`·`ResetPeriod`·`ResetEntry`·`FailureRetry`로 구분해 기록됩니다. xAI·Gemini 앱·Antigravity는 이 정책 대신 30분 고정입니다(PR #197, 0.11.0 이후 소스).
 - 수동 Refresh, 절전 복귀 조회, 연결 복구 조회(네트워크 이벤트는 1분 제한), 정상 종료 시 작업 취소.
 - 화면의 Provider 이름은 ChatGPT·Claude·Gemini 제품 이름으로 표시합니다. 저장되는 값과 공식 상태 주소는 그대로입니다(OpenAI 상태 페이지).
 - 메뉴바 또는 Provider의 기록 메뉴에서 Success·Slow·Error·Interrupted를 기록. 메모는 선택 사항이며 Windows와 같이 최대 1,000자입니다.

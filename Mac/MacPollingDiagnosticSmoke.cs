@@ -6,6 +6,10 @@ namespace AiBurgerClock;
 // Synthetic readings and a fake clock only; the diagnostic file lives beside a temporary SQLite database.
 internal static class MacPollingDiagnosticSmoke
 {
+    // The shared detail's schedule line for the sources with a fixed 30 minutes (xAI, Gemini web, Antigravity), spelled
+    // out here so that a changed interval or wording fails the checks.
+    internal const string FixedCadenceLine = "자동 30분 · 수동 Refresh · 실패 시 30분 뒤 다시 조회";
+
     private static void Check(bool condition, string message)
     {
         if (!condition) throw new InvalidOperationException("Polling diagnostics: " + message);
@@ -102,18 +106,24 @@ internal static class MacPollingDiagnosticSmoke
                     $"{usage}% must be {reason} with a +1h next check (found {high.Reason}, +{(high.Next - T()).TotalMinutes:0}m).");
             }
 
-            // xAI (weekly credits): its own Provider name in the v2 log; regular 1 hour, and the scheduled reset-period
-            // interval is at least 10 minutes (Codex/Claude keep 5; Gemini has no scheduled query).
-            Entry xaiRegular = await Poll(QuotaProvider.Xai, (p, now) => R(p,
-                new QuotaWindow(AccountQuotaParsers.GrokWeeklyWindowId, "주간 크레딧", 20, now.AddDays(5), AccountQuotaParsers.GrokWeeklyWindowMinutes)));
-            Check(xaiRegular is { Provider: "Xai", Reason: "Regular", Selected: null, Succeeded: true, Failures: 0, Anchors: 1 } && xaiRegular.Next == T().AddHours(1),
-                $"xAI regular entry has the wrong shape ({xaiRegular.Provider}, {xaiRegular.Reason}, +{(xaiRegular.Next - T()).TotalMinutes:0}m).");
-            DateTimeOffset xaiReset = T().AddMinutes(10);
-            Entry xaiPeriod = await Poll(QuotaProvider.Xai, (p, now) => R(p,
-                new QuotaWindow(AccountQuotaParsers.GrokWeeklyWindowId, "주간 크레딧", 40, xaiReset, AccountQuotaParsers.GrokWeeklyWindowMinutes)));
-            Check(xaiPeriod is { Provider: "Xai", Reason: "ResetPeriod", Succeeded: true } && xaiPeriod.Selected == xaiReset && xaiPeriod.Next == T().AddMinutes(10),
-                $"xAI reset period must check every 10 minutes (found {xaiPeriod.Reason}, +{(xaiPeriod.Next - T()).TotalMinutes:0}m).");
-            client.Clock = client.Clock.AddHours(1); // the xAI +15m band is over before the Codex checks below
+            // xAI (weekly credits): its own Provider name in the v2 log. A fixed 30 minutes at any usage or reset offset and
+            // after a failure, with no reset anchors (Codex/Claude keep the usage-based schedule; Gemini has no CLI query).
+            foreach ((double used, TimeSpan resetAfter) in new[]
+                { (20.0, TimeSpan.FromDays(5)), (40.0, TimeSpan.FromMinutes(10)), (100.0, TimeSpan.FromMinutes(10)) })
+            {
+                Entry xaiRead = await Poll(QuotaProvider.Xai, (p, now) => R(p,
+                    new QuotaWindow(AccountQuotaParsers.GrokWeeklyWindowId, "주간 크레딧", used, now + resetAfter, AccountQuotaParsers.GrokWeeklyWindowMinutes)));
+                Check(xaiRead is { Provider: "Xai", Reason: "Regular", Selected: null, Succeeded: true, Failures: 0, Anchors: 0 } && xaiRead.Next == T().AddMinutes(30),
+                    $"xAI at {used}% must be a +30m Regular entry ({xaiRead.Provider}, {xaiRead.Reason}, +{(xaiRead.Next - T()).TotalMinutes:0}m, {xaiRead.Anchors} anchors).");
+            }
+            for (int failures = 1; failures <= 2; failures++)
+            {
+                Entry xaiFailed = await Poll(QuotaProvider.Xai, (_, _) => null);
+                Check(xaiFailed is { Provider: "Xai", Reason: "FailureRetry", Selected: null, Succeeded: false, Anchors: 0 } &&
+                      xaiFailed.Failures == failures && xaiFailed.Next == T().AddMinutes(30),
+                    $"xAI failure {failures} must retry after 30m ({xaiFailed.Reason}, failures {xaiFailed.Failures}, +{(xaiFailed.Next - T()).TotalMinutes:0}m).");
+            }
+            client.Clock = client.Clock.AddHours(1); // keep the Codex checks below apart from the xAI readings
 
             // ResetPeriod: a used window resetting in 10 minutes -> 5 minute checks, that reset selected.
             DateTimeOffset reset = T().AddMinutes(10);
@@ -193,8 +203,8 @@ internal static class MacPollingDiagnosticSmoke
             Check(File.ReadAllBytes(Path.Combine(logs, LegacyPolling)).SequenceEqual(legacyBytes) &&
                   File.ReadAllBytes(Path.Combine(logs, LegacyDecisions)).SequenceEqual(legacyBytes),
                 "the old v1 diagnostic files must be kept byte for byte.");
-            // Provider detail (what the Mac tooltips show; panel.Verify checks they equal this text): 1 hour default for the three
-            // queried Providers; Gemini's detail is the fixed "no automatic query" text instead.
+            // Provider detail (what the Mac tooltips show; panel.Verify checks they equal this text): Codex and Claude state the
+            // usage-based policy, xAI the fixed cadence; Gemini's detail is the fixed "no automatic query" text instead.
             QuotaState Sample(QuotaProvider provider, string id) => new(provider,
                 new(provider, [new QuotaWindow(id, "주간", 10, client.Clock.AddDays(3), 10080)]),
                 LastSuccessfulCheckUtc: client.Clock, NextCheckUtc: client.Clock.AddHours(1),
@@ -211,16 +221,15 @@ internal static class MacPollingDiagnosticSmoke
                         "the Gemini detail must be the fixed not-queried text, with no polling policy text.");
                     continue;
                 }
-                Check(section.Detail.Contains("기본 1시간") && section.Detail.Contains("사용 90% 초과~100% 미만은 1시간") && !section.Detail.Contains("기본 6시간"),
-                    $"{section.Provider} detail does not state the 1 hour default policy.");
                 Check(!section.Detail.Contains("사용 0% 창의 리셋은 빠른 조회 기준에서 제외"), $"{section.Provider} detail has the retired Gemini 0% exception line.");
-                // xAI: scheduled reset-period checks every 10 minutes and the minimum-interval notice; the others stay at 5.
+                // xAI: the fixed cadence only, without a reset-period interval or a minimum-interval notice; the others are unchanged.
                 bool xai = section.Provider == QuotaProvider.Xai;
-                Check(section.Detail.Contains("리셋 전후 15분은 10분") == xai && section.Detail.Contains("리셋 전후 15분은 5분") == !xai &&
-                      section.Detail.Contains("xAI 예약 조회는 최소 10분입니다") == xai,
-                    $"{section.Provider} detail states the wrong reset-period interval.");
+                Check(section.Detail.Contains(FixedCadenceLine) == xai && section.Detail.Contains("기본 1시간") == !xai &&
+                      section.Detail.Contains("사용 90% 초과~100% 미만은 1시간") == !xai && section.Detail.Contains("리셋 전후 15분은 5분") == !xai &&
+                      !section.Detail.Contains("리셋 전후 15분은 10분") && !section.Detail.Contains("xAI 예약 조회는") && !section.Detail.Contains("기본 6시간"),
+                    $"{section.Provider} detail states the wrong polling policy.");
             }
-            return $"polling diagnostics (Regular/ResetPeriod/ResetEntry/Exhausted/FailureRetry with next + selected reset, 1h default (Regular vs LowRemaining >90%, on Claude), 1h policy text in the three queried Provider details (Gemini: fixed no-query text, no polling entry), xAI own entries (1h regular, 10m reset period, 10m interval text), v2 files + untouched v1 files, 1m jitter -> {jitterAnchors} anchors, " +
+            return $"polling diagnostics (Regular/ResetPeriod/ResetEntry/Exhausted/FailureRetry with next + selected reset, 1h default (Regular vs LowRemaining >90%, on Claude), policy text in the Codex/Claude/xAI details (Gemini: fixed no-query text, no polling entry), xAI own entries (+30m at 20/40/100% incl. near a reset and after 2 failures, no anchors, fixed-cadence text), v2 files + untouched v1 files, 1m jitter -> {jitterAnchors} anchors, " +
                    $"40s chain kept {chain}, 256 entries {bytes / 1024.0:0.0}KiB, 9 scheduling fields only)";
         }
         finally
