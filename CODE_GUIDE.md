@@ -1,5 +1,7 @@
 # 소스코드, 쉬운 말로 읽기
 
+**Windows 2.11.0 기준**으로 `AntigravityUsagePage.cs`가 Antigravity의 두 한도와 추정 리셋을 파싱합니다. `WindowsAntigravitySession.cs`는 Gemini 웹 세션을 공유하며, `QuotaPanelModel.cs`와 `AccountQuotaView.cs`가 Gemini 박스 안의 두 부분을 표시합니다. [2.11.0 배포 기록](MAINTENANCE_2_11_0.md)
+
 **Windows 2.10.0 기준**으로 `QuotaSources.cs`가 조회원별 주기·특성·표시 정책을 묶고, `AccountQuotaMonitor.cs`가 공통 실행 루프를 담당합니다. `QuotaCacheAdapter.cs`가 조회원별 캐시를 다룹니다. P0 검사에서 기존 조회·표시·송신 동작을 확인합니다. [2.10.0 배포 기록](MAINTENANCE_2_10_0.md)
 
 **Windows 2.9.9 후보 기준**으로 `AccountQuotaClient.cs`와 `GeminiUsagePage.cs`가 조회 실패를 분류하고, `QuotaPanelModel.cs`가 문구와 톤을 만듭니다. `QuotaFailure.cs`의 고정 진단 코드는 상세와 `--check-quotas`의 실패 출력에 표시합니다. [2.9.9 기록](MAINTENANCE_2_9_9.md)
@@ -388,7 +390,13 @@ Windows 내부 승인 형식은 알려진 경우만 해석합니다. 낯선 값�
 
 ## 11. 전체 소스 파일 지도
 
-2.10.0의 추적 C#은 루트·Properties 151개, Mac 31개, 공통 검사 입구 1개로 총 183개입니다. 공통 제품 원본 43개는 `Shared/SharedSources.props`에 등록돼 있습니다. 생성된 bin·obj·artifacts는 집계에서 제외합니다.
+2.11.0의 추적 C#은 루트·Properties 154개, Mac 34개, 공통 검사 입구 1개로 총 189개입니다. 공통 제품 원본 44개는 `Shared/SharedSources.props`에 등록돼 있습니다. 생성된 bin·obj·artifacts는 집계에서 제외합니다.
+
+| P2.5에서 찾을 파일 | 맡은 일 |
+|---|---|
+| [AntigravityUsagePage.cs](AntigravityUsagePage.cs) | 공통 읽기 스크립트, 5시간·주간 한도 파싱, 추정 리셋과 진단 코드 |
+| [WindowsAntigravitySession.cs](WindowsAntigravitySession.cs) | 기존 Gemini 프로필로 숨김 조회, Windows 세션 잠금 상태 확인 |
+| [AntigravityUsageTests.cs](AntigravityUsageTests.cs) | 합성 파서·예약·캐시·표시 회귀 검사 |
 
 | P2에서 찾을 파일 | 맡은 일 |
 |---|---|
