@@ -505,6 +505,7 @@ You have used some of your #-hour limit, it will fully refresh in # hours, ## mi
 - **Antigravity 한도를 자동으로 읽는다(2026-11-26, 사용자 결정).** Antigravity 약관 §6은 제3자 소프트웨어로 서비스에 접근하는 것을 위반으로 보고, Antigravity·Gemini CLI 계정 정지를 언급한다. 사용자는 이 위험을 알고 받아들였다. 위험을 줄이는 장치는 1시간 주기, 별도 켜기와 기본 꺼짐, Models 설정 화면 읽기만(클릭·원격 세션 조작·내부 API·쿠키·토큰 사용 없음), UA 변경 없음이다(4.7).
 - **xAI·Gemini 웹·Antigravity를 30분 고정으로 조회한다(2026-11-28, 사용자 결정).** 세 조회원은 성공과 실패에 같은 주기를 쓰고, Antigravity의 수동 Refresh 최소 간격은 없앤다. [Antigravity 약관 §6](https://antigravity.google/terms)은 접근 방식을 다루며 조회 빈도에 따른 예외를 두지 않는다. 빈도는 탐지 가능성에만 영향을 준다는 것이 사용자의 위험 판단 전제다. 별도 켜기와 기본 꺼짐은 유지한다.
 - **Antigravity는 Gemini와 다른 조회원이다.** 로그인·실패·켜기·캐시가 따로 움직이기 때문이다(예: Gemini 앱은 정상인데 Antigravity 형식만 바뀜). 표시는 Gemini 박스 하나로 합친다. "Provider당 조회원 하나" 원칙을 지키려고 열거형 끝에 `Antigravity`를 추가한다.
+- **P4에서 Antigravity를 다섯 번째 박스로 분리한다(2026-11-28, 사용자 결정).** Windows·Mac·모바일 사이트에 함께 반영한다. Gemini 앱과 Antigravity는 같은 구독에 포함되지만 제공 방식·쓰임새·사용량이 각각 다른 서비스다. P2.5에서 두 부분으로 나눴던 Gemini 박스를 정리한다. 같은 로그인 세션과 Gemini에 대한 `DependsOn` 관계를 유지하며, 로그아웃하면 두 조회원을 모두 끈다.
 - **숨김 읽기는 가시성 판정에 기댄다.** 문서에 없는 동작이라 깨질 수 있음을 알고 택했다. 깨지면 진단 코드로 바로 드러나게 한다(4.7 가시성 의존 대응).
 
 ## 6. 단계별 PR
@@ -526,7 +527,7 @@ You have used some of your #-hour limit, it will fully refresh in # hours, ## mi
 | P2 | **조회원 인터페이스와 공통 루프.** `IQuotaSource`, 어댑터, 주기 정책, `SetMode`, `RequestSourceRefresh`, `ClearCacheAsync`, 호환 팩토리, `IsQueryEnabled` 대체, Gemini 전용 루프·상태 필드 제거, 호스트의 Gemini 메뉴 연결 변경, 기존 검사·smoke의 호출부 이전(건수 증감 기록). **Claude 로그인 확인 루프와 `LatestClaudeAuth`, `QuotaState.ClaudeAuth`는 그대로 둔다** | 없음(P0 검사 그대로 통과) | Windows·Mac(회귀만 관찰) |
 | P2.5 | **Antigravity 웹 조회원(4.7).** P2가 운영에서 3일 이상 회귀 없이 돈 뒤 시작한다. 공통 파서·조회원·표시, 두 호스트의 리더·메뉴·로그아웃 연동. 송신 제외. P3와 순서는 준비된 쪽이 먼저지만, 같은 배포에 묶지 않는다 | 켜면 Gemini 박스가 네 줄 | Windows·Mac |
 | P3 | **로그인 상태 일반화.** P2가 운영에서 3일 이상 회귀 없이 돈 뒤 시작한다. `QuotaAuth`, `IQuotaAuthProbe`, Claude 확인 이전, `LatestAuth`, 호스트 알림의 API 변경, Gemini 웹 로그인 상태 연결, Codex·Grok 공식 상태 명령 조사(있을 때만 추가), 박스 상세 "로그인 상태" 절 공통화 | Gemini와 조사 결과에 따라 Codex·xAI에도 로그인 상태 표시 | Windows·Mac |
-| P4 | **송신 일반화.** `Traits.Export` 기반 송신, Antigravity 줄 송신, (선택) v2에 실패 종류 선택 필드 추가. 사이트가 허용 목록 밖 필드를 지우므로 **사이트를 먼저 배포하고 앱을 그다음 배포한다** | 사이트에 로그인 필요 표시(선택 시) | 사이트 → Windows |
+| P4 | **송신 일반화.** `Traits.Export` 기반 송신, Antigravity 줄 송신, Antigravity 다섯 번째 박스 분리(두 부분 Gemini 박스 정리), (선택) v2에 실패 종류 선택 필드 추가. 사이트가 허용 목록 밖 필드를 지우므로 **사이트를 먼저 배포하고 앱을 그다음 배포한다** | Windows·Mac·사이트에서 Antigravity를 별도 박스로 표시, 사이트에 로그인 필요 표시(선택 시) | 사이트 → Windows·Mac |
 
 - **통과 기준:**
   - P0 검사가 통과 기준이다.
