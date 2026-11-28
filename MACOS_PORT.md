@@ -3517,9 +3517,13 @@ native `--smoke-test`는 배포에서 실행하지 않았다. 팝오버의 실�
 
 로그아웃은 실제로 실행하지 않는다(앱의 Gemini 로그인 세션이 지워진다). 로그아웃 경로는 89절의 합성 검사와 코드 검토까지만 확인했다.
 
+이 관찰은 2026-11-28 13:33 KST의 0.11.0 교체로 끝났고, 미확인 항목은 미확인으로 남긴다([92절](#92-0110-정리-antigravity-웹-한도-조회-포함)).
+
 ## 91. Antigravity 웹 한도 조회원(P2.5, PR #191)의 Mac 호스트
 
 2026-11-27. 기준은 #191 HEAD `899652fa115c197ec4e034a4aaaefd363ada6522`, 설계는 [QUOTA_SOURCES_DESIGN](QUOTA_SOURCES_DESIGN.md) 4.7·5·7절이다. 버전은 올리지 않았다(0.10.0 그대로). 이 PR(Mac 파일·이 기록)은 #191의 브랜치를 base로 하는 Draft이며, 병합과 배포는 P2 관찰(90절) 종료 뒤 메인 지시로 한다. 공통 원본은 바꾸지 않았다.
+
+> **갱신(2026-11-28):** 위 기준·일정과 아래 공통 코드 관찰 1, "수행하지 않은 검증"은 작성 시점의 내용이다. 병합 기준, 관찰 1 해결, 관찰 단축, 배포 뒤 확인 결과는 [92절](#92-0110-정리-antigravity-웹-한도-조회-포함)에 있다.
 
 ### 동작
 - **리더(`MacAntigravityUsageReader`):** 공통 `AntigravityUsagePage.Url`·`ReadScript`를 Gemini 앱 리더와 같은 웹 데이터 저장소에서 쓴다. 읽는 동안만 창을 만들고(`alphaValue` 0, status 레벨, 클릭 통과, 그림자 없음, `canJoinAllSpaces`·`transient`·`ignoresCycle`, `fullScreenAuxiliary` 없음, 앱 활성화·키 포커스 없음) 끝나면 창과 `WKWebView`를 바로 해제한다. 탐색이 끝난 뒤 0.25초 간격으로 최대 20초, 전체 30초. URL은 scheme·host·path만 남기고 페이지에서는 읽을 영역의 문구만 받는다.
@@ -3590,3 +3594,47 @@ Antigravity 웹 한도 조회(기본 꺼짐)와 Gemini 박스의 두 부분 표�
 Shared.Tests **291,869건 PASS**, `bash Mac/build.sh` 옵션 없음 경고 0 / 오류 0, 번들 `CFBundleShortVersionString` 0.11.0 / `CFBundleVersion` 38, `codesign --verify --deep --strict` 통과. Xcode 27.2, .NET SDK 10.0.404, macos 워크로드 27.2.10000.
 
 native `--smoke-test`는 메인 지시에 따라 실행하지 않았다. 빌드만 해서 임시 사본은 등록되지 않았고(`lsregister -u`는 대상 없음 `-10814`), LaunchServices 등록 수는 1이다. 실행 중인 0.10.0 앱은 건드리지 않았다.
+
+### 병합과 smoke 차이에 대한 메인 결정
+PR #194(HEAD `55e092c1e6027acef1d2692735086ea520c8739b`)는 2026-11-28 13:15 KST에 병합됐다(main `40687b23e2efd7442f8348067117ce5b8675a44d`). 이 main에는 Windows 2.11.0 버전 PR #193도 병합돼 있으며, #194 HEAD와의 차이는 `AiBurgerClock.csproj`뿐이다.
+
+위 파서 차이에 대해 메인은 **smoke를 다시 실행하지 않고 그대로 배포**하기로 했다(2026-11-28). 메인이 든 근거는 파서의 언어 판정 조건 변경을 Shared.Tests와 Windows 합성 smoke(`d4d5dc8`, 1,219건 통과, PR #191 기록)로 확인했고 `Mac/`·`Shared/`가 같다는 것이다.
+
+### 저장소 경로 빌드와 실행 (Claude Code 수행, 2026-11-28, 메인 "배포 진행" 지시)
+main `40687b2`, 작업 트리 깨끗한 상태에서 AGENTS.md "Mac 배포" 절 순서로 진행했다.
+
+| 항목 | 결과 |
+|---|---|
+| 시작 전 | 0.10.0 / 37 앱 실행 중(PID 849). 실행 파일·앱 DLL의 SHA-256이 90절 기록과 같음. LaunchServices 등록 수 1 |
+| 빌드 | `bash Mac/build.sh --quit-running`(13:33 KST). `--quit-running`이 종료를 요청해 앱이 정상 종료됨. Shared.Tests 291,869 PASS, 경고 0 / 오류 0. Xcode 27.2(27B52), .NET SDK 10.0.404, macos 워크로드 27.2.10000 |
+| 번들 | `CFBundleShortVersionString` **0.11.0**, `CFBundleVersion` **38**, `codesign --verify --deep --strict` 통과 |
+| 실행 | `open`으로 실행(13:33:51). 프로세스 **1개**(PID 62821), 약 36초 뒤 자식 프로세스 0. 약 4분 뒤에도 같은 PID, 앱의 충돌 보고서 없음 |
+| SHA-256 실행 파일 | `90474618001d9976a09043aa53b34d96758911b13ed3be3556d70fa775db7f54` |
+| SHA-256 앱 DLL | `5eda441adafa1987f3ccddf2e1835604813beaba426a3ec893de2293e528db0c` (`Contents/MonoBundle/AI Burger Clock.dll`) |
+| LaunchServices 등록 수 | **1**(등록된 번들 버전 38) |
+
+native `--smoke-test`는 배포에서 실행하지 않았다.
+
+### 첫 켜기 확인 (2026-11-28, 사용자, 1회)
+배포 직후 사용자가 `Antigravity 사용량 조회`를 켜고 확인했다. 근거는 사용자가 보낸 팝오버 캡처와 답이며, Claude Code가 화면을 직접 조작해 확인한 것이 아니다. 실제 계정 값은 적지 않는다.
+
+| 항목 | 결과 | 근거 |
+|---|---|---|
+| Gemini 박스가 `Gemini 앱`·`Antigravity` 두 부분 | 정상 | 캡처 |
+| Antigravity 5시간·주간 두 줄, 조회 성공, 다음 조회 1시간 뒤 예약 | 정상 | 캡처 |
+| 행의 `약 … 후 리셋` | 확인(다른 조회원의 행에도 있는 표기) | 캡처와 사용자 지적 |
+| 상세의 리셋 시각 앞 `약` | 정상 | 사용자 답 "모두 정상" |
+| Dock·Mission Control에 새 창 없음 | 정상 | 같음 |
+| 전체 화면 앱 위 메뉴바 | 정상 | 같음 |
+
+실패가 없어 기록할 진단 코드는 없다. Dock·Mission Control 확인이 읽기 창이 있는 순간에 이뤄졌는지는 따로 묻지 않았다.
+
+### 91절 갱신
+- **#192의 최종 기준:** 91절은 #191 `899652f` 기준으로 썼다. #192는 base를 #191 `54a929e4f393ec604b51924b39ba4fc83ac9bd22`로 갱신한 HEAD `845f2047086be9e3038ef3b45440177ed39d1903`로 2026-11-28 12:36 KST에 병합됐다. 그 HEAD에서 임시 사본 빌드 0 / 0, Shared.Tests 291,869건을 확인했고 smoke는 다시 실행하지 않았다(91절의 smoke는 `6c1c5db`).
+- **공통 코드 관찰 1 해결:** #191의 `f891a3a`·`54a929e`부터 문구가 없고 언어 값이 비어 있는 응답은 `antigravity.language`가 아니라 `antigravity.not-rendered`가 된다. 언어 값이 영어가 아닌 값으로 채워진 경우만 `antigravity.language`다. 관찰 2·3은 그대로다.
+
+### P2 관찰 단축
+0.10.0의 운영 관찰은 설계 6.2의 3일 기준(2026-11-26 17:25 → 11-29 17:25 KST)보다 일찍 끝냈다(메인 결정). #191이 main에 병합된 11-28 13:06까지 약 43시간 41분, 0.10.0을 교체한 11-28 13:33까지 약 44시간 8분이다. 그 사이 11-28 01:36에 Mac이 재부팅됐고 앱 프로세스는 01:37에 시작된 것이었다. 90절 표에서 확인된 것은 수동 Refresh와 팝오버 네 박스(11-26)뿐이고, 나머지 네 항목은 항목별 답을 받지 못해 **미확인**이다. 사용자의 "모두 정상" 답은 첫 켜기 확인에 대한 것으로 기록했고 0.10.0 항목에는 옮기지 않았다.
+
+### 수행하지 않은 검증 (0.11.0)
+읽기 창이 있는 순간을 특정한 비노출 확인, 앱 비활성 상태를 구분한 확인, 전체 화면 앱이 덮은 디스플레이에서의 읽기·미루기, 화면 잠금·디스플레이 잠자기에서의 미루기, 1시간 뒤 자동 조회와 수동 Refresh의 Antigravity 갱신, Antigravity만 로그인이 필요한 경우, 로그아웃(실행하지 않음), 0.10.0으로 되돌리기, 배포 번들의 native smoke.
